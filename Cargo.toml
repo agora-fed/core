@@ -6,6 +6,7 @@ members = [
     "crates/core",
     "crates/db",
     "crates/api-contract",
+    "crates/app",
     "crates/gateway",
     "crates/platform/*",
     "crates/spaces/*",
@@ -44,6 +45,7 @@ lettre = { version = "0.11", default-features = false, features = ["tokio1-rustl
 uuid = { version = "1", features = ["v7", "serde"] }
 chrono = { version = "0.4", default-features = false, features = ["serde", "clock"] }
 thiserror = "2"
+async-trait = "0.1"
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }

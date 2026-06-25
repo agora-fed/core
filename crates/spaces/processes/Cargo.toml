@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 description = "Participatory processes: time-bound civic spaces grouping components toward a goal."
 
+[lints]
+workspace = true
+
 [dependencies]
 dsoc-core = { path = "../../core" }
 dsoc-db = { path = "../../db" }

@@ -16,9 +16,10 @@ pub mod clock;
 pub mod error;
 pub mod events;
 pub mod ids;
+pub mod testing;
 pub mod traits;
 
 pub use clock::{Clock, SystemClock};
 pub use error::{Error, Result};
 pub use events::{Event, EventEnvelope, EventTopic};
-pub use traits::{Authorization, Component, Space, VerificationLevel};
+pub use traits::{Authorization, Component, EventBus, Space, VerificationLevel};

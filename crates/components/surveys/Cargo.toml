@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 description = "Surveys: structured questionnaires with typed answers and tallies."
 
+[lints]
+workspace = true
+
 [dependencies]
 dsoc-core = { path = "../../core" }
 dsoc-db = { path = "../../db" }

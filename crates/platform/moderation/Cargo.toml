@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 description = "Auditable moderation: deterministic rules + statistical anomaly detection + optional local model."
 
+[lints]
+workspace = true
+
 [dependencies]
 dsoc-core = { path = "../../core" }
 dsoc-db = { path = "../../db" }

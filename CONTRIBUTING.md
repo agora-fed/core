@@ -45,3 +45,14 @@ Example: `feat(consequence): start SLA clock when a cluster crosses the support 
 - [ ] `CRATE.md` updated (responsibility, events emitted/consumed, owned tables).
 - [ ] `fmt` + `clippy -D warnings` + `sqlx` checks green against real PostgreSQL.
 - [ ] CHANGELOG entry; Decidim concept credited if ported.
+
+## Wiring conventions (frozen by ADR-0004)
+
+- Expose `pub fn routes(state: dsoc_app::AppState) -> axum::Router<()>`. Do not bind sockets in a
+  crate (the gateway owns the IPv6 bind).
+- Emit events via the injected `Arc<dyn dsoc_core::EventBus>`; in tests use
+  `dsoc_core::testing::RecordingEventBus`. Never depend on a peer `dsoc-*` crate.
+- Own your request/response DTOs + `utoipa` fragment in `src/dto.rs`; the gateway composes
+  `/openapi.json`. `api-contract` holds only the envelope/error/pagination.
+- Migrations live in the shared `migrations/` dir within your assigned range (see
+  `migrations/REGISTRY.md`); commit the per-crate `.sqlx/` offline cache (`cargo sqlx prepare`).

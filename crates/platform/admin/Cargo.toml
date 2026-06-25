@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 description = "System & organization administration: tenants, roles, feature flags, audit-log surface."
 
+[lints]
+workspace = true
+
 [dependencies]
 dsoc-core = { path = "../../core" }
 dsoc-db = { path = "../../db" }

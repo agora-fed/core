@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 description = "Public per-politician scorecard: promises vs delivery, answered vs ignored."
 
+[lints]
+workspace = true
+
 [dependencies]
 dsoc-core = { path = "../../core" }
 dsoc-db = { path = "../../db" }

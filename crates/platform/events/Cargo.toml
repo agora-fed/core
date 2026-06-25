@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 description = "Postgres-backed event bus implementation (pgmq)."
 
+[lints]
+workspace = true
+
 [dependencies]
 dsoc-core = { path = "../../core" }
 dsoc-db = { path = "../../db" }

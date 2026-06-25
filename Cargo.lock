@@ -443,6 +443,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "dsoc-app"
+version = "0.1.0"
+dependencies = [
+ "dsoc-core",
+ "dsoc-db",
+ "tokio",
+]
+
+[[package]]
 name = "dsoc-assemblies"
 version = "0.1.0"
 dependencies = [
@@ -533,10 +542,12 @@ dependencies = [
 name = "dsoc-core"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
  "uuid",
 ]
 

@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 description = "Votes: support signals on proposals."
 
+[lints]
+workspace = true
+
 [dependencies]
 dsoc-core = { path = "../../core" }
 dsoc-db = { path = "../../db" }

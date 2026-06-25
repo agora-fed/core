@@ -5,6 +5,8 @@
 
 ## Responsibility
 
+**Protocol: ActivityPub** + a namespaced accountability vocabulary (ADR-0005). Citizens/voters and mandates are AP Actors; a voter can evolve into a candidate then an official as one federated identity the scorecard follows. Support stays an aggregate (never a per-actor public activity — vote privacy / LGPD). Depends only on the frozen `api-contract`.
+
 Federation hub & SDK (Phase 3): lets a municipality run a local instance that federates its signal into the central platform. Depends only on the frozen api-contract.
 
 ## Events

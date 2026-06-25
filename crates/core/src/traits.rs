@@ -7,6 +7,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
+use crate::events::EventEnvelope;
 use crate::ids::{CitizenId, MandateId, OrgId, SpaceId};
 
 /// Identity assurance level for a participant (PLAN.md `mandates`: email-only → TSE-backed).
@@ -25,21 +26,29 @@ pub enum VerificationLevel {
 }
 
 /// Authorization: "is this person who they claim, and may they act?" Implemented by `auth`.
+/// `async-trait` keeps it dyn-compatible so it can be injected as `Arc<dyn Authorization>`.
+#[async_trait::async_trait]
 pub trait Authorization: Send + Sync {
     /// Resolve the verification level of a citizen within an organization.
-    fn level(
-        &self,
-        org: OrgId,
-        citizen: CitizenId,
-    ) -> impl std::future::Future<Output = Result<VerificationLevel>> + Send;
+    async fn level(&self, org: OrgId, citizen: CitizenId) -> Result<VerificationLevel>;
 
     /// Assert the citizen meets at least `required`, else [`crate::Error::Forbidden`].
-    fn require(
+    async fn require(
         &self,
         org: OrgId,
         citizen: CitizenId,
         required: VerificationLevel,
-    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    ) -> Result<()>;
+}
+
+/// The publish port for the durable event bus. A crate emits cross-crate signals through this
+/// (injected as `Arc<dyn EventBus>`) instead of depending on `dsoc-events` — preserving the crate
+/// boundary (PLAN.md section 5.2, ADR-0004). The concrete implementation lives in `dsoc-events`.
+#[async_trait::async_trait]
+pub trait EventBus: Send + Sync {
+    /// Durably publish an event envelope. Implementations must be at-least-once; consumers must be
+    /// idempotent.
+    async fn publish(&self, envelope: EventEnvelope) -> Result<()>;
 }
 
 /// A participation **space** (process, assembly, initiative, consultation, mandate).

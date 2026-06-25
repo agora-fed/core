@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 description = "Participatory budgeting: projects, costs, and citizen allocation under a ceiling."
 
+[lints]
+workspace = true
+
 [dependencies]
 dsoc-core = { path = "../../core" }
 dsoc-db = { path = "../../db" }

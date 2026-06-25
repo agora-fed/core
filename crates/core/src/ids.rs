@@ -75,6 +75,8 @@ define_id!(/// A consequence-engine SLA instance.
     SlaId, "sla_");
 define_id!(/// A public scorecard entry.
     ScorecardId, "scd_");
+define_id!(/// A notification delivery (push/email/whatsapp fan-out).
+    NotificationId, "ntf_");
 define_id!(/// A durable event envelope id.
     EventId, "evt_");
 

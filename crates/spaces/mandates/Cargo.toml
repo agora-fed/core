@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 description = "Mandate & candidate registry with mandatory official onboarding."
 
+[lints]
+workspace = true
+
 [dependencies]
 dsoc-core = { path = "../../core" }
 dsoc-db = { path = "../../db" }

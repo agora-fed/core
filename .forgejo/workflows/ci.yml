@@ -33,8 +33,12 @@ jobs:
     runs-on: docker
     steps:
       - uses: actions/checkout@v4
-      - name: crate-boundary check
-        run: ./scripts/check-crate-boundaries.sh
+      - name: crate-boundary + schema guards
+        run: |
+          ./scripts/check-crate-boundaries.sh
+          ./scripts/check-migration-numbers.sh
+          ./scripts/check-fk-targets.sh
+          ./scripts/check-lints-optin.sh
 
   test:
     runs-on: docker

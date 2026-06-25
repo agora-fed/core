@@ -5,6 +5,9 @@ cd "$(dirname "$0")/.."
 echo "==> fmt";        cargo fmt --all -- --check
 echo "==> clippy";     cargo clippy --all-targets --all-features -- -D warnings
 echo "==> boundaries"; ./scripts/check-crate-boundaries.sh
+echo "==> migration numbers"; ./scripts/check-migration-numbers.sh
+echo "==> fk targets"; ./scripts/check-fk-targets.sh
+echo "==> lints opt-in"; ./scripts/check-lints-optin.sh
 echo "==> secrets";    ./scripts/scan-secrets.sh
 echo "==> tests";      cargo test --workspace --all-features
 echo "All local gates passed."

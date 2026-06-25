@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 description = "Meetings: in-person/online civic gatherings with minutes and attendance."
 
+[lints]
+workspace = true
+
 [dependencies]
 dsoc-core = { path = "../../core" }
 dsoc-db = { path = "../../db" }

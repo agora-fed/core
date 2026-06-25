@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 description = "Federation hub & SDK (Phase 3): lets a municipality run a local instance that federates its signal into the central platform."
 
+[lints]
+workspace = true
+
 [dependencies]
 dsoc-api-contract = { path = "../../api-contract" }
 tokio = { workspace = true }

@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 description = "Response-or-public-silence engine: SLA clock + public answered/ignored record."
 
+[lints]
+workspace = true
+
 [dependencies]
 dsoc-core = { path = "../../core" }
 dsoc-db = { path = "../../db" }

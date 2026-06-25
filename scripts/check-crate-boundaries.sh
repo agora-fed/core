@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 
 violations=0
 # Component/space crates may depend only on dsoc-core, dsoc-db, dsoc-api-contract.
-allowed='dsoc-core|dsoc-db|dsoc-api-contract'
+allowed='dsoc-core|dsoc-db|dsoc-api-contract|dsoc-app'
 while IFS= read -r manifest; do
   crate_dir="$(dirname "$manifest")"
   case "$crate_dir" in

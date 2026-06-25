@@ -8,7 +8,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{
-    ClusterId, CommentId, EventId, MandateId, OrgId, ProposalId, ScorecardId, SlaId, VoteId,
+    CitizenId, ClusterId, CommentId, EventId, MandateId, NotificationId, OrgId, ProposalId,
+    ScorecardId, SlaId, VoteId,
 };
 
 /// Stable topic strings used for routing and durable subscriptions (pgmq queue names).
@@ -33,6 +34,8 @@ pub enum EventTopic {
     Moderation,
     /// `auth.*`
     Auth,
+    /// `notify.*`
+    Notify,
 }
 
 impl EventTopic {
@@ -49,6 +52,7 @@ impl EventTopic {
             EventTopic::Scorecard => "scorecard",
             EventTopic::Moderation => "moderation",
             EventTopic::Auth => "auth",
+            EventTopic::Notify => "notify",
         }
     }
 }
@@ -130,6 +134,38 @@ pub enum Event {
     /// Content cleared moderation.
     #[serde(rename = "moderation.cleared")]
     ModerationCleared { proposal: ProposalId },
+
+    // --- additive (ADR-0004): seams the component CRATE.md contracts reference ---
+    /// A proposal cleared moderation and was published.
+    #[serde(rename = "proposals.published")]
+    ProposalPublished {
+        proposal: ProposalId,
+        mandate: MandateId,
+    },
+    /// A proposal's aggregate support tally changed (privacy-safe aggregate only).
+    #[serde(rename = "votes.tally.updated")]
+    VoteTallyUpdated {
+        proposal: ProposalId,
+        support_count: u64,
+    },
+    /// `consensus` merged a proposal into an existing cluster.
+    #[serde(rename = "consensus.proposal.merged")]
+    ConsensusProposalMerged {
+        proposal: ProposalId,
+        cluster: ClusterId,
+    },
+    /// A mandate's identity was verified to a higher assurance level.
+    #[serde(rename = "mandates.identity.verified")]
+    MandateIdentityVerified { mandate: MandateId },
+    /// A citizen's verification level was upgraded by `auth`.
+    #[serde(rename = "auth.verification.upgraded")]
+    AuthVerificationUpgraded { citizen: CitizenId },
+    /// A notification was dispatched to a channel.
+    #[serde(rename = "notify.dispatched")]
+    NotifyDispatched { notification: NotificationId },
+    /// A notification failed delivery (after retries).
+    #[serde(rename = "notify.delivery.failed")]
+    NotifyDeliveryFailed { notification: NotificationId },
 }
 
 impl Event {
@@ -152,6 +188,14 @@ impl Event {
             Event::ScorecardUpdated { .. } => EventTopic::Scorecard,
             Event::ModerationFlagged { .. } | Event::ModerationCleared { .. } => {
                 EventTopic::Moderation
+            }
+            Event::ProposalPublished { .. } => EventTopic::Proposals,
+            Event::VoteTallyUpdated { .. } => EventTopic::Votes,
+            Event::ConsensusProposalMerged { .. } => EventTopic::Consensus,
+            Event::MandateIdentityVerified { .. } => EventTopic::Mandates,
+            Event::AuthVerificationUpgraded { .. } => EventTopic::Auth,
+            Event::NotifyDispatched { .. } | Event::NotifyDeliveryFailed { .. } => {
+                EventTopic::Notify
             }
         }
     }

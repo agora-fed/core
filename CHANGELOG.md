@@ -18,6 +18,11 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 - Kubernetes + Helm deployment chart (umbrella + per-service values), IPv6-first.
 - Documentation set (English): architecture, parallelization, testing, CI/CD, deployment, ADRs, wiki.
 
+- Wave 0 (ADR-0004): `EventBus` port + `RecordingEventBus`; 7 additive event variants + `Notify`
+  topic + `NotificationId`; `dsoc-app` `AppState` wiring crate; migration registry + 3 CI guard
+  scripts; per-crate `.sqlx` convention.
+- ADR-0005 (Proposed): federate over **ActivityPub** (voter→candidate→official as one identity).
+
 ### Decisions
 - **ADR-0002**: reversed the original "no Docker / LXC + systemd" deployment stance to
   **Kubernetes + Helm**, justified per principle 12 (see `docs/decisions/`).
