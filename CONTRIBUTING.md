@@ -50,8 +50,11 @@ Example: `feat(consequence): start SLA clock when a cluster crosses the support 
 
 - Expose `pub fn routes(state: dsoc_app::AppState) -> axum::Router<()>`. Do not bind sockets in a
   crate (the gateway owns the IPv6 bind).
-- Emit events via the injected `Arc<dyn dsoc_core::EventBus>`; in tests use
-  `dsoc_core::testing::RecordingEventBus`. Never depend on a peer `dsoc-*` crate.
+- Emit events from a domain mutation via the **transactional outbox**
+  `dsoc_db::outbox::publish_tx(&mut *tx, &envelope)` so the change and the event commit atomically
+  (ADR-0006). Use the injected `Arc<dyn dsoc_core::EventBus>` only for fire-and-forget emission
+  outside a transaction. In tests use `dsoc_core::testing::RecordingEventBus`. Never depend on a peer
+  `dsoc-*` crate.
 - Own your request/response DTOs + `utoipa` fragment in `src/dto.rs`; the gateway composes
   `/openapi.json`. `api-contract` holds only the envelope/error/pagination.
 - Migrations live in the shared `migrations/` dir within your assigned range (see

@@ -35,6 +35,24 @@ Semantic clustering & dedupe via pgvector. Embeds every new proposal, finds near
   queries only.
 - DO NOT default any socket/example/doc to IPv4.
 
+## Behaviors under test (the test catalog — docs/TESTING.md)
+
+Unit (`src/domain.rs`, pure, deterministic):
+- the stub embedder is deterministic, fixed-dimension (384), and unit-norm for non-empty text;
+- near-identical texts are within the threshold, dissimilar texts are beyond it;
+- cosine distance matches pgvector's `<=>` (zero for identical, `1.0` for a zero vector);
+- the threshold decision is inclusive at the boundary and forms just past it;
+- empty/blank text is rejected as `Validation`; the pgvector literal formats losslessly.
+
+Integration (`tests/integration.rs`, real PostgreSQL, `FixedClock`, `RecordingEventBus`):
+- the first proposal forms a cluster and emits `consensus.cluster.formed`;
+- two near-identical texts merge into one cluster and emit `consensus.proposal.merged` (size 2);
+- dissimilar texts form separate clusters;
+- the cosine-distance threshold boundary is respected (a strict threshold blocks a near merge);
+- re-ingesting the same proposal is a `Conflict`; blank text is `Validation` (no event emitted);
+- consuming `proposals.created` clusters the proposal; unrelated events are ignored;
+- cluster fetch + keyset-paginated listing round-trip; an absent cluster is `NotFound`.
+
 ## Definition of done
 
 - Domain model + `sqlx` queries + service impl + HTTP handlers + **own tests**.

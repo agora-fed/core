@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE consensus_cluster c\n           SET centroid = sub.centroid, size = sub.cnt\n           FROM (\n               SELECT avg(e.embedding) AS centroid, count(*)::int AS cnt\n               FROM consensus_cluster_member m\n               JOIN consensus_embedding e ON e.proposal_id = m.proposal_id\n               WHERE m.cluster_id = $1\n           ) sub\n           WHERE c.id = $1\n           RETURNING c.size AS \"size!: i32\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "size!: i32",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1cefa774b024cd9fd96059d9a92bb11e9d2c3c945d12aaecfcc347a39794fa2d"
+}

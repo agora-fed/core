@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, (centroid <=> $2::text::vector) AS \"distance!: f64\"\n           FROM consensus_cluster\n           WHERE org_id = $1\n           ORDER BY centroid <=> $2::text::vector\n           LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "distance!: f64",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "eef2f3b3bfda06ebff25f4a4113b4887c69f6113f582cd5eadc221fa50ad01ed"
+}

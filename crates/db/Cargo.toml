@@ -13,9 +13,14 @@ workspace = true
 [dependencies]
 dsoc-core = { path = "../core" }
 sqlx = { workspace = true }
+serde_json = { workspace = true }
 tokio = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+chrono = { workspace = true }
+serde_json = { workspace = true }
+dsoc-core = { path = "../core" }
+

@@ -423,12 +423,21 @@ dependencies = [
 name = "dsoc-admin"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "dsoc-api-contract",
+ "dsoc-app",
  "dsoc-core",
  "dsoc-db",
  "serde",
+ "serde_json",
+ "sqlx 0.8.6",
  "thiserror",
  "tokio",
  "tracing",
+ "utoipa",
+ "uuid",
 ]
 
 [[package]]
@@ -467,14 +476,23 @@ dependencies = [
 name = "dsoc-auth"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "dsoc-api-contract",
+ "dsoc-app",
  "dsoc-core",
  "dsoc-db",
  "jsonwebtoken",
  "reqwest",
  "serde",
+ "serde_json",
+ "sqlx 0.8.6",
  "thiserror",
  "tokio",
  "tracing",
+ "utoipa",
+ "uuid",
 ]
 
 [[package]]
@@ -505,13 +523,22 @@ dependencies = [
 name = "dsoc-consensus"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "dsoc-api-contract",
+ "dsoc-app",
  "dsoc-core",
  "dsoc-db",
  "pgvector",
  "serde",
+ "serde_json",
+ "sqlx 0.8.6",
  "thiserror",
  "tokio",
  "tracing",
+ "utoipa",
+ "uuid",
 ]
 
 [[package]]
@@ -555,7 +582,9 @@ dependencies = [
 name = "dsoc-db"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "dsoc-core",
+ "serde_json",
  "sqlx 0.8.6",
  "thiserror",
  "tokio",
@@ -578,12 +607,21 @@ dependencies = [
 name = "dsoc-events"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "dsoc-api-contract",
+ "dsoc-app",
  "dsoc-core",
  "dsoc-db",
  "serde",
+ "serde_json",
+ "sqlx 0.8.6",
  "thiserror",
  "tokio",
  "tracing",
+ "utoipa",
+ "uuid",
 ]
 
 [[package]]
@@ -653,26 +691,41 @@ dependencies = [
 name = "dsoc-moderation"
 version = "0.1.0"
 dependencies = [
+ "axum",
+ "chrono",
+ "dsoc-api-contract",
+ "dsoc-app",
  "dsoc-core",
  "dsoc-db",
  "serde",
+ "sqlx 0.8.6",
  "thiserror",
  "tokio",
- "tracing",
+ "utoipa",
+ "uuid",
 ]
 
 [[package]]
 name = "dsoc-notify"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "dsoc-api-contract",
+ "dsoc-app",
  "dsoc-core",
  "dsoc-db",
  "lettre",
  "reqwest",
  "serde",
+ "serde_json",
+ "sqlx 0.8.6",
  "thiserror",
  "tokio",
  "tracing",
+ "utoipa",
+ "uuid",
 ]
 
 [[package]]

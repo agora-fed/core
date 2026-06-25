@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE notify_outbox\n        SET status = $2, attempts = $3\n        WHERE id = $1 AND status = $4 AND attempts = $5\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int4",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "efcd43cf5ed7c8785eb418341ed31bb95c9197400d2ddbfe2427940bee24c22d"
+}

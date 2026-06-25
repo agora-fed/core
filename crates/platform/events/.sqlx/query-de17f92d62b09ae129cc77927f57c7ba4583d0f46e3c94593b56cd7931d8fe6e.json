@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO events_subscription\n               (subscriber, topic, cursor_occurred_at, cursor_event_id, updated_at)\n           VALUES ($1, $2, $3, $4, $5)\n           ON CONFLICT (subscriber, topic) DO UPDATE\n               SET cursor_occurred_at = EXCLUDED.cursor_occurred_at,\n                   cursor_event_id    = EXCLUDED.cursor_event_id,\n                   updated_at         = EXCLUDED.updated_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "de17f92d62b09ae129cc77927f57c7ba4583d0f46e3c94593b56cd7931d8fe6e"
+}

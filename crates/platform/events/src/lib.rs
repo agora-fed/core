@@ -13,6 +13,19 @@
 
 #![forbid(unsafe_code)]
 
+mod domain;
+mod events;
+mod http;
+mod queries;
+mod service;
+
+pub use domain::{
+    decode_event, encode_event, total_pending, Cursor, EncodedEvent, QueueDepth, SubscriberName,
+};
+pub use events::{dispatch_batch, EventHandler};
+pub use http::routes;
+pub use service::{EventQueue, PgEventBus};
+
 /// Compile-time marker proving the crate name is wired into the workspace.
 pub const CRATE_NAME: &str = "dsoc-events";
 

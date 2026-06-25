@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO notify_device_token\n            (id, citizen_id, platform, token, created_at)\n        VALUES ($1, $2, $3, $4, $5)\n        ON CONFLICT (citizen_id, platform, token)\n            DO UPDATE SET created_at = EXCLUDED.created_at\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "75541f9e5b6a345a8ca81c6bdc2159c4f73d56bb5a5a90d058c4c9d57d5d303e"
+}

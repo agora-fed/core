@@ -11,14 +11,25 @@ System & organization administration: tenants, roles, feature flags, audit-log s
 
 | Direction | Topic |
 |-----------|-------|
-| emits | `admin.org.created` |
-| emits | `admin.feature_flag.changed` |
+| emits | _none_ |
+| consumes | _none_ |
+
+The frozen event catalog (`dsoc_core::events::Event`) has **no `admin.*` variants**, and
+adding one is a Tier-0 change requiring an ADR (PLAN.md section 5.3). Administration is
+internal state management that nothing currently subscribes to, so admin **persists state and
+exposes routes but emits no cross-crate events for now**. The `Arc<dyn EventBus>` publish port
+is still injected and held by `AdminService` (`AdminService::event_bus`) so a future ADR can wire
+emission in `src/events.rs` without changing the service's construction or the gateway.
 
 ## Owned tables
 
-- `admin_org`
-- `admin_role_binding`
-- `admin_feature_flag`
+- `admin_org` — 1:1 administrative extension of the core-owned `org` (`org_id` PK → `org`).
+- `admin_role_binding` — `(id, org_id, citizen_id, role, created_at)`; unique
+  `(org_id, citizen_id, role)`; `role ∈ {owner, admin, auditor}`.
+- `admin_feature_flag` — `(id, org_id, key, enabled, created_at, updated_at)`; unique
+  `(org_id, key)` (the upsert target making toggles idempotent and audited).
+
+Migration: `migrations/0150_admin_core.sql`. Cross-crate FKs target only `org`/`citizen`.
 
 ## Public surface
 
@@ -33,6 +44,20 @@ System & organization administration: tenants, roles, feature flags, audit-log s
 - DO NOT introduce an ORM or query builder that hides SQL — `sqlx` checked
   queries only.
 - DO NOT default any socket/example/doc to IPv4.
+
+## Behaviors under test
+
+Unit (`src/domain.rs`): role string round-trip + unknown-role rejection, role mutate
+capability, mutation authorization threshold (directory-level), feature-flag key validation
+(empty / too-long / charset / max length), idempotency no-op detection, page-limit clamping.
+
+Integration (`tests/integration.rs`, real Postgres, `RecordingEventBus`, `FixedClock`):
+
+- create org, then bind a role, and read both back (asserts **no events emitted**);
+- duplicate role binding → `Conflict`;
+- toggling a feature flag is **idempotent and audited** (one row; `created_at` preserved,
+  `updated_at` advances under the injected clock);
+- unauthorized mutation → `Forbidden` (and nothing persisted).
 
 ## Definition of done
 

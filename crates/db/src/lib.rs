@@ -11,6 +11,8 @@
 //! - All ids are `uuid` (UUIDv7) — see [`dsoc_core::ids`].
 //! - Reads that can be unbounded MUST paginate (`LIMIT`/keyset). No `SELECT *` in app code.
 
+pub mod outbox;
+
 use sqlx::postgres::{PgPool, PgPoolOptions};
 
 /// The shared Postgres connection pool type used across the workspace.

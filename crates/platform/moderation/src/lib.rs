@@ -13,6 +13,16 @@
 
 #![forbid(unsafe_code)]
 
+pub mod domain;
+pub mod events;
+pub mod http;
+pub mod queries;
+pub mod service;
+
+pub use events::{emit_decision, handle_event};
+pub use http::routes;
+pub use service::{ModerationService, ModerationTarget};
+
 /// Compile-time marker proving the crate name is wired into the workspace.
 pub const CRATE_NAME: &str = "dsoc-moderation";
 

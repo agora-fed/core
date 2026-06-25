@@ -13,10 +13,19 @@ workspace = true
 [dependencies]
 dsoc-core = { path = "../../core" }
 dsoc-db = { path = "../../db" }
+dsoc-api-contract = { path = "../../api-contract" }
+dsoc-app = { path = "../../app" }
+axum = { workspace = true }
+sqlx = { workspace = true }
 reqwest = { workspace = true }
 lettre = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+utoipa = { workspace = true }
+async-trait = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 

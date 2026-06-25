@@ -11,14 +11,22 @@ Sovereign identity & verification: Zitadel/OIDC token validation, session issuan
 
 | Direction | Topic |
 |-----------|-------|
-| emits | `auth.session.created` |
 | emits | `auth.verification.upgraded` |
 | consumes | `mandates.official.invited` |
 
+> **Drift note (ADR-0004 catalog):** the frozen `dsoc_core::events::Event` catalog has **no
+> `auth.session.created` variant**, so session issuance is recorded in `auth_session` rather than
+> emitted. Per the wiring rules a crate emits **only** existing catalog variants; if a session
+> event is later needed it must be added to the catalog by ADR first. `auth.verification.upgraded`
+> is emitted whenever a citizen's level rises.
+
 ## Owned tables
 
-- `auth_session`
-- `auth_verification_level`
+- `auth_session` — server-issued sessions. Includes the **ActivityPub-readiness seam** (ADR-0005):
+  a stable `public_handle` and a reserved, nullable `actor_public_key` (HTTP-Signatures keypair
+  slot; not populated in the MVP). A `auth_session_public` view exposes the handle without the
+  OIDC subject.
+- `auth_verification_level` — append-only audit trail of verification-level changes.
 
 ## Public surface
 

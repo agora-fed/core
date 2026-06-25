@@ -23,7 +23,14 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
   scripts; per-crate `.sqlx` convention.
 - ADR-0005 (Proposed): federate over **ActivityPub** (voter→candidate→official as one identity).
 
+- Wave 1: 6 platform crates implemented + adversarially reviewed — events (PgEventBus + outbox
+  dispatcher), auth (Zitadel OIDC + Authorization + verification levels, AP-readiness seam),
+  notify (multi-channel fan-out), consensus (pgvector clustering), moderation (rules+stats),
+  admin. Review caught + fixed a TOCTOU race, a notification-hijack authz hole, a phantom-UUID
+  idempotency bug, and a dual-write hazard (now via ADR-0006 transactional outbox).
+
 ### Decisions
+- **ADR-0006**: transactional outbox for atomic event emission.
 - **ADR-0002**: reversed the original "no Docker / LXC + systemd" deployment stance to
   **Kubernetes + Helm**, justified per principle 12 (see `docs/decisions/`).
 
