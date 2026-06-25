@@ -1,0 +1,9 @@
+# Production overrides for the sovereign cluster (IPv6-only park).
+gateway:
+  replicaCount: 3
+  autoscaling:
+    minReplicas: 3
+    maxReplicas: 20
+ingress:
+  host: "democracia.social.br"
+  tls: true

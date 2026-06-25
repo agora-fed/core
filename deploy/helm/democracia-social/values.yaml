@@ -1,0 +1,41 @@
+# Default values. The STATEFUL sovereign tier (PostgreSQL+pgvector, Redis, Zitadel,
+# embeddings) is NOT managed here (ADR-0002) — it is consumed as external services.
+# Secrets are referenced by NAME, never by value (PLAN.md principle 8).
+
+network:
+  # IPv6-first (PLAN.md principle 4). IPv4 is an explicit opt-in fallback only.
+  ipFamily: IPv6
+  ipFamilyPolicy: SingleStack
+
+image:
+  registry: registry.pop.coop
+  repository: brasil/democracia-social
+  pullPolicy: IfNotPresent
+  tag: ""            # defaults to .Chart.AppVersion
+
+gateway:
+  enabled: true
+  replicaCount: 2
+  containerPort: 8080
+  resources:
+    requests: { cpu: "100m", memory: "64Mi" }
+    limits:   { cpu: "500m", memory: "256Mi" }
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+# External sovereign dependencies — provided via a Kubernetes Secret created out-of-band.
+externalSecrets:
+  name: democracia-social-secrets   # contains DATABASE_URL, REDIS_URL, OIDC_*, SMTP_URL, ...
+
+config:
+  oidcIssuer: "https://id.pop.coop"
+  embeddingsUrl: "http://embeddings.democracia-social.svc:8081"
+
+ingress:
+  enabled: true
+  className: "haproxy"
+  host: "democracia.social.br"
+  tls: true

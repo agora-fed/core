@@ -1,0 +1,19 @@
+[package]
+name = "dsoc-initiatives"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Citizen initiatives: signature-threshold-driven proposals that escalate when supported."
+
+[dependencies]
+dsoc-core = { path = "../../core" }
+dsoc-db = { path = "../../db" }
+tokio = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

@@ -1,0 +1,18 @@
+[package]
+name = "dsoc-federation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Federation hub & SDK (Phase 3): lets a municipality run a local instance that federates its signal into the central platform."
+
+[dependencies]
+dsoc-api-contract = { path = "../../api-contract" }
+tokio = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

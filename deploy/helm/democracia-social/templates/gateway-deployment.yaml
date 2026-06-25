@@ -1,0 +1,47 @@
+{{- if .Values.gateway.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ds.fullname" . }}
+  labels: {{- include "ds.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.gateway.autoscaling.enabled }}
+  replicas: {{ .Values.gateway.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: democracia-social
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels: {{- include "ds.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: gateway
+          image: {{ include "ds.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.gateway.containerPort }}
+          env:
+            - name: GATEWAY_PORT
+              value: "{{ .Values.gateway.containerPort }}"
+            - name: OIDC_ISSUER
+              value: "{{ .Values.config.oidcIssuer }}"
+            - name: EMBEDDINGS_URL
+              value: "{{ .Values.config.embeddingsUrl }}"
+          # Sovereign secrets injected by name, never by value (principle 8).
+          envFrom:
+            - secretRef:
+                name: {{ .Values.externalSecrets.name }}
+          # IPv6-first probes.
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources: {{- toYaml .Values.gateway.resources | nindent 12 }}
+{{- end }}

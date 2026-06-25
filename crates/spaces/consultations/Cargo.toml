@@ -1,0 +1,19 @@
+[package]
+name = "dsoc-consultations"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Consultations: scoped questions put to the population with defined response windows."
+
+[dependencies]
+dsoc-core = { path = "../../core" }
+dsoc-db = { path = "../../db" }
+tokio = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

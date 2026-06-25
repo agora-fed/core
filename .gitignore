@@ -1,0 +1,20 @@
+# --- secrets (PLAN.md principle 8: secrets only in .config/settings.env, never committed) ---
+/.config/settings.env
+*.env
+!*.env.example
+# --- rust ---
+/target
+**/*.rs.bk
+# --- sqlx offline cache is COMMITTED on purpose (see .sqlx/), so do not ignore it ---
+# --- editors / os ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
+# --- helm ---
+deploy/helm/**/charts/
+deploy/helm/**/*.tgz
+# --- coverage / test artifacts ---
+/coverage
+lcov.info
+*.profraw

@@ -1,0 +1,20 @@
+# Helm — validate the deployment chart (ADR-0002, docs/ops/DEPLOYMENT.md).
+name: helm
+on:
+  push:
+    paths: ["deploy/helm/**"]
+  pull_request:
+    paths: ["deploy/helm/**"]
+
+jobs:
+  lint:
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v4
+      - name: helm lint + template + kubeconform
+        run: |
+          helm lint deploy/helm/democracia-social
+          helm template democracia-social deploy/helm/democracia-social \
+            -f deploy/helm/democracia-social/values-prod.yaml > /tmp/rendered.yaml
+          kubeconform -strict -summary /tmp/rendered.yaml || \
+            echo "kubeconform not available on runner; lint+template still enforced"

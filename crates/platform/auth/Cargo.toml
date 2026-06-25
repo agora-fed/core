@@ -1,0 +1,21 @@
+[package]
+name = "dsoc-auth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Sovereign identity and verification via Zitadel OIDC, with graded verification levels."
+
+[dependencies]
+dsoc-core = { path = "../../core" }
+dsoc-db = { path = "../../db" }
+jsonwebtoken = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

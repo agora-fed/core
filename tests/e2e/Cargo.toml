@@ -1,0 +1,14 @@
+[package]
+name = "e2e"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Workspace end-to-end tests: the consequence-loop thesis test (docs/TESTING.md)."
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+dsoc-core = { path = "../../crates/core" }
+chrono = { workspace = true }

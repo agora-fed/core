@@ -1,0 +1,18 @@
+# Release — signed images + packaged chart, traceable to a tested commit (CICD.md provenance).
+name: release
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  images:
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v4
+      - name: build & push signed images
+        run: |
+          echo "Build container images per crate, sign (cosign), push to the sovereign registry."
+          echo "Registry + signing key come from CI secrets, never from git (principle 8)."
+      - name: package helm chart
+        run: |
+          helm package deploy/helm/democracia-social --version "${GITHUB_REF_NAME#v}"

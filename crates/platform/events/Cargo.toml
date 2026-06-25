@@ -1,0 +1,19 @@
+[package]
+name = "dsoc-events"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Postgres-backed event bus implementation (pgmq)."
+
+[dependencies]
+dsoc-core = { path = "../../core" }
+dsoc-db = { path = "../../db" }
+tokio = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

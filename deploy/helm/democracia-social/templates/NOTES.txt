@@ -1,0 +1,7 @@
+democracia-social (PINDORAMA) stateless tier deployed.
+
+  Gateway:  {{ include "ds.fullname" . }} (IPv6-first)
+  Ingress:  https://{{ .Values.ingress.host }}/health
+
+The sovereign STATEFUL tier (PostgreSQL+pgvector, Redis, Zitadel, embeddings) is external
+(ADR-0002) and consumed via the '{{ .Values.externalSecrets.name }}' secret.

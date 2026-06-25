@@ -1,0 +1,9 @@
+apiVersion: v2
+name: democracia-social
+description: Sovereign Participatory Democracy Platform (PINDORAMA) — stateless tier. IPv6-first (ADR-0002).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+maintainers:
+  - name: PopSolutions Cooperativa de Tecnologia
+    url: https://git.pop.coop/brasil/democracia-social

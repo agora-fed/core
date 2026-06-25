@@ -1,0 +1,21 @@
+[package]
+name = "dsoc-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Tier-0 domain primitives: IDs, errors, Clock port, frozen event catalog, and the Space/Component/Authorization traits."
+
+[lints]
+workspace = true
+
+[dependencies]
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

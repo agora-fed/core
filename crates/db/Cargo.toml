@@ -1,0 +1,21 @@
+[package]
+name = "dsoc-db"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Tier-0 database layer: sqlx pool setup, migration runner, and query conventions. Explicit SQL only (no ORM)."
+
+[lints]
+workspace = true
+
+[dependencies]
+dsoc-core = { path = "../core" }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

@@ -1,0 +1,60 @@
+# democracia-social — Sovereign Participatory Democracy Platform (codename PINDORAMA)
+# Cargo workspace. The crate boundary is the agent boundary (PLAN.md section 6).
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/db",
+    "crates/api-contract",
+    "crates/gateway",
+    "crates/platform/*",
+    "crates/spaces/*",
+    "crates/components/*",
+    "crates/clients/*",
+    "tests/e2e",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+authors = ["PopSolutions Cooperativa de Tecnologia"]
+repository = "https://git.pop.coop/brasil/democracia-social"
+rust-version = "1.86"
+
+[workspace.dependencies]
+# --- async runtime / web ---
+tokio = { version = "1.43", features = ["rt-multi-thread", "macros", "net", "time", "signal"] }
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "cors", "limit", "timeout"] }
+# --- database: explicit, compile-time-checked SQL only (PLAN.md principle 3) ---
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "macros", "migrate"] }
+pgvector = { version = "0.4", features = ["sqlx"] }
+redis = { version = "0.27", features = ["tokio-comp"] }
+# --- serialization / contracts ---
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
+# --- identity / http clients ---
+jsonwebtoken = "9"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder"] }
+# --- ids / time / errors / logging ---
+uuid = { version = "1", features = ["v7", "serde"] }
+chrono = { version = "0.4", default-features = false, features = ["serde", "clock"] }
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unreachable_pub = "warn"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+# Auditability: forbid panics on the request hot path (PLAN.md principle 3).
+unwrap_used = "warn"
+expect_used = "warn"

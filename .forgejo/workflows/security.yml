@@ -1,0 +1,34 @@
+# Security — supply-chain audit & secret scan (SECURITY.md, PLAN.md principles 8, 11).
+name: security
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"   # weekly Monday 06:00
+
+jobs:
+  deny:
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v4
+      - name: cargo-deny (advisories, licenses, sources)
+        run: |
+          cargo install cargo-deny --locked || true
+          cargo deny check
+
+  audit:
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v4
+      - name: cargo-audit
+        run: |
+          cargo install cargo-audit --locked || true
+          cargo audit
+
+  secrets:
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v4
+      - name: secret scan (no committed credentials)
+        run: ./scripts/scan-secrets.sh

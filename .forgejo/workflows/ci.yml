@@ -1,0 +1,95 @@
+# CI — the primary reliability & audit gate (docs/CICD.md).
+# Runs on a self-hosted Forgejo runner in the sovereign park.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  fmt:
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v4
+      - name: rustfmt
+        run: |
+          rustup component add rustfmt
+          cargo fmt --all -- --check
+
+  clippy:
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v4
+      - name: clippy (deny warnings)
+        run: |
+          rustup component add clippy
+          cargo clippy --all-targets --all-features -- -D warnings
+
+  boundaries:
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v4
+      - name: crate-boundary check
+        run: ./scripts/check-crate-boundaries.sh
+
+  test:
+    runs-on: docker
+    # Real PostgreSQL 16 + pgvector — no mocked database (docs/TESTING.md).
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: dsoc
+          POSTGRES_PASSWORD: dsoc
+          POSTGRES_DB: democracia_social_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dsoc"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      # IPv6 loopback where available; CI service is reachable on localhost.
+      DATABASE_URL: postgres://dsoc:dsoc@localhost:5432/democracia_social_test
+      SQLX_OFFLINE: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - name: install sqlx-cli
+        run: cargo install sqlx-cli --no-default-features --features postgres,rustls --locked || true
+      - name: migrate
+        run: cargo sqlx migrate run --source migrations
+      - name: workspace tests (unit + integration)
+        run: cargo test --workspace --all-features
+
+  coverage:
+    runs-on: docker
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: dsoc
+          POSTGRES_PASSWORD: dsoc
+          POSTGRES_DB: democracia_social_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dsoc"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://dsoc:dsoc@localhost:5432/democracia_social_test
+      SQLX_OFFLINE: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - name: coverage gate (>= 80%)
+        run: |
+          cargo install cargo-llvm-cov --locked || true
+          cargo install sqlx-cli --no-default-features --features postgres,rustls --locked || true
+          cargo sqlx migrate run --source migrations
+          cargo llvm-cov --workspace --fail-under-lines 80 --lcov --output-path lcov.info
+      - uses: actions/upload-artifact@v3
+        with:
+          name: coverage-lcov
+          path: lcov.info
