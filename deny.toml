@@ -1,11 +1,16 @@
 # cargo-deny: supply-chain audit gate (run in CI, see .forgejo/workflows/security.yml).
 [advisories]
+# rsa (RUSTSEC-2023-0071, Marvin timing sidechannel) is pulled ONLY by sqlx-mysql, which this
+# project does not enable (postgres-only). `cargo tree -i rsa` confirms it is not in the compiled
+# dependency graph, so the vulnerable code is never built into our binaries. Re-evaluate if a
+# patched rsa is released or if a MySQL driver is ever added.
+ignore = ["RUSTSEC-2023-0071"]
 yanked = "deny"
 [bans]
 multiple-versions = "warn"
 [licenses]
 # AGPL project: permit permissive deps; deny copyleft-incompatible / unknown.
-allow = ["AGPL-3.0", "Apache-2.0", "MIT", "BSD-3-Clause", "BSD-2-Clause", "ISC", "Unicode-3.0", "Zlib", "MPL-2.0"]
+allow = ["AGPL-3.0-or-later", "Apache-2.0", "MIT", "BSD-3-Clause", "BSD-2-Clause", "ISC", "Unicode-3.0", "Zlib", "0BSD", "CDLA-Permissive-2.0"]
 confidence-threshold = 0.9
 [sources]
 unknown-registry = "deny"
