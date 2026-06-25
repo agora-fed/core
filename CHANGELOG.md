@@ -29,7 +29,14 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
   admin. Review caught + fixed a TOCTOU race, a notification-hijack authz hole, a phantom-UUID
   idempotency bug, and a dual-write hazard (now via ADR-0006 transactional outbox).
 
+- Wave 2: the 6 consequence-loop / thesis crates — mandates (registry+onboarding), proposals
+  (threshold trigger), votes (privacy-preserving tally), comments, consequence (SLA engine +
+  public silence), scorecard (public projection). Each adversarially reviewed; review caught a
+  recurring auth-bypass (citizen_id from body) and consumer non-idempotency, fixed at the
+  contract level via ADR-0007 (dsoc_app::CallerId extractor + dsoc_db::consumed::claim_consumed).
+
 ### Decisions
+- **ADR-0007**: authenticated-caller extractor + consumer idempotency ledger.
 - **ADR-0006**: transactional outbox for atomic event emission.
 - **ADR-0002**: reversed the original "no Docker / LXC + systemd" deployment stance to
   **Kubernetes + Helm**, justified per principle 12 (see `docs/decisions/`).

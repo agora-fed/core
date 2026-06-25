@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO scorecard (id, org_id, mandate_id, answered, ignored, created_at, updated_at)\n        VALUES ($1, $2, $3, 0, 0, $4, $4)\n        ON CONFLICT (mandate_id) DO UPDATE SET mandate_id = EXCLUDED.mandate_id\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1cf06780c31d5d35dcdbaa00809d147d777fa17d08886848fb9f2574a38bff15"
+}

@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, mandate_id, office, district, term_start, term_end, created_at\n        FROM mandate_office\n        WHERE mandate_id = $1\n          AND ($2::uuid IS NULL OR id > $2)\n        ORDER BY id ASC\n        LIMIT $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "mandate_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "office",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "district",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "term_start",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 5,
+        "name": "term_end",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "c5730ea65e9a1a0cf7d315cc6130a9428ecc73e0cbee142dc9ef0dcba8ad5b95"
+}

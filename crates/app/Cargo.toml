@@ -13,6 +13,8 @@ workspace = true
 [dependencies]
 dsoc-core = { path = "../core" }
 dsoc-db = { path = "../db" }
+axum = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

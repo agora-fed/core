@@ -16,8 +16,12 @@ Votes: support signals on proposals. Stores aggregates queryable by officials; i
 
 ## Owned tables
 
-- `vote`
-- `vote_tally`
+- `votes_vote` — the PROTECTED per-citizen support linkage (LGPD); never exposed to officials.
+- `votes_vote_tally` — the privacy-safe aggregate support count; the only official-facing surface.
+
+## Consumes
+
+- (none) — `votes` subscribes to no cross-crate event.
 
 ## Public surface
 

@@ -13,11 +13,20 @@ workspace = true
 [dependencies]
 dsoc-core = { path = "../../core" }
 dsoc-db = { path = "../../db" }
-redis = { workspace = true }
+dsoc-api-contract = { path = "../../api-contract" }
+dsoc-app = { path = "../../app" }
 tokio = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+axum = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+async-trait = { workspace = true }
+utoipa = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+serde_json = { workspace = true }

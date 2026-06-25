@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO mandate_office\n            (id, mandate_id, office, district, term_start, term_end, created_at)\n        VALUES ($1, $2, $3, $4, $5, $6, $7)\n        RETURNING id, mandate_id, office, district, term_start, term_end, created_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "mandate_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "office",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "district",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "term_start",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 5,
+        "name": "term_end",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Date",
+        "Date",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "e9e254c376060df81a68ea56ed83ef6acd321784c773fc73987aa311ca5eca38"
+}

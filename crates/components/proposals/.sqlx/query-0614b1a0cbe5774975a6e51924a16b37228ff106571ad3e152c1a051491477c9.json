@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE proposal\n           SET threshold_crossed_at = $2\n           WHERE id = $1 AND threshold_crossed_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0614b1a0cbe5774975a6e51924a16b37228ff106571ad3e152c1a051491477c9"
+}

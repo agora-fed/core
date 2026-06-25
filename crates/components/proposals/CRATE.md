@@ -14,8 +14,10 @@ Proposals: the primary civic artifact citizens create, directed at a mandate or 
 | emits | `proposals.created` |
 | emits | `proposals.published` |
 | emits | `proposals.threshold.crossed` |
-| consumes | `consensus.cluster.formed` |
-| consumes | `moderation.cleared` |
+| consumes | `consensus.cluster.formed` (recognised; carries no proposal id, so not actionable alone) |
+| consumes | `consensus.proposal.merged` (links the proposal to its cluster, status → clustered) |
+| consumes | `moderation.cleared` (gates publication) |
+| consumes | `votes.tally.updated` (folds the privacy-safe aggregate into `support_count`) |
 
 ## Owned tables
 

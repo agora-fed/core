@@ -13,6 +13,16 @@
 
 #![forbid(unsafe_code)]
 
+pub mod domain;
+pub mod events;
+pub mod http;
+pub mod queries;
+pub mod service;
+
+pub use events::{handle_event, scorecard_updated};
+pub use http::routes;
+pub use service::ScorecardService;
+
 /// Compile-time marker proving the crate name is wired into the workspace.
 pub const CRATE_NAME: &str = "dsoc-scorecard";
 

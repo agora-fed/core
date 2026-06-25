@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO votes_vote (id, org_id, proposal_id, citizen_id, created_at)\n        VALUES ($1, $2, $3, $4, $5)\n        ON CONFLICT (proposal_id, citizen_id) DO NOTHING\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "768f20518bae47ab25a6a66f3535eba4d85cb0e213ba131752adbd3f9947892c"
+}

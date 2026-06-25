@@ -13,6 +13,20 @@
 
 #![forbid(unsafe_code)]
 
+pub mod domain;
+pub mod events;
+pub mod http;
+pub mod queries;
+pub mod service;
+
+pub use domain::{
+    is_terminal, status_as_str, status_from_str, transition, SlaInput, SlaPolicy,
+    DEFAULT_WINDOW_HOURS,
+};
+pub use events::{threshold_crossed, ThresholdCrossed};
+pub use http::routes;
+pub use service::{ConsequenceService, RespondOutcome, StartedSla};
+
 /// Compile-time marker proving the crate name is wired into the workspace.
 pub const CRATE_NAME: &str = "dsoc-consequence";
 

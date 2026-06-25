@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
-# Cross-crate FKs may target ONLY core identity tables (org, citizen, mandate). Enforces the
-# crate-isolation rule at the schema level (ARCHITECTURE.md section 3).
+# Cross-crate FKs may target ONLY core identity tables (org, citizen, mandate) or a table created in
+# the SAME migration file (a same-crate self/intra reference). Enforces crate isolation at the schema
+# level (ARCHITECTURE.md section 3) without false-flagging legitimate intra-crate references.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-allowed='org|citizen|mandate'
+core='org|citizen|mandate'
 violations=0
-while IFS= read -r ref; do
-  file="${ref%%:*}"
-  target=$(echo "$ref" | grep -oiE 'REFERENCES[[:space:]]+[a-z_]+' | awk '{print $2}' | head -1)
-  # skip the baseline (defines the core identity tables itself)
-  [[ "$file" == *0001_baseline.sql ]] && continue
-  if [[ -n "$target" ]] && ! [[ "$target" =~ ^($allowed)$ ]]; then
-    # allow self-references to a table the same migration file defines
-    slug=$(basename "$file" | sed -E 's@[0-9]+_([a-z]+)_.*@\1@')
-    if ! [[ "$target" == ${slug}* ]]; then
-      echo "FK VIOLATION in $file: REFERENCES $target (only org/citizen/mandate or own tables allowed)"
+for f in migrations/*.sql; do
+  [[ "$f" == *0001_baseline.sql ]] && continue
+  # tables this migration defines (allowed self-reference targets)
+  own=$(grep -ioE 'CREATE TABLE (IF NOT EXISTS )?[a-z_]+' "$f" | awk '{print $NF}' | tr '\n' '|' | sed 's/|$//')
+  allowed="$core${own:+|$own}"
+  while read -r tgt; do
+    [[ -z "$tgt" ]] && continue
+    if ! [[ "$tgt" =~ ^($allowed)$ ]]; then
+      echo "FK VIOLATION in $f: REFERENCES $tgt (allowed: $core or a table created in this file)"
       violations=$((violations+1))
     fi
-  fi
-done < <(grep -rinE 'REFERENCES[[:space:]]+[a-z_]+' migrations/ 2>/dev/null || true)
+  done < <(grep -ioE 'REFERENCES[[:space:]]+[a-z_]+' "$f" | awk '{print $2}')
+done
 if [[ "$violations" -gt 0 ]]; then echo "FAILED: $violations cross-crate FK violation(s)."; exit 1; fi
 echo "OK: cross-crate FK targets valid."

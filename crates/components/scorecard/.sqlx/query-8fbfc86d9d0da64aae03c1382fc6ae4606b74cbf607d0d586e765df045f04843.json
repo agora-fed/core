@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO scorecard_entry\n            (id, scorecard_id, sla_id, outcome, response_hours, occurred_at, created_at)\n        VALUES ($1, $2, $3, $4, $5, $6, $7)\n        ON CONFLICT (sla_id) DO NOTHING\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Float8",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8fbfc86d9d0da64aae03c1382fc6ae4606b74cbf607d0d586e765df045f04843"
+}

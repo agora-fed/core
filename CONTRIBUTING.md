@@ -59,3 +59,9 @@ Example: `feat(consequence): start SLA clock when a cluster crosses the support 
   `/openapi.json`. `api-contract` holds only the envelope/error/pagination.
 - Migrations live in the shared `migrations/` dir within your assigned range (see
   `migrations/REGISTRY.md`); commit the per-crate `.sqlx/` offline cache (`cargo sqlx prepare`).
+
+## Security & idempotency (ADR-0007)
+- Take the acting citizen from the `dsoc_app::CallerId` extractor — NEVER from the request body.
+  Authorize with `authz.require(caller.org, caller.citizen, level)`.
+- Make consumers idempotent: `dsoc_db::consumed::claim_consumed(&mut *tx, "<crate>", envelope.id)`
+  inside the effect transaction, or a naturally-idempotent state guard.

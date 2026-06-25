@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO comment_vote (id, comment_id, citizen_id, weight, created_at)\n        VALUES ($1, $2, $3, $4, $5)\n        ON CONFLICT (comment_id, citizen_id)\n        DO UPDATE SET weight = EXCLUDED.weight\n        RETURNING id, comment_id, citizen_id, weight, created_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "comment_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "citizen_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "weight",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Int2",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b9a1a2c6a05389e1addef1d807151b4a80cdf4cc27ddff952a7d8b30c6329a00"
+}

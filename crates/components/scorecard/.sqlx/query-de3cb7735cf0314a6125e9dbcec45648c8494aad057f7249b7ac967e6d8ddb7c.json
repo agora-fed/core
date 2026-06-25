@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT response_hours AS \"response_hours!\"\n        FROM scorecard_entry\n        WHERE scorecard_id = $1 AND outcome = 'answered'\n        ORDER BY occurred_at ASC, id ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "response_hours!",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "de3cb7735cf0314a6125e9dbcec45648c8494aad057f7249b7ac967e6d8ddb7c"
+}

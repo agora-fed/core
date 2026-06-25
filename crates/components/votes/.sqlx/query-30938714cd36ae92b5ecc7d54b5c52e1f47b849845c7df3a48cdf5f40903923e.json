@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO votes_vote_tally (proposal_id, support_count, updated_at)\n        VALUES ($1, 1, $2)\n        ON CONFLICT (proposal_id) DO UPDATE\n            SET support_count = votes_vote_tally.support_count + 1,\n                updated_at = $2\n        RETURNING support_count\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "support_count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "30938714cd36ae92b5ecc7d54b5c52e1f47b849845c7df3a48cdf5f40903923e"
+}

@@ -9,6 +9,9 @@
 
 #![forbid(unsafe_code)]
 
+pub mod caller;
+pub use caller::CallerId;
+
 use std::sync::Arc;
 
 use dsoc_core::{Authorization, Clock, EventBus};
