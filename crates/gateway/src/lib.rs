@@ -21,7 +21,6 @@ async fn openapi() -> Json<serde_json::Value> {
 
 /// Compose every crate's `routes(state)` under `/api/v1`. Each crate owns its own paths and already
 /// carries its state, so the gateway merges them; cross-crate effects still flow only through events.
-#[must_use]
 pub fn api_router(state: AppState) -> Router {
     let api = Router::new()
         // platform
