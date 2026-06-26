@@ -1,0 +1,7 @@
+# DemocraciaBR reverse proxy — automatic HTTPS (Let's Encrypt over IPv6) on the sovereign VM.
+# The gateway serves BOTH the static site and /api/v1, so everything is one origin behind the domain
+# (no CORS). Installed via `apt install caddy`; config at /etc/caddy/Caddyfile.
+democracia.social.br {
+	encode zstd gzip
+	reverse_proxy [::1]:8080
+}

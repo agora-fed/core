@@ -46,3 +46,11 @@ curl 'http://[2804:710:d0:9::a000]:8080/api/v1/proposals?org_id=<uuid>'   # pagi
   until Zitadel is wired. Verification-level checks (other crates) work against the DB regardless.
 - Single replica (hostNetwork). For HA/multi-region, move to the Helm chart (`deploy/helm/`) once the
   cluster has capacity, with an Ingress and a real Secret manager.
+
+## HTTPS + domain (Caddy reverse proxy)
+`democracia.social.br` resolves **AAAA → the VM** (the VM has no public IPv4; IPv4 `A` records point
+elsewhere, so the platform is IPv6-reachable only — consistent with the IPv6-first design). TLS is
+terminated by **Caddy** (`apt install caddy`, config in `deploy/caddy/Caddyfile`), which auto-obtains a
+Let's Encrypt cert over IPv6 (TLS-ALPN-01) and reverse-proxies `[::1]:8080` (the gateway). Since the
+gateway serves the static site AND `/api/v1` at the same origin behind the domain, there is **no CORS**.
+HTTP is 308-redirected to HTTPS. Live: **https://democracia.social.br**.
