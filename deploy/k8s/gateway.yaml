@@ -1,0 +1,37 @@
+# Live production deployment on the sovereign VM (k3s). The STATEFUL tier (PostgreSQL 17 + pgvector)
+# runs on the VM host (apt), consumed externally — aligned with ADR-0002. The gateway pod uses
+# hostNetwork so it reaches Postgres on [::1] and binds the host's public IPv6 directly (no Ingress
+# needed on this single-node, IPv6-first node). See docs/ops/DEPLOYMENT-k3s-vm.md.
+apiVersion: v1
+kind: Secret
+metadata: { name: dsoc-gateway-secrets, namespace: default }
+type: Opaque
+stringData:
+  # Local Postgres over IPv6 loopback; sslmode=disable (same host, no TLS). Replace creds via your
+  # secret manager in a real deploy (PLAN.md principle 8) — this value is gitignored in practice.
+  DATABASE_URL: "postgres://dsoc:CHANGE_ME@[::1]:5432/democracia_social?sslmode=disable"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: dsoc-gateway, labels: { app: dsoc-gateway } }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }   # hostNetwork: only one pod can own host:8080
+  selector: { matchLabels: { app: dsoc-gateway } }
+  template:
+    metadata: { labels: { app: dsoc-gateway } }
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+      - name: gateway
+        image: dsoc-gateway:0.1.0
+        imagePullPolicy: Never        # image imported into containerd (k8s.io ns) on this node
+        envFrom: [ { secretRef: { name: dsoc-gateway-secrets } } ]
+        env:
+        - { name: GATEWAY_PORT, value: "8080" }
+        - { name: RUST_LOG, value: "info" }
+        ports: [ { containerPort: 8080 } ]
+        readinessProbe: { httpGet: { path: /health, port: 8080 }, initialDelaySeconds: 3, periodSeconds: 10 }
+        livenessProbe:  { httpGet: { path: /health, port: 8080 }, initialDelaySeconds: 10, periodSeconds: 20 }
+        resources: { requests: { cpu: "50m", memory: "64Mi" }, limits: { memory: "256Mi" } }
