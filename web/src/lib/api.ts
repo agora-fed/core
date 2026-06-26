@@ -12,16 +12,16 @@ import type {
   SlaDto,
 } from './types';
 
-/** Default to the live IPv6 gateway; override via PUBLIC_API_BASE. */
+/** Default to a RELATIVE base (same origin that served the page) so the API call always reaches the
+ *  gateway that serves this site — no CORS, no IPv6/host mismatch. Override via PUBLIC_API_BASE only
+ *  if the front-end is served from a different origin than the API. */
 export const API_BASE: string =
-  (import.meta.env.PUBLIC_API_BASE as string | undefined)?.replace(/\/$/, '') ||
-  'http://[2804:710:d0:9::a000]:8080';
+  ((import.meta.env.PUBLIC_API_BASE as string | undefined) ?? '').replace(/\/$/, '');
 
-/** A demonstration organization id, used to scope public list endpoints when no
- *  org is selected. Override via PUBLIC_ORG_ID. The lists require `org_id`. */
+/** Default organization id used to scope public list endpoints. Override via PUBLIC_ORG_ID. */
 export const DEFAULT_ORG_ID: string =
   (import.meta.env.PUBLIC_ORG_ID as string | undefined) ||
-  '00000000-0000-0000-0000-000000000000';
+  '11111111-1111-1111-1111-111111111111';
 
 /** Result wrapper so callers can render empty/error states without throwing. */
 export interface Fetched<T> {
