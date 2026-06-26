@@ -663,11 +663,13 @@ dependencies = [
 name = "dsoc-federation"
 version = "0.1.0"
 dependencies = [
+ "axum",
+ "chrono",
  "dsoc-api-contract",
  "serde",
- "thiserror",
- "tokio",
- "tracing",
+ "serde_json",
+ "utoipa",
+ "uuid",
 ]
 
 [[package]]
@@ -675,8 +677,31 @@ name = "dsoc-gateway"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "dsoc-accountability",
+ "dsoc-admin",
  "dsoc-api-contract",
+ "dsoc-app",
+ "dsoc-assemblies",
+ "dsoc-auth",
+ "dsoc-budgets",
+ "dsoc-comments",
+ "dsoc-consensus",
+ "dsoc-consequence",
+ "dsoc-consultations",
  "dsoc-core",
+ "dsoc-db",
+ "dsoc-debates",
+ "dsoc-events",
+ "dsoc-initiatives",
+ "dsoc-mandates",
+ "dsoc-meetings",
+ "dsoc-moderation",
+ "dsoc-notify",
+ "dsoc-processes",
+ "dsoc-proposals",
+ "dsoc-scorecard",
+ "dsoc-surveys",
+ "dsoc-votes",
  "serde_json",
  "tokio",
  "tower",

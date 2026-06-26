@@ -30,7 +30,7 @@ pub use domain::{
     KeySource, StaticKeySource, TokenValidator, ValidatedToken, DEFAULT_SESSION_TTL_SECS,
 };
 pub use dto::{CreateSessionRequest, MeDto, SessionDto};
-pub use http::routes;
+pub use http::{authorization, routes};
 pub use service::{AuditEntry, Identity, IssuedSession, ZitadelAuth};
 
 /// Compile-time marker proving the crate name is wired into the workspace (event routing key).

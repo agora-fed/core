@@ -16,7 +16,34 @@ path = "src/main.rs"
 
 [dependencies]
 dsoc-core = { path = "../core" }
+dsoc-db = { path = "../db" }
+dsoc-app = { path = "../app" }
 dsoc-api-contract = { path = "../api-contract" }
+# platform
+dsoc-auth = { path = "../platform/auth" }
+dsoc-notify = { path = "../platform/notify" }
+dsoc-events = { path = "../platform/events" }
+dsoc-consensus = { path = "../platform/consensus" }
+dsoc-moderation = { path = "../platform/moderation" }
+dsoc-admin = { path = "../platform/admin" }
+# spaces
+dsoc-processes = { path = "../spaces/processes" }
+dsoc-assemblies = { path = "../spaces/assemblies" }
+dsoc-initiatives = { path = "../spaces/initiatives" }
+dsoc-consultations = { path = "../spaces/consultations" }
+dsoc-mandates = { path = "../spaces/mandates" }
+# components
+dsoc-proposals = { path = "../components/proposals" }
+dsoc-votes = { path = "../components/votes" }
+dsoc-comments = { path = "../components/comments" }
+dsoc-debates = { path = "../components/debates" }
+dsoc-meetings = { path = "../components/meetings" }
+dsoc-budgets = { path = "../components/budgets" }
+dsoc-surveys = { path = "../components/surveys" }
+dsoc-accountability = { path = "../components/accountability" }
+dsoc-consequence = { path = "../components/consequence" }
+dsoc-scorecard = { path = "../components/scorecard" }
+
 axum = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }

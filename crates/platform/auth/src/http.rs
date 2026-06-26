@@ -38,19 +38,22 @@ pub fn routes(state: AppState) -> Router<()> {
 }
 
 fn build_service(state: &AppState) -> Arc<ZitadelAuth> {
-    let session_ttl_secs = std::env::var("AUTH_SESSION_TTL_SECS")
-        .ok()
-        .and_then(|raw| raw.parse::<i64>().ok())
-        .unwrap_or(DEFAULT_SESSION_TTL_SECS);
+    Arc::new(build_zitadel(
+        state.db.clone(),
+        state.clock.clone(),
+        state.bus.clone(),
+    ))
+}
 
+/// Build the OIDC token validator from the sovereign-issuer environment (never hardcoded —
+/// PLAN.md principle 8). When unconfigured, returns a validator that rejects every token.
+fn validator_from_env() -> TokenValidator {
     let issuer = std::env::var("AUTH_OIDC_ISSUER").ok();
     let jwks_url = std::env::var("AUTH_OIDC_JWKS_URL").ok();
     let audience = std::env::var("AUTH_OIDC_AUDIENCE").ok();
-
-    let validator = match (issuer, jwks_url) {
+    match (issuer, jwks_url) {
         (Some(issuer), Some(jwks_url)) => {
-            let source = JwksKeySource::new(jwks_url, issuer, audience);
-            TokenValidator::new(Arc::new(source))
+            TokenValidator::new(Arc::new(JwksKeySource::new(jwks_url, issuer, audience)))
         }
         _ => {
             tracing::error!(
@@ -58,15 +61,31 @@ fn build_service(state: &AppState) -> Arc<ZitadelAuth> {
             );
             TokenValidator::new(Arc::new(UnconfiguredKeySource))
         }
-    };
+    }
+}
 
-    Arc::new(ZitadelAuth::new(
-        state.db.clone(),
-        state.clock.clone(),
-        state.bus.clone(),
-        validator,
-        session_ttl_secs,
-    ))
+fn build_zitadel(
+    db: dsoc_db::Db,
+    clock: std::sync::Arc<dyn dsoc_core::Clock>,
+    bus: std::sync::Arc<dyn dsoc_core::EventBus>,
+) -> ZitadelAuth {
+    let session_ttl_secs = std::env::var("AUTH_SESSION_TTL_SECS")
+        .ok()
+        .and_then(|raw| raw.parse::<i64>().ok())
+        .unwrap_or(DEFAULT_SESSION_TTL_SECS);
+    ZitadelAuth::new(db, clock, bus, validator_from_env(), session_ttl_secs)
+}
+
+/// Construct the shared [`dsoc_core::Authorization`] port (for `AppState.authz`) from env config.
+/// The gateway injects this so every crate can call `authz.require(...)`; the verification-level
+/// checks only read the database, so they work regardless of OIDC reachability.
+#[must_use]
+pub fn authorization(
+    db: dsoc_db::Db,
+    clock: std::sync::Arc<dyn dsoc_core::Clock>,
+    bus: std::sync::Arc<dyn dsoc_core::EventBus>,
+) -> std::sync::Arc<dyn dsoc_core::Authorization> {
+    std::sync::Arc::new(build_zitadel(db, clock, bus))
 }
 
 /// Query parameters for `GET /auth/me`.
