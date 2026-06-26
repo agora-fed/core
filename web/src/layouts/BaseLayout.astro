@@ -1,0 +1,92 @@
+---
+import '../styles/global.css';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+
+export interface Props {
+  title: string;
+  description: string;
+  /** Absolute or site-relative OG image; defaults to the brand card. */
+  image?: string;
+  /** Canonical path override (defaults to the current URL). */
+  canonical?: string;
+  /** JSON-LD structured data object(s) for rich results. */
+  jsonLd?: unknown;
+  /** Keep private/interactive pages out of the index. */
+  noindex?: boolean;
+}
+
+const {
+  title,
+  description,
+  image = '/og-image.png',
+  canonical,
+  jsonLd,
+  noindex = false,
+} = Astro.props;
+
+const SITE_NAME = 'DemocraciaBR';
+const fullTitle = title.includes(SITE_NAME) ? title : `${title} · ${SITE_NAME}`;
+
+// Resolve absolute URLs for canonical + social cards.
+const site = Astro.site ?? new URL('https://democracia.social.br');
+const canonicalUrl = new URL(canonical ?? Astro.url.pathname, site).href;
+const imageUrl = new URL(image, site).href;
+
+const jsonLdList = jsonLd ? (Array.isArray(jsonLd) ? jsonLd : [jsonLd]) : [];
+---
+
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" href="/favicon-512.png" />
+    <link rel="apple-touch-icon" href="/favicon-512.png" />
+    <meta name="theme-color" content="#15803d" />
+    <meta name="generator" content={Astro.generator} />
+
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonicalUrl} />
+    {
+      noindex ? (
+        <meta name="robots" content="noindex,nofollow" />
+      ) : (
+        <meta name="robots" content="index,follow,max-image-preview:large" />
+      )
+    }
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={SITE_NAME} />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:image" content={imageUrl} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+
+    <!-- Twitter / X cards -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={fullTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={imageUrl} />
+
+    {
+      jsonLdList.map((data) => (
+        <script type="application/ld+json" set:html={JSON.stringify(data)} />
+      ))
+    }
+  </head>
+  <body>
+    <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
+    <Header />
+    <main id="conteudo">
+      <slot />
+    </main>
+    <Footer />
+  </body>
+</html>

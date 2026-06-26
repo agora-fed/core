@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /entrar
+Disallow: /cadastrar
+
+Sitemap: https://democracia.social.br/sitemap-index.xml

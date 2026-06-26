@@ -1,0 +1,128 @@
+---
+const year = new Date().getFullYear();
+const pillars = [
+  {
+    name: 'Diálogo',
+    color: 'var(--c-amber)',
+    text: 'Espaço plural onde diferentes ideias se encontram.',
+  },
+  {
+    name: 'Transparência',
+    color: 'var(--c-blue)',
+    text: 'Cada resposta — ou silêncio — fica registrado em público.',
+  },
+  {
+    name: 'Participação',
+    color: 'var(--c-green)',
+    text: 'Da proposta ao voto, a população no centro da decisão.',
+  },
+];
+---
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="pillars">
+      {
+        pillars.map((p) => (
+          <div class="pillar">
+            <span
+              class="dot"
+              style={`background:${p.color}`}
+              aria-hidden="true"
+            />
+            <h3>{p.name}</h3>
+            <p class="muted">{p.text}</p>
+          </div>
+        ))
+      }
+    </div>
+
+    <div class="foot-bar">
+      <div class="foot-brand">
+        <img src="/logo.png" width="140" height="94" alt="DemocraciaBR" />
+        <p class="tagline">Diferentes ideias, um só Brasil.</p>
+      </div>
+      <nav aria-label="Rodapé" class="foot-nav">
+        <a href="/politicos">Políticos</a>
+        <a href="/propostas">Propostas</a>
+        <a href="/debates">Debates</a>
+        <a href="/consultas">Consultas</a>
+        <a href="/cadastrar">Criar conta</a>
+      </nav>
+    </div>
+
+    <p class="copy muted">
+      © {year} DemocraciaBR · Infraestrutura democrática soberana, aberta e
+      auditável. Participação sem consequência é teatro.
+    </p>
+  </div>
+</footer>
+
+<style>
+  .site-footer {
+    background: var(--c-paper);
+    border-top: 1px solid var(--c-border);
+    margin-top: 3rem;
+    padding-block: 2.5rem 1.5rem;
+  }
+  .pillars {
+    display: grid;
+    gap: 1.25rem;
+    margin-bottom: 2rem;
+  }
+  @media (min-width: 720px) {
+    .pillars {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+  .pillar h3 {
+    margin: 0.4rem 0 0.25rem;
+    font-size: 1.05rem;
+  }
+  .pillar p {
+    margin: 0;
+    font-size: 0.95rem;
+  }
+  .dot {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+  }
+  .foot-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    padding-block: 1.25rem;
+    border-top: 1px solid var(--c-border);
+  }
+  .foot-brand img {
+    height: 34px;
+    width: auto;
+  }
+  .tagline {
+    margin: 0.3rem 0 0;
+    font-size: 0.9rem;
+    color: var(--c-text-muted);
+  }
+  .foot-nav {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .foot-nav a {
+    color: var(--c-navy);
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.95rem;
+  }
+  .foot-nav a:hover {
+    color: var(--c-green);
+  }
+  .copy {
+    margin: 1rem 0 0;
+    font-size: 0.85rem;
+  }
+</style>

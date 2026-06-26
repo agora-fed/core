@@ -1,0 +1,228 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+const description =
+  'DemocraciaBR converte a demanda popular em responsabilidade pública e com prazo. Participação sem consequência é teatro: aqui o silêncio de um mandato fica registrado.';
+
+const loop = [
+  {
+    n: '01',
+    color: 'var(--c-amber)',
+    title: 'Propor',
+    text: 'Qualquer cidadão propõe uma ideia direcionada a um mandato ou candidatura.',
+  },
+  {
+    n: '02',
+    color: 'var(--c-red)',
+    title: 'Agrupar',
+    text: 'Propostas parecidas são reunidas em um único sinal de consenso — sem ruído.',
+  },
+  {
+    n: '03',
+    color: 'var(--c-blue)',
+    title: 'Votar',
+    text: 'A população apoia. Ao cruzar o limiar, a demanda vira pressão pública.',
+  },
+  {
+    n: '04',
+    color: 'var(--c-green)',
+    title: 'Responder ou silenciar',
+    text: 'Um relógio público começa a correr. O mandato responde no prazo — ou o silêncio fica registrado.',
+  },
+];
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: 'DemocraciaBR',
+  url: 'https://democracia.social.br',
+  inLanguage: 'pt-BR',
+  description,
+  publisher: {
+    '@type': 'Organization',
+    name: 'DemocraciaBR',
+    slogan: 'Diferentes ideias, um só Brasil.',
+  },
+};
+---
+
+<BaseLayout
+  title="DemocraciaBR — participação com consequência"
+  {description}
+  {jsonLd}
+>
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container hero-inner">
+      <p class="eyebrow">Infraestrutura democrática soberana · Brasil</p>
+      <h1>Participação sem consequência <span class="strike">é teatro</span>.</h1>
+      <p class="lede">
+        A DemocraciaBR conecta a população — e os mandatos de toda a cadeia
+        política — em um único lugar onde cada demanda vira
+        <strong>responsabilidade pública, visível e com prazo</strong>. Quando um
+        político ignora, o silêncio não passa despercebido: ele é registrado.
+      </p>
+      <div class="cta">
+        <a href="/cadastrar" class="btn btn-primary btn-lg">Criar minha conta</a>
+        <a href="/politicos" class="btn btn-ghost btn-lg"
+          >Ver o placar dos políticos</a
+        >
+      </div>
+      <p class="tagline">Diferentes ideias, um só Brasil.</p>
+    </div>
+  </section>
+
+  <!-- The consequence loop -->
+  <section class="section" aria-labelledby="loop-title">
+    <div class="container">
+      <h2 id="loop-title" class="center">O ciclo da consequência</h2>
+      <p class="center muted sub">
+        Um caminho hiperespecializado: propor → agrupar → votar → notificar →
+        resposta ou silêncio público.
+      </p>
+      <ol class="loop grid grid-2">
+        {
+          loop.map((s) => (
+            <li class="card step">
+              <span class="step-n" style={`color:${s.color}`}>
+                {s.n}
+              </span>
+              <h3>{s.title}</h3>
+              <p class="muted">{s.text}</p>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </section>
+
+  <!-- Why it's different -->
+  <section class="section alt" aria-labelledby="why-title">
+    <div class="container">
+      <h2 id="why-title">Por que isto não é mais um portal cívico</h2>
+      <div class="grid grid-3">
+        <div class="card">
+          <h3>O relógio do prazo</h3>
+          <p class="muted">
+            Quando uma demanda cruza o limiar, começa um SLA público. O tempo
+            corre à vista de todos — e o atraso tem custo político.
+          </p>
+        </div>
+        <div class="card">
+          <h3>O placar permanente</h3>
+          <p class="muted">
+            Cada político tem um placar público: respondidas vs. ignoradas,
+            tempo de resposta, promessas vs. entrega. Memória que não apaga.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Soberano e auditável</h3>
+          <p class="muted">
+            Código aberto, dados no Brasil, identidade soberana. Sem caixa-preta
+            e sem dependência de plataformas estrangeiras.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Closing CTA -->
+  <section class="section closing center">
+    <div class="container">
+      <h2>Sua voz, com consequência.</h2>
+      <p class="muted sub">
+        Some-se a quem está transformando demanda em accountability real.
+      </p>
+      <a href="/cadastrar" class="btn btn-primary btn-lg">Participar agora</a>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .hero {
+    background:
+      radial-gradient(
+        1200px 400px at 80% -10%,
+        rgba(29, 78, 216, 0.07),
+        transparent
+      ),
+      radial-gradient(
+        900px 360px at 5% 0%,
+        rgba(21, 128, 61, 0.08),
+        transparent
+      );
+    padding-block: clamp(3rem, 8vw, 6rem);
+  }
+  .hero-inner {
+    max-width: 56rem;
+  }
+  .eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--c-green-dark);
+    margin-bottom: 0.75rem;
+  }
+  .strike {
+    position: relative;
+    color: var(--c-red);
+    white-space: nowrap;
+  }
+  .strike::after {
+    content: '';
+    position: absolute;
+    left: -2%;
+    right: -2%;
+    top: 52%;
+    height: 6px;
+    background: var(--c-red);
+    transform: rotate(-2deg);
+    border-radius: 4px;
+    opacity: 0.85;
+  }
+  .lede {
+    font-size: 1.18rem;
+    max-width: 44rem;
+    color: #1f2937;
+  }
+  .cta {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin: 1.5rem 0 0.75rem;
+  }
+  .tagline {
+    margin-top: 1rem;
+    font-weight: 600;
+    color: var(--c-green-dark);
+  }
+  .sub {
+    max-width: 40rem;
+    margin-inline: auto;
+    margin-bottom: 2rem;
+  }
+  .loop {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .step {
+    position: relative;
+  }
+  .step-n {
+    font-weight: 700;
+    font-size: 1.1rem;
+    letter-spacing: 0.05em;
+  }
+  .step h3 {
+    margin: 0.3rem 0 0.4rem;
+  }
+  .alt {
+    background: var(--c-paper);
+    border-block: 1px solid var(--c-border);
+  }
+  .closing h2 {
+    margin-bottom: 0.5rem;
+  }
+</style>

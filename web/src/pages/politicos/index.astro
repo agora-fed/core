@@ -1,0 +1,209 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getScorecards, getMandate, DEFAULT_ORG_ID } from '../../lib/api';
+import { responseRate, formatLatency } from '../../lib/format';
+import type { MandateDto, ScorecardDto } from '../../lib/types';
+
+// Static (SSG): data is fetched at build time and rendered to indexable HTML.
+const orgId = DEFAULT_ORG_ID;
+const cards = await getScorecards(orgId);
+
+// Enrich each scorecard with its mandate (display name / office) in parallel.
+type Row = { card: ScorecardDto; mandate: MandateDto | null };
+let rows: Row[] = [];
+if (cards.ok && cards.data) {
+  rows = await Promise.all(
+    cards.data.map(async (card) => {
+      const m = await getMandate(card.mandate_id);
+      return { card, mandate: m.ok ? m.data : null };
+    }),
+  );
+}
+
+const description =
+  'Placar público de responsabilidade: quantas demandas cada político respondeu, quantas ignorou e em quanto tempo respondeu. Transparência que não apaga.';
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'CollectionPage',
+  name: 'Placar dos políticos · DemocraciaBR',
+  inLanguage: 'pt-BR',
+  description,
+};
+
+function badge(card: ScorecardDto) {
+  const rate = responseRate(card.answered, card.ignored);
+  if (rate === null) return { cls: 'badge-pending', label: 'Sem registros' };
+  if (rate >= 70) return { cls: 'badge-answered', label: `${rate}% responde` };
+  if (rate >= 40) return { cls: 'badge-acted', label: `${rate}% responde` };
+  return { cls: 'badge-ignored', label: `${rate}% responde` };
+}
+---
+
+<BaseLayout title="Placar dos políticos" {description} {jsonLd}>
+  <section class="section">
+    <div class="container">
+      <header class="page-head">
+        <h1>Placar dos políticos</h1>
+        <p class="muted lede">
+          O artefato de accountability da DemocraciaBR. Para cada mandato:
+          demandas <strong>respondidas</strong> vs.
+          <strong>ignoradas</strong> e o tempo de resposta. Memória pública e
+          compartilhável.
+        </p>
+      </header>
+
+      {
+        !cards.ok && (
+          <div class="card state" role="alert">
+            <h2>Não foi possível carregar o placar</h2>
+            <p class="muted">{cards.error}</p>
+          </div>
+        )
+      }
+
+      {
+        cards.ok && rows.length === 0 && (
+          <div class="card state">
+            <h2>Ainda não há placares publicados</h2>
+            <p class="muted">
+              Assim que os mandatos forem cobrados e os prazos correrem, os
+              registros aparecem aqui.
+            </p>
+          </div>
+        )
+      }
+
+      {
+        rows.length > 0 && (
+          <ul class="cards grid grid-3">
+            {rows.map(({ card, mandate }) => {
+              const b = badge(card);
+              const rate = responseRate(card.answered, card.ignored);
+              return (
+                <li class="card pol">
+                  <a class="pol-link" href={`/politicos/${card.mandate_id}`}>
+                    <div class="pol-top">
+                      <h2 class="pol-name">
+                        {mandate?.display_name ?? 'Mandato'}
+                      </h2>
+                      <span class={`badge ${b.cls}`}>{b.label}</span>
+                    </div>
+                    <p class="pol-office muted">
+                      {mandate?.office ?? 'Cargo não informado'}
+                      {mandate?.is_candidate ? ' · candidatura' : ''}
+                    </p>
+                    <dl class="stats">
+                      <div>
+                        <dt>Respondidas</dt>
+                        <dd class="ok">{card.answered}</dd>
+                      </div>
+                      <div>
+                        <dt>Ignoradas</dt>
+                        <dd class="bad">{card.ignored}</dd>
+                      </div>
+                      <div>
+                        <dt>Tempo médio</dt>
+                        <dd>{formatLatency(card.median_response_hours)}</dd>
+                      </div>
+                    </dl>
+                    {rate !== null && (
+                      <div
+                        class="meter"
+                        role="img"
+                        aria-label={`${rate}% das demandas respondidas`}
+                      >
+                        <span class="meter-fill" style={`width:${rate}%`} />
+                      </div>
+                    )}
+                  </a>
+                </li>
+              );
+            })}
+          </ul>
+        )
+      }
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .page-head {
+    max-width: 46rem;
+    margin-bottom: 2rem;
+  }
+  .lede {
+    font-size: 1.1rem;
+  }
+  .cards {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .pol {
+    padding: 0;
+    overflow: hidden;
+  }
+  .pol-link {
+    display: block;
+    padding: 1.25rem;
+    text-decoration: none;
+    color: inherit;
+  }
+  .pol-link:hover {
+    background: var(--c-bg);
+  }
+  .pol-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  .pol-name {
+    font-size: 1.15rem;
+    margin: 0;
+  }
+  .pol-office {
+    margin: 0.25rem 0 1rem;
+    font-size: 0.9rem;
+  }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+    margin: 0 0 0.85rem;
+  }
+  .stats dt {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--c-text-muted);
+  }
+  .stats dd {
+    margin: 0.1rem 0 0;
+    font-size: 1.3rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .stats .ok {
+    color: var(--c-green-dark);
+  }
+  .stats .bad {
+    color: var(--c-ignored);
+  }
+  .meter {
+    height: 8px;
+    background: #f0d9d9;
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .meter-fill {
+    display: block;
+    height: 100%;
+    background: var(--c-green);
+  }
+  .state {
+    text-align: center;
+    padding: 3rem 1.5rem;
+  }
+</style>

@@ -1,0 +1,110 @@
+---
+// Site header with the DemocraciaBR logo and primary navigation.
+const path = Astro.url.pathname;
+const isActive = (href: string) =>
+  href === '/' ? path === '/' : path.startsWith(href);
+
+const links = [
+  { href: '/politicos', label: 'Políticos' },
+  { href: '/propostas', label: 'Propostas' },
+  { href: '/debates', label: 'Debates' },
+  { href: '/consultas', label: 'Consultas' },
+];
+---
+
+<header class="site-header">
+  <div class="container bar">
+    <a href="/" class="brand" aria-label="DemocraciaBR — página inicial">
+      <img
+        src="/logo.png"
+        width="160"
+        height="107"
+        alt="DemocraciaBR"
+        class="brand-logo"
+      />
+    </a>
+
+    <nav aria-label="Navegação principal" class="nav">
+      {
+        links.map((l) => (
+          <a
+            href={l.href}
+            class:list={['nav-link', { active: isActive(l.href) }]}
+            aria-current={isActive(l.href) ? 'page' : undefined}
+          >
+            {l.label}
+          </a>
+        ))
+      }
+    </nav>
+
+    <div class="actions">
+      <a href="/entrar" class="btn btn-ghost">Entrar</a>
+      <a href="/cadastrar" class="btn btn-primary">Criar conta</a>
+    </div>
+  </div>
+</header>
+
+<style>
+  .site-header {
+    background: var(--c-paper);
+    border-bottom: 1px solid var(--c-border);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    min-height: 64px;
+    flex-wrap: wrap;
+  }
+  .brand {
+    display: inline-flex;
+    align-items: center;
+  }
+  .brand-logo {
+    height: 38px;
+    width: auto;
+  }
+  .nav {
+    display: flex;
+    gap: 0.35rem;
+    margin-inline-start: auto;
+    flex-wrap: wrap;
+  }
+  .nav-link {
+    text-decoration: none;
+    color: var(--c-navy);
+    font-weight: 500;
+    padding: 0.45rem 0.7rem;
+    border-radius: 8px;
+    font-size: 0.96rem;
+  }
+  .nav-link:hover {
+    background: var(--c-bg);
+  }
+  .nav-link.active {
+    color: var(--c-green-dark);
+    background: var(--c-green-soft);
+  }
+  .actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .actions .btn {
+    padding: 0.55rem 1rem;
+    font-size: 0.92rem;
+  }
+  @media (max-width: 560px) {
+    .nav {
+      order: 3;
+      width: 100%;
+      margin-inline-start: 0;
+    }
+    .actions {
+      margin-inline-start: auto;
+    }
+  }
+</style>

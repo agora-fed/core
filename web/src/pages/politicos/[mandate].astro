@@ -1,0 +1,335 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import SlaClock from '../../components/islands/SlaClock.svelte';
+import {
+  getScorecards,
+  getMandate,
+  getPromises,
+  getSlas,
+  DEFAULT_ORG_ID,
+} from '../../lib/api';
+import { responseRate, formatLatency, formatDate } from '../../lib/format';
+import type {
+  MandateDto,
+  PromiseDto,
+  ScorecardDto,
+  SlaDto,
+} from '../../lib/types';
+
+// Pre-render one static page per known mandate. Enumerated from the scorecard
+// list at build time; resilient to an unreachable API (yields no pages, the
+// build still succeeds and the index shows an empty state).
+export async function getStaticPaths() {
+  const cards = await getScorecards(DEFAULT_ORG_ID, 200);
+  if (!cards.ok || !cards.data) return [];
+
+  return Promise.all(
+    cards.data.map(async (card) => {
+      const [mandate, promises, slas] = await Promise.all([
+        getMandate(card.mandate_id),
+        getPromises(card.mandate_id),
+        getSlas(DEFAULT_ORG_ID, 200),
+      ]);
+      const mySlas = (slas.ok ? (slas.data ?? []) : []).filter(
+        (s) => s.mandate_id === card.mandate_id,
+      );
+      return {
+        params: { mandate: card.mandate_id },
+        props: {
+          card,
+          mandate: mandate.ok ? mandate.data : null,
+          promises: promises.ok ? (promises.data ?? []) : [],
+          slas: mySlas,
+        },
+      };
+    }),
+  );
+}
+
+interface Props {
+  card: ScorecardDto;
+  mandate: MandateDto | null;
+  promises: PromiseDto[];
+  slas: SlaDto[];
+}
+
+const { card: scorecard, mandate, promises, slas } = Astro.props as Props;
+
+const name = mandate?.display_name ?? 'Mandato';
+const office = mandate?.office ?? 'Cargo público';
+
+const rate = responseRate(scorecard.answered, scorecard.ignored);
+const total = scorecard.answered + scorecard.ignored;
+
+// Pick the most relevant SLA for the live clock: a running one if present.
+const activeSla = slas.find((s) => s.status === 'pending') ?? slas[0] ?? null;
+
+const description = `Placar de ${name} (${office}): ${scorecard.answered} demandas respondidas, ${scorecard.ignored} ignoradas${
+  rate !== null ? `, ${rate}% de resposta` : ''
+}. Tempo médio: ${formatLatency(scorecard.median_response_hours)}.`;
+
+// JSON-LD: a Person + an explicit accountability rating for rich results.
+const jsonLd: unknown[] = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'Person',
+    name,
+    jobTitle: office,
+    description,
+    url: new URL(
+      Astro.url.pathname,
+      Astro.site ?? 'https://democracia.social.br',
+    ).href,
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'Rating',
+    name: `Responsividade de ${name}`,
+    ratingValue: rate ?? 0,
+    worstRating: 0,
+    bestRating: 100,
+    ratingExplanation: `${scorecard.answered} de ${total} demandas respondidas dentro do prazo.`,
+  },
+];
+
+const delivered = promises.filter((p) => p.delivered).length;
+---
+
+<BaseLayout title={`${name} — placar público`} {description} {jsonLd}>
+  <section class="section">
+    <div class="container narrow">
+      <a href="/politicos" class="back muted">← Todos os políticos</a>
+
+      <header class="head">
+        <h1>{name}</h1>
+        <p class="office muted">
+          {office}{mandate?.is_candidate ? ' · candidatura' : ''}
+          {
+            mandate && !mandate.onboarded && (
+              <span class="badge badge-pending">não embarcou</span>
+            )
+          }
+        </p>
+      </header>
+
+      <!-- The scorecard: the sober accountability artifact -->
+      <div class="board">
+        <div class="metric">
+          <span class="m-num ok">{scorecard.answered}</span>
+          <span class="m-lab">Respondidas no prazo</span>
+        </div>
+        <div class="metric">
+          <span class="m-num bad">{scorecard.ignored}</span>
+          <span class="m-lab">Ignoradas · silêncio público</span>
+        </div>
+        <div class="metric">
+          <span class="m-num"
+            >{formatLatency(scorecard.median_response_hours)}</span
+          >
+          <span class="m-lab">Tempo mediano de resposta</span>
+        </div>
+      </div>
+
+      {
+        rate !== null && (
+          <div class="rate-wrap">
+            <div class="rate-head">
+              <strong>{rate}%</strong> das {total} demandas respondidas
+            </div>
+            <div
+              class="meter big"
+              role="img"
+              aria-label={`${rate}% das demandas respondidas`}
+            >
+              <span class="meter-fill" style={`width:${rate}%`} />
+            </div>
+          </div>
+        )
+      }
+
+      <!-- Live SLA clock (hydrates client-side and ticks) -->
+      {
+        activeSla && (
+          <section class="sla-section" aria-labelledby="sla-h">
+            <h2 id="sla-h">Prazo em aberto</h2>
+            <p class="muted">
+              Uma demanda cruzou o limiar e {name} foi notificado(a). O relógio
+              corre em público.
+            </p>
+            <SlaClock
+              client:visible
+              dueAt={activeSla.due_at}
+              startedAt={activeSla.started_at}
+              status={activeSla.status}
+              mandateName={name}
+            />
+          </section>
+        )
+      }
+
+      <!-- Promises vs delivery -->
+      <section class="promises" aria-labelledby="prom-h">
+        <h2 id="prom-h">Promessas vs. entrega</h2>
+        {
+          promises.length === 0 ? (
+            <p class="muted">Nenhuma promessa registrada até o momento.</p>
+          ) : (
+            <>
+              <p class="muted">
+                {delivered} de {promises.length} promessas cumpridas.
+              </p>
+              <ul class="prom-list">
+                {promises.map((p) => (
+                  <li class={`prom ${p.delivered ? 'done' : 'open'}`}>
+                    <span class="prom-mark" aria-hidden="true">
+                      {p.delivered ? '✓' : '○'}
+                    </span>
+                    <div>
+                      <p class="prom-text">{p.text}</p>
+                      <p class="prom-meta muted">
+                        Feita em {formatDate(p.made_at)}
+                        {p.delivered && p.delivered_at
+                          ? ` · cumprida em ${formatDate(p.delivered_at)}`
+                          : ' · ainda pendente'}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )
+        }
+      </section>
+
+      <aside class="share card">
+        <p>
+          Este placar é público e compartilhável. Cobrança é memória — divulgue.
+        </p>
+      </aside>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .narrow {
+    max-width: 48rem;
+  }
+  .back {
+    display: inline-block;
+    margin-bottom: 1rem;
+    text-decoration: none;
+  }
+  .head h1 {
+    margin-bottom: 0.2rem;
+  }
+  .office {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .board {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: 1fr;
+    margin: 1.5rem 0;
+  }
+  @media (min-width: 620px) {
+    .board {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+  .metric {
+    background: #fff;
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    padding: 1.1rem;
+    text-align: center;
+    box-shadow: var(--shadow);
+  }
+  .m-num {
+    display: block;
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+  .m-num.ok {
+    color: var(--c-green-dark);
+  }
+  .m-num.bad {
+    color: var(--c-ignored);
+  }
+  .m-lab {
+    display: block;
+    margin-top: 0.35rem;
+    font-size: 0.8rem;
+    color: var(--c-text-muted);
+  }
+  .rate-wrap {
+    margin: 1.5rem 0 2rem;
+  }
+  .rate-head {
+    margin-bottom: 0.4rem;
+  }
+  .meter {
+    height: 10px;
+    background: #f0d9d9;
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .meter.big {
+    height: 16px;
+  }
+  .meter-fill {
+    display: block;
+    height: 100%;
+    background: var(--c-green);
+  }
+  .sla-section,
+  .promises {
+    margin: 2rem 0;
+  }
+  .prom-list {
+    list-style: none;
+    padding: 0;
+    margin: 1rem 0 0;
+    display: grid;
+    gap: 0.75rem;
+  }
+  .prom {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    background: #fff;
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-sm);
+    padding: 0.85rem 1rem;
+  }
+  .prom-mark {
+    font-weight: 700;
+    line-height: 1.4;
+  }
+  .prom.done .prom-mark {
+    color: var(--c-green);
+  }
+  .prom.open .prom-mark {
+    color: var(--c-text-muted);
+  }
+  .prom-text {
+    margin: 0;
+    font-weight: 500;
+  }
+  .prom-meta {
+    margin: 0.2rem 0 0;
+    font-size: 0.82rem;
+  }
+  .share {
+    margin-top: 2rem;
+    background: var(--c-green-soft);
+    border-color: #cfe6d7;
+  }
+  .share p {
+    margin: 0;
+  }
+</style>

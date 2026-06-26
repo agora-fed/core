@@ -1,0 +1,158 @@
+<script lang="ts">
+  // Propose form — create a civic proposal directed at a specific mandate.
+  import { apiPost } from '../../lib/api';
+  import type { ProposalDto } from '../../lib/types';
+
+  let title = $state('');
+  let body = $state('');
+  let mandateId = $state('');
+  let threshold = $state(100);
+  let busy = $state(false);
+  let status = $state<{ kind: 'error' | 'ok' | 'info'; text: string } | null>(
+    null,
+  );
+
+  let titleValid = $derived(title.trim().length >= 8);
+  let bodyValid = $derived(body.trim().length >= 20);
+  let mandateValid = $derived(/^[0-9a-f-]{36}$/i.test(mandateId.trim()));
+  let valid = $derived(titleValid && bodyValid && mandateValid && threshold > 0);
+
+  function readCitizenId(): string | null {
+    try {
+      return localStorage.getItem('dsoc_citizen');
+    } catch {
+      return null;
+    }
+  }
+
+  async function submit(event: SubmitEvent) {
+    event.preventDefault();
+    if (!valid || busy) return;
+    status = null;
+
+    if (!readCitizenId()) {
+      status = {
+        kind: 'info',
+        text: 'Entre na sua conta para enviar uma proposta.',
+      };
+      return;
+    }
+
+    busy = true;
+    const res = await apiPost<ProposalDto>('/api/v1/proposals', {
+      mandate_id: mandateId.trim(),
+      title: title.trim(),
+      body: body.trim(),
+      threshold,
+    });
+    busy = false;
+
+    if (res.success && res.data) {
+      window.location.href = `/propostas/${res.data.id}`;
+    } else {
+      status = {
+        kind: 'error',
+        text: res.error?.message ?? 'Não foi possível enviar a proposta.',
+      };
+    }
+  }
+</script>
+
+<form class="propose" onsubmit={submit} novalidate>
+  <div class="field">
+    <label for="p-title">Título da proposta</label>
+    <input
+      id="p-title"
+      class="input"
+      type="text"
+      bind:value={title}
+      maxlength="160"
+      aria-invalid={title.length > 0 && !titleValid}
+      placeholder="Ex.: Ciclovia ligando o bairro ao centro"
+    />
+    {#if title.length > 0 && !titleValid}
+      <p class="hint hint-error">Use ao menos 8 caracteres.</p>
+    {/if}
+  </div>
+
+  <div class="field">
+    <label for="p-body">Descrição</label>
+    <textarea
+      id="p-body"
+      class="input"
+      rows="5"
+      bind:value={body}
+      aria-invalid={body.length > 0 && !bodyValid}
+      placeholder="Explique o problema, quem é afetado e a mudança proposta…"
+    ></textarea>
+    {#if body.length > 0 && !bodyValid}
+      <p class="hint hint-error">Descreva com ao menos 20 caracteres.</p>
+    {/if}
+  </div>
+
+  <div class="row">
+    <div class="field">
+      <label for="p-mandate">Mandato destinatário (ID)</label>
+      <input
+        id="p-mandate"
+        class="input"
+        type="text"
+        bind:value={mandateId}
+        aria-invalid={mandateId.length > 0 && !mandateValid}
+        placeholder="00000000-0000-0000-0000-000000000000"
+      />
+      {#if mandateId.length > 0 && !mandateValid}
+        <p class="hint hint-error">Informe um identificador válido (UUID).</p>
+      {/if}
+    </div>
+    <div class="field narrow">
+      <label for="p-threshold">Limiar de apoios</label>
+      <input
+        id="p-threshold"
+        class="input"
+        type="number"
+        min="1"
+        bind:value={threshold}
+      />
+    </div>
+  </div>
+
+  <button class="btn btn-primary btn-lg" type="submit" disabled={!valid || busy}>
+    {busy ? 'Enviando…' : 'Enviar proposta'}
+  </button>
+
+  {#if status}
+    <p class={`note ${status.kind}`} role="status">
+      {status.text}
+      {#if status.kind === 'info'}<a href="/entrar">Entrar</a>{/if}
+    </p>
+  {/if}
+</form>
+
+<style>
+  .propose {
+    display: block;
+  }
+  textarea.input {
+    resize: vertical;
+  }
+  .row {
+    display: grid;
+    gap: 1rem;
+  }
+  @media (min-width: 640px) {
+    .row {
+      grid-template-columns: 1fr 10rem;
+    }
+  }
+  .note {
+    margin: 0.75rem 0 0;
+    font-size: 0.92rem;
+  }
+  .note.error {
+    color: var(--c-ignored);
+  }
+  .note.info {
+    color: var(--c-text-muted);
+  }
+</style>
