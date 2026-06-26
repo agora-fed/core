@@ -40,6 +40,18 @@ pub use service::{AuditEntry, Identity, IssuedSession, ZitadelAuth};
 /// Compile-time marker proving the crate name is wired into the workspace (event routing key).
 pub const CRATE_NAME: &str = "dsoc-auth";
 
+/// Resolve a session cookie's id to the caller's `(citizen_id, org_id)` if the session is live.
+/// Used by the gateway's auth middleware. Returns `Ok(None)` for missing/expired sessions.
+///
+/// # Errors
+/// Propagates the underlying `sqlx::Error`.
+pub async fn session_identity(
+    db: &dsoc_db::Db,
+    session_id: uuid::Uuid,
+) -> Result<Option<(uuid::Uuid, uuid::Uuid)>, sqlx::Error> {
+    queries::session_identity(db, session_id).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

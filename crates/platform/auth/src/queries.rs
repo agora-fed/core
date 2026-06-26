@@ -308,3 +308,18 @@ pub(crate) async fn find_credential_by_email<'e, E: PgExecutor<'e>>(
         password_hash: r.password_hash,
     }))
 }
+
+/// Resolve a live (non-expired) session to its (citizen_id, org_id) — used by the gateway auth
+/// middleware to turn the session cookie into the caller's identity.
+pub async fn session_identity<'e, E: PgExecutor<'e>>(
+    ex: E,
+    session_id: Uuid,
+) -> Result<Option<(Uuid, Uuid)>, sqlx::Error> {
+    let row = sqlx::query!(
+        "SELECT citizen_id, org_id FROM auth_session WHERE id = $1 AND expires_at > now()",
+        session_id
+    )
+    .fetch_optional(ex)
+    .await?;
+    Ok(row.map(|r| (r.citizen_id, r.org_id)))
+}
