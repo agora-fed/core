@@ -41,6 +41,8 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
   and corrected aspirational CRATE.md event contracts to match the frozen catalog.
 
 ### Decisions
+- **ADR-0009**: web front-end = Astro + Svelte islands; SSG (static) now, SSR pod later.
+- **ADR-0008**: sovereign CPF + e-mail/senha auth (Argon2id), reverses Zitadel for citizens.
 - **ADR-0007**: authenticated-caller extractor + consumer idempotency ledger.
 - **ADR-0006**: transactional outbox for atomic event emission.
 - **ADR-0002**: reversed the original "no Docker / LXC + systemd" deployment stance to
