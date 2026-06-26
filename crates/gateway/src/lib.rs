@@ -61,6 +61,6 @@ mod tests {
 
     #[test]
     fn health_router_builds() {
-        let _app = Router::new().route("/health", get(health));
+        let _app: Router<()> = Router::new().route("/health", get(health));
     }
 }
