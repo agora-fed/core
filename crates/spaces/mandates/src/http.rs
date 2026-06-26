@@ -221,6 +221,7 @@ fn to_mandate_dto(view: MandateView) -> MandateDto {
 /// Invite acceptance is authenticated by the bearer of the one-time token, not an actor header.
 pub fn routes(state: AppState) -> Router<()> {
     Router::new()
+        .route("/mandates", get(list_mandates))
         .route("/mandates/invitations/accept", post(accept_invitation))
         .route("/mandates/{mandate_id}", get(get_mandate))
         .route("/mandates/{mandate_id}/invitations", post(invite))
@@ -324,6 +325,31 @@ async fn get_mandate(
         )
         .await?;
     Ok(Json(ApiResponse::ok(to_mandate_dto(view))))
+}
+
+/// Query parameters for `GET /mandates`: the org and an optional offset/limit window.
+#[derive(Debug, Clone, Deserialize)]
+struct MandateListQuery {
+    org_id: Uuid,
+    #[serde(default)]
+    limit: Option<u32>,
+    #[serde(default)]
+    offset: Option<u32>,
+}
+
+/// `GET /mandates?org_id=&limit=&offset=` — directory of mandates in an org, ordered by display
+/// name. Public; used by the front-end picker so people don't have to type a UUID by hand.
+async fn list_mandates(
+    State(state): State<AppState>,
+    Query(query): Query<MandateListQuery>,
+) -> Result<Json<ApiResponse<Vec<MandateDto>>>, ApiErr> {
+    let svc = MandateRegistry::from_state(&state);
+    let views = svc
+        .list_mandates(OrgId::from_uuid(query.org_id), query.limit, query.offset)
+        .await?;
+    Ok(Json(ApiResponse::ok(
+        views.into_iter().map(to_mandate_dto).collect(),
+    )))
 }
 
 async fn list_offices(

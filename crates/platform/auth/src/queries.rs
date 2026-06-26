@@ -323,3 +323,16 @@ pub async fn session_identity<'e, E: PgExecutor<'e>>(
     .await?;
     Ok(row.map(|r| (r.citizen_id, r.org_id)))
 }
+
+/// Delete a session row by id (logout). Idempotent: a missing row reports 0 affected and is not
+/// an error — a logout request on an already-expired or cleared session still succeeds at the
+/// HTTP layer so a stale tab never sees an error trying to sign out.
+pub async fn delete_session<'e, E: PgExecutor<'e>>(
+    ex: E,
+    session_id: Uuid,
+) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query!("DELETE FROM auth_session WHERE id = $1", session_id)
+        .execute(ex)
+        .await?;
+    Ok(result.rows_affected())
+}

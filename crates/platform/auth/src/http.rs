@@ -34,6 +34,7 @@ pub fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/auth/register", post(register))
         .route("/auth/login", post(login))
+        .route("/auth/logout", post(logout))
         .route("/auth/session", post(create_session))
         .route("/auth/me", get(me))
         .with_state(svc)
@@ -130,13 +131,51 @@ async fn register(
 async fn login(State(svc): State<Arc<ZitadelAuth>>, Json(req): Json<LoginRequest>) -> Response {
     let org = OrgId::from_uuid(req.org_id);
     match svc.login(org, &req.email, &req.password).await {
-        Ok(session) => (
-            StatusCode::OK,
-            Json(ApiResponse::ok(SessionDto::from(session))),
-        )
-            .into_response(),
+        Ok(session) => {
+            let cookie = session_cookie(&session);
+            (
+                StatusCode::OK,
+                [(header::SET_COOKIE, cookie)],
+                Json(ApiResponse::ok(SessionDto::from(session))),
+            )
+                .into_response()
+        }
         Err(error) => error_response(&error),
     }
+}
+
+/// `POST /auth/logout` — invalidate the caller's session row AND tell the browser to drop the
+/// HttpOnly cookie (which JS cannot clear on its own). Idempotent: missing/already-expired cookie
+/// still returns 200, so a stale tab never sees an error trying to log out.
+async fn logout(State(svc): State<Arc<ZitadelAuth>>, headers: HeaderMap) -> Response {
+    let session_id = headers
+        .get(header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(extract_session_cookie)
+        .and_then(|raw| Uuid::parse_str(raw).ok());
+    if let Some(sid) = session_id {
+        if let Err(error) = svc.delete_session(sid).await {
+            return error_response(&error);
+        }
+    }
+    // Cookie attributes mirror the issuing site's so the browser overwrites the same cookie; the
+    // `Max-Age=0` (and a past `Expires`) is what actually deletes it.
+    let kill = "dsoc_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0";
+    (
+        StatusCode::OK,
+        [(header::SET_COOKIE, kill)],
+        Json(ApiResponse::<()>::ok(())),
+    )
+        .into_response()
+}
+
+/// Pull the `dsoc_session` value out of a `Cookie:` header — mirrors the gateway middleware's
+/// parsing so logout sees the same cookie identity middleware does.
+fn extract_session_cookie(cookie_header: &str) -> Option<&str> {
+    cookie_header.split(';').find_map(|kv| {
+        let kv = kv.trim();
+        kv.strip_prefix("dsoc_session").and_then(|rest| rest.strip_prefix('='))
+    })
 }
 
 async fn create_session(
@@ -194,14 +233,20 @@ fn status_for(error: &Error) -> StatusCode {
     }
 }
 
-/// End-user message (Portuguese — civic content policy) that never leaks internal detail.
+/// End-user message (Portuguese — civic content policy) that never leaks internal detail. Conflict
+/// reasons are mapped to a specific message when the service tagged them (e.g. `email_taken`,
+/// `cpf_taken` during registration), so the user sees the exact field that collided.
 fn message_for(error: &Error) -> &'static str {
     match error {
         Error::NotFound(_) => "Recurso não encontrado.",
         Error::Forbidden(_) => "Acesso negado.",
         Error::Unauthorized => "Não autenticado.",
         Error::Validation(_) => "Dados inválidos.",
-        Error::Conflict(_) => "Conflito de estado.",
+        Error::Conflict(reason) => match reason.as_str() {
+            "email_taken" => "Este e-mail já está cadastrado. Tente entrar na sua conta.",
+            "cpf_taken" => "Este CPF já está cadastrado nesta plataforma.",
+            _ => "Conflito de estado.",
+        },
         Error::Dependency { .. } => "Falha ao contatar dependência soberana.",
         _ => "Erro interno do servidor.",
     }

@@ -103,6 +103,27 @@ fn map_sqlx(error: sqlx::Error) -> Error {
     }
 }
 
+/// Map a `sqlx` failure during **registration** specifically: a unique-violation here is the user's
+/// e-mail or CPF already being taken, and the http layer renders a precise message for each so the
+/// person sees exactly which field collided (not a generic "conflito de estado"). The constraint
+/// names come from migration `0101_auth_credentials.sql` (`UNIQUE (org_id, email)` and
+/// `UNIQUE (org_id, cpf)` — PostgreSQL auto-names them `<table>_<cols>_key`).
+fn map_register_sqlx(error: sqlx::Error) -> Error {
+    if let sqlx::Error::Database(db) = &error {
+        if db.is_unique_violation() {
+            let constraint = db.constraint().unwrap_or("");
+            if constraint.contains("email") {
+                return Error::Conflict("email_taken".to_owned());
+            }
+            if constraint.contains("cpf") {
+                return Error::Conflict("cpf_taken".to_owned());
+            }
+            return Error::Conflict("entity already exists".to_owned());
+        }
+    }
+    map_sqlx(error)
+}
+
 /// Normalize and minimally validate an e-mail (trim + lowercase; must look like an address).
 fn normalize_email(email: &str) -> Result<String> {
     let e = email.trim().to_lowercase();
@@ -156,7 +177,7 @@ impl ZitadelAuth {
             _ => VerificationLevel::Email,
         };
 
-        let mut tx = self.db.begin().await.map_err(map_sqlx)?;
+        let mut tx = self.db.begin().await.map_err(map_register_sqlx)?;
         let citizen = CitizenId::new();
         queries::insert_credential_citizen(
             &mut *tx,
@@ -166,7 +187,7 @@ impl ZitadelAuth {
             now,
         )
         .await
-        .map_err(map_sqlx)?;
+        .map_err(map_register_sqlx)?;
         queries::insert_credential(
             &mut *tx,
             Uuid::now_v7(),
@@ -179,7 +200,7 @@ impl ZitadelAuth {
             now,
         )
         .await
-        .map_err(map_sqlx)?;
+        .map_err(map_register_sqlx)?;
 
         let session = self
             .persist_session(&mut tx, org, citizen, &email, now)
@@ -244,6 +265,18 @@ impl ZitadelAuth {
             expires_at,
             public_handle: handle,
         })
+    }
+
+    /// Invalidate a session by id (logout). Idempotent — missing/already-expired sessions are not
+    /// an error: a stale browser tab signing out should never see a failure.
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on persistence failure.
+    pub async fn delete_session(&self, session_id: Uuid) -> Result<()> {
+        queries::delete_session(&self.db, session_id)
+            .await
+            .map_err(map_sqlx)?;
+        Ok(())
     }
 
     /// Exchange a validated OIDC token for a server-issued session, provisioning the citizen on

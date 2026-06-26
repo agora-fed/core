@@ -84,6 +84,34 @@ pub(crate) async fn find_mandate<'e, E: PgExecutor<'e>>(
     Ok(row)
 }
 
+/// List mandates in an organization, ordered alphabetically by `display_name`. Returns up to
+/// `limit` rows starting at `offset`. Used by the front-end picker on the "propose" page so people
+/// don't have to type a UUID by hand — there is no compelling threat model for a hidden mandate, so
+/// the read is public.
+pub(crate) async fn list_mandates<'e, E: PgExecutor<'e>>(
+    exec: E,
+    org_id: Uuid,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<MandateRow>, sqlx::Error> {
+    let rows = sqlx::query_as!(
+        MandateRow,
+        r#"
+        SELECT id, office, display_name, public_email, is_candidate, onboarded_at
+        FROM mandate
+        WHERE org_id = $1
+        ORDER BY display_name ASC
+        LIMIT $2 OFFSET $3
+        "#,
+        org_id,
+        limit,
+        offset,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows)
+}
+
 /// Whether a mandate has at least one invitation row (drives the derived onboarding status).
 pub(crate) async fn mandate_has_invitation<'e, E: PgExecutor<'e>>(
     exec: E,

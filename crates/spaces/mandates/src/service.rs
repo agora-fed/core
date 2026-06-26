@@ -459,6 +459,45 @@ impl MandateRegistry {
         })
     }
 
+    /// List mandates in an organization, alphabetical by `display_name`. Public read (no auth)
+    /// because the directory of mandates is itself the citizens' map of who they can address; a
+    /// hidden mandate would defeat the platform's accountability promise. Drives the front-end
+    /// picker on `/propor`.
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on persistence failure.
+    pub async fn list_mandates(
+        &self,
+        org: OrgId,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<Vec<MandateView>> {
+        let limit = clamp_limit(limit);
+        let offset = offset.unwrap_or(0) as i64;
+        let rows = queries::list_mandates(&self.db, org.as_uuid(), limit, offset)
+            .await
+            .map_err(map_sqlx)?;
+        let mut views = Vec::with_capacity(rows.len());
+        for row in rows {
+            // Same derived status as `get_mandate`: collapse the (onboarded_at, has_invitation)
+            // pair into the public OnboardingStatus the contract carries.
+            let has_invitation = queries::mandate_has_invitation(&self.db, row.id)
+                .await
+                .map_err(map_sqlx)?;
+            let status = domain::onboarding_status(row.onboarded_at, has_invitation);
+            let id = MandateId::from_uuid(row.id);
+            views.push(MandateView {
+                id,
+                office: row.office,
+                display_name: row.display_name,
+                is_candidate: row.is_candidate,
+                status,
+                public_handle: domain::public_handle(id),
+            });
+        }
+        Ok(views)
+    }
+
     /// Keyset-paginated office list for a mandate (ordered by id ascending).
     ///
     /// # Errors
