@@ -1,0 +1,28 @@
+---
+// Construção — friendly rounded star (brand blue by default via currentColor).
+interface Props {
+  size?: number;
+  class?: string;
+  title?: string;
+}
+const { size = 28, class: className, title } = Astro.props;
+---
+
+<svg
+  width={size}
+  height={size}
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="1.9"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class={className}
+  role={title ? 'img' : undefined}
+  aria-hidden={title ? undefined : 'true'}
+>
+  {title && <title>{title}</title>}
+  <path
+    d="M12 3.2a.6.6 0 0 1 .54.34l2.1 4.25a.6.6 0 0 0 .45.33l4.69.68a.6.6 0 0 1 .33 1.02l-3.39 3.3a.6.6 0 0 0-.17.54l.8 4.67a.6.6 0 0 1-.87.63l-4.2-2.2a.6.6 0 0 0-.56 0l-4.2 2.2a.6.6 0 0 1-.87-.63l.8-4.67a.6.6 0 0 0-.17-.54l-3.39-3.3a.6.6 0 0 1 .33-1.02l4.69-.68a.6.6 0 0 0 .45-.33l2.1-4.25A.6.6 0 0 1 12 3.2Z"
+  ></path>
+</svg>

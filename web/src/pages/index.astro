@@ -1,5 +1,16 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
+import HeroArt from '../components/illustrations/HeroArt.astro';
+import ColorBar from '../components/illustrations/ColorBar.astro';
+import Emblem from '../components/illustrations/Emblem.astro';
+import Dialogo from '../components/icons/Dialogo.astro';
+import Compreensao from '../components/icons/Compreensao.astro';
+import Uniao from '../components/icons/Uniao.astro';
+import Construcao from '../components/icons/Construcao.astro';
+import Transparencia from '../components/icons/Transparencia.astro';
+import Respeito from '../components/icons/Respeito.astro';
+import Acordos from '../components/icons/Acordos.astro';
+import Participacao from '../components/icons/Participacao.astro';
 
 const description =
   'DemocraciaBR converte a demanda popular em responsabilidade pública e com prazo. Participação sem consequência é teatro: aqui o silêncio de um mandato fica registrado.';
@@ -31,6 +42,13 @@ const loop = [
   },
 ];
 
+const valores = [
+  { Icon: Transparencia, name: 'Transparência', color: 'var(--c-blue)' },
+  { Icon: Respeito, name: 'Respeito', color: 'var(--c-green)' },
+  { Icon: Acordos, name: 'Acordos', color: 'var(--c-amber)' },
+  { Icon: Participacao, name: 'Participação', color: 'var(--c-red)' },
+];
+
 const jsonLd = {
   '@context': 'https://schema.org',
   '@type': 'WebSite',
@@ -53,33 +71,91 @@ const jsonLd = {
 >
   <!-- Hero -->
   <section class="hero">
-    <div class="container hero-inner">
-      <p class="eyebrow">Infraestrutura democrática soberana · Brasil</p>
-      <h1>Participação sem consequência <span class="strike">é teatro</span>.</h1>
-      <p class="lede">
-        A DemocraciaBR conecta a população — e os mandatos de toda a cadeia
-        política — em um único lugar onde cada demanda vira
-        <strong>responsabilidade pública, visível e com prazo</strong>. Quando um
-        político ignora, o silêncio não passa despercebido: ele é registrado.
-      </p>
-      <div class="cta">
-        <a href="/cadastrar" class="btn btn-primary btn-lg">Criar minha conta</a>
-        <a href="/politicos" class="btn btn-ghost btn-lg"
-          >Ver o placar dos políticos</a
-        >
+    <div class="container hero-grid">
+      <div class="hero-copy">
+        <p class="eyebrow">Infraestrutura democrática soberana · Brasil</p>
+        <h1>
+          Participação sem consequência <span class="strike">é teatro</span>.
+        </h1>
+        <p class="lede">
+          A DemocraciaBR conecta a população — e os mandatos de toda a cadeia
+          política — em um único lugar onde cada demanda vira
+          <strong>responsabilidade pública, visível e com prazo</strong>.
+        </p>
+        <div class="cta">
+          <a href="/cadastrar" class="btn btn-primary btn-lg"
+            >Criar minha conta</a
+          >
+          <a href="/politicos" class="btn btn-ghost btn-lg"
+            >Ver o placar dos políticos</a
+          >
+        </div>
+        <p class="tagline">
+          <ColorBar /><span>Diferentes ideias, um só Brasil.</span>
+        </p>
       </div>
-      <p class="tagline">Diferentes ideias, um só Brasil.</p>
+      <div class="hero-visual">
+        <HeroArt />
+      </div>
+    </div>
+  </section>
+
+  <!-- Pilares -->
+  <section class="section pilares-section" aria-labelledby="pilares-title">
+    <div class="container">
+      <div class="sec-head center">
+        <h2 id="pilares-title">Nossos pilares</h2>
+        <p class="muted sub">
+          Diferentes ideias se encontram — e constroem o Brasil juntas.
+        </p>
+      </div>
+      <div class="pilares">
+        <article class="pilar red">
+          <span class="pilar-ic"><Dialogo size={30} /></span>
+          <h3>Diálogo</h3>
+          <p class="muted">Ouça diferentes pontos de vista.</p>
+        </article>
+        <article class="pilar amber">
+          <span class="pilar-ic"><Compreensao size={30} /></span>
+          <h3>Compreensão</h3>
+          <p class="muted">Entenda antes de discordar.</p>
+        </article>
+        <article class="pilar green">
+          <span class="pilar-ic"><Uniao size={30} /></span>
+          <h3>União</h3>
+          <p class="muted">O Brasil acima das diferenças.</p>
+        </article>
+        <article class="pilar blue">
+          <span class="pilar-ic"><Construcao size={30} /></span>
+          <h3>Construção</h3>
+          <p class="muted">Participe de soluções e construa o país.</p>
+        </article>
+      </div>
+
+      <ul class="valores" aria-label="Nossos valores">
+        {
+          valores.map(({ Icon, name, color }) => (
+            <li class="valor">
+              <span class="valor-ic" style={`color:${color}`}>
+                <Icon size={24} />
+              </span>
+              <span>{name}</span>
+            </li>
+          ))
+        }
+      </ul>
     </div>
   </section>
 
   <!-- The consequence loop -->
-  <section class="section" aria-labelledby="loop-title">
+  <section class="section alt" aria-labelledby="loop-title">
     <div class="container">
-      <h2 id="loop-title" class="center">O ciclo da consequência</h2>
-      <p class="center muted sub">
-        Um caminho hiperespecializado: propor → agrupar → votar → notificar →
-        resposta ou silêncio público.
-      </p>
+      <div class="sec-head center">
+        <h2 id="loop-title">O ciclo da consequência</h2>
+        <p class="center muted sub">
+          Propor → agrupar → votar → notificar → resposta ou silêncio público.
+        </p>
+      </div>
       <ol class="loop grid grid-2">
         {
           loop.map((s) => (
@@ -97,25 +173,28 @@ const jsonLd = {
   </section>
 
   <!-- Why it's different -->
-  <section class="section alt" aria-labelledby="why-title">
+  <section class="section" aria-labelledby="why-title">
     <div class="container">
-      <h2 id="why-title">Por que isto não é mais um portal cívico</h2>
+      <div class="sec-head">
+        <ColorBar />
+        <h2 id="why-title">Por que isto não é mais um portal cívico</h2>
+      </div>
       <div class="grid grid-3">
-        <div class="card">
+        <div class="card feat green-top">
           <h3>O relógio do prazo</h3>
           <p class="muted">
             Quando uma demanda cruza o limiar, começa um SLA público. O tempo
             corre à vista de todos — e o atraso tem custo político.
           </p>
         </div>
-        <div class="card">
+        <div class="card feat blue-top">
           <h3>O placar permanente</h3>
           <p class="muted">
             Cada político tem um placar público: respondidas vs. ignoradas,
             tempo de resposta, promessas vs. entrega. Memória que não apaga.
           </p>
         </div>
-        <div class="card">
+        <div class="card feat amber-top">
           <h3>Soberano e auditável</h3>
           <p class="muted">
             Código aberto, dados no Brasil, identidade soberana. Sem caixa-preta
@@ -127,8 +206,9 @@ const jsonLd = {
   </section>
 
   <!-- Closing CTA -->
-  <section class="section closing center">
-    <div class="container">
+  <section class="section closing">
+    <div class="container center closing-inner">
+      <Emblem size={84} class="closing-emblem" />
       <h2>Sua voz, com consequência.</h2>
       <p class="muted sub">
         Some-se a quem está transformando demanda em accountability real.
@@ -142,19 +222,22 @@ const jsonLd = {
   .hero {
     background:
       radial-gradient(
-        1200px 400px at 80% -10%,
-        rgba(29, 78, 216, 0.07),
+        1100px 420px at 88% -10%,
+        rgba(29, 78, 216, 0.08),
         transparent
       ),
-      radial-gradient(
-        900px 360px at 5% 0%,
-        rgba(21, 128, 61, 0.08),
-        transparent
-      );
-    padding-block: clamp(3rem, 8vw, 6rem);
+      radial-gradient(900px 380px at 0% 0%, rgba(21, 128, 61, 0.09), transparent);
+    padding-block: clamp(2.5rem, 6vw, 5rem);
   }
-  .hero-inner {
-    max-width: 56rem;
+  .hero-grid {
+    display: grid;
+    gap: 2rem;
+    align-items: center;
+  }
+  @media (min-width: 900px) {
+    .hero-grid {
+      grid-template-columns: 1.1fr 0.9fr;
+    }
   }
   .eyebrow {
     text-transform: uppercase;
@@ -183,24 +266,134 @@ const jsonLd = {
   }
   .lede {
     font-size: 1.18rem;
-    max-width: 44rem;
+    max-width: 38rem;
     color: #1f2937;
   }
   .cta {
     display: flex;
     gap: 0.75rem;
     flex-wrap: wrap;
-    margin: 1.5rem 0 0.75rem;
+    margin: 1.5rem 0 1rem;
   }
   .tagline {
-    margin-top: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    margin: 0;
     font-weight: 600;
     color: var(--c-green-dark);
+  }
+  .hero-visual {
+    order: -1;
+  }
+  @media (min-width: 900px) {
+    .hero-visual {
+      order: 0;
+    }
+  }
+  .sec-head {
+    margin-bottom: 1.75rem;
+  }
+  .sec-head.center {
+    text-align: center;
   }
   .sub {
     max-width: 40rem;
     margin-inline: auto;
-    margin-bottom: 2rem;
+  }
+
+  /* Pilares */
+  .pilares {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(2, 1fr);
+    margin-bottom: 1.75rem;
+  }
+  @media (min-width: 860px) {
+    .pilares {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
+  .pilar {
+    border-radius: var(--radius);
+    padding: 1.4rem 1.2rem;
+    border: 1px solid transparent;
+  }
+  .pilar h3 {
+    margin: 0.85rem 0 0.3rem;
+    font-size: 1.1rem;
+  }
+  .pilar p {
+    margin: 0;
+    font-size: 0.92rem;
+  }
+  .pilar-ic {
+    display: inline-flex;
+    width: 54px;
+    height: 54px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 16px;
+    background: #fff;
+  }
+  .pilar.red {
+    background: #fdecea;
+    border-color: #f7d5d0;
+  }
+  .pilar.red .pilar-ic {
+    color: var(--c-red);
+  }
+  .pilar.amber {
+    background: #fef6da;
+    border-color: #f5e6ab;
+  }
+  .pilar.amber .pilar-ic {
+    color: #b8890a;
+  }
+  .pilar.green {
+    background: #e7f3ec;
+    border-color: #c8e5d3;
+  }
+  .pilar.green .pilar-ic {
+    color: var(--c-green);
+  }
+  .pilar.blue {
+    background: #e9eefc;
+    border-color: #cdd9f7;
+  }
+  .pilar.blue .pilar-ic {
+    color: var(--c-blue);
+  }
+
+  /* Valores chips */
+  .valores {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    justify-content: center;
+  }
+  .valor {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #fff;
+    border: 1px solid var(--c-border);
+    border-radius: 999px;
+    padding: 0.5rem 1rem 0.5rem 0.6rem;
+    font-weight: 600;
+    font-size: 0.95rem;
+    box-shadow: var(--shadow);
+  }
+  .valor-ic {
+    display: inline-flex;
+  }
+
+  .alt {
+    background: var(--c-paper);
+    border-block: 1px solid var(--c-border);
   }
   .loop {
     list-style: none;
@@ -218,9 +411,29 @@ const jsonLd = {
   .step h3 {
     margin: 0.3rem 0 0.4rem;
   }
-  .alt {
-    background: var(--c-paper);
-    border-block: 1px solid var(--c-border);
+
+  .feat {
+    border-top: 4px solid var(--c-border);
+  }
+  .green-top {
+    border-top-color: var(--c-green);
+  }
+  .blue-top {
+    border-top-color: var(--c-blue);
+  }
+  .amber-top {
+    border-top-color: var(--c-amber);
+  }
+
+  .closing {
+    background: radial-gradient(
+      700px 300px at 50% 0%,
+      rgba(21, 128, 61, 0.08),
+      transparent
+    );
+  }
+  .closing-inner :global(.closing-emblem) {
+    margin-bottom: 0.5rem;
   }
   .closing h2 {
     margin-bottom: 0.5rem;

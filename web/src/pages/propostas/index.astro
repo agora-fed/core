@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import ProposeForm from '../../components/islands/ProposeForm.svelte';
+import ColorBar from '../../components/illustrations/ColorBar.astro';
 import { getProposals, DEFAULT_ORG_ID } from '../../lib/api';
 import { formatDate } from '../../lib/format';
 
@@ -23,6 +24,7 @@ const jsonLd = {
   <section class="section">
     <div class="container">
       <header class="page-head">
+        <ColorBar class="head-bar" />
         <h1>Propostas</h1>
         <p class="muted lede">
           Ideias direcionadas a um mandato. Ao reunir apoios suficientes, uma
@@ -93,6 +95,9 @@ const jsonLd = {
   .page-head {
     max-width: 46rem;
     margin-bottom: 2rem;
+  }
+  .head-bar {
+    margin-bottom: 0.9rem;
   }
   .lede {
     font-size: 1.1rem;

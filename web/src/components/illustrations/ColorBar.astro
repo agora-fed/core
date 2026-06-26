@@ -1,0 +1,35 @@
+---
+// A short rounded four-colour brand bar (red · amber · green · blue) used as a
+// section accent, echoing the logo's embrace and the manual's colour system.
+interface Props {
+  class?: string;
+}
+const { class: className } = Astro.props;
+---
+
+<span class={`color-bar ${className ?? ''}`} aria-hidden="true">
+  <i style="background:#e84c3d"></i>
+  <i style="background:#f4c20d"></i>
+  <i style="background:#15803d"></i>
+  <i style="background:#1d4ed8"></i>
+</span>
+
+<style>
+  .color-bar {
+    display: inline-flex;
+    gap: 5px;
+    height: 7px;
+  }
+  .color-bar i {
+    display: block;
+    width: 30px;
+    height: 100%;
+    border-radius: 999px;
+  }
+  .color-bar i:first-child {
+    width: 16px;
+  }
+  .color-bar i:last-child {
+    width: 16px;
+  }
+</style>

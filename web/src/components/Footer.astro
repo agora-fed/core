@@ -1,17 +1,24 @@
 ---
+import Dialogo from './icons/Dialogo.astro';
+import Transparencia from './icons/Transparencia.astro';
+import Participacao from './icons/Participacao.astro';
+
 const year = new Date().getFullYear();
 const pillars = [
   {
+    Icon: Dialogo,
     name: 'Diálogo',
-    color: 'var(--c-amber)',
+    color: 'var(--c-red)',
     text: 'Espaço plural onde diferentes ideias se encontram.',
   },
   {
+    Icon: Transparencia,
     name: 'Transparência',
     color: 'var(--c-blue)',
     text: 'Cada resposta — ou silêncio — fica registrado em público.',
   },
   {
+    Icon: Participacao,
     name: 'Participação',
     color: 'var(--c-green)',
     text: 'Da proposta ao voto, a população no centro da decisão.',
@@ -25,11 +32,9 @@ const pillars = [
       {
         pillars.map((p) => (
           <div class="pillar">
-            <span
-              class="dot"
-              style={`background:${p.color}`}
-              aria-hidden="true"
-            />
+            <span class="pic" style={`color:${p.color}`} aria-hidden="true">
+              <p.Icon size={26} />
+            </span>
             <h3>{p.name}</h3>
             <p class="muted">{p.text}</p>
           </div>
@@ -83,11 +88,15 @@ const pillars = [
     margin: 0;
     font-size: 0.95rem;
   }
-  .dot {
-    display: inline-block;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
+  .pic {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    background: var(--c-bg);
+    border: 1px solid var(--c-border);
   }
   .foot-bar {
     display: flex;

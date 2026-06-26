@@ -90,7 +90,25 @@ export async function apiPost<T>(
       },
       body: JSON.stringify(payload),
     });
-    return (await res.json()) as ApiResponse<T>;
+    // Parse defensively: a framework-level 4xx/5xx (e.g. a 422 from the JSON extractor) may come
+    // back as text/plain, not the ApiResponse envelope. Don't let JSON.parse throw -> never report a
+    // real HTTP error as a connection failure.
+    const text = await res.text();
+    try {
+      const body = JSON.parse(text) as ApiResponse<T>;
+      if (body && typeof body === 'object' && 'success' in body) return body;
+    } catch {
+      /* not JSON — fall through */
+    }
+    return {
+      success: false,
+      data: null,
+      error: {
+        code: `http_${res.status}`,
+        message: res.ok ? 'Resposta inesperada do servidor.' : 'Não foi possível concluir. Verifique os dados e tente novamente.',
+      },
+      meta: null,
+    };
   } catch {
     return {
       success: false,
@@ -142,3 +160,32 @@ export const getConsultations = (orgId = DEFAULT_ORG_ID, limit = 30) =>
   apiGet<ConsultationDto[]>(
     `/api/v1/surveys${orgQuery(orgId, `&limit=${limit}`)}`,
   );
+
+// --- Auth: centralized so the org_id (required by the backend Register/LoginRequest) can NEVER be
+//     forgotten by a form. A contract test (web/tests/api.contract.test.ts) guards these shapes. ---
+
+/** Session returned by /auth/register and /auth/login. */
+export interface SessionData {
+  id: string;
+  citizen_id: string;
+  issued_at: string;
+  expires_at: string;
+  public_handle: string;
+}
+
+/** Register a citizen (e-mail + senha + CPF). Always includes org_id. */
+export const register = (email: string, password: string, cpf: string, orgId = DEFAULT_ORG_ID) =>
+  apiPost<SessionData>('/api/v1/auth/register', {
+    org_id: orgId,
+    email: email.trim(),
+    password,
+    cpf,
+  });
+
+/** Authenticate (e-mail + senha). Always includes org_id. */
+export const login = (email: string, password: string, orgId = DEFAULT_ORG_ID) =>
+  apiPost<SessionData>('/api/v1/auth/login', {
+    org_id: orgId,
+    email: email.trim(),
+    password,
+  });

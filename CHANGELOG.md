@@ -40,6 +40,14 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
   review caught a cross-tenant IDOR in surveys (publish/add_question now enforce org ownership)
   and corrected aspirational CRATE.md event contracts to match the frozen catalog.
 
+- Front-end ↔ backend **contract tests** (web/tests/api.contract.test.ts, vitest) + CI
+  (.forgejo/workflows/web.yml). Added after production bugs that such tests would have caught:
+  (1) the register/login forms omitted `org_id` → Axum returned 422 text/plain that the client
+  surfaced as 'falha de conexão'; (2) an absolute IPv6 API base caused cross-origin failures.
+  Fixes: register/login centralized in api.ts (org_id can't be forgotten), relative same-origin
+  base, defensive non-JSON response handling. Web served by the gateway behind Caddy/HTTPS at
+  https://democracia.social.br; admin bootstrap documented (docs/ops/ADMIN.md).
+
 ### Decisions
 - **ADR-0009**: web front-end = Astro + Svelte islands; SSG (static) now, SSR pod later.
 - **ADR-0008**: sovereign CPF + e-mail/senha auth (Argon2id), reverses Zitadel for citizens.

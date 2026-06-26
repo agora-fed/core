@@ -1,0 +1,29 @@
+---
+// Transparência — bar chart with a magnifier (brand blue by default via currentColor).
+interface Props {
+  size?: number;
+  class?: string;
+  title?: string;
+}
+const { size = 28, class: className, title } = Astro.props;
+---
+
+<svg
+  width={size}
+  height={size}
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="1.9"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class={className}
+  role={title ? 'img' : undefined}
+  aria-hidden={title ? undefined : 'true'}
+>
+  {title && <title>{title}</title>}
+  <path d="M3 3.5v15a2 2 0 0 0 2 2h15"></path>
+  <path d="M7.5 18v-4M12 18v-6"></path>
+  <circle cx="16.5" cy="9" r="2.6"></circle>
+  <path d="m18.5 11 1.7 1.7"></path>
+</svg>

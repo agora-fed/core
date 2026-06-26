@@ -1,6 +1,6 @@
 <script lang="ts">
   // Propose form — create a civic proposal directed at a specific mandate.
-  import { apiPost } from '../../lib/api';
+  import { apiPost, DEFAULT_ORG_ID } from '../../lib/api';
   import type { ProposalDto } from '../../lib/types';
 
   let title = $state('');
@@ -40,6 +40,7 @@
 
     busy = true;
     const res = await apiPost<ProposalDto>('/api/v1/proposals', {
+      org_id: DEFAULT_ORG_ID,
       mandate_id: mandateId.trim(),
       title: title.trim(),
       body: body.trim(),

@@ -1,0 +1,19 @@
+# Web front-end CI — contract tests (front<->back request shapes) + static build.
+# Catches the class of bug that broke production registration (a form omitting `org_id`).
+name: web
+on:
+  push:
+    paths: ["web/**"]
+  pull_request:
+    paths: ["web/**"]
+jobs:
+  build-and-test:
+    runs-on: docker
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@v4
+      - name: install + contract tests + static build
+        run: |
+          cd web
+          npm ci || npm install
+          npm test            # vitest: front-end <-> backend request-shape contract
+          npm run build        # static SSG output

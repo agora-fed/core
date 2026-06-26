@@ -1,6 +1,6 @@
 <script lang="ts">
   // Registration: e-mail + senha + CPF, with client-side CPF check-digit validation.
-  import { apiPost } from '../../lib/api';
+  import { register } from '../../lib/api';
   import { formatCpf, isValidCpf, onlyDigits } from '../../lib/cpf';
 
   interface SessionData {
@@ -30,11 +30,7 @@
     serverError = null;
     busy = true;
 
-    const res = await apiPost<SessionData>('/api/v1/auth/register', {
-      email: email.trim(),
-      password,
-      cpf: onlyDigits(cpf),
-    });
+    const res = await register(email, password, onlyDigits(cpf));
     busy = false;
 
     if (res.success) {

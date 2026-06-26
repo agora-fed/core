@@ -1,6 +1,6 @@
 <script lang="ts">
   // Login: e-mail + senha. On success the gateway sets a session cookie.
-  import { apiPost } from '../../lib/api';
+  import { login } from '../../lib/api';
 
   interface SessionData {
     citizen_id?: string;
@@ -20,10 +20,7 @@
     serverError = null;
     busy = true;
 
-    const res = await apiPost<SessionData>('/api/v1/auth/login', {
-      email: email.trim(),
-      password,
-    });
+    const res = await login(email, password);
     busy = false;
 
     if (res.success) {

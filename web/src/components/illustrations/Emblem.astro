@@ -1,0 +1,53 @@
+---
+// The DemocraciaBR emblem — three people (red, amber, blue) embraced by a green
+// ring — recreated as lightweight inline SVG from the logo motif.
+interface Props {
+  size?: number;
+  class?: string;
+  title?: string;
+}
+const { size = 120, class: className, title = 'DemocraciaBR' } = Astro.props;
+---
+
+<svg
+  width={size}
+  height={size}
+  viewBox="0 0 120 120"
+  fill="none"
+  class={className}
+  role="img"
+  aria-label={title}
+>
+  <title>{title}</title>
+  <!-- green embrace (bottom ring) -->
+  <path
+    d="M16 60a44 44 0 0 0 88 0"
+    fill="none"
+    stroke="#15803d"
+    stroke-width="15"
+    stroke-linecap="round"></path>
+  <!-- red person (left) -->
+  <circle cx="35" cy="44" r="11" fill="#e84c3d"></circle>
+  <path
+    d="M35 55c-9 4-15 12-16 23"
+    fill="none"
+    stroke="#e84c3d"
+    stroke-width="14"
+    stroke-linecap="round"></path>
+  <!-- amber person (center, tallest) -->
+  <circle cx="60" cy="34" r="12" fill="#f4c20d"></circle>
+  <path
+    d="M60 46c-1 8-1 15 0 22"
+    fill="none"
+    stroke="#f4c20d"
+    stroke-width="14"
+    stroke-linecap="round"></path>
+  <!-- blue person (right) -->
+  <circle cx="85" cy="44" r="11" fill="#1d4ed8"></circle>
+  <path
+    d="M85 55c9 4 15 12 16 23"
+    fill="none"
+    stroke="#1d4ed8"
+    stroke-width="14"
+    stroke-linecap="round"></path>
+</svg>
