@@ -435,6 +435,80 @@ pub(crate) async fn find_profile<'e, E: PgExecutor<'e>>(
     Ok(row)
 }
 
+/// Read the public PEM of a citizen's federation actor key, when it exists. The PRIVATE PEM is
+/// deliberately NOT returned by this query — it is a credential and the request hot path that
+/// renders the Actor document never needs it.
+pub(crate) async fn find_actor_public_key<'e, E: PgExecutor<'e>>(
+    ex: E,
+    citizen_id: Uuid,
+) -> Result<Option<String>, sqlx::Error> {
+    let row = sqlx::query!(
+        "SELECT public_pem FROM citizen_actor_key WHERE citizen_id = $1",
+        citizen_id,
+    )
+    .fetch_optional(ex)
+    .await?;
+    Ok(row.map(|r| r.public_pem))
+}
+
+/// Insert a freshly-generated keypair (private+public PEM) for a citizen. Idempotent at the
+/// schema level via the primary key; the service uses `ON CONFLICT DO NOTHING` so a concurrent
+/// double-flip on `is_public` never races.
+pub(crate) async fn insert_actor_keypair<'e, E: PgExecutor<'e>>(
+    ex: E,
+    citizen_id: Uuid,
+    private_pem: &str,
+    public_pem: &str,
+    now: DateTime<Utc>,
+) -> Result<u64, sqlx::Error> {
+    let r = sqlx::query!(
+        r#"
+        INSERT INTO citizen_actor_key (citizen_id, private_pem, public_pem, created_at)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (citizen_id) DO NOTHING
+        "#,
+        citizen_id,
+        private_pem,
+        public_pem,
+        now,
+    )
+    .execute(ex)
+    .await?;
+    Ok(r.rows_affected())
+}
+
+/// Resolve a public citizen by user-chosen handle (NOT the `public_handle` opaque id). Returns
+/// `None` if the handle is unknown or the citizen has not opted into a public profile — the
+/// federation surface is gated by `is_public = true` (ADR-0010 / LGPD).
+pub(crate) async fn find_public_citizen_by_handle<'e, E: PgExecutor<'e>>(
+    ex: E,
+    org_id: Uuid,
+    handle: &str,
+) -> Result<Option<ProfileRow>, sqlx::Error> {
+    let row = sqlx::query_as!(
+        ProfileRow,
+        r#"
+        SELECT id AS citizen_id,
+               org_id,
+               handle,
+               display_name,
+               bio,
+               avatar_object_key,
+               cover_object_key,
+               is_public,
+               verification_level,
+               created_at
+          FROM citizen
+         WHERE org_id = $1 AND handle = $2 AND is_public = true
+        "#,
+        org_id,
+        handle,
+    )
+    .fetch_optional(ex)
+    .await?;
+    Ok(row)
+}
+
 /// Read the citizen's current avatar/cover keys (before an update). Two-step (read + update)
 /// avoids the SQL gymnastics needed to coax the pre-update value out of `RETURNING`; the race
 /// window between the two statements only matters for the same citizen uploading two avatars

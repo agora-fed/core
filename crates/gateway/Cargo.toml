@@ -27,6 +27,8 @@ dsoc-consensus = { path = "../platform/consensus" }
 dsoc-moderation = { path = "../platform/moderation" }
 dsoc-admin = { path = "../platform/admin" }
 dsoc-storage = { path = "../platform/storage" }
+# clients
+dsoc-federation = { path = "../clients/federation" }
 # spaces
 dsoc-processes = { path = "../spaces/processes" }
 dsoc-assemblies = { path = "../spaces/assemblies" }
@@ -50,6 +52,7 @@ async-trait = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
 tokio = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
 tracing = { workspace = true }

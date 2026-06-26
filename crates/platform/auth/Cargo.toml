@@ -34,6 +34,7 @@ sha2 = "0.10"
 base64 = "0.22"
 rand = "0.8"
 image = { workspace = true }
+dsoc-federation = { path = "../../clients/federation" }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

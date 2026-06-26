@@ -21,3 +21,7 @@ axum = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
 utoipa = { workspace = true }
+# RSA keypair generation for ActivityPub Actor publicKey (ADR-0010 W2). Pure CPU + RNG — no
+# database, no I/O — keeps the crate Tier-3 (PLAN.md §6.1).
+rsa = { workspace = true }
+rand = { workspace = true }

@@ -6,6 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod federation;
 pub mod worker;
 
 use axum::extract::{Request, State};
@@ -95,10 +96,16 @@ pub fn api_router(state: AppState) -> Router {
     let web_root = std::env::var("WEB_ROOT").unwrap_or_else(|_| "/srv/web".to_string());
     let static_site = ServeDir::new(web_root).append_index_html_on_directories(true);
 
+    // Federation surface lives at the root (NOT under /api/v1), so paths look like any other
+    // ActivityPub instance: /.well-known/webfinger, /actors/<handle>. The federation module is
+    // DB-backed (resolves @handle to a public citizen) — see ADR-0010 W2.
+    let federation_routes = federation::routes(state.clone());
+
     Router::new()
         .route("/health", get(health))
         .route("/openapi.json", get(openapi))
         .nest("/api/v1", api)
+        .merge(federation_routes)
         .fallback_service(static_site)
 }
 
