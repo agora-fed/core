@@ -25,3 +25,5 @@ utoipa = { workspace = true }
 # database, no I/O — keeps the crate Tier-3 (PLAN.md §6.1).
 rsa = { workspace = true }
 rand = { workspace = true }
+sha2 = "0.10"
+base64 = "0.22"

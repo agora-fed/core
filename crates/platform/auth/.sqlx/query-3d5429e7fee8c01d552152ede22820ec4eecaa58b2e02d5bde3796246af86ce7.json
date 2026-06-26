@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE federation_follow\n           SET accepted_at = $3\n         WHERE citizen_id = $1\n           AND direction = 'inbound'\n           AND remote_actor_url = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3d5429e7fee8c01d552152ede22820ec4eecaa58b2e02d5bde3796246af86ce7"
+}

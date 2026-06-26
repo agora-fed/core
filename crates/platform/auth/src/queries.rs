@@ -435,6 +435,154 @@ pub(crate) async fn find_profile<'e, E: PgExecutor<'e>>(
     Ok(row)
 }
 
+/// Read the PRIVATE PEM of a citizen's federation actor key. Used by the outbound delivery
+/// path (signing Accept, Create etc.). NEVER returned by any HTTP surface — this function is
+/// internal to the platform tier. Returns `None` when the citizen has no key yet (lazy gen
+/// hasn't run because they're not public or never had a federation hit).
+pub(crate) async fn find_actor_private_key<'e, E: PgExecutor<'e>>(
+    ex: E,
+    citizen_id: Uuid,
+) -> Result<Option<String>, sqlx::Error> {
+    let row = sqlx::query!(
+        "SELECT private_pem FROM citizen_actor_key WHERE citizen_id = $1",
+        citizen_id,
+    )
+    .fetch_optional(ex)
+    .await?;
+    Ok(row.map(|r| r.private_pem))
+}
+
+/// Try to record an inbound activity id as "seen" before acting on it. Returns `true` for a
+/// FRESH delivery (the caller should act), `false` for a duplicate (the caller should reply
+/// 202 immediately without re-acting). The INSERT-then-check pattern is the strict idempotency
+/// guarantee Mastodon retries against.
+pub(crate) async fn mark_inbox_activity_seen<'e, E: PgExecutor<'e>>(
+    ex: E,
+    activity_id: &str,
+    citizen_id: Uuid,
+    now: DateTime<Utc>,
+) -> Result<bool, sqlx::Error> {
+    let r = sqlx::query!(
+        r#"
+        INSERT INTO federation_inbox_seen (activity_id, citizen_id, seen_at)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (activity_id) DO NOTHING
+        "#,
+        activity_id,
+        citizen_id,
+        now,
+    )
+    .execute(ex)
+    .await?;
+    Ok(r.rows_affected() == 1)
+}
+
+/// Persist an inbound follow (someone remote follows our citizen). Idempotent at the schema
+/// level (unique on (citizen_id, direction, remote_actor_url)); a duplicate inbound Follow
+/// from the same remote actor is a no-op.
+pub(crate) async fn insert_inbound_follow<'e, E: PgExecutor<'e>>(
+    ex: E,
+    id: Uuid,
+    citizen_id: Uuid,
+    remote_actor_url: &str,
+    remote_inbox_url: &str,
+    follow_activity_id: &str,
+    now: DateTime<Utc>,
+) -> Result<u64, sqlx::Error> {
+    let r = sqlx::query!(
+        r#"
+        INSERT INTO federation_follow
+            (id, citizen_id, direction, remote_actor_url, remote_inbox_url,
+             follow_activity_id, accepted_at, created_at)
+        VALUES ($1, $2, 'inbound', $3, $4, $5, NULL, $6)
+        ON CONFLICT (citizen_id, direction, remote_actor_url) DO UPDATE
+            SET remote_inbox_url    = EXCLUDED.remote_inbox_url,
+                follow_activity_id  = EXCLUDED.follow_activity_id
+        "#,
+        id,
+        citizen_id,
+        remote_actor_url,
+        remote_inbox_url,
+        follow_activity_id,
+        now,
+    )
+    .execute(ex)
+    .await?;
+    Ok(r.rows_affected())
+}
+
+/// Mark an inbound follow as ACK'd (we successfully delivered the Accept back). Lookup is by
+/// the natural key — (citizen, direction, remote actor) — not the surrogate id.
+pub(crate) async fn mark_inbound_follow_accepted<'e, E: PgExecutor<'e>>(
+    ex: E,
+    citizen_id: Uuid,
+    remote_actor_url: &str,
+    now: DateTime<Utc>,
+) -> Result<u64, sqlx::Error> {
+    let r = sqlx::query!(
+        r#"
+        UPDATE federation_follow
+           SET accepted_at = $3
+         WHERE citizen_id = $1
+           AND direction = 'inbound'
+           AND remote_actor_url = $2
+        "#,
+        citizen_id,
+        remote_actor_url,
+        now,
+    )
+    .execute(ex)
+    .await?;
+    Ok(r.rows_affected())
+}
+
+/// Page of ACK'd inbound followers of a citizen. Each row is one remote actor URL. Used by the
+/// `GET /actors/{handle}/followers` OrderedCollection (Mastodon reads this for the count).
+pub(crate) async fn list_inbound_followers<'e, E: PgExecutor<'e>>(
+    ex: E,
+    citizen_id: Uuid,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<String>, sqlx::Error> {
+    let rows = sqlx::query_scalar!(
+        r#"
+        SELECT remote_actor_url
+          FROM federation_follow
+         WHERE citizen_id = $1
+           AND direction = 'inbound'
+           AND accepted_at IS NOT NULL
+         ORDER BY created_at DESC
+         LIMIT $2 OFFSET $3
+        "#,
+        citizen_id,
+        limit,
+        offset,
+    )
+    .fetch_all(ex)
+    .await?;
+    Ok(rows)
+}
+
+/// Total count of ACK'd inbound followers (used in the OrderedCollection's `totalItems`).
+pub(crate) async fn count_inbound_followers<'e, E: PgExecutor<'e>>(
+    ex: E,
+    citizen_id: Uuid,
+) -> Result<i64, sqlx::Error> {
+    let row = sqlx::query!(
+        r#"
+        SELECT count(*) AS "n!"
+          FROM federation_follow
+         WHERE citizen_id = $1
+           AND direction = 'inbound'
+           AND accepted_at IS NOT NULL
+        "#,
+        citizen_id,
+    )
+    .fetch_one(ex)
+    .await?;
+    Ok(row.n)
+}
+
 /// Read the public PEM of a citizen's federation actor key, when it exists. The PRIVATE PEM is
 /// deliberately NOT returned by this query — it is a credential and the request hot path that
 /// renders the Actor document never needs it.

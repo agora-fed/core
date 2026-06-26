@@ -1201,12 +1201,14 @@ name = "dsoc-federation"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64",
  "chrono",
  "dsoc-api-contract",
  "rand 0.8.6",
  "rsa",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "utoipa",
  "uuid",
 ]
@@ -1217,6 +1219,8 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
+ "base64",
+ "chrono",
  "dsoc-accountability",
  "dsoc-admin",
  "dsoc-api-contract",
@@ -1244,8 +1248,10 @@ dependencies = [
  "dsoc-storage",
  "dsoc-surveys",
  "dsoc-votes",
+ "reqwest",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tokio",
  "tower",
  "tower-http",

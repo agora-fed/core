@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT count(*) AS \"n!\"\n          FROM federation_follow\n         WHERE citizen_id = $1\n           AND direction = 'inbound'\n           AND accepted_at IS NOT NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e470895ac4bbfbdd7eea72b5c63561cd3a6c597e5da130bf9df4bb1254983561"
+}

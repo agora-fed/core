@@ -173,6 +173,107 @@ impl ProfileService {
         self.set_media(caller, expected_org, MediaKind::Cover, raw).await
     }
 
+    /// Read the citizen's PRIVATE federation PEM. Internal-use only: this is a credential and
+    /// MUST NOT cross any HTTP response. Used by the outbound delivery path to sign Accept etc.
+    ///
+    /// # Errors
+    /// [`Error::NotFound`] when no keypair exists yet (caller should `ensure_actor_public_key`
+    /// first to materialize one); [`Error::Storage`] on persistence failure.
+    pub async fn read_actor_private_key(&self, citizen: CitizenId) -> Result<String> {
+        queries::find_actor_private_key(&self.db, citizen.as_uuid())
+            .await
+            .map_err(map_sqlx)?
+            .ok_or_else(|| Error::NotFound("actor key not found".to_owned()))
+    }
+
+    /// Mark an inbound activity id as seen (insert-before-act idempotency log). Returns `true`
+    /// for a fresh delivery, `false` for a duplicate.
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on persistence failure.
+    pub async fn mark_inbox_seen(
+        &self,
+        activity_id: &str,
+        citizen: CitizenId,
+    ) -> Result<bool> {
+        let now = self.clock.now();
+        queries::mark_inbox_activity_seen(&self.db, activity_id, citizen.as_uuid(), now)
+            .await
+            .map_err(map_sqlx)
+    }
+
+    /// Persist a (validated) inbound Follow activity from a remote actor.
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on persistence failure.
+    pub async fn record_inbound_follow(
+        &self,
+        citizen: CitizenId,
+        remote_actor_url: &str,
+        remote_inbox_url: &str,
+        follow_activity_id: &str,
+    ) -> Result<()> {
+        let now = self.clock.now();
+        queries::insert_inbound_follow(
+            &self.db,
+            uuid::Uuid::now_v7(),
+            citizen.as_uuid(),
+            remote_actor_url,
+            remote_inbox_url,
+            follow_activity_id,
+            now,
+        )
+        .await
+        .map_err(map_sqlx)?;
+        Ok(())
+    }
+
+    /// Mark a previously-recorded inbound follow as ACK'd (Accept delivered).
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on persistence failure.
+    pub async fn accept_inbound_follow(
+        &self,
+        citizen: CitizenId,
+        remote_actor_url: &str,
+    ) -> Result<()> {
+        let now = self.clock.now();
+        queries::mark_inbound_follow_accepted(
+            &self.db,
+            citizen.as_uuid(),
+            remote_actor_url,
+            now,
+        )
+        .await
+        .map_err(map_sqlx)?;
+        Ok(())
+    }
+
+    /// List ACK'd inbound followers of a citizen (page). Used by the OrderedCollection at
+    /// `/actors/{handle}/followers`.
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on persistence failure.
+    pub async fn list_followers(
+        &self,
+        citizen: CitizenId,
+        limit: u32,
+        offset: u32,
+    ) -> Result<(Vec<String>, u64)> {
+        let urls = queries::list_inbound_followers(
+            &self.db,
+            citizen.as_uuid(),
+            i64::from(limit),
+            i64::from(offset),
+        )
+        .await
+        .map_err(map_sqlx)?;
+        let total = queries::count_inbound_followers(&self.db, citizen.as_uuid())
+            .await
+            .map_err(map_sqlx)?;
+        Ok((urls, total as u64))
+    }
+
     /// Look up a public citizen by user-chosen handle (only when `is_public = true`). Used by the
 /// federation surface (`/.well-known/webfinger`, `/actors/{handle}`) to resolve `@handle`. Returns
 /// the profile DTO so the federation layer can build the Actor document from it.

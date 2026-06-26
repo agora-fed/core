@@ -28,6 +28,7 @@
 #![forbid(unsafe_code)]
 
 pub mod actor;
+pub mod crypto;
 pub mod http;
 pub mod keys;
 pub mod mapping;
@@ -43,6 +44,7 @@ pub use actor::{
     mandate_handle, Actor, ActorRole, ActorType,
 };
 pub use http::routes;
+pub use crypto::{sign_with_pem, signature_header_value, RsaSha256Verifier};
 pub use keys::{generate_actor_keypair, GeneratedKeypair, ACTOR_KEY_BITS};
 pub use mapping::{
     cluster_to_ap, mandate_to_actor, proposal_to_ap, scorecard_to_ap, sla_to_ap, support_tally,
