@@ -11,10 +11,11 @@ import type {
   ProposalDto,
   PromiseDto,
   ScorecardDto,
+  SessionInfoDto,
   SlaDto,
 } from './types';
 
-export type { MandateDto, ProfileDto, ProfileUpdateDto };
+export type { MandateDto, ProfileDto, ProfileUpdateDto, SessionInfoDto };
 
 /** Default to a RELATIVE base (same origin that served the page) so the API call always reaches the
  *  gateway that serves this site — no CORS, no IPv6/host mismatch. Override via PUBLIC_API_BASE only
@@ -205,6 +206,50 @@ export const getMyProfile = () => apiGetCredentialed<ProfileDto>('/api/v1/me');
 /** Patch the authenticated citizen's profile. Returns the refreshed profile. */
 export const updateMyProfile = (patch: ProfileUpdateDto) =>
   apiPatch<ProfileDto>('/api/v1/me', patch);
+
+/** List my live sessions; the one carrying THIS request is flagged `current`. */
+export const getMySessions = () =>
+  apiGetCredentialed<SessionInfoDto[]>('/api/v1/me/sessions');
+
+/** Revoke one of my sessions. Cannot revoke the current one (use logout). */
+export async function revokeSession(id: string): Promise<ApiResponse<null>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/me/sessions/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { accept: 'application/json' },
+    });
+    if (res.status === 204) {
+      return { success: true, data: null, error: null, meta: null };
+    }
+    const text = await res.text();
+    try {
+      const body = JSON.parse(text) as ApiResponse<null>;
+      if (body && typeof body === 'object' && 'success' in body) return body;
+    } catch {
+      /* not JSON */
+    }
+    return {
+      success: false,
+      data: null,
+      error: {
+        code: `http_${res.status}`,
+        message: 'Não foi possível encerrar a sessão.',
+      },
+      meta: null,
+    };
+  } catch {
+    return {
+      success: false,
+      data: null,
+      error: {
+        code: 'network_error',
+        message: 'Falha de conexão. Verifique sua internet e tente novamente.',
+      },
+      meta: null,
+    };
+  }
+}
 
 /** Multipart upload of avatar / cover. The backend ignores the multipart Content-Type and
  *  validates from bytes — so any PNG/JPEG/WebP is accepted; an invalid file gets a 400 with a

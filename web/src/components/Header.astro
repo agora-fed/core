@@ -1,5 +1,7 @@
 ---
-// Site header with the DemocraciaBR logo and primary navigation.
+// Site header — collapses into a hamburger drawer on small screens so the four nav links plus the
+// auth menu (avatar + handle + sair) never stack/overflow on a phone. The drawer is a pure CSS
+// peer-checkbox pattern: no JS needed, no flash of unstyled state, accessible via the label.
 import AuthMenu from './islands/AuthMenu.svelte';
 
 const path = Astro.url.pathname;
@@ -26,22 +28,35 @@ const links = [
       />
     </a>
 
-    <nav aria-label="Navegação principal" class="nav">
-      {
-        links.map((l) => (
-          <a
-            href={l.href}
-            class:list={['nav-link', { active: isActive(l.href) }]}
-            aria-current={isActive(l.href) ? 'page' : undefined}
-          >
-            {l.label}
-          </a>
-        ))
-      }
-    </nav>
+    <!-- Hamburger checkbox (peer of `.drawer`); only visible <840px. Defaults closed. -->
+    <input id="menu-toggle" class="menu-toggle" type="checkbox" aria-hidden="true" />
+    <label for="menu-toggle" class="menu-button" aria-label="Abrir menu">
+      <span class="bars" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
+      </span>
+    </label>
 
-    <div class="actions">
-      <AuthMenu client:load />
+    <!-- Drawer holds nav + auth on small screens; inline row on big screens. -->
+    <div class="drawer">
+      <nav aria-label="Navegação principal" class="nav">
+        {
+          links.map((l) => (
+            <a
+              href={l.href}
+              class:list={['nav-link', { active: isActive(l.href) }]}
+              aria-current={isActive(l.href) ? 'page' : undefined}
+            >
+              {l.label}
+            </a>
+          ))
+        }
+      </nav>
+
+      <div class="actions">
+        <AuthMenu client:load />
+      </div>
     </div>
   </div>
 </header>
@@ -59,21 +74,35 @@ const links = [
     align-items: center;
     gap: 1rem;
     min-height: 64px;
-    flex-wrap: wrap;
   }
   .brand {
     display: inline-flex;
     align-items: center;
+    flex-shrink: 0;
   }
   .brand-logo {
     height: 38px;
     width: auto;
   }
+
+  /* Hamburger is invisible on desktop, the drawer renders inline. */
+  .menu-toggle,
+  .menu-button {
+    display: none;
+  }
+
+  .drawer {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex: 1;
+    justify-content: space-between;
+  }
   .nav {
     display: flex;
     gap: 0.35rem;
-    margin-inline-start: auto;
     flex-wrap: wrap;
+    margin-inline-start: auto;
   }
   .nav-link {
     text-decoration: none;
@@ -92,20 +121,98 @@ const links = [
   }
   .actions {
     display: flex;
+    align-items: center;
     gap: 0.5rem;
   }
-  .actions .btn {
+  .actions :global(.btn) {
     padding: 0.55rem 1rem;
     font-size: 0.92rem;
   }
-  @media (max-width: 560px) {
+
+  /* --- Mobile: hamburger pattern -------------------------------------------- */
+  @media (max-width: 840px) {
+    .menu-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      height: 44px;
+      margin-inline-start: auto;
+      border: 1px solid var(--c-border);
+      border-radius: 10px;
+      background: var(--c-paper);
+      cursor: pointer;
+    }
+    .menu-button:hover {
+      background: var(--c-bg);
+    }
+    .bars {
+      position: relative;
+      display: inline-block;
+      width: 20px;
+      height: 14px;
+    }
+    .bars span {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--c-navy);
+      border-radius: 2px;
+      transition: transform 160ms ease, opacity 160ms ease, top 160ms ease;
+    }
+    .bars span:nth-child(1) { top: 0; }
+    .bars span:nth-child(2) { top: 6px; }
+    .bars span:nth-child(3) { top: 12px; }
+    .menu-toggle:checked ~ .menu-button .bars span:nth-child(1) {
+      top: 6px;
+      transform: rotate(45deg);
+    }
+    .menu-toggle:checked ~ .menu-button .bars span:nth-child(2) {
+      opacity: 0;
+    }
+    .menu-toggle:checked ~ .menu-button .bars span:nth-child(3) {
+      top: 6px;
+      transform: rotate(-45deg);
+    }
+
+    .drawer {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.4rem;
+      padding: 0.75rem 1rem 1rem;
+      background: var(--c-paper);
+      border-bottom: 1px solid var(--c-border);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+      display: none;
+    }
+    .menu-toggle:checked ~ .drawer {
+      display: flex;
+    }
     .nav {
-      order: 3;
-      width: 100%;
-      margin-inline-start: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      margin: 0;
+    }
+    .nav-link {
+      padding: 0.7rem 0.7rem;
+      font-size: 1rem;
     }
     .actions {
-      margin-inline-start: auto;
+      flex-direction: row;
+      gap: 0.5rem;
+      padding-top: 0.5rem;
+      border-top: 1px solid var(--c-border);
+      flex-wrap: wrap;
+    }
+    .actions :global(.btn) {
+      flex: 1;
+      justify-content: center;
     }
   }
 </style>

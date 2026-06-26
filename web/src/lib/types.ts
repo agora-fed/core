@@ -48,6 +48,14 @@ export interface ProfileDto {
   created_at: string;
 }
 
+/** One active session of the authenticated citizen, returned by `GET /me/sessions`. */
+export interface SessionInfoDto {
+  id: string;
+  issued_at: string;
+  expires_at: string;
+  current: boolean;
+}
+
 /** Editable subset of `ProfileDto` accepted by `PATCH /me`. */
 export interface ProfileUpdateDto {
   display_name?: string;
