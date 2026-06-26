@@ -77,7 +77,7 @@ These are non-negotiable and bind every agent and every crate.
 - **DO NOT** build cryptographic, election-grade binding voting in the MVP. This is for *pressure and accountability*, not for replacing the TSE ballot.
 - **DO NOT** attempt to integrate every legacy government system in Phase 1.
 - **DO NOT** moderate civic speech with opaque foreign AI.
-- **DO NOT** ship a generic "everything for everyone" UI. Hyperspecialize the core loop: *propose → cluster → vote → notify official → response-or-public-silence*.
+- **DO NOT** ship a generic "everything for everyone" UI. Hyperspecialize the core loop: *propose → cluster → vote → notify official → response-or-public-silence*. *(Scoped reversal: the bare social substrate — profile, follow, feed, search — is now in-scope as the trust layer the loop runs on; see [ADR-0010](docs/decisions/ADR-0010-civic-social-platform.md). The anti-bloat spirit holds — no blogs, marketplaces, ads, monetization, or generic CMS.)*
 
 **Operations / security**
 - **DO NOT** hardcode credentials, tokens, or keys. `.config/settings.env`, gitignored, always.
