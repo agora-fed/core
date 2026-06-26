@@ -1,0 +1,50 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PasswordResetRequestForm from '../components/islands/PasswordResetRequestForm.svelte';
+
+const description =
+  'Informe seu e-mail e receba um link para redefinir sua senha na DemocraciaBR.';
+---
+
+<BaseLayout title="Recuperar senha" {description} noindex>
+  <section class="section">
+    <div class="container auth-shell">
+      <div class="auth-card card">
+        <img
+          src="/logo.png"
+          width="180"
+          height="120"
+          alt="DemocraciaBR"
+          class="logo"
+        />
+        <h1>Recuperar senha</h1>
+        <p class="muted">
+          Vamos te enviar um link por e-mail para criar uma nova senha. O
+          link expira em 1 hora.
+        </p>
+        <PasswordResetRequestForm client:load />
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .auth-shell {
+    max-width: 26rem;
+  }
+  .auth-card {
+    padding: 2rem;
+  }
+  .logo {
+    height: 44px;
+    width: auto;
+    display: block;
+    margin-bottom: 1rem;
+  }
+  h1 {
+    margin-bottom: 0.25rem;
+  }
+  .auth-card > .muted {
+    margin-bottom: 1.5rem;
+  }
+</style>

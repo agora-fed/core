@@ -6,13 +6,15 @@ import type {
   ConsultationDto,
   DebateDto,
   MandateDto,
+  ProfileDto,
+  ProfileUpdateDto,
   ProposalDto,
   PromiseDto,
   ScorecardDto,
   SlaDto,
 } from './types';
 
-export type { MandateDto };
+export type { MandateDto, ProfileDto, ProfileUpdateDto };
 
 /** Default to a RELATIVE base (same origin that served the page) so the API call always reaches the
  *  gateway that serves this site — no CORS, no IPv6/host mismatch. Override via PUBLIC_API_BASE only
@@ -80,9 +82,47 @@ export async function apiPost<T>(
   payload: unknown,
   init?: RequestInit,
 ): Promise<ApiResponse<T>> {
+  return apiBody<T>('POST', path, payload, init);
+}
+
+/** Client-side PATCH returning the parsed envelope. */
+export async function apiPatch<T>(
+  path: string,
+  payload: unknown,
+  init?: RequestInit,
+): Promise<ApiResponse<T>> {
+  return apiBody<T>('PATCH', path, payload, init);
+}
+
+/** Client-side GET that uses the same defensive parsing as POST/PATCH and includes the cookie. */
+export async function apiGetCredentialed<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<ApiResponse<T>> {
   try {
     const res = await fetch(`${API_BASE}${path}`, {
-      method: 'POST',
+      credentials: 'include',
+      ...init,
+      headers: {
+        accept: 'application/json',
+        ...(init?.headers ?? {}),
+      },
+    });
+    return parseEnvelope<T>(res);
+  } catch {
+    return networkFailure<T>();
+  }
+}
+
+async function apiBody<T>(
+  method: 'POST' | 'PATCH',
+  path: string,
+  payload: unknown,
+  init?: RequestInit,
+): Promise<ApiResponse<T>> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method,
       credentials: 'include',
       ...init,
       headers: {
@@ -92,36 +132,46 @@ export async function apiPost<T>(
       },
       body: JSON.stringify(payload),
     });
-    // Parse defensively: a framework-level 4xx/5xx (e.g. a 422 from the JSON extractor) may come
-    // back as text/plain, not the ApiResponse envelope. Don't let JSON.parse throw -> never report a
-    // real HTTP error as a connection failure.
-    const text = await res.text();
-    try {
-      const body = JSON.parse(text) as ApiResponse<T>;
-      if (body && typeof body === 'object' && 'success' in body) return body;
-    } catch {
-      /* not JSON — fall through */
-    }
-    return {
-      success: false,
-      data: null,
-      error: {
-        code: `http_${res.status}`,
-        message: res.ok ? 'Resposta inesperada do servidor.' : 'Não foi possível concluir. Verifique os dados e tente novamente.',
-      },
-      meta: null,
-    };
+    return parseEnvelope<T>(res);
   } catch {
-    return {
-      success: false,
-      data: null,
-      error: {
-        code: 'network_error',
-        message: 'Falha de conexão. Verifique sua internet e tente novamente.',
-      },
-      meta: null,
-    };
+    return networkFailure<T>();
   }
+}
+
+async function parseEnvelope<T>(res: Response): Promise<ApiResponse<T>> {
+  // Parse defensively: a framework-level 4xx/5xx (e.g. a 422 from the JSON extractor) may come
+  // back as text/plain, not the ApiResponse envelope. Don't let JSON.parse throw -> never report
+  // a real HTTP error as a connection failure.
+  const text = await res.text();
+  try {
+    const body = JSON.parse(text) as ApiResponse<T>;
+    if (body && typeof body === 'object' && 'success' in body) return body;
+  } catch {
+    /* not JSON — fall through */
+  }
+  return {
+    success: false,
+    data: null,
+    error: {
+      code: `http_${res.status}`,
+      message: res.ok
+        ? 'Resposta inesperada do servidor.'
+        : 'Não foi possível concluir. Verifique os dados e tente novamente.',
+    },
+    meta: null,
+  };
+}
+
+function networkFailure<T>(): ApiResponse<T> {
+  return {
+    success: false,
+    data: null,
+    error: {
+      code: 'network_error',
+      message: 'Falha de conexão. Verifique sua internet e tente novamente.',
+    },
+    meta: null,
+  };
 }
 
 // --- Typed convenience readers used by the SSR pages -------------------------
@@ -148,6 +198,13 @@ export const getMandate = (mandateId: string) =>
  *  to type a UUID by hand. Public read. */
 export const getMandates = (orgId = DEFAULT_ORG_ID, limit = 50) =>
   apiGet<MandateDto[]>(`/api/v1/mandates${orgQuery(orgId, `&limit=${limit}`)}`);
+
+/** Read the authenticated citizen's own profile (cookie required). */
+export const getMyProfile = () => apiGetCredentialed<ProfileDto>('/api/v1/me');
+
+/** Patch the authenticated citizen's profile. Returns the refreshed profile. */
+export const updateMyProfile = (patch: ProfileUpdateDto) =>
+  apiPatch<ProfileDto>('/api/v1/me', patch);
 
 export const getPromises = (mandateId: string) =>
   apiGet<PromiseDto[]>(
@@ -196,3 +253,14 @@ export const login = (email: string, password: string, orgId = DEFAULT_ORG_ID) =
     email: email.trim(),
     password,
   });
+
+/** Request a password reset link (enumeration-resistant: always returns success). */
+export const requestPasswordReset = (email: string, orgId = DEFAULT_ORG_ID) =>
+  apiPost<null>('/api/v1/auth/password-reset/request', {
+    org_id: orgId,
+    email: email.trim(),
+  });
+
+/** Redeem a reset token and set a new password. */
+export const confirmPasswordReset = (token: string, password: string) =>
+  apiPost<null>('/api/v1/auth/password-reset/confirm', { token, password });

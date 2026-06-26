@@ -1,0 +1,50 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PasswordResetConfirmForm from '../components/islands/PasswordResetConfirmForm.svelte';
+
+const description =
+  'Defina sua nova senha. Por segurança, suas outras sessões serão encerradas.';
+---
+
+<BaseLayout title="Redefinir senha" {description} noindex>
+  <section class="section">
+    <div class="container auth-shell">
+      <div class="auth-card card">
+        <img
+          src="/logo.png"
+          width="180"
+          height="120"
+          alt="DemocraciaBR"
+          class="logo"
+        />
+        <h1>Redefinir senha</h1>
+        <p class="muted">
+          Escolha uma senha forte (mínimo 8 caracteres). Vamos encerrar suas
+          outras sessões em seguida.
+        </p>
+        <PasswordResetConfirmForm client:load />
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .auth-shell {
+    max-width: 26rem;
+  }
+  .auth-card {
+    padding: 2rem;
+  }
+  .logo {
+    height: 44px;
+    width: auto;
+    display: block;
+    margin-bottom: 1rem;
+  }
+  h1 {
+    margin-bottom: 0.25rem;
+  }
+  .auth-card > .muted {
+    margin-bottom: 1.5rem;
+  }
+</style>

@@ -78,6 +78,9 @@
   <p class="alt muted">
     Ainda não tem conta? <a href="/cadastrar">Criar conta</a>
   </p>
+  <p class="alt muted">
+    <a href="/recuperar-senha">Esqueci minha senha</a>
+  </p>
 </form>
 
 <style>

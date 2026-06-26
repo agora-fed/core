@@ -33,6 +33,29 @@ export interface ProposalDto {
   created_at: string;
 }
 
+/** Authenticated citizen's own profile (returned by `GET /me`). Never carries CPF/e-mail. */
+export interface ProfileDto {
+  citizen_id: string;
+  org_id: string;
+  handle: string | null;
+  public_handle: string;
+  display_name: string | null;
+  bio: string | null;
+  avatar_url: string | null;
+  cover_url: string | null;
+  is_public: boolean;
+  verification_level: string;
+  created_at: string;
+}
+
+/** Editable subset of `ProfileDto` accepted by `PATCH /me`. */
+export interface ProfileUpdateDto {
+  display_name?: string;
+  bio?: string;
+  handle?: string;
+  is_public?: boolean;
+}
+
 /** Public view of a mandate / candidacy. */
 export interface MandateDto {
   id: string;

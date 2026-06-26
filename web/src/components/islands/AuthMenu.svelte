@@ -52,9 +52,9 @@
      users (SSG ships static HTML so the server has no idea who you are). -->
 {#if ready}
   {#if handle}
-    <span class="hi" title="Sua identidade pública nesta plataforma">
+    <a class="hi" href="/configuracoes" title="Abrir configurações do perfil">
       Olá <strong>{handle}</strong>
-    </span>
+    </a>
     <button class="btn btn-ghost" type="button" onclick={logout}>Sair</button>
   {:else}
     <a href="/entrar" class="btn btn-ghost">Entrar</a>
@@ -72,6 +72,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    text-decoration: none;
+    padding: 0.35rem 0.55rem;
+    border-radius: 8px;
+  }
+  .hi:hover {
+    background: var(--c-bg);
   }
   .hi strong {
     color: var(--c-navy);

@@ -1,0 +1,44 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import ColorBar from '../components/illustrations/ColorBar.astro';
+import ProfileForm from '../components/islands/ProfileForm.svelte';
+
+const description =
+  'Edite seu nome, sua bio, seu @ e decida se seu perfil é privado ou federado no fediverso.';
+---
+
+<BaseLayout title="Configurações" {description} noindex>
+  <section class="section">
+    <div class="container settings">
+      <header class="head">
+        <ColorBar class="head-bar" />
+        <h1>Configurações</h1>
+        <p class="muted lede">
+          O seu perfil nasce <strong>privado</strong>. Você pode escolher um
+          nome de usuário, escrever uma bio e, se quiser, tornar o perfil
+          público — aí ele é descoberto e seguido no fediverso.
+        </p>
+      </header>
+
+      <ProfileForm client:load />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .settings {
+    max-width: 38rem;
+  }
+  .head {
+    margin-bottom: 2rem;
+  }
+  .head-bar {
+    margin-bottom: 0.9rem;
+  }
+  h1 {
+    margin: 0 0 0.5rem;
+  }
+  .lede {
+    font-size: 1.05rem;
+  }
+</style>
