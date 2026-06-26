@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT citizen_id, password_hash FROM auth_credential WHERE org_id = $1 AND email = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "citizen_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "password_hash",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "67e24c7f90e2e53215e1f53e07847304e8b313e38737eef2496711c869a0e2da"
+}

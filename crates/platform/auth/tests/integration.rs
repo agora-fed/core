@@ -350,3 +350,93 @@ async fn second_login_reuses_citizen_and_issues_fresh_session() {
             .unwrap();
     assert_eq!(session_count, 2);
 }
+
+#[tokio::test]
+async fn register_then_login_with_cpf_and_password() {
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    let clock: Arc<dyn Clock> = Arc::new(FixedClock(now()));
+    let bus = Arc::new(RecordingEventBus::new());
+    let auth = build_auth(db.clone(), clock, bus as Arc<dyn EventBus>);
+
+    let email = format!("cidadao-{}@exemplo.br", Uuid::now_v7());
+    let s = auth
+        .register(org, &email, "senha-super-secreta", "529.982.247-25")
+        .await
+        .expect("register");
+
+    // credential stored: normalized CPF + algorithmic status; password Argon2id-hashed, never plain.
+    let (cpf, status): (String, String) =
+        sqlx::query_as("SELECT cpf, cpf_status FROM auth_credential WHERE citizen_id = $1")
+            .bind(s.citizen.as_uuid())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(cpf, "52998224725");
+    assert_eq!(status, "validated");
+    let hash: String =
+        sqlx::query_scalar("SELECT password_hash FROM auth_credential WHERE citizen_id = $1")
+            .bind(s.citizen.as_uuid())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert!(hash.starts_with("$argon2"));
+    assert!(!hash.contains("senha-super-secreta"));
+
+    // login: same citizen, fresh distinct session.
+    let s2 = auth
+        .login(org, &email, "senha-super-secreta")
+        .await
+        .expect("login");
+    assert_eq!(s2.citizen, s.citizen);
+    assert_ne!(s2.id, s.id);
+}
+
+#[tokio::test]
+async fn login_with_wrong_password_is_unauthorized() {
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    let clock: Arc<dyn Clock> = Arc::new(FixedClock(now()));
+    let bus = Arc::new(RecordingEventBus::new());
+    let auth = build_auth(db.clone(), clock, bus as Arc<dyn EventBus>);
+    let email = format!("x-{}@exemplo.br", Uuid::now_v7());
+    auth.register(org, &email, "senha-correta-123", "529.982.247-25")
+        .await
+        .expect("register");
+    let err = auth.login(org, &email, "senha-errada").await.unwrap_err();
+    assert!(matches!(err, dsoc_core::Error::Unauthorized));
+}
+
+#[tokio::test]
+async fn duplicate_cpf_is_conflict_and_rolls_back() {
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    let clock: Arc<dyn Clock> = Arc::new(FixedClock(now()));
+    let bus = Arc::new(RecordingEventBus::new());
+    let auth = build_auth(db.clone(), clock, bus as Arc<dyn EventBus>);
+    let email = format!("dup-{}@exemplo.br", Uuid::now_v7());
+    auth.register(org, &email, "senha-correta-123", "529.982.247-25")
+        .await
+        .expect("first");
+    let other = format!("dup2-{}@exemplo.br", Uuid::now_v7());
+    let err = auth
+        .register(org, &other, "senha-correta-123", "529.982.247-25")
+        .await
+        .unwrap_err();
+    assert!(matches!(err, dsoc_core::Error::Conflict(_)));
+}
+
+#[tokio::test]
+async fn invalid_cpf_is_rejected() {
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    let clock: Arc<dyn Clock> = Arc::new(FixedClock(now()));
+    let bus = Arc::new(RecordingEventBus::new());
+    let auth = build_auth(db.clone(), clock, bus as Arc<dyn EventBus>);
+    let email = format!("bad-{}@exemplo.br", Uuid::now_v7());
+    let err = auth
+        .register(org, &email, "senha-correta-123", "111.111.111-11")
+        .await
+        .unwrap_err();
+    assert!(matches!(err, dsoc_core::Error::Validation(_)));
+}

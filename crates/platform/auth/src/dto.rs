@@ -105,3 +105,27 @@ mod tests {
         assert_eq!(dto.citizen_id, citizen.as_uuid());
     }
 }
+
+/// Registration: e-mail + senha + CPF (auth verified by CPF, not an external IdP).
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
+pub struct RegisterRequest {
+    /// Organization/tenant the citizen registers under.
+    pub org_id: uuid::Uuid,
+    /// Contact e-mail (unique per org).
+    pub email: String,
+    /// Password (>= 8 chars; stored Argon2id-hashed, never plaintext).
+    pub password: String,
+    /// Brazilian CPF (any punctuation; validated by check digits).
+    pub cpf: String,
+}
+
+/// Login with e-mail + senha.
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
+pub struct LoginRequest {
+    /// Organization/tenant.
+    pub org_id: uuid::Uuid,
+    /// Registered e-mail.
+    pub email: String,
+    /// Password.
+    pub password: String,
+}

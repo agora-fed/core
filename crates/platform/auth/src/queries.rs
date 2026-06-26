@@ -230,3 +230,81 @@ pub(crate) async fn verification_history<'e, E: PgExecutor<'e>>(
     .await?;
     Ok(rows)
 }
+
+/// Minimal credential lookup row for login.
+#[derive(Debug)]
+pub(crate) struct CredentialRow {
+    pub citizen_id: Uuid,
+    pub password_hash: String,
+}
+
+/// Insert a credential-authenticated citizen (no external OIDC subject).
+pub(crate) async fn insert_credential_citizen<'e, E: PgExecutor<'e>>(
+    ex: E,
+    id: Uuid,
+    org: Uuid,
+    level: &str,
+    now: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "INSERT INTO citizen (id, org_id, oidc_subject, verification_level, created_at) \
+         VALUES ($1, $2, NULL, $3, $4)",
+        id,
+        org,
+        level,
+        now
+    )
+    .execute(ex)
+    .await?;
+    Ok(())
+}
+
+/// Insert the e-mail/senha/CPF credential for a citizen.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn insert_credential<'e, E: PgExecutor<'e>>(
+    ex: E,
+    id: Uuid,
+    citizen: Uuid,
+    org: Uuid,
+    email: &str,
+    password_hash: &str,
+    cpf: &str,
+    cpf_status: &str,
+    now: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "INSERT INTO auth_credential \
+         (id, citizen_id, org_id, email, password_hash, cpf, cpf_status, created_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        id,
+        citizen,
+        org,
+        email,
+        password_hash,
+        cpf,
+        cpf_status,
+        now
+    )
+    .execute(ex)
+    .await?;
+    Ok(())
+}
+
+/// Look up a credential by e-mail within an org (for login).
+pub(crate) async fn find_credential_by_email<'e, E: PgExecutor<'e>>(
+    ex: E,
+    org: Uuid,
+    email: &str,
+) -> Result<Option<CredentialRow>, sqlx::Error> {
+    let row = sqlx::query!(
+        "SELECT citizen_id, password_hash FROM auth_credential WHERE org_id = $1 AND email = $2",
+        org,
+        email
+    )
+    .fetch_optional(ex)
+    .await?;
+    Ok(row.map(|r| CredentialRow {
+        citizen_id: r.citizen_id,
+        password_hash: r.password_hash,
+    }))
+}

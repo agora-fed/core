@@ -23,7 +23,7 @@ use dsoc_core::ids::OrgId;
 use dsoc_core::{Error, Result};
 
 use crate::domain::{KeySource, TokenValidator, DEFAULT_SESSION_TTL_SECS, IDENTITY_DEPENDENCY};
-use crate::dto::{CreateSessionRequest, MeDto, SessionDto};
+use crate::dto::{CreateSessionRequest, LoginRequest, MeDto, RegisterRequest, SessionDto};
 use crate::service::ZitadelAuth;
 
 /// Build the routed service surface. Reads sovereign-issuer configuration from the environment
@@ -32,6 +32,8 @@ use crate::service::ZitadelAuth;
 pub fn routes(state: AppState) -> Router<()> {
     let svc = build_service(&state);
     Router::new()
+        .route("/auth/register", post(register))
+        .route("/auth/login", post(login))
         .route("/auth/session", post(create_session))
         .route("/auth/me", get(me))
         .with_state(svc)
@@ -92,6 +94,35 @@ pub fn authorization(
 #[derive(Debug, Deserialize)]
 struct MeQuery {
     org_id: Uuid,
+}
+
+/// `POST /auth/register` — sovereign sign-up with e-mail + senha + CPF (ADR-0008).
+async fn register(
+    State(svc): State<Arc<ZitadelAuth>>,
+    Json(req): Json<RegisterRequest>,
+) -> Response {
+    let org = OrgId::from_uuid(req.org_id);
+    match svc.register(org, &req.email, &req.password, &req.cpf).await {
+        Ok(session) => (
+            StatusCode::CREATED,
+            Json(ApiResponse::ok(SessionDto::from(session))),
+        )
+            .into_response(),
+        Err(error) => error_response(&error),
+    }
+}
+
+/// `POST /auth/login` — authenticate with e-mail + senha.
+async fn login(State(svc): State<Arc<ZitadelAuth>>, Json(req): Json<LoginRequest>) -> Response {
+    let org = OrgId::from_uuid(req.org_id);
+    match svc.login(org, &req.email, &req.password).await {
+        Ok(session) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(SessionDto::from(session))),
+        )
+            .into_response(),
+        Err(error) => error_response(&error),
+    }
 }
 
 async fn create_session(

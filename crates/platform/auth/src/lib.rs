@@ -19,6 +19,9 @@
 
 #![forbid(unsafe_code)]
 
+pub use dsoc_core::Error;
+
+pub mod credential;
 pub mod domain;
 pub mod dto;
 pub mod events;
@@ -26,6 +29,7 @@ pub mod http;
 pub mod queries;
 pub mod service;
 
+pub use credential::{AlgorithmicCpfVerifier, Cpf, CpfStatus, CpfVerifier};
 pub use domain::{
     KeySource, StaticKeySource, TokenValidator, ValidatedToken, DEFAULT_SESSION_TTL_SECS,
 };

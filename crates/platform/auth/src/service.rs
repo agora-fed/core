@@ -79,6 +79,8 @@ pub struct ZitadelAuth {
     bus: Arc<dyn EventBus>,
     validator: TokenValidator,
     session_ttl_secs: i64,
+    /// Pluggable CPF verifier (algorithmic now; Serpro/KYC later) — ADR-0008.
+    cpf_verifier: Arc<dyn crate::credential::CpfVerifier>,
 }
 
 impl fmt::Debug for ZitadelAuth {
@@ -101,6 +103,15 @@ fn map_sqlx(error: sqlx::Error) -> Error {
     }
 }
 
+/// Normalize and minimally validate an e-mail (trim + lowercase; must look like an address).
+fn normalize_email(email: &str) -> Result<String> {
+    let e = email.trim().to_lowercase();
+    if e.len() < 3 || !e.contains('@') || !e.split('@').nth(1).is_some_and(|d| d.contains('.')) {
+        return Err(Error::Validation("e-mail inválido".to_string()));
+    }
+    Ok(e)
+}
+
 impl ZitadelAuth {
     /// Construct the service from its injected collaborators.
     #[must_use]
@@ -117,7 +128,122 @@ impl ZitadelAuth {
             bus,
             validator,
             session_ttl_secs,
+            cpf_verifier: Arc::new(crate::credential::AlgorithmicCpfVerifier),
         }
+    }
+
+    /// Register a citizen with **e-mail + senha + CPF** (sovereign credential auth — ADR-0008). The
+    /// CPF is validated (check digits) and its assurance recorded; the password is Argon2id-hashed;
+    /// a session is issued. The whole flow runs in one transaction.
+    ///
+    /// # Errors
+    /// [`Error::Validation`] for a bad e-mail/senha/CPF; [`Error::Conflict`] if the e-mail or CPF is
+    /// already registered in the org.
+    pub async fn register(
+        &self,
+        org: OrgId,
+        email: &str,
+        password: &str,
+        cpf_raw: &str,
+    ) -> Result<IssuedSession> {
+        let now = self.clock.now();
+        let email = normalize_email(email)?;
+        let cpf = crate::credential::Cpf::parse(cpf_raw)?;
+        let password_hash = crate::credential::hash_password(password)?;
+        let cpf_status = self.cpf_verifier.verify(&cpf).await;
+        let level = match cpf_status {
+            crate::credential::CpfStatus::Verified => VerificationLevel::Strong,
+            _ => VerificationLevel::Email,
+        };
+
+        let mut tx = self.db.begin().await.map_err(map_sqlx)?;
+        let citizen = CitizenId::new();
+        queries::insert_credential_citizen(
+            &mut *tx,
+            citizen.as_uuid(),
+            org.as_uuid(),
+            domain::level_as_str(level),
+            now,
+        )
+        .await
+        .map_err(map_sqlx)?;
+        queries::insert_credential(
+            &mut *tx,
+            Uuid::now_v7(),
+            citizen.as_uuid(),
+            org.as_uuid(),
+            &email,
+            &password_hash,
+            cpf.as_str(),
+            cpf_status.as_str(),
+            now,
+        )
+        .await
+        .map_err(map_sqlx)?;
+
+        let session = self
+            .persist_session(&mut tx, org, citizen, &email, now)
+            .await?;
+        tx.commit().await.map_err(map_sqlx)?;
+        Ok(session)
+    }
+
+    /// Authenticate with **e-mail + senha** and issue a session.
+    ///
+    /// # Errors
+    /// [`Error::Unauthorized`] for an unknown e-mail or a wrong password.
+    pub async fn login(&self, org: OrgId, email: &str, password: &str) -> Result<IssuedSession> {
+        let now = self.clock.now();
+        let email = normalize_email(email)?;
+        let cred = queries::find_credential_by_email(&self.db, org.as_uuid(), &email)
+            .await
+            .map_err(map_sqlx)?
+            .ok_or(Error::Unauthorized)?;
+        if !crate::credential::verify_password(password, &cred.password_hash) {
+            return Err(Error::Unauthorized);
+        }
+        let citizen = CitizenId::from_uuid(cred.citizen_id);
+        let mut tx = self.db.begin().await.map_err(map_sqlx)?;
+        let session = self
+            .persist_session(&mut tx, org, citizen, &email, now)
+            .await?;
+        tx.commit().await.map_err(map_sqlx)?;
+        Ok(session)
+    }
+
+    /// Persist a session row (within an open tx) and return the issued session.
+    async fn persist_session(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        org: OrgId,
+        citizen: CitizenId,
+        email: &str,
+        now: DateTime<Utc>,
+    ) -> Result<IssuedSession> {
+        let subject = format!("cred:{email}");
+        let handle = domain::public_handle(citizen);
+        let session_id = Uuid::now_v7();
+        let expires_at = domain::compute_expiry(now, self.session_ttl_secs);
+        queries::insert_session(
+            &mut **tx,
+            session_id,
+            org.as_uuid(),
+            citizen.as_uuid(),
+            &subject,
+            now,
+            expires_at,
+            &handle,
+        )
+        .await
+        .map_err(map_sqlx)?;
+        Ok(IssuedSession {
+            id: session_id,
+            citizen,
+            oidc_subject: subject,
+            issued_at: now,
+            expires_at,
+            public_handle: handle,
+        })
     }
 
     /// Exchange a validated OIDC token for a server-issued session, provisioning the citizen on
