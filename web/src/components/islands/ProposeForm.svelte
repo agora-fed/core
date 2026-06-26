@@ -1,6 +1,8 @@
 <script lang="ts">
   // Propose form — create a civic proposal directed at a specific mandate.
-  import { apiPost, DEFAULT_ORG_ID } from '../../lib/api';
+  // The mandate is selected from a picker so the user never has to type a UUID by hand.
+  import { onMount } from 'svelte';
+  import { apiPost, DEFAULT_ORG_ID, getMandates, type MandateDto } from '../../lib/api';
   import type { ProposalDto } from '../../lib/types';
 
   let title = $state('');
@@ -11,6 +13,10 @@
   let status = $state<{ kind: 'error' | 'ok' | 'info'; text: string } | null>(
     null,
   );
+
+  let mandates = $state<MandateDto[]>([]);
+  let mandatesLoading = $state(true);
+  let mandatesError = $state<string | null>(null);
 
   let titleValid = $derived(title.trim().length >= 8);
   let bodyValid = $derived(body.trim().length >= 20);
@@ -24,6 +30,18 @@
       return null;
     }
   }
+
+  onMount(async () => {
+    const res = await getMandates();
+    mandatesLoading = false;
+    if (res.ok && res.data) {
+      mandates = res.data;
+      if (mandates.length === 1) mandateId = mandates[0].id;
+    } else {
+      mandatesError =
+        res.error ?? 'Não foi possível carregar a lista de políticos.';
+    }
+  });
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();
@@ -93,17 +111,31 @@
 
   <div class="row">
     <div class="field">
-      <label for="p-mandate">Mandato destinatário (ID)</label>
-      <input
-        id="p-mandate"
-        class="input"
-        type="text"
-        bind:value={mandateId}
-        aria-invalid={mandateId.length > 0 && !mandateValid}
-        placeholder="00000000-0000-0000-0000-000000000000"
-      />
-      {#if mandateId.length > 0 && !mandateValid}
-        <p class="hint hint-error">Informe um identificador válido (UUID).</p>
+      <label for="p-mandate">Político destinatário</label>
+      {#if mandatesLoading}
+        <p class="hint muted">Carregando lista de políticos…</p>
+      {:else if mandatesError}
+        <p class="hint hint-error">{mandatesError}</p>
+      {:else if mandates.length === 0}
+        <p class="hint muted">
+          Ainda não há políticos cadastrados nesta plataforma.
+        </p>
+      {:else}
+        <select
+          id="p-mandate"
+          class="input"
+          bind:value={mandateId}
+          aria-invalid={mandateId.length > 0 && !mandateValid}
+        >
+          <option value="" disabled>Escolha um político…</option>
+          {#each mandates as m (m.id)}
+            <option value={m.id}>
+              {m.display_name} — {m.office}{m.is_candidate
+                ? ' (candidatura)'
+                : ''}
+            </option>
+          {/each}
+        </select>
       {/if}
     </div>
     <div class="field narrow">

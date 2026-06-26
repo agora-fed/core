@@ -1,25 +1,31 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import ColorBar from '../../components/illustrations/ColorBar.astro';
-import { getScorecards, getMandate, DEFAULT_ORG_ID } from '../../lib/api';
+import { getMandates, getScorecards, DEFAULT_ORG_ID } from '../../lib/api';
 import { responseRate, formatLatency } from '../../lib/format';
 import type { MandateDto, ScorecardDto } from '../../lib/types';
 
-// Static (SSG): data is fetched at build time and rendered to indexable HTML.
+// Static (SSG): the directory is anchored on `mandates` (every politician shows up, even with
+// no activity yet), and `scorecards` is merged in when present so people who have already been
+// graded carry their stats. Anchoring on scorecards alone hides freshly-seated politicians until
+// the first SLA runs, which made the page look empty on a fresh deploy.
 const orgId = DEFAULT_ORG_ID;
-const cards = await getScorecards(orgId);
+const [mandatesRes, scorecardsRes] = await Promise.all([
+  getMandates(orgId),
+  getScorecards(orgId),
+]);
 
-// Enrich each scorecard with its mandate (display name / office) in parallel.
-type Row = { card: ScorecardDto; mandate: MandateDto | null };
-let rows: Row[] = [];
-if (cards.ok && cards.data) {
-  rows = await Promise.all(
-    cards.data.map(async (card) => {
-      const m = await getMandate(card.mandate_id);
-      return { card, mandate: m.ok ? m.data : null };
-    }),
-  );
+const cardsByMandate = new Map<string, ScorecardDto>();
+if (scorecardsRes.ok && scorecardsRes.data) {
+  for (const c of scorecardsRes.data) cardsByMandate.set(c.mandate_id, c);
 }
+
+type Row = { mandate: MandateDto; card: ScorecardDto | null };
+const rows: Row[] =
+  mandatesRes.ok && mandatesRes.data
+    ? mandatesRes.data.map((m) => ({ mandate: m, card: cardsByMandate.get(m.id) ?? null }))
+    : [];
+const cards = mandatesRes; // preserves the existing error-state markup below
 
 const description =
   'Placar público de responsabilidade: quantas demandas cada político respondeu, quantas ignorou e em quanto tempo respondeu. Transparência que não apaga.';
@@ -32,7 +38,8 @@ const jsonLd = {
   description,
 };
 
-function badge(card: ScorecardDto) {
+function badge(card: ScorecardDto | null) {
+  if (!card) return { cls: 'badge-pending', label: 'Sem demandas ainda' };
   const rate = responseRate(card.answered, card.ignored);
   if (rate === null) return { cls: 'badge-pending', label: 'Sem registros' };
   if (rate >= 70) return { cls: 'badge-answered', label: `${rate}% responde` };
@@ -79,34 +86,32 @@ function badge(card: ScorecardDto) {
       {
         rows.length > 0 && (
           <ul class="cards grid grid-3">
-            {rows.map(({ card, mandate }) => {
+            {rows.map(({ mandate, card }) => {
               const b = badge(card);
-              const rate = responseRate(card.answered, card.ignored);
+              const rate = card ? responseRate(card.answered, card.ignored) : null;
               return (
                 <li class="card pol">
-                  <a class="pol-link" href={`/politicos/${card.mandate_id}`}>
+                  <a class="pol-link" href={`/politicos/${mandate.id}`}>
                     <div class="pol-top">
-                      <h2 class="pol-name">
-                        {mandate?.display_name ?? 'Mandato'}
-                      </h2>
+                      <h2 class="pol-name">{mandate.display_name}</h2>
                       <span class={`badge ${b.cls}`}>{b.label}</span>
                     </div>
                     <p class="pol-office muted">
-                      {mandate?.office ?? 'Cargo não informado'}
-                      {mandate?.is_candidate ? ' · candidatura' : ''}
+                      {mandate.office}
+                      {mandate.is_candidate ? ' · candidatura' : ''}
                     </p>
                     <dl class="stats">
                       <div>
                         <dt>Respondidas</dt>
-                        <dd class="ok">{card.answered}</dd>
+                        <dd class="ok">{card?.answered ?? 0}</dd>
                       </div>
                       <div>
                         <dt>Ignoradas</dt>
-                        <dd class="bad">{card.ignored}</dd>
+                        <dd class="bad">{card?.ignored ?? 0}</dd>
                       </div>
                       <div>
                         <dt>Tempo médio</dt>
-                        <dd>{formatLatency(card.median_response_hours)}</dd>
+                        <dd>{formatLatency(card?.median_response_hours ?? null)}</dd>
                       </div>
                     </dl>
                     {rate !== null && (

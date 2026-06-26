@@ -1,0 +1,126 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import ColorBar from '../components/illustrations/ColorBar.astro';
+
+const description =
+  'Conta criada com sucesso. Aqui está o que você pode fazer agora na DemocraciaBR.';
+---
+
+<BaseLayout title="Bem-vinda" {description} noindex>
+  <section class="section">
+    <div class="container welcome">
+      <header class="head">
+        <ColorBar class="head-bar" />
+        <h1>Bem-vinda à <strong>DemocraciaBR</strong>.</h1>
+        <p class="lede muted">
+          Sua conta foi criada. A plataforma existe para transformar a sua
+          demanda em <strong>responsabilidade pública</strong> — um pedido
+          ignorado fica registrado para sempre.
+        </p>
+      </header>
+
+      <div class="grid grid-3 cards">
+        <a class="card cta" href="/politicos">
+          <span class="step">1</span>
+          <h2>Conheça os políticos</h2>
+          <p class="muted">
+            Veja o placar de quem responde e quem ignora as demandas dos
+            cidadãos.
+          </p>
+          <span class="go">Ver placar →</span>
+        </a>
+
+        <a class="card cta" href="/propostas">
+          <span class="step">2</span>
+          <h2>Apoie uma proposta</h2>
+          <p class="muted">
+            Encontre uma proposta que você concorda e some seu apoio. Apoio
+            é votar com seu nome.
+          </p>
+          <span class="go">Ver propostas →</span>
+        </a>
+
+        <a class="card cta" href="/propostas#propor">
+          <span class="step">3</span>
+          <h2>Faça sua proposta</h2>
+          <p class="muted">
+            Escreva uma demanda dirigida a um mandato. Ao cruzar o limiar
+            de apoios, o relógio do prazo começa a correr.
+          </p>
+          <span class="go">Propor agora →</span>
+        </a>
+      </div>
+
+      <p class="back muted">
+        <a href="/">Voltar à página inicial</a>
+      </p>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .welcome {
+    max-width: 60rem;
+  }
+  .head {
+    max-width: 44rem;
+    margin-bottom: 2.25rem;
+  }
+  .head-bar {
+    margin-bottom: 0.9rem;
+  }
+  h1 {
+    font-size: clamp(1.6rem, 1.2rem + 1.6vw, 2.2rem);
+    margin: 0 0 0.6rem;
+  }
+  .lede {
+    font-size: 1.08rem;
+  }
+  .cards {
+    margin: 0 0 2rem;
+  }
+  .cta {
+    display: block;
+    padding: 1.5rem 1.4rem 1.25rem;
+    position: relative;
+    color: inherit;
+    text-decoration: none;
+    transition:
+      transform 120ms ease,
+      box-shadow 120ms ease;
+  }
+  .cta:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+  }
+  .step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.9rem;
+    height: 1.9rem;
+    border-radius: 999px;
+    background: var(--c-green-soft);
+    color: var(--c-green-dark);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 0.8rem;
+  }
+  .cta h2 {
+    font-size: 1.12rem;
+    margin: 0 0 0.4rem;
+  }
+  .cta .muted {
+    margin: 0 0 1rem;
+    font-size: 0.95rem;
+  }
+  .go {
+    color: var(--c-green-dark);
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+  .back {
+    text-align: center;
+    margin: 0;
+  }
+</style>

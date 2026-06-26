@@ -1,5 +1,7 @@
 ---
 // Site header with the DemocraciaBR logo and primary navigation.
+import AuthMenu from './islands/AuthMenu.svelte';
+
 const path = Astro.url.pathname;
 const isActive = (href: string) =>
   href === '/' ? path === '/' : path.startsWith(href);
@@ -39,8 +41,7 @@ const links = [
     </nav>
 
     <div class="actions">
-      <a href="/entrar" class="btn btn-ghost">Entrar</a>
-      <a href="/cadastrar" class="btn btn-primary">Criar conta</a>
+      <AuthMenu client:load />
     </div>
   </div>
 </header>

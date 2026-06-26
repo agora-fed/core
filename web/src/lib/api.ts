@@ -12,6 +12,8 @@ import type {
   SlaDto,
 } from './types';
 
+export type { MandateDto };
+
 /** Default to a RELATIVE base (same origin that served the page) so the API call always reaches the
  *  gateway that serves this site — no CORS, no IPv6/host mismatch. Override via PUBLIC_API_BASE only
  *  if the front-end is served from a different origin than the API. */
@@ -141,6 +143,11 @@ export const getScorecard = (mandateId: string) =>
 
 export const getMandate = (mandateId: string) =>
   apiGet<MandateDto>(`/api/v1/mandates/${encodeURIComponent(mandateId)}`);
+
+/** Directory of mandates in an org — drives the "Propor" form's picker so the user does not have
+ *  to type a UUID by hand. Public read. */
+export const getMandates = (orgId = DEFAULT_ORG_ID, limit = 50) =>
+  apiGet<MandateDto[]>(`/api/v1/mandates${orgQuery(orgId, `&limit=${limit}`)}`);
 
 export const getPromises = (mandateId: string) =>
   apiGet<PromiseDto[]>(

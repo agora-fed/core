@@ -2,10 +2,6 @@
   // Login: e-mail + senha. On success the gateway sets a session cookie.
   import { login } from '../../lib/api';
 
-  interface SessionData {
-    citizen_id?: string;
-  }
-
   let email = $state('');
   let password = $state('');
   let busy = $state(false);
@@ -27,6 +23,9 @@
       if (res.data?.citizen_id) {
         try {
           localStorage.setItem('dsoc_citizen', res.data.citizen_id);
+          if (res.data.public_handle) {
+            localStorage.setItem('dsoc_handle', res.data.public_handle);
+          }
         } catch {
           /* storage may be blocked; session cookie still set */
         }

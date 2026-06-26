@@ -3,10 +3,6 @@
   import { register } from '../../lib/api';
   import { formatCpf, isValidCpf, onlyDigits } from '../../lib/cpf';
 
-  interface SessionData {
-    citizen_id?: string;
-  }
-
   let email = $state('');
   let password = $state('');
   let cpf = $state('');
@@ -37,11 +33,14 @@
       if (res.data?.citizen_id) {
         try {
           localStorage.setItem('dsoc_citizen', res.data.citizen_id);
+          if (res.data.public_handle) {
+            localStorage.setItem('dsoc_handle', res.data.public_handle);
+          }
         } catch {
           /* storage may be blocked; session cookie still set */
         }
       }
-      window.location.href = '/';
+      window.location.href = '/bem-vinda';
     } else {
       serverError =
         res.error?.message ??
