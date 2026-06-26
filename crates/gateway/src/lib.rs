@@ -8,6 +8,7 @@
 
 use axum::{routing::get, Json, Router};
 use dsoc_app::AppState;
+use tower_http::services::ServeDir;
 
 async fn health() -> Json<serde_json::Value> {
     Json(serde_json::json!({ "status": "ok", "service": "dsoc-gateway" }))
@@ -48,10 +49,16 @@ pub fn api_router(state: AppState) -> Router {
         .merge(dsoc_consequence::routes(state.clone()))
         .merge(dsoc_scorecard::routes(state.clone()));
 
+    // Serve the static DemocraciaBR front-end (Astro SSG, ADR-0009) at the same origin as the API
+    // (no CORS). WEB_ROOT defaults to /srv/web (baked into the image); a missing dir just 404s.
+    let web_root = std::env::var("WEB_ROOT").unwrap_or_else(|_| "/srv/web".to_string());
+    let static_site = ServeDir::new(web_root).append_index_html_on_directories(true);
+
     Router::new()
         .route("/health", get(health))
         .route("/openapi.json", get(openapi))
         .nest("/api/v1", api)
+        .fallback_service(static_site)
 }
 
 #[cfg(test)]
