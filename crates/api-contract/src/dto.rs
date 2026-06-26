@@ -84,6 +84,24 @@ pub struct ProfileDto {
     pub created_at: DateTime<Utc>,
 }
 
+/// One active (or expired-but-not-cleaned) session of the authenticated citizen, returned by
+/// `GET /me/sessions`. Carries no credentials — just the opaque session id (which the user can
+/// then revoke), the timestamps, and a `current` flag so the UI can clearly mark "this device".
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct SessionInfoDto {
+    /// Opaque session id (usable as the path parameter on `DELETE /me/sessions/{id}`).
+    pub id: Uuid,
+    /// When this session was issued.
+    pub issued_at: DateTime<Utc>,
+    /// When this session expires (or expired — sessions don't auto-disappear; the cleanup happens
+    /// at next use or via this list-and-revoke surface).
+    pub expires_at: DateTime<Utc>,
+    /// True iff this is the session the request itself was made on. The UI uses it to disable
+    /// the revoke button (revoking your current session would be the same as logging out, which
+    /// has its own path), or to add an "(este dispositivo)" tag.
+    pub current: bool,
+}
+
 /// Editable subset of [`ProfileDto`] accepted by `PATCH /me`. Every field is optional so the
 /// caller can patch one attribute at a time; `None` means "leave as-is". To CLEAR an optional
 /// field (e.g. wipe the bio), send `Some("")` — the service interprets empty strings as `NULL`.

@@ -337,6 +337,59 @@ pub async fn delete_session<'e, E: PgExecutor<'e>>(
     Ok(result.rows_affected())
 }
 
+/// One session row as listed for the citizen on `GET /me/sessions`. Carries no credentials —
+/// the session id IS the credential (the cookie) so we surface only what the UI needs to render
+/// (timestamps) and what the revoke surface needs (the id).
+#[derive(Debug, Clone)]
+pub(crate) struct SessionListRow {
+    pub id: Uuid,
+    pub issued_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+}
+
+/// List the live (non-expired) sessions of a citizen, newest first. Expired rows are excluded so
+/// the surface matches what is actually usable; cleanup of dead rows is a separate concern
+/// (could be added to the SLA sweeper if it becomes a volume issue).
+pub(crate) async fn list_sessions_for_citizen<'e, E: PgExecutor<'e>>(
+    ex: E,
+    citizen_id: Uuid,
+    now: DateTime<Utc>,
+) -> Result<Vec<SessionListRow>, sqlx::Error> {
+    let rows = sqlx::query_as!(
+        SessionListRow,
+        r#"
+        SELECT id, issued_at, expires_at
+          FROM auth_session
+         WHERE citizen_id = $1 AND expires_at > $2
+         ORDER BY issued_at DESC, id DESC
+        "#,
+        citizen_id,
+        now,
+    )
+    .fetch_all(ex)
+    .await?;
+    Ok(rows)
+}
+
+/// Revoke a session BUT ONLY if it belongs to the given citizen (the WHERE clause is the
+/// security boundary — without `AND citizen_id = $2` a logged-in user could revoke other users'
+/// sessions by guessing their ids). Returns the number of rows affected so the service can
+/// distinguish "deleted" from "wasn't yours / doesn't exist".
+pub(crate) async fn delete_session_for_citizen<'e, E: PgExecutor<'e>>(
+    ex: E,
+    session_id: Uuid,
+    citizen_id: Uuid,
+) -> Result<u64, sqlx::Error> {
+    let r = sqlx::query!(
+        "DELETE FROM auth_session WHERE id = $1 AND citizen_id = $2",
+        session_id,
+        citizen_id,
+    )
+    .execute(ex)
+    .await?;
+    Ok(r.rows_affected())
+}
+
 /// The full profile row read for `GET /me` / federation Actor materialization (ADR-0010). Carries
 /// no credentials — CPF and password hash live in `auth_credential` and never escape the service
 /// boundary, regardless of how the caller queries.

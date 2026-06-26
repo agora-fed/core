@@ -12,10 +12,11 @@
 
 use std::sync::Arc;
 
-use dsoc_api_contract::ProfileDto;
+use dsoc_api_contract::{ProfileDto, SessionInfoDto};
 use dsoc_core::ids::{CitizenId, OrgId};
-use dsoc_core::{Error, Result, Storage};
+use dsoc_core::{Clock, Error, Result, Storage};
 use dsoc_db::Db;
+use uuid::Uuid;
 
 use crate::domain;
 use crate::media::{self, MediaKind};
@@ -37,6 +38,7 @@ pub struct ProfileService {
     db: Db,
     media_base_url: String,
     storage: Option<Arc<dyn Storage>>,
+    clock: Arc<dyn Clock>,
 }
 
 impl std::fmt::Debug for ProfileService {
@@ -56,6 +58,7 @@ impl ProfileService {
         db: Db,
         media_base_url: impl Into<String>,
         storage: Option<Arc<dyn Storage>>,
+        clock: Arc<dyn Clock>,
     ) -> Self {
         let raw = media_base_url.into();
         let trimmed = raw.trim_end_matches('/').to_owned();
@@ -63,6 +66,7 @@ impl ProfileService {
             db,
             media_base_url: trimmed,
             storage,
+            clock,
         }
     }
 
@@ -73,7 +77,72 @@ impl ProfileService {
     #[must_use]
     pub fn from_state(state: &dsoc_app::AppState) -> Self {
         let base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
-        Self::new(state.db.clone(), base, state.storage.clone())
+        Self::new(
+            state.db.clone(),
+            base,
+            state.storage.clone(),
+            state.clock.clone(),
+        )
+    }
+
+    /// List the caller's live sessions. `current_session_id`, when present, is the session id
+    /// the inbound request carried (i.e. "this device"); the DTO flag lets the UI mark it and
+    /// disable the revoke button for it (revoking your current cookie is just logout).
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on persistence failure.
+    pub async fn list_sessions(
+        &self,
+        caller: CitizenId,
+        current_session_id: Option<Uuid>,
+    ) -> Result<Vec<SessionInfoDto>> {
+        let now = self.clock.now();
+        let rows = queries::list_sessions_for_citizen(&self.db, caller.as_uuid(), now)
+            .await
+            .map_err(map_sqlx)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| SessionInfoDto {
+                id: r.id,
+                issued_at: r.issued_at,
+                expires_at: r.expires_at,
+                current: current_session_id == Some(r.id),
+            })
+            .collect())
+    }
+
+    /// Revoke one of the caller's sessions. The DB query is gated by `citizen_id` so a logged-in
+    /// user cannot guess another user's session id and revoke it. Refusing to revoke the
+    /// CURRENT session keeps the surface non-confusing (the user should call `POST /auth/logout`
+    /// for that — different semantics: logout clears the cookie too).
+    ///
+    /// # Errors
+    /// [`Error::Validation`] if `session_id == current_session_id` (call logout instead);
+    /// [`Error::NotFound`] if the session is not the caller's (the surface conflates "not
+    /// yours" with "doesn't exist" to avoid leaking which it was);
+    /// [`Error::Storage`] on persistence failure.
+    pub async fn revoke_session(
+        &self,
+        caller: CitizenId,
+        session_id: Uuid,
+        current_session_id: Option<Uuid>,
+    ) -> Result<()> {
+        if current_session_id == Some(session_id) {
+            return Err(Error::Validation(
+                "use POST /auth/logout para encerrar este dispositivo".to_owned(),
+            ));
+        }
+        let affected = queries::delete_session_for_citizen(
+            &self.db,
+            session_id,
+            caller.as_uuid(),
+        )
+        .await
+        .map_err(map_sqlx)?;
+        if affected == 0 {
+            return Err(Error::NotFound("session not found".to_owned()));
+        }
+        Ok(())
     }
 
     /// Upload + persist the caller's avatar. Returns the refreshed profile.

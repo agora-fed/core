@@ -47,6 +47,8 @@ pub fn routes(state: AppState) -> Router<()> {
         .route("/me", get(get_me_profile).patch(patch_me_profile))
         .route("/me/avatar", post(post_me_avatar))
         .route("/me/cover", post(post_me_cover))
+        .route("/me/sessions", get(list_me_sessions))
+        .route("/me/sessions/{session_id}", axum::routing::delete(delete_me_session))
         .route("/auth/password-reset/request", post(password_reset_request))
         .route("/auth/password-reset/confirm", post(password_reset_confirm))
         // Multipart body cap: avatar/cover code re-validates at 5 MiB, but we cap the framework
@@ -561,6 +563,50 @@ async fn read_file_part(
         }
     }
     Ok(None)
+}
+
+/// `GET /me/sessions` — list the caller's live sessions, with the one that issued THIS request
+/// flagged as `current` so the UI can mark "(este dispositivo)" and disable revoke on it.
+async fn list_me_sessions(
+    State(state): State<AppState>,
+    caller: CallerId,
+    headers: HeaderMap,
+) -> Response {
+    let svc = ProfileService::from_state(&state);
+    let current = current_session_id_from_headers(&headers);
+    match svc.list_sessions(caller.citizen, current).await {
+        Ok(sessions) => (StatusCode::OK, Json(ApiResponse::ok(sessions))).into_response(),
+        Err(error) => error_response(&error),
+    }
+}
+
+/// `DELETE /me/sessions/{session_id}` — revoke a session by id. Refuses to revoke the caller's
+/// CURRENT session (use `POST /auth/logout` for that — it also clears the cookie). The DB
+/// surface is gated by `citizen_id` so id-guessing across users yields a 404, never a successful
+/// cross-user revoke.
+async fn delete_me_session(
+    State(state): State<AppState>,
+    caller: CallerId,
+    headers: HeaderMap,
+    axum::extract::Path(session_id): axum::extract::Path<Uuid>,
+) -> Response {
+    let svc = ProfileService::from_state(&state);
+    let current = current_session_id_from_headers(&headers);
+    match svc.revoke_session(caller.citizen, session_id, current).await {
+        Ok(()) => (StatusCode::NO_CONTENT, Json(ApiResponse::<()>::ok(()))).into_response(),
+        Err(error) => error_response(&error),
+    }
+}
+
+/// Pull the inbound `dsoc_session` cookie value (if any) and parse it as a UUID. Used by the
+/// sessions list/revoke handlers to mark/protect the current device. Mirrors the gateway
+/// middleware's cookie parsing exactly so the two surfaces always agree.
+fn current_session_id_from_headers(headers: &HeaderMap) -> Option<Uuid> {
+    headers
+        .get(header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(extract_session_cookie)
+        .and_then(|raw| Uuid::parse_str(raw).ok())
 }
 
 /// `PATCH /me` — update display name / bio / handle / privacy. Returns the refreshed profile so
