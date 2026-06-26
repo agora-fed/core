@@ -3,6 +3,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import ColorBar from '../components/illustrations/ColorBar.astro';
 import ProfileForm from '../components/islands/ProfileForm.svelte';
 import SessionsList from '../components/islands/SessionsList.svelte';
+import FediverseSearch from '../components/islands/FediverseSearch.svelte';
 
 const description =
   'Edite seu nome, sua bio, seu @ e decida se seu perfil é privado ou federado no fediverso.';
@@ -22,6 +23,7 @@ const description =
       </header>
 
       <ProfileForm client:load />
+      <FediverseSearch client:load />
       <SessionsList client:load />
     </div>
   </section>

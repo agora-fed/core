@@ -563,6 +563,116 @@ pub(crate) async fn list_inbound_followers<'e, E: PgExecutor<'e>>(
     Ok(rows)
 }
 
+/// Persist a fresh OUTBOUND follow (we follow someone remote). Returns the surrogate id so the
+/// caller can use it as the activity's `id` URL (we publish `<actor>/activities/<uuid>`). `ON
+/// CONFLICT DO UPDATE` makes re-clicking "Seguir" on the same remote actor a refresh, not an
+/// error. `accepted_at` stays NULL until the remote Accept comes back to our inbox.
+pub(crate) async fn upsert_outbound_follow<'e, E: PgExecutor<'e>>(
+    ex: E,
+    id: Uuid,
+    citizen_id: Uuid,
+    remote_actor_url: &str,
+    remote_inbox_url: &str,
+    follow_activity_id: &str,
+    now: DateTime<Utc>,
+) -> Result<Uuid, sqlx::Error> {
+    let row = sqlx::query!(
+        r#"
+        INSERT INTO federation_follow
+            (id, citizen_id, direction, remote_actor_url, remote_inbox_url,
+             follow_activity_id, accepted_at, created_at)
+        VALUES ($1, $2, 'outbound', $3, $4, $5, NULL, $6)
+        ON CONFLICT (citizen_id, direction, remote_actor_url) DO UPDATE
+            SET remote_inbox_url   = EXCLUDED.remote_inbox_url,
+                follow_activity_id = EXCLUDED.follow_activity_id
+        RETURNING id
+        "#,
+        id,
+        citizen_id,
+        remote_actor_url,
+        remote_inbox_url,
+        follow_activity_id,
+        now,
+    )
+    .fetch_one(ex)
+    .await?;
+    Ok(row.id)
+}
+
+/// Mark an outbound follow as accepted by the remote. Looked up by (citizen, remote_actor_url)
+/// — the natural identity. Returns the affected row count so the inbox handler can distinguish
+/// "Accept of something we sent" from "Accept of something we never sent" (idempotent: 0 = no
+/// pending follow matches, harmless to no-op).
+pub(crate) async fn mark_outbound_follow_accepted<'e, E: PgExecutor<'e>>(
+    ex: E,
+    citizen_id: Uuid,
+    remote_actor_url: &str,
+    now: DateTime<Utc>,
+) -> Result<u64, sqlx::Error> {
+    let r = sqlx::query!(
+        r#"
+        UPDATE federation_follow
+           SET accepted_at = $3
+         WHERE citizen_id = $1
+           AND direction = 'outbound'
+           AND remote_actor_url = $2
+           AND accepted_at IS NULL
+        "#,
+        citizen_id,
+        remote_actor_url,
+        now,
+    )
+    .execute(ex)
+    .await?;
+    Ok(r.rows_affected())
+}
+
+/// Page of ACK'd outbound follows ("who I follow"). Drives the `/actors/{handle}/following`
+/// OrderedCollection.
+pub(crate) async fn list_outbound_following<'e, E: PgExecutor<'e>>(
+    ex: E,
+    citizen_id: Uuid,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<String>, sqlx::Error> {
+    let rows = sqlx::query_scalar!(
+        r#"
+        SELECT remote_actor_url
+          FROM federation_follow
+         WHERE citizen_id = $1
+           AND direction = 'outbound'
+           AND accepted_at IS NOT NULL
+         ORDER BY created_at DESC
+         LIMIT $2 OFFSET $3
+        "#,
+        citizen_id,
+        limit,
+        offset,
+    )
+    .fetch_all(ex)
+    .await?;
+    Ok(rows)
+}
+
+pub(crate) async fn count_outbound_following<'e, E: PgExecutor<'e>>(
+    ex: E,
+    citizen_id: Uuid,
+) -> Result<i64, sqlx::Error> {
+    let row = sqlx::query!(
+        r#"
+        SELECT count(*) AS "n!"
+          FROM federation_follow
+         WHERE citizen_id = $1
+           AND direction = 'outbound'
+           AND accepted_at IS NOT NULL
+        "#,
+        citizen_id,
+    )
+    .fetch_one(ex)
+    .await?;
+    Ok(row.n)
+}
+
 /// Total count of ACK'd inbound followers (used in the OrderedCollection's `totalItems`).
 pub(crate) async fn count_inbound_followers<'e, E: PgExecutor<'e>>(
     ex: E,

@@ -22,7 +22,12 @@ spec:
     metadata: { labels: { app: dsoc-gateway } }
     spec:
       hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet
+      # `Default` makes the pod use the HOST's `/etc/resolv.conf`. `ClusterFirstWithHostNet`
+      # routes DNS at the in-cluster CoreDNS (`10.43.0.10`), which a hostNetwork pod cannot
+      # actually reach — the result was every external lookup failing (mastodon.social etc.).
+      # With `Default`, IPv6 resolution works through whichever resolver the VM is configured to
+      # use (the sovereign one), and we still need no cluster-internal service discovery anyway.
+      dnsPolicy: Default
       containers:
       - name: gateway
         image: dsoc-gateway:0.3.1

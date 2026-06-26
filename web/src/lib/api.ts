@@ -355,3 +355,24 @@ export const requestPasswordReset = (email: string, orgId = DEFAULT_ORG_ID) =>
 /** Redeem a reset token and set a new password. */
 export const confirmPasswordReset = (token: string, password: string) =>
   apiPost<null>('/api/v1/auth/password-reset/confirm', { token, password });
+
+/** Resolved remote ActivityPub actor (returned by `/federation/lookup`). */
+export interface RemoteActorDto {
+  remote_actor_url: string;
+  inbox_url: string;
+  handle: string;
+  name: string | null;
+  preferred_username: string | null;
+  summary: string | null;
+  avatar_url: string | null;
+}
+
+/** Look up a fediverse account by `@user@host`. Auth required (citizen cookie). */
+export const lookupRemoteActor = (acct: string) =>
+  apiGetCredentialed<RemoteActorDto>(
+    `/api/v1/federation/lookup?acct=${encodeURIComponent(acct)}`,
+  );
+
+/** Send a Follow to a remote actor (uses the URL from `lookupRemoteActor`). */
+export const followRemoteActor = (remote_actor_url: string) =>
+  apiPost<{ status: string }>('/api/v1/me/follow', { remote_actor_url });

@@ -89,6 +89,9 @@ pub fn api_router(state: AppState) -> Router {
         .merge(dsoc_accountability::routes(state.clone()))
         .merge(dsoc_consequence::routes(state.clone()))
         .merge(dsoc_scorecard::routes(state.clone()))
+        // Federation client surface: `/federation/lookup`, `/me/follow` — see ADR-0010 W2.4.
+        // Goes UNDER the same `/api/v1` prefix so the cookie/identity middleware below covers it.
+        .merge(federation::client_routes(state.clone()))
         .layer(middleware::from_fn_with_state(state.clone(), inject_identity));
 
     // Serve the static DemocraciaBR front-end (Astro SSG, ADR-0009) at the same origin as the API
@@ -96,16 +99,18 @@ pub fn api_router(state: AppState) -> Router {
     let web_root = std::env::var("WEB_ROOT").unwrap_or_else(|_| "/srv/web".to_string());
     let static_site = ServeDir::new(web_root).append_index_html_on_directories(true);
 
-    // Federation surface lives at the root (NOT under /api/v1), so paths look like any other
-    // ActivityPub instance: /.well-known/webfinger, /actors/<handle>. The federation module is
-    // DB-backed (resolves @handle to a public citizen) — see ADR-0010 W2.
-    let federation_routes = federation::routes(state.clone());
+    // Federation PUBLIC surface lives at the root (NOT under /api/v1): /.well-known/webfinger,
+    // /actors/<handle>, /actors/<handle>/{inbox,outbox,followers,following}. These are read by
+    // remote ActivityPub instances and must keep their canonical paths. (The federation CLIENT
+    // surface — what the front uses to look up + follow remote actors — is merged INTO `api`
+    // above so the cookie/identity middleware covers it.)
+    let federation_public = federation::public_routes(state.clone());
 
     Router::new()
         .route("/health", get(health))
         .route("/openapi.json", get(openapi))
         .nest("/api/v1", api)
-        .merge(federation_routes)
+        .merge(federation_public)
         .fallback_service(static_site)
 }
 

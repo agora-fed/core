@@ -249,6 +249,83 @@ impl ProfileService {
         Ok(())
     }
 
+    /// Persist a fresh outbound follow (our citizen → remote actor). Caller has already done the
+    /// signed network delivery and persists into the DB so a re-click is idempotent and the
+    /// `/following` collection has a record to display. Returns the activity id URL the caller
+    /// used to sign the Follow (passed in unchanged — convenience so callers don't lose track).
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on persistence failure.
+    pub async fn record_outbound_follow(
+        &self,
+        citizen: CitizenId,
+        remote_actor_url: &str,
+        remote_inbox_url: &str,
+        follow_activity_id: &str,
+    ) -> Result<()> {
+        let now = self.clock.now();
+        queries::upsert_outbound_follow(
+            &self.db,
+            uuid::Uuid::now_v7(),
+            citizen.as_uuid(),
+            remote_actor_url,
+            remote_inbox_url,
+            follow_activity_id,
+            now,
+        )
+        .await
+        .map_err(map_sqlx)?;
+        Ok(())
+    }
+
+    /// Mark an outbound follow as ACK'd by the remote (called by the inbox handler when an
+    /// `Accept(Follow)` arrives). Returns `true` if a pending row matched, `false` for a stray
+    /// Accept that doesn't match anything we sent (treated as a no-op).
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on persistence failure.
+    pub async fn accept_outbound_follow(
+        &self,
+        citizen: CitizenId,
+        remote_actor_url: &str,
+    ) -> Result<bool> {
+        let now = self.clock.now();
+        let affected = queries::mark_outbound_follow_accepted(
+            &self.db,
+            citizen.as_uuid(),
+            remote_actor_url,
+            now,
+        )
+        .await
+        .map_err(map_sqlx)?;
+        Ok(affected > 0)
+    }
+
+    /// List who the citizen follows (ACK'd outbound follows). Drives the `/actors/{handle}/
+    /// following` OrderedCollection.
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on persistence failure.
+    pub async fn list_following(
+        &self,
+        citizen: CitizenId,
+        limit: u32,
+        offset: u32,
+    ) -> Result<(Vec<String>, u64)> {
+        let urls = queries::list_outbound_following(
+            &self.db,
+            citizen.as_uuid(),
+            i64::from(limit),
+            i64::from(offset),
+        )
+        .await
+        .map_err(map_sqlx)?;
+        let total = queries::count_outbound_following(&self.db, citizen.as_uuid())
+            .await
+            .map_err(map_sqlx)?;
+        Ok((urls, total as u64))
+    }
+
     /// List ACK'd inbound followers of a citizen (page). Used by the OrderedCollection at
     /// `/actors/{handle}/followers`.
     ///

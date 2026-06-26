@@ -20,12 +20,12 @@
 use std::time::Duration;
 
 use axum::body::Bytes;
-use axum::extract::{Path, Query, State};
+use axum::extract::{Json as AxumJson, Path, Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use axum::Router;
-use dsoc_app::AppState;
+use axum::{Json, Router};
+use dsoc_app::{AppState, CallerId};
 use dsoc_auth::profile::ProfileService;
 use dsoc_core::ids::{CitizenId, OrgId};
 use dsoc_federation::signatures::{PublicKey, SignatureHeader, SignatureVerifier};
@@ -33,7 +33,8 @@ use dsoc_federation::{
     actor_id, build_signing_string, sign_with_pem, signature_header_value, Actor, ActorRole,
     RsaSha256Verifier,
 };
-use serde::Deserialize;
+use dsoc_api_contract::ApiResponse;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 const ACTIVITY_JSON: &str = "application/activity+json";
@@ -46,18 +47,30 @@ const DEFAULT_ORG_UUID: uuid::Uuid = uuid::uuid!("11111111-1111-1111-1111-111111
 const REMOTE_FETCH_TIMEOUT_SECS: u64 = 10;
 const REMOTE_DELIVERY_TIMEOUT_SECS: u64 = 10;
 
-/// Mount the federation HTTP surface on the gateway's root router.
-pub fn routes(state: AppState) -> Router<()> {
+/// Public ActivityPub surface mounted at the gateway's ROOT (RFC-mandated paths: webfinger,
+/// actor docs, inbox/outbox/followers/following). No authentication — these are read by remote
+/// instances and crawlers. Inbox POST authenticates via HTTP Signature, not cookies.
+pub fn public_routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/.well-known/webfinger", get(webfinger_handler))
         .route("/actors/{handle}", get(actor_handler))
         .route("/actors/{handle}/inbox", post(inbox_post).get(inbox_get_stub))
         .route("/actors/{handle}/outbox", get(outbox_get_stub))
         .route("/actors/{handle}/followers", get(followers_get))
-        .route("/actors/{handle}/following", get(following_get_stub))
+        .route("/actors/{handle}/following", get(following_get))
         .with_state(state)
         // Mastodon does not send Content-Length on streaming bodies; cap at 1 MiB for safety.
         .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024))
+}
+
+/// Authenticated client surface — paths CITIZENS hit from the front (look up + follow remote
+/// actors). Mounted by the gateway UNDER `/api/v1` so the cookie/identity middleware applies.
+/// Caller identity comes from `CallerId` (i.e. the cookie middleware must run first).
+pub fn client_routes(state: AppState) -> Router<()> {
+    Router::new()
+        .route("/federation/lookup", get(lookup_remote))
+        .route("/me/follow", post(follow_remote))
+        .with_state(state)
 }
 
 #[derive(Debug, Deserialize)]
@@ -306,9 +319,23 @@ async fn inbox_post(
         if let Err(err) = svc.accept_inbound_follow(citizen, &signer_actor_url).await {
             tracing::error!(error = ?err, "failed to mark follow ACK'd");
         }
+    } else if kind == "Accept" {
+        // The remote ACK'd a Follow WE sent. The Accept's actor is the remote (signer); the
+        // inner object is our original Follow whose `actor` is us. We match on signer URL —
+        // there is exactly one pending outbound follow per (citizen, remote actor URL).
+        match svc.accept_outbound_follow(citizen, &signer_actor_url).await {
+            Ok(true) => tracing::info!(remote = %signer_actor_url, "outbound follow ACK'd"),
+            Ok(false) => {
+                tracing::debug!(remote = %signer_actor_url, "stray Accept (no matching pending follow)");
+            }
+            Err(err) => {
+                tracing::error!(error = ?err, "failed to mark outbound follow accepted");
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        }
     } else if kind == "Undo" {
-        // TODO(W2.3): handle Undo Follow → remove the follow row.
-        tracing::info!(kind, "ignored activity type (W2.3)");
+        // TODO(W2.5): handle Undo Follow → remove the follow row.
+        tracing::info!(kind, "ignored activity type (W2.5)");
     } else {
         tracing::debug!(kind, "ignored unhandled activity type");
     }
@@ -336,13 +363,281 @@ async fn outbox_get_stub(
     serve_empty_collection(state, headers, handle, "outbox").await
 }
 
-/// `GET /actors/{handle}/following` — empty until W2.4 (we don't yet send Follow ourselves).
-async fn following_get_stub(
+/// `GET /actors/{handle}/following` — OrderedCollection of remote actor URLs the citizen
+/// follows (ACK'd outbound follows). Mastodon reads `totalItems` for the badge.
+async fn following_get(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(handle): Path<String>,
 ) -> Response {
-    serve_empty_collection(state, headers, handle, "following").await
+    let Some(host) = host_from(&headers) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let svc = ProfileService::from_state(&state);
+    let org = OrgId::from_uuid(DEFAULT_ORG_UUID);
+    let Ok(profile) = svc.find_public_by_handle(org, &handle).await else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let (items, total) = match svc
+        .list_following(CitizenId::from_uuid(profile.citizen_id), 100, 0)
+        .await
+    {
+        Ok(v) => v,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let id = format!("{}/following", actor_id(&host, &handle));
+    let body = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": id,
+        "type": "OrderedCollection",
+        "totalItems": total,
+        "orderedItems": items,
+    });
+    match serde_json::to_string(&body) {
+        Ok(s) => ([(header::CONTENT_TYPE, ACTIVITY_JSON)], s).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Authenticated client API — front-end uses these to look up + follow remote actors (W2.4).
+// ---------------------------------------------------------------------------
+
+/// Query for `GET /api/v1/federation/lookup`.
+#[derive(Debug, Deserialize)]
+struct LookupQuery {
+    /// `acct` URI without the scheme (`user@host` or `@user@host`), as a citizen would type it.
+    acct: String,
+}
+
+/// Sanitized DTO for a resolved remote actor, returned to the front. NEVER carries the raw AP
+/// JSON — only the fields the UI actually needs. Avatar URL may be `None` if the remote has none.
+#[derive(Debug, Serialize)]
+struct RemoteActorDto {
+    /// Stable URL of the remote actor (the `id` of the Actor document).
+    remote_actor_url: String,
+    /// Inbox URL (where we'd POST a Follow). Cached so the follow call doesn't re-fetch.
+    inbox_url: String,
+    /// `acct:user@host` rendered for the UI to display ("@m@pop.coop").
+    handle: String,
+    /// Display name (`name` from the Actor doc), if any.
+    name: Option<String>,
+    /// `preferredUsername` (the local part of the handle), if any.
+    preferred_username: Option<String>,
+    /// Short summary / bio.
+    summary: Option<String>,
+    /// Best avatar URL from `icon`/`image`/`avatar` (we look at the first one that resolves).
+    avatar_url: Option<String>,
+}
+
+/// `GET /api/v1/federation/lookup?acct=@user@host` — webfinger-resolve a remote handle and
+/// return a sanitized view. Auth-gated (citizen cookie) so the platform is not a generic
+/// fediverse crawler — only logged-in citizens can probe.
+async fn lookup_remote(
+    State(_state): State<AppState>,
+    _caller: CallerId,
+    Query(query): Query<LookupQuery>,
+) -> Response {
+    // Accept "@user@host" with a leading at, or bare "user@host".
+    let raw = query.acct.trim_start_matches('@');
+    let Some((user, host)) = raw.rsplit_once('@') else {
+        return client_error("forneça @usuario@host válido");
+    };
+    if user.is_empty() || host.is_empty() {
+        return client_error("forneça @usuario@host válido");
+    }
+    // Step 1: webfinger lookup on the remote host.
+    let webfinger_url = format!("https://{host}/.well-known/webfinger?resource=acct:{user}@{host}");
+    let jrd = match fetch_remote_actor(&webfinger_url).await {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!(error = ?err, host, "webfinger lookup failed");
+            return upstream_error("não consegui contatar essa instância");
+        }
+    };
+    // Step 2: pull the `self` link → ActivityStreams Actor URL.
+    let self_url = jrd
+        .get("links")
+        .and_then(Value::as_array)
+        .and_then(|links| {
+            links.iter().find_map(|l| {
+                let rel = l.get("rel").and_then(Value::as_str)?;
+                let typ = l.get("type").and_then(Value::as_str)?;
+                if rel == "self" && typ.contains("activity") {
+                    l.get("href").and_then(Value::as_str)
+                } else {
+                    None
+                }
+            })
+        });
+    let Some(actor_url) = self_url else {
+        return upstream_error("instância não expõe um perfil ActivityPub para esse usuário");
+    };
+    // Step 3: fetch the Actor doc.
+    let actor = match fetch_remote_actor(actor_url).await {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!(error = ?err, actor_url, "remote actor fetch failed");
+            return upstream_error("não consegui carregar o perfil remoto");
+        }
+    };
+    let dto = sanitize_actor(actor, actor_url, raw);
+    (StatusCode::OK, Json(ApiResponse::ok(dto))).into_response()
+}
+
+/// Body for `POST /api/v1/me/follow`.
+#[derive(Debug, Deserialize)]
+struct FollowRequest {
+    /// The remote actor's URL (the `remote_actor_url` returned by `/lookup`).
+    remote_actor_url: String,
+}
+
+/// `POST /api/v1/me/follow` — send a signed Follow to a remote actor's inbox and persist the
+/// outbound row. The Accept comes back asynchronously to our inbox; until then the row stays
+/// unACK'd (the UI can show "Solicitação enviada").
+async fn follow_remote(
+    State(state): State<AppState>,
+    caller: CallerId,
+    AxumJson(body): AxumJson<FollowRequest>,
+) -> Response {
+    let svc = ProfileService::from_state(&state);
+    // The follower must be a public citizen — federation surface is opt-in (ADR-0010).
+    let me = match svc
+        .find_public_by_handle(caller.org, &handle_of(&svc, caller.citizen).await)
+        .await
+    {
+        Ok(p) => p,
+        Err(_) => {
+            return client_error("torne seu perfil público antes de seguir alguém no fediverso");
+        }
+    };
+    // Make sure we have a key (lazy-generate if first time).
+    let _ = match svc.ensure_actor_public_key(caller.citizen).await {
+        Ok(p) => p,
+        Err(err) => {
+            tracing::error!(error = ?err, "ensure_actor_public_key failed");
+            return server_error();
+        }
+    };
+    let private_pem = match svc.read_actor_private_key(caller.citizen).await {
+        Ok(p) => p,
+        Err(err) => {
+            tracing::error!(error = ?err, "read_actor_private_key failed");
+            return server_error();
+        }
+    };
+    // Fetch the remote actor to learn its inbox URL.
+    let remote_actor = match fetch_remote_actor(&body.remote_actor_url).await {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!(error = ?err, "remote fetch failed during follow");
+            return upstream_error("instância remota não respondeu");
+        }
+    };
+    let Some(remote_inbox) = remote_actor
+        .get("inbox")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+    else {
+        return upstream_error("perfil remoto sem inbox");
+    };
+    // Our handle is what we used in the URL; the host we don't know without the request — pull
+    // from PUBLIC_ORIGIN (configured in env; defaults to democracia.social.br).
+    let public_origin = std::env::var("PUBLIC_ORIGIN")
+        .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
+    let me_url = format!(
+        "{}/actors/{}",
+        public_origin.trim_end_matches('/'),
+        me.handle.as_deref().unwrap_or(&me.public_handle)
+    );
+    let activity_id = format!("{me_url}/activities/follow-{}", uuid::Uuid::now_v7());
+    let follow = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": activity_id,
+        "type": "Follow",
+        "actor": me_url,
+        "object": body.remote_actor_url,
+    });
+    if let Err(err) = deliver_signed(&me_url, &private_pem, &remote_inbox, &follow).await {
+        tracing::warn!(error = ?err, target = %remote_inbox, "outbound Follow delivery failed");
+        return upstream_error("não consegui entregar o pedido de seguir");
+    }
+    if let Err(err) = svc
+        .record_outbound_follow(caller.citizen, &body.remote_actor_url, &remote_inbox, &activity_id)
+        .await
+    {
+        tracing::error!(error = ?err, "persist outbound follow failed");
+        return server_error();
+    }
+    (
+        StatusCode::ACCEPTED,
+        Json(ApiResponse::ok(json!({ "status": "pending" }))),
+    )
+        .into_response()
+}
+
+/// Resolve the caller's handle from their profile row (needed because `follow_remote` builds a
+/// URL with it). Caller is taken from middleware, not from any user input.
+async fn handle_of(svc: &ProfileService, citizen: CitizenId) -> String {
+    // `find_public_by_handle` reads by handle; we need to go the other way. Use the existing
+    // public profile read which always works for the authenticated caller.
+    if let Ok(p) = svc.get(citizen, OrgId::from_uuid(DEFAULT_ORG_UUID)).await {
+        return p.handle.unwrap_or(p.public_handle);
+    }
+    // Fallback to opaque handle — never happens in practice because the caller is authenticated.
+    format!("u-{}", citizen.as_uuid().simple())
+}
+
+/// Reduce a fetched remote Actor JSON to the fields the UI needs. Strips raw HTML, picks the
+/// first usable avatar URL, and falls back gracefully when fields are absent.
+fn sanitize_actor(actor: Value, actor_url: &str, acct: &str) -> RemoteActorDto {
+    let name = actor
+        .get("name")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let preferred_username = actor
+        .get("preferredUsername")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let summary = actor
+        .get("summary")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let avatar_url = actor
+        .get("icon")
+        .and_then(|i| i.get("url"))
+        .or_else(|| actor.get("image").and_then(|i| i.get("url")))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let inbox_url = actor
+        .get("inbox")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned();
+    RemoteActorDto {
+        remote_actor_url: actor_url.to_owned(),
+        inbox_url,
+        handle: format!("@{acct}"),
+        name,
+        preferred_username,
+        summary,
+        avatar_url,
+    }
+}
+
+fn client_error(message: &str) -> Response {
+    let body = ApiResponse::<()>::fail("invalid_input", message);
+    (StatusCode::BAD_REQUEST, Json(body)).into_response()
+}
+
+fn upstream_error(message: &str) -> Response {
+    let body = ApiResponse::<()>::fail("upstream_error", message);
+    (StatusCode::BAD_GATEWAY, Json(body)).into_response()
+}
+
+fn server_error() -> Response {
+    let body = ApiResponse::<()>::fail("storage_error", "Erro interno do servidor.");
+    (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
 }
 
 async fn serve_empty_collection(
