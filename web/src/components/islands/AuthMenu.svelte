@@ -6,6 +6,7 @@
   import { onMount } from 'svelte';
 
   let handle = $state<string | null>(null);
+  let avatar = $state<string | null>(null);
   let ready = $state(false);
 
   function readHandle(): string | null {
@@ -23,8 +24,17 @@
     }
   }
 
+  function readAvatar(): string | null {
+    try {
+      return localStorage.getItem('dsoc_avatar');
+    } catch {
+      return null;
+    }
+  }
+
   onMount(() => {
     handle = readHandle();
+    avatar = readAvatar();
     ready = true;
   });
 
@@ -41,6 +51,7 @@
     try {
       localStorage.removeItem('dsoc_citizen');
       localStorage.removeItem('dsoc_handle');
+      localStorage.removeItem('dsoc_avatar');
     } catch {
       /* storage may be blocked */
     }
@@ -53,7 +64,12 @@
 {#if ready}
   {#if handle}
     <a class="hi" href="/configuracoes" title="Abrir configurações do perfil">
-      Olá <strong>{handle}</strong>
+      {#if avatar}
+        <img class="avatar" src={avatar} alt="" />
+      {:else}
+        <span class="avatar-placeholder" aria-hidden="true">👤</span>
+      {/if}
+      <strong>{handle}</strong>
     </a>
     <button class="btn btn-ghost" type="button" onclick={logout}>Sair</button>
   {:else}
@@ -64,17 +80,18 @@
 
 <style>
   .hi {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
     align-self: center;
     color: var(--c-text-muted);
     font-size: 0.9rem;
     margin-right: 0.5rem;
-    max-width: 14rem;
+    max-width: 16rem;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     text-decoration: none;
-    padding: 0.35rem 0.55rem;
-    border-radius: 8px;
+    padding: 0.3rem 0.55rem;
+    border-radius: 999px;
   }
   .hi:hover {
     background: var(--c-bg);
@@ -82,6 +99,27 @@
   .hi strong {
     color: var(--c-navy);
     font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+  .avatar-placeholder {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--c-bg);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 0.95rem;
   }
   .btn {
     padding: 0.55rem 1rem;

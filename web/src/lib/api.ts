@@ -206,6 +206,52 @@ export const getMyProfile = () => apiGetCredentialed<ProfileDto>('/api/v1/me');
 export const updateMyProfile = (patch: ProfileUpdateDto) =>
   apiPatch<ProfileDto>('/api/v1/me', patch);
 
+/** Multipart upload of avatar / cover. The backend ignores the multipart Content-Type and
+ *  validates from bytes — so any PNG/JPEG/WebP is accepted; an invalid file gets a 400 with a
+ *  Portuguese message. */
+export async function uploadProfileImage(
+  kind: 'avatar' | 'cover',
+  file: File,
+): Promise<ApiResponse<ProfileDto>> {
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`${API_BASE}/api/v1/me/${kind}`, {
+      method: 'POST',
+      credentials: 'include',
+      body: fd,
+    });
+    const text = await res.text();
+    try {
+      const body = JSON.parse(text) as ApiResponse<ProfileDto>;
+      if (body && typeof body === 'object' && 'success' in body) return body;
+    } catch {
+      /* not JSON — fall through */
+    }
+    return {
+      success: false,
+      data: null,
+      error: {
+        code: `http_${res.status}`,
+        message: res.ok
+          ? 'Resposta inesperada do servidor.'
+          : 'Não foi possível enviar a imagem.',
+      },
+      meta: null,
+    };
+  } catch {
+    return {
+      success: false,
+      data: null,
+      error: {
+        code: 'network_error',
+        message: 'Falha de conexão. Verifique sua internet e tente novamente.',
+      },
+      meta: null,
+    };
+  }
+}
+
 export const getPromises = (mandateId: string) =>
   apiGet<PromiseDto[]>(
     `/api/v1/scorecards/${encodeURIComponent(mandateId)}/promises`,

@@ -8,6 +8,7 @@
     updateMyProfile,
     type ProfileDto,
   } from '../../lib/api';
+  import ImageUpload from './ImageUpload.svelte';
 
   let loading = $state(true);
   let profile = $state<ProfileDto | null>(null);
@@ -90,6 +91,31 @@
     </p>
   </div>
 {:else if profile}
+  <div class="media-row">
+    <ImageUpload
+      kind="avatar"
+      currentUrl={profile.avatar_url}
+      label="Foto de perfil"
+      helper="Aparece no cabeçalho e nas suas contribuições. Quadrada, até 5 MB."
+      onUploaded={(p) => {
+        profile = p;
+        try {
+          if (p.avatar_url) localStorage.setItem('dsoc_avatar', p.avatar_url);
+        } catch {}
+      }}
+    />
+    <ImageUpload
+      kind="cover"
+      currentUrl={profile.cover_url}
+      label="Imagem de capa"
+      helper="Banner do seu perfil público. Recomendado 1500×500."
+      aspect="3 / 1"
+      onUploaded={(p) => {
+        profile = p;
+      }}
+    />
+  </div>
+
   <form class="profile-form" onsubmit={submit} novalidate>
     <div class="field">
       <label for="p-display">Nome para exibição</label>
@@ -176,6 +202,19 @@
 <style>
   .profile-form {
     display: block;
+  }
+  .media-row {
+    display: grid;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--c-border);
+  }
+  @media (min-width: 560px) {
+    .media-row {
+      grid-template-columns: auto 1fr;
+      align-items: start;
+    }
   }
   .handle-wrap {
     display: flex;
