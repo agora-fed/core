@@ -305,6 +305,27 @@ impl ConsequenceService {
         Ok(expired)
     }
 
+    /// Sweep every tenant that currently has an expired-but-pending SLA clock. Enumerates the due
+    /// orgs and runs the per-org [`Self::sweep_expired`] for each at the supplied `now`, returning the
+    /// total number of SLAs moved into permanent public silence. This is the entry point the
+    /// background scheduler calls on its interval (the per-org method stays the authorized HTTP path).
+    ///
+    /// Deterministic and `sleep`-free: `now` is the injected clock's time. Idempotent: a re-run after
+    /// everything due has expired enumerates no orgs and returns `0`.
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on a persistence failure.
+    pub async fn sweep_all_due(&self, now: DateTime<Utc>) -> Result<u64> {
+        let orgs = queries::select_due_org_ids(&self.db, now)
+            .await
+            .map_err(map_sqlx)?;
+        let mut total = 0u64;
+        for org in orgs {
+            total += self.sweep_expired(OrgId::from_uuid(org), now).await?;
+        }
+        Ok(total)
+    }
+
     /// Fetch a single SLA by id.
     ///
     /// # Errors

@@ -296,6 +296,23 @@ pub async fn get_outcome(
 ///
 /// # Errors
 /// Propagates the underlying `sqlx::Error`.
+/// Distinct orgs that currently have at least one `pending` SLA already past its `due_at`. Drives the
+/// background sweep so it only touches tenants with work, scoped per-org for the existing batch sweep.
+pub async fn select_due_org_ids(
+    executor: impl sqlx::PgExecutor<'_>,
+    now: DateTime<Utc>,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    // Runtime-bound (not the `query!` macro) so this internal scheduler enumeration needs no `.sqlx`
+    // cache entry — the offline build never depends on it. The SQL is a fixed literal with one typed
+    // bind; there is no injection surface.
+    sqlx::query_scalar::<_, Uuid>(
+        "SELECT DISTINCT org_id FROM consequence_sla WHERE status = 'pending' AND due_at <= $1",
+    )
+    .bind(now)
+    .fetch_all(executor)
+    .await
+}
+
 pub async fn select_expired_pending(
     executor: impl sqlx::PgExecutor<'_>,
     org_id: Uuid,

@@ -698,6 +698,7 @@ dependencies = [
 name = "dsoc-gateway"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "axum",
  "dsoc-accountability",
  "dsoc-admin",
@@ -730,6 +731,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

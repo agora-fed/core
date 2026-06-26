@@ -6,6 +6,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod worker;
+
 use axum::{routing::get, Json, Router};
 use dsoc_app::AppState;
 use tower_http::services::ServeDir;
