@@ -11,8 +11,7 @@ Surveys: structured questionnaires with typed answers and tallies.
 
 | Direction | Topic |
 |-----------|-------|
-| emits | `surveys.published` |
-| emits | `surveys.response.received` |
+| emits | (none — these domain events are not yet in the frozen catalog; deferred until a consumer needs them, per YAGNI/ADR-0004) |
 
 ## Owned tables
 

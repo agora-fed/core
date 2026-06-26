@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO budget_order (id, budget_id, citizen_id, created_at)\n           VALUES ($1, $2, $3, $4)\n           RETURNING id, budget_id, citizen_id, created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "budget_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "citizen_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "460a985becab64846e8102e98cf799a763a93fe0c56f23063f0fbfc7129dad00"
+}

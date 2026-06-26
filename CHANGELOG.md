@@ -35,6 +35,11 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
   recurring auth-bypass (citizen_id from body) and consumer non-idempotency, fixed at the
   contract level via ADR-0007 (dsoc_app::CallerId extractor + dsoc_db::consumed::claim_consumed).
 
+- Wave 3: the 9 breadth crates — spaces (processes, assemblies, initiatives, consultations) and
+  components (debates, meetings, budgets, surveys, accountability). Each adversarially reviewed;
+  review caught a cross-tenant IDOR in surveys (publish/add_question now enforce org ownership)
+  and corrected aspirational CRATE.md event contracts to match the frozen catalog.
+
 ### Decisions
 - **ADR-0007**: authenticated-caller extractor + consumer idempotency ledger.
 - **ADR-0006**: transactional outbox for atomic event emission.

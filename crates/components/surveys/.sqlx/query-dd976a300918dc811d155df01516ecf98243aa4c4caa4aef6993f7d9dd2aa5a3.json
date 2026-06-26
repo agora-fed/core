@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO survey_response (id, survey_id, citizen_id, answers, created_at)\n           VALUES ($1, $2, $3, $4::text::jsonb, $5)\n           ON CONFLICT (survey_id, citizen_id) DO NOTHING\n           RETURNING id, survey_id, citizen_id, answers::text AS \"answers!\", created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "survey_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "citizen_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "answers!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      false
+    ]
+  },
+  "hash": "dd976a300918dc811d155df01516ecf98243aa4c4caa4aef6993f7d9dd2aa5a3"
+}

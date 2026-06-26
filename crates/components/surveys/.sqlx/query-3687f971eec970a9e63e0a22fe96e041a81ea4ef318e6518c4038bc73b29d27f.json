@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, survey_id, prompt, kind, position, created_at\n           FROM survey_question\n           WHERE survey_id = $1 AND ($2::uuid IS NULL OR id > $2)\n           ORDER BY id\n           LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "survey_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "prompt",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "position",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "3687f971eec970a9e63e0a22fe96e041a81ea4ef318e6518c4038bc73b29d27f"
+}

@@ -13,10 +13,20 @@ workspace = true
 [dependencies]
 dsoc-core = { path = "../../core" }
 dsoc-db = { path = "../../db" }
-tokio = { workspace = true }
+dsoc-api-contract = { path = "../../api-contract" }
+dsoc-app = { path = "../../app" }
 serde = { workspace = true }
-thiserror = { workspace = true }
+sqlx = { workspace = true }
+axum = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
 tracing = { workspace = true }
+utoipa = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+# Test-only: drive the Axum router (`ServiceExt::oneshot`) to exercise the HTTP handlers
+# end-to-end. Workspace-pinned; never a runtime dependency.
+tower = { workspace = true }

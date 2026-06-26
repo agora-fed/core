@@ -11,8 +11,7 @@ Consultations: scoped questions put to the population with defined response wind
 
 | Direction | Topic |
 |-----------|-------|
-| emits | `consultations.created` |
-| emits | `consultations.closed` |
+| emits | (none — these domain events are not yet in the frozen catalog; deferred until a consumer needs them, per YAGNI/ADR-0004) |
 
 ## Owned tables
 

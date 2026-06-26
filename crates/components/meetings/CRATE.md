@@ -11,7 +11,7 @@ Meetings: in-person/online civic gatherings with minutes and attendance.
 
 | Direction | Topic |
 |-----------|-------|
-| emits | `meetings.scheduled` |
+| emits | (none — these domain events are not yet in the frozen catalog; deferred until a consumer needs them, per YAGNI/ADR-0004) |
 
 ## Owned tables
 

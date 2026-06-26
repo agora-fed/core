@@ -11,8 +11,7 @@ Participatory processes: time-bound civic spaces grouping components toward a go
 
 | Direction | Topic |
 |-----------|-------|
-| emits | `processes.created` |
-| emits | `processes.phase.advanced` |
+| emits | (none — these domain events are not yet in the frozen catalog; deferred until a consumer needs them, per YAGNI/ADR-0004) |
 
 ## Owned tables
 

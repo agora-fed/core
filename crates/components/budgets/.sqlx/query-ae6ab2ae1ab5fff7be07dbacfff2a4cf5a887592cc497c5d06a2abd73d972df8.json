@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, budget_id, citizen_id, created_at\n           FROM budget_order\n           WHERE budget_id = $1 AND ($2::uuid IS NULL OR id > $2)\n           ORDER BY id\n           LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "budget_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "citizen_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ae6ab2ae1ab5fff7be07dbacfff2a4cf5a887592cc497c5d06a2abd73d972df8"
+}

@@ -11,7 +11,7 @@ Assemblies: permanent participatory bodies with membership and recurring decisio
 
 | Direction | Topic |
 |-----------|-------|
-| emits | `assemblies.created` |
+| emits | (none — these domain events are not yet in the frozen catalog; deferred until a consumer needs them, per YAGNI/ADR-0004) |
 
 ## Owned tables
 

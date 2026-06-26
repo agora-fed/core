@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, survey_id, citizen_id, answers::text AS \"answers!\", created_at\n           FROM survey_response\n           WHERE survey_id = $1 AND citizen_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "survey_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "citizen_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "answers!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      false
+    ]
+  },
+  "hash": "1d195d7e9fb170375e74e0c86e21d4b1d5e4f41df868a2471af54aab683e1632"
+}

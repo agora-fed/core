@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, survey_id, citizen_id, answers::text AS \"answers!\", created_at\n           FROM survey_response\n           WHERE survey_id = $1 AND ($2::uuid IS NULL OR id > $2)\n           ORDER BY id\n           LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "survey_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "citizen_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "answers!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      false
+    ]
+  },
+  "hash": "12b55e721664eb7c7461a87614f1b675b634e062dc1a031d3e613eccfde102fc"
+}

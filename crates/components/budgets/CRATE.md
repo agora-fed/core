@@ -11,8 +11,7 @@ Participatory budgeting: projects, costs, and citizen allocation under a ceiling
 
 | Direction | Topic |
 |-----------|-------|
-| emits | `budgets.project.created` |
-| emits | `budgets.order.confirmed` |
+| emits | (none — these domain events are not yet in the frozen catalog; deferred until a consumer needs them, per YAGNI/ADR-0004) |
 
 ## Owned tables
 

@@ -388,12 +388,20 @@ checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 name = "dsoc-accountability"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "dsoc-api-contract",
+ "dsoc-app",
  "dsoc-core",
  "dsoc-db",
  "serde",
+ "sqlx 0.8.6",
  "thiserror",
  "tokio",
  "tracing",
+ "utoipa",
+ "uuid",
 ]
 
 [[package]]
@@ -443,12 +451,21 @@ dependencies = [
 name = "dsoc-assemblies"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "dsoc-api-contract",
+ "dsoc-app",
  "dsoc-core",
  "dsoc-db",
  "serde",
- "thiserror",
+ "serde_json",
+ "sqlx 0.8.6",
  "tokio",
+ "tower",
  "tracing",
+ "utoipa",
+ "uuid",
 ]
 
 [[package]]
@@ -478,12 +495,19 @@ dependencies = [
 name = "dsoc-budgets"
 version = "0.1.0"
 dependencies = [
+ "axum",
+ "chrono",
+ "dsoc-api-contract",
+ "dsoc-app",
  "dsoc-core",
  "dsoc-db",
  "serde",
+ "sqlx 0.8.6",
  "thiserror",
  "tokio",
  "tracing",
+ "utoipa",
+ "uuid",
 ]
 
 [[package]]
@@ -552,12 +576,21 @@ dependencies = [
 name = "dsoc-consultations"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "dsoc-api-contract",
+ "dsoc-app",
  "dsoc-core",
  "dsoc-db",
  "serde",
+ "serde_json",
+ "sqlx 0.8.6",
  "thiserror",
  "tokio",
  "tracing",
+ "utoipa",
+ "uuid",
 ]
 
 [[package]]
@@ -590,12 +623,19 @@ dependencies = [
 name = "dsoc-debates"
 version = "0.1.0"
 dependencies = [
+ "axum",
+ "chrono",
+ "dsoc-api-contract",
+ "dsoc-app",
  "dsoc-core",
  "dsoc-db",
  "serde",
+ "sqlx 0.8.6",
  "thiserror",
  "tokio",
  "tracing",
+ "utoipa",
+ "uuid",
 ]
 
 [[package]]
@@ -649,12 +689,21 @@ dependencies = [
 name = "dsoc-initiatives"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "dsoc-api-contract",
+ "dsoc-app",
  "dsoc-core",
  "dsoc-db",
  "serde",
+ "serde_json",
+ "sqlx 0.8.6",
  "thiserror",
  "tokio",
  "tracing",
+ "utoipa",
+ "uuid",
 ]
 
 [[package]]
@@ -683,12 +732,19 @@ dependencies = [
 name = "dsoc-meetings"
 version = "0.1.0"
 dependencies = [
+ "axum",
+ "chrono",
+ "dsoc-api-contract",
+ "dsoc-app",
  "dsoc-core",
  "dsoc-db",
  "serde",
+ "sqlx 0.8.6",
  "thiserror",
  "tokio",
  "tracing",
+ "utoipa",
+ "uuid",
 ]
 
 [[package]]
@@ -736,12 +792,22 @@ dependencies = [
 name = "dsoc-processes"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "dsoc-api-contract",
+ "dsoc-app",
  "dsoc-core",
  "dsoc-db",
  "serde",
+ "serde_json",
+ "sqlx 0.8.6",
  "thiserror",
  "tokio",
+ "tower",
  "tracing",
+ "utoipa",
+ "uuid",
 ]
 
 [[package]]
@@ -789,12 +855,20 @@ dependencies = [
 name = "dsoc-surveys"
 version = "0.1.0"
 dependencies = [
+ "axum",
+ "chrono",
+ "dsoc-api-contract",
+ "dsoc-app",
  "dsoc-core",
  "dsoc-db",
  "serde",
+ "serde_json",
+ "sqlx 0.8.6",
  "thiserror",
  "tokio",
  "tracing",
+ "utoipa",
+ "uuid",
 ]
 
 [[package]]

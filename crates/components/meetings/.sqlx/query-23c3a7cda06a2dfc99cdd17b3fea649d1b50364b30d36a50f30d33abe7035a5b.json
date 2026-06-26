@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO meeting_attendee (id, meeting_id, citizen_id, created_at)\n           VALUES ($1, $2, $3, $4)\n           ON CONFLICT (meeting_id, citizen_id)\n               DO UPDATE SET meeting_id = EXCLUDED.meeting_id\n           RETURNING id, meeting_id, citizen_id, created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "meeting_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "citizen_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "23c3a7cda06a2dfc99cdd17b3fea649d1b50364b30d36a50f30d33abe7035a5b"
+}

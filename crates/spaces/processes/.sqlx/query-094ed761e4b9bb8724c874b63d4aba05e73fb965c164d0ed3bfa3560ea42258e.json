@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, position, active\n        FROM process_phase\n        WHERE process_id = $1\n        ORDER BY position ASC\n        FOR UPDATE\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "position",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "active",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "094ed761e4b9bb8724c874b63d4aba05e73fb965c164d0ed3bfa3560ea42258e"
+}
