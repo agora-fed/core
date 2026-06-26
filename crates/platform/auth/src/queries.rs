@@ -563,6 +563,297 @@ pub(crate) async fn list_inbound_followers<'e, E: PgExecutor<'e>>(
     Ok(rows)
 }
 
+// --- W2.5: outbox + delivery -----------------------------------------------------------------
+
+/// One claimable delivery row pulled by the worker. Carries the actor's signing key + the
+/// recipient inbox + the body to POST, so the worker doesn't need to JOIN per row.
+#[derive(Debug, Clone)]
+pub(crate) struct DeliveryClaim {
+    pub delivery_id: Uuid,
+    pub recipient_inbox: String,
+    pub actor_url: String,
+    pub private_pem: String,
+    pub payload: serde_json::Value,
+    pub attempts: i32,
+}
+
+/// Insert a new outbox entry (the wire-ready Activity). Returns the entry id so the caller
+/// can chain it into the per-follower delivery fanout.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn insert_outbox_entry<'e, E: PgExecutor<'e>>(
+    ex: E,
+    id: Uuid,
+    citizen_id: Uuid,
+    activity_id: &str,
+    kind: &str,
+    visibility: &str,
+    payload: &serde_json::Value,
+    now: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"
+        INSERT INTO federation_outbox_entry
+            (id, citizen_id, activity_id, kind, visibility, payload, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        "#,
+        id,
+        citizen_id,
+        activity_id,
+        kind,
+        visibility,
+        payload,
+        now,
+    )
+    .execute(ex)
+    .await?;
+    Ok(())
+}
+
+/// Fan out an outbox entry to every ACK'd inbound follower of the citizen. One row per
+/// (entry, inbox). Idempotent via the UNIQUE on (outbox_entry_id, recipient_inbox).
+pub(crate) async fn fanout_delivery_to_followers<'e, E: PgExecutor<'e>>(
+    ex: E,
+    outbox_entry_id: Uuid,
+    citizen_id: Uuid,
+    now: DateTime<Utc>,
+) -> Result<u64, sqlx::Error> {
+    // Generates one new uuid per row via gen_random_uuid() (pgcrypto already installed for
+    // mandate_invitation hashing); avoids streaming the follower list back to the gateway.
+    let r = sqlx::query!(
+        r#"
+        INSERT INTO federation_delivery
+            (id, outbox_entry_id, recipient_inbox, attempts, next_attempt_at, delivered_at,
+             last_error, created_at)
+        SELECT gen_random_uuid(), $1, f.remote_inbox_url, 0, $3, NULL, NULL, $3
+          FROM federation_follow f
+         WHERE f.citizen_id = $2
+           AND f.direction = 'inbound'
+           AND f.accepted_at IS NOT NULL
+           AND f.remote_inbox_url IS NOT NULL
+        ON CONFLICT (outbox_entry_id, recipient_inbox) DO NOTHING
+        "#,
+        outbox_entry_id,
+        citizen_id,
+        now,
+    )
+    .execute(ex)
+    .await?;
+    Ok(r.rows_affected())
+}
+
+/// List a citizen's public outbox entries, newest first. Payload returned as-is so the Outbox
+/// endpoint can put the JSONB straight into the OrderedCollection.
+pub(crate) async fn list_public_outbox<'e, E: PgExecutor<'e>>(
+    ex: E,
+    citizen_id: Uuid,
+    limit: i64,
+) -> Result<Vec<serde_json::Value>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"
+        SELECT payload
+          FROM federation_outbox_entry
+         WHERE citizen_id = $1 AND visibility = 'public'
+         ORDER BY created_at DESC
+         LIMIT $2
+        "#,
+        citizen_id,
+        limit,
+    )
+    .fetch_all(ex)
+    .await?;
+    Ok(rows.into_iter().map(|r| r.payload).collect())
+}
+
+pub(crate) async fn count_public_outbox<'e, E: PgExecutor<'e>>(
+    ex: E,
+    citizen_id: Uuid,
+) -> Result<i64, sqlx::Error> {
+    let row = sqlx::query!(
+        r#"SELECT count(*) AS "n!" FROM federation_outbox_entry WHERE citizen_id = $1 AND visibility = 'public'"#,
+        citizen_id,
+    )
+    .fetch_one(ex)
+    .await?;
+    Ok(row.n)
+}
+
+/// Claim a batch of pending deliveries whose `next_attempt_at <= now`. Uses `FOR UPDATE SKIP
+/// LOCKED` so multiple worker tasks (today: one; future: many) never race for the same row.
+/// The same statement INCREMENTS `attempts` and pushes `next_attempt_at` far into the future
+/// inside the same transaction — so even if the worker crashes mid-delivery, the row won't be
+/// re-picked instantly. On success the worker stamps `delivered_at`; on failure it explicitly
+/// resets `next_attempt_at` to an exponential-backoff time.
+///
+/// Returns the claimed rows joined with the actor's signing material and the activity payload.
+pub(crate) async fn claim_pending_deliveries(
+    db: &dsoc_db::Db,
+    now: DateTime<Utc>,
+    limit: i64,
+) -> Result<Vec<DeliveryClaim>, sqlx::Error> {
+    // The CTE locks the rows we'll touch; the outer UPDATE bumps attempts and stages a short
+    // pessimistic next_attempt window so a crash before success/failure leaves the row in a
+    // sane state (re-claimable after a few minutes).
+    let rows = sqlx::query!(
+        r#"
+        WITH claimed AS (
+            SELECT id
+              FROM federation_delivery
+             WHERE delivered_at IS NULL AND next_attempt_at <= $1
+             ORDER BY next_attempt_at, id
+             FOR UPDATE SKIP LOCKED
+             LIMIT $2
+        )
+        UPDATE federation_delivery d
+           SET attempts        = d.attempts + 1,
+               next_attempt_at = $1 + interval '5 minutes'
+          FROM claimed
+         WHERE d.id = claimed.id
+        RETURNING d.id            AS delivery_id,
+                  d.recipient_inbox,
+                  d.outbox_entry_id,
+                  d.attempts
+        "#,
+        now,
+        limit,
+    )
+    .fetch_all(db)
+    .await?;
+
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Second round-trip: pull the payload + actor signing material for each claimed row. Done
+    // in a single batched query keyed on the entry ids to avoid N+1.
+    let entry_ids: Vec<Uuid> = rows.iter().map(|r| r.outbox_entry_id).collect();
+    let entries = sqlx::query!(
+        r#"
+        SELECT o.id           AS entry_id,
+               o.payload      AS payload,
+               o.citizen_id   AS citizen_id,
+               k.private_pem  AS "private_pem!"
+          FROM federation_outbox_entry o
+          JOIN citizen_actor_key k ON k.citizen_id = o.citizen_id
+         WHERE o.id = ANY($1)
+        "#,
+        &entry_ids,
+    )
+    .fetch_all(db)
+    .await?;
+
+    // Also need the citizen's handle to build the actor URL. The federation surface uses the
+    // user-chosen `handle` (or the opaque public_handle as fallback).
+    let citizen_ids: Vec<Uuid> = entries.iter().map(|e| e.citizen_id).collect();
+    let citizens = sqlx::query!(
+        r#"
+        SELECT id AS "id!",
+               handle AS "handle"
+          FROM citizen
+         WHERE id = ANY($1)
+        "#,
+        &citizen_ids,
+    )
+    .fetch_all(db)
+    .await?;
+
+    let public_origin = std::env::var("PUBLIC_ORIGIN")
+        .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
+    let public_origin = public_origin.trim_end_matches('/').to_owned();
+
+    let mut claims = Vec::with_capacity(rows.len());
+    for r in rows {
+        let Some(entry) = entries.iter().find(|e| e.entry_id == r.outbox_entry_id) else {
+            continue;
+        };
+        let Some(c) = citizens.iter().find(|c| c.id == entry.citizen_id) else {
+            continue;
+        };
+        let handle = c
+            .handle
+            .clone()
+            .unwrap_or_else(|| format!("u-{}", c.id.simple()));
+        let actor_url = format!("{public_origin}/actors/{handle}");
+        claims.push(DeliveryClaim {
+            delivery_id: r.delivery_id,
+            recipient_inbox: r.recipient_inbox,
+            actor_url,
+            private_pem: entry.private_pem.clone(),
+            payload: entry.payload.clone(),
+            attempts: r.attempts,
+        });
+    }
+    Ok(claims)
+}
+
+/// Mark a delivery as successful (the worker just got a 2xx). The row becomes inert.
+pub(crate) async fn mark_delivery_done<'e, E: PgExecutor<'e>>(
+    ex: E,
+    delivery_id: Uuid,
+    now: DateTime<Utc>,
+) -> Result<u64, sqlx::Error> {
+    let r = sqlx::query!(
+        "UPDATE federation_delivery SET delivered_at = $2, last_error = NULL WHERE id = $1",
+        delivery_id,
+        now,
+    )
+    .execute(ex)
+    .await?;
+    Ok(r.rows_affected())
+}
+
+/// Record a failed delivery and schedule the next attempt. Exponential backoff: 1m, 5m, 30m,
+/// 2h, 12h, 24h, 24h (capped). The worker stops re-trying after ~10 attempts at the call site.
+pub(crate) async fn mark_delivery_failed<'e, E: PgExecutor<'e>>(
+    ex: E,
+    delivery_id: Uuid,
+    attempts: i32,
+    error: &str,
+    now: DateTime<Utc>,
+) -> Result<u64, sqlx::Error> {
+    let backoff_secs = match attempts {
+        0..=1 => 60,
+        2 => 300,
+        3 => 1_800,
+        4 => 7_200,
+        5 => 43_200,
+        _ => 86_400,
+    };
+    let next = now + chrono::Duration::seconds(backoff_secs);
+    let r = sqlx::query!(
+        r#"
+        UPDATE federation_delivery
+           SET next_attempt_at = $2,
+               last_error      = $3
+         WHERE id = $1
+        "#,
+        delivery_id,
+        next,
+        error,
+    )
+    .execute(ex)
+    .await?;
+    Ok(r.rows_affected())
+}
+
+/// Remove an inbound follow row (called when the remote sends `Undo(Follow)`).
+pub(crate) async fn delete_inbound_follow<'e, E: PgExecutor<'e>>(
+    ex: E,
+    citizen_id: Uuid,
+    remote_actor_url: &str,
+) -> Result<u64, sqlx::Error> {
+    let r = sqlx::query!(
+        r#"
+        DELETE FROM federation_follow
+         WHERE citizen_id = $1 AND direction = 'inbound' AND remote_actor_url = $2
+        "#,
+        citizen_id,
+        remote_actor_url,
+    )
+    .execute(ex)
+    .await?;
+    Ok(r.rows_affected())
+}
+
 /// Persist a fresh OUTBOUND follow (we follow someone remote). Returns the surrogate id so the
 /// caller can use it as the activity's `id` URL (we publish `<actor>/activities/<uuid>`). `ON
 /// CONFLICT DO UPDATE` makes re-clicking "Seguir" on the same remote actor a refresh, not an

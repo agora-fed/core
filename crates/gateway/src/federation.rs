@@ -55,7 +55,7 @@ pub fn public_routes(state: AppState) -> Router<()> {
         .route("/.well-known/webfinger", get(webfinger_handler))
         .route("/actors/{handle}", get(actor_handler))
         .route("/actors/{handle}/inbox", post(inbox_post).get(inbox_get_stub))
-        .route("/actors/{handle}/outbox", get(outbox_get_stub))
+        .route("/actors/{handle}/outbox", get(outbox_get_populated))
         .route("/actors/{handle}/followers", get(followers_get))
         .route("/actors/{handle}/following", get(following_get))
         .with_state(state)
@@ -64,12 +64,13 @@ pub fn public_routes(state: AppState) -> Router<()> {
 }
 
 /// Authenticated client surface — paths CITIZENS hit from the front (look up + follow remote
-/// actors). Mounted by the gateway UNDER `/api/v1` so the cookie/identity middleware applies.
-/// Caller identity comes from `CallerId` (i.e. the cookie middleware must run first).
+/// actors, post notes). Mounted by the gateway UNDER `/api/v1` so the cookie/identity middleware
+/// applies. Caller identity comes from `CallerId` (i.e. the cookie middleware must run first).
 pub fn client_routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/federation/lookup", get(lookup_remote))
         .route("/me/follow", post(follow_remote))
+        .route("/me/notes", post(post_my_note))
         .with_state(state)
 }
 
@@ -334,8 +335,28 @@ async fn inbox_post(
             }
         }
     } else if kind == "Undo" {
-        // TODO(W2.5): handle Undo Follow → remove the follow row.
-        tracing::info!(kind, "ignored activity type (W2.5)");
+        // Undo Follow → the remote unfollowed us. Verify the inner object is a Follow whose
+        // actor is the same as the Undo's signer (don't let one user undo another's follow),
+        // then delete the row. Idempotent at the DB level (DELETE returns 0 if already gone).
+        let inner_kind = activity
+            .get("object")
+            .and_then(|o| o.get("type"))
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let inner_actor = activity
+            .get("object")
+            .and_then(|o| o.get("actor"))
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if inner_kind == "Follow" && inner_actor == signer_actor_url {
+            if let Err(err) = svc.remove_inbound_follow(citizen, &signer_actor_url).await {
+                tracing::error!(error = ?err, "failed to remove inbound follow on Undo");
+            } else {
+                tracing::info!(remote = %signer_actor_url, "inbound follow undone");
+            }
+        } else {
+            tracing::debug!(inner_kind, inner_actor, "ignored Undo for non-Follow or actor mismatch");
+        }
     } else {
         tracing::debug!(kind, "ignored unhandled activity type");
     }
@@ -354,13 +375,40 @@ async fn inbox_get_stub(
     serve_empty_collection(state, headers, handle, "inbox").await
 }
 
-/// `GET /actors/{handle}/outbox` — empty OrderedCollection. Will carry posted notes in W3.
-async fn outbox_get_stub(
+/// `GET /actors/{handle}/outbox` — OrderedCollection of the citizen's public Notes (W2.5).
+/// Returns the latest N activities verbatim; the payload column already holds wire-ready JSON.
+async fn outbox_get_populated(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(handle): Path<String>,
 ) -> Response {
-    serve_empty_collection(state, headers, handle, "outbox").await
+    let Some(host) = host_from(&headers) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let svc = ProfileService::from_state(&state);
+    let org = OrgId::from_uuid(DEFAULT_ORG_UUID);
+    let Ok(profile) = svc.find_public_by_handle(org, &handle).await else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let (items, total) = match svc
+        .list_public_outbox(CitizenId::from_uuid(profile.citizen_id), 40)
+        .await
+    {
+        Ok(v) => v,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let id = format!("{}/outbox", actor_id(&host, &handle));
+    let body = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": id,
+        "type": "OrderedCollection",
+        "totalItems": total,
+        "orderedItems": items,
+    });
+    match serde_json::to_string(&body) {
+        Ok(s) => ([(header::CONTENT_TYPE, ACTIVITY_JSON)], s).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 /// `GET /actors/{handle}/following` — OrderedCollection of remote actor URLs the citizen
@@ -576,6 +624,67 @@ async fn follow_remote(
         .into_response()
 }
 
+/// Body for `POST /api/v1/me/notes`.
+#[derive(Debug, Deserialize)]
+struct PostNoteRequest {
+    /// The note's text content. Server-side validation: non-empty, max 5000 chars.
+    content: String,
+}
+
+/// `POST /api/v1/me/notes` — publish a public Note. Wraps the content in a `Create(Note)`,
+/// persists into the outbox, fans out one delivery row per ACK'd inbound follower; the worker
+/// drains the queue asynchronously. Returns `{activity_id, fanout_count, status: "queued"}`.
+async fn post_my_note(
+    State(state): State<AppState>,
+    caller: CallerId,
+    AxumJson(body): AxumJson<PostNoteRequest>,
+) -> Response {
+    let svc = ProfileService::from_state(&state);
+    // The author must be a public citizen (federation surface is opt-in per ADR-0010).
+    let me = match svc
+        .find_public_by_handle(caller.org, &handle_of(&svc, caller.citizen).await)
+        .await
+    {
+        Ok(p) => p,
+        Err(_) => {
+            return client_error(
+                "torne seu perfil público antes de publicar (em Configurações)",
+            );
+        }
+    };
+    // Make sure the keypair exists so the worker can sign — first publish triggers lazy gen.
+    if let Err(err) = svc.ensure_actor_public_key(caller.citizen).await {
+        tracing::error!(error = ?err, "ensure_actor_public_key failed");
+        return server_error();
+    }
+    let public_origin = std::env::var("PUBLIC_ORIGIN")
+        .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
+    let me_url = format!(
+        "{}/actors/{}",
+        public_origin.trim_end_matches('/'),
+        me.handle.as_deref().unwrap_or(&me.public_handle)
+    );
+    match svc
+        .create_public_note(caller.citizen, &me_url, &body.content)
+        .await
+    {
+        Ok((activity_id, fanout)) => (
+            StatusCode::ACCEPTED,
+            Json(ApiResponse::ok(json!({
+                "activity_id": activity_id,
+                "fanout_count": fanout,
+                "status": "queued",
+            }))),
+        )
+            .into_response(),
+        Err(dsoc_core::Error::Validation(msg)) => client_error(&msg),
+        Err(err) => {
+            tracing::error!(error = ?err, "create_public_note failed");
+            server_error()
+        }
+    }
+}
+
 /// Resolve the caller's handle from their profile row (needed because `follow_remote` builds a
 /// URL with it). Caller is taken from middleware, not from any user input.
 async fn handle_of(svc: &ProfileService, citizen: CitizenId) -> String {
@@ -733,7 +842,7 @@ async fn fetch_remote_actor(url: &str) -> Result<Value, FederationError> {
 
 /// Sign and POST an activity to a remote inbox. The covered headers are
 /// `(request-target) host date digest`, the same set Mastodon emits and expects.
-async fn deliver_signed(
+pub(crate) async fn deliver_signed(
     sender_actor_url: &str,
     sender_private_pem: &str,
     target_inbox_url: &str,
@@ -808,7 +917,7 @@ use base64::Engine;
 /// Errors from outbound federation operations. Public-safe; the inbox handler logs the detail
 /// and returns a generic status to the wire.
 #[derive(Debug)]
-enum FederationError {
+pub(crate) enum FederationError {
     Http(String),
 }
 

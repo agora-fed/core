@@ -249,6 +249,160 @@ impl ProfileService {
         Ok(())
     }
 
+    /// Claim a batch of pending deliveries for the worker to ship. Each task carries everything
+    /// needed (recipient inbox, signing material, body) so the worker doesn't need to JOIN.
+    /// The DB-level update bumps `attempts` and stages a short pessimistic next-attempt window
+    /// inside the same statement, so a worker crash before success/failure leaves the row
+    /// re-claimable after ~5 minutes (not lost, not immediately re-tried).
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on persistence failure.
+    pub async fn claim_deliveries(&self, limit: u32) -> Result<Vec<DeliveryTask>> {
+        let now = self.clock.now();
+        let claims = queries::claim_pending_deliveries(&self.db, now, i64::from(limit))
+            .await
+            .map_err(map_sqlx)?;
+        Ok(claims.into_iter().map(DeliveryTask::from).collect())
+    }
+    // (signature already passes `&self.db`)
+
+    /// Mark a delivery as successfully shipped (worker got a 2xx).
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on persistence failure.
+    pub async fn delivery_succeeded(&self, delivery_id: uuid::Uuid) -> Result<()> {
+        let now = self.clock.now();
+        queries::mark_delivery_done(&self.db, delivery_id, now)
+            .await
+            .map_err(map_sqlx)?;
+        Ok(())
+    }
+
+    /// Mark a delivery as failed; schedules the next attempt with exponential backoff.
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on persistence failure.
+    pub async fn delivery_failed(
+        &self,
+        delivery_id: uuid::Uuid,
+        attempts: i32,
+        error: &str,
+    ) -> Result<()> {
+        let now = self.clock.now();
+        queries::mark_delivery_failed(&self.db, delivery_id, attempts, error, now)
+            .await
+            .map_err(map_sqlx)?;
+        Ok(())
+    }
+
+    /// Post a public Note authored by the citizen. Wraps the content in a `Create(Note)`
+    /// activity addressed to `as:Public` + the citizen's followers collection (the Mastodon
+    /// "post-to-the-world" envelope), persists into the outbox, and fans out one delivery row
+    /// per ACK'd inbound follower. The delivery worker drains the queue asynchronously, so this
+    /// call returns fast.
+    ///
+    /// Returns `(activity_id_url, fanout_count)` — the id the caller surfaces in the UI and
+    /// the number of followers we just queued for.
+    ///
+    /// # Errors
+    /// [`Error::Validation`] for an empty/oversized content; [`Error::Storage`] on persistence.
+    pub async fn create_public_note(
+        &self,
+        citizen: CitizenId,
+        actor_url: &str,
+        content: &str,
+    ) -> Result<(String, u64)> {
+        let trimmed = content.trim().to_owned();
+        if trimmed.is_empty() {
+            return Err(Error::Validation("digite alguma coisa antes de publicar".to_owned()));
+        }
+        if trimmed.chars().count() > 5_000 {
+            return Err(Error::Validation("o texto está muito longo (máx 5000 caracteres)".to_owned()));
+        }
+        let now = self.clock.now();
+        let entry_id = uuid::Uuid::now_v7();
+        let activity_id = format!("{actor_url}/activities/note-{entry_id}");
+        let object_id = format!("{actor_url}/objects/{entry_id}");
+        // The wire-ready Create(Note). The Outbox endpoint serves this verbatim; the delivery
+        // worker POSTs it verbatim to each follower's inbox. Addressed to `as:Public` + the
+        // followers collection — the Mastodon default for a public post.
+        let payload = serde_json::json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": activity_id,
+            "type": "Create",
+            "actor": actor_url,
+            "published": now.to_rfc3339(),
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "cc": [format!("{actor_url}/followers")],
+            "object": {
+                "id": object_id,
+                "type": "Note",
+                "attributedTo": actor_url,
+                "published": now.to_rfc3339(),
+                "content": trimmed,
+                "to": ["https://www.w3.org/ns/activitystreams#Public"],
+                "cc": [format!("{actor_url}/followers")],
+            }
+        });
+        // INSERT outbox + fanout — two statements; if the fanout fails we leave the outbox
+        // entry behind (visible via the Outbox endpoint, just not delivered) so a manual
+        // re-fanout is possible.
+        queries::insert_outbox_entry(
+            &self.db,
+            entry_id,
+            citizen.as_uuid(),
+            &activity_id,
+            "Create",
+            "public",
+            &payload,
+            now,
+        )
+        .await
+        .map_err(map_sqlx)?;
+        let fanout = queries::fanout_delivery_to_followers(
+            &self.db,
+            entry_id,
+            citizen.as_uuid(),
+            now,
+        )
+        .await
+        .map_err(map_sqlx)?;
+        Ok((activity_id, fanout))
+    }
+
+    /// List the citizen's public outbox entries, newest first. Drives the `/actors/{handle}/
+    /// outbox` OrderedCollection.
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on persistence failure.
+    pub async fn list_public_outbox(
+        &self,
+        citizen: CitizenId,
+        limit: u32,
+    ) -> Result<(Vec<serde_json::Value>, u64)> {
+        let items = queries::list_public_outbox(&self.db, citizen.as_uuid(), i64::from(limit))
+            .await
+            .map_err(map_sqlx)?;
+        let total = queries::count_public_outbox(&self.db, citizen.as_uuid())
+            .await
+            .map_err(map_sqlx)?;
+        Ok((items, total as u64))
+    }
+
+    /// Remove an inbound follow row (called from the inbox handler on `Undo(Follow)`).
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on persistence failure.
+    pub async fn remove_inbound_follow(
+        &self,
+        citizen: CitizenId,
+        remote_actor_url: &str,
+    ) -> Result<u64> {
+        queries::delete_inbound_follow(&self.db, citizen.as_uuid(), remote_actor_url)
+            .await
+            .map_err(map_sqlx)
+    }
+
     /// Persist a fresh outbound follow (our citizen → remote actor). Caller has already done the
     /// signed network delivery and persists into the DB so a re-click is idempotent and the
     /// `/following` collection has a record to display. Returns the activity id URL the caller
@@ -549,6 +703,38 @@ pub async fn ensure_actor_public_key(&self, citizen: CitizenId) -> Result<String
             return None;
         }
         Some(format!("{}/{key}", self.media_base_url))
+    }
+}
+
+/// Public mirror of `queries::DeliveryClaim` — what the worker needs to ship a pending row.
+/// Lives in the service surface so the queries type can stay `pub(crate)` and the gateway
+/// worker never imports query internals.
+#[derive(Debug, Clone)]
+pub struct DeliveryTask {
+    /// The `federation_delivery.id` to mark done/failed after the attempt.
+    pub delivery_id: uuid::Uuid,
+    /// Where to POST.
+    pub recipient_inbox: String,
+    /// The signer (our actor URL — the `keyId` of the signing key is `<actor>/#main-key`).
+    pub actor_url: String,
+    /// PKCS#8 PEM of the citizen's private key. Sensitive: never log.
+    pub private_pem: String,
+    /// The wire-ready Activity to POST as the body.
+    pub payload: serde_json::Value,
+    /// Attempts so far (for the backoff schedule on failure).
+    pub attempts: i32,
+}
+
+impl From<queries::DeliveryClaim> for DeliveryTask {
+    fn from(c: queries::DeliveryClaim) -> Self {
+        Self {
+            delivery_id: c.delivery_id,
+            recipient_inbox: c.recipient_inbox,
+            actor_url: c.actor_url,
+            private_pem: c.private_pem,
+            payload: c.payload,
+            attempts: c.attempts,
+        }
     }
 }
 

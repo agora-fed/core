@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT o.id           AS entry_id,\n               o.payload      AS payload,\n               o.citizen_id   AS citizen_id,\n               k.private_pem  AS \"private_pem!\"\n          FROM federation_outbox_entry o\n          JOIN citizen_actor_key k ON k.citizen_id = o.citizen_id\n         WHERE o.id = ANY($1)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "entry_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "payload",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 2,
+        "name": "citizen_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "private_pem!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "9d5324ec3e67457eec75be981fc7d751727d002d033efea4fc6d81f5c82b8c3a"
+}

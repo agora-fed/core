@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT payload\n          FROM federation_outbox_entry\n         WHERE citizen_id = $1 AND visibility = 'public'\n         ORDER BY created_at DESC\n         LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "payload",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d8c79543966e0cfad0b2f154d330799db835af60d0ae1c46f1f0ec85b86f5173"
+}

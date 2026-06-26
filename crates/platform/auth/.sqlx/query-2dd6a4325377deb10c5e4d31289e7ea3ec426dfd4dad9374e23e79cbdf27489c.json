@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO federation_delivery\n            (id, outbox_entry_id, recipient_inbox, attempts, next_attempt_at, delivered_at,\n             last_error, created_at)\n        SELECT gen_random_uuid(), $1, f.remote_inbox_url, 0, $3, NULL, NULL, $3\n          FROM federation_follow f\n         WHERE f.citizen_id = $2\n           AND f.direction = 'inbound'\n           AND f.accepted_at IS NOT NULL\n           AND f.remote_inbox_url IS NOT NULL\n        ON CONFLICT (outbox_entry_id, recipient_inbox) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2dd6a4325377deb10c5e4d31289e7ea3ec426dfd4dad9374e23e79cbdf27489c"
+}

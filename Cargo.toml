@@ -30,7 +30,7 @@ axum = { version = "0.8", features = ["macros", "multipart"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "cors", "limit", "timeout", "fs"] }
 # --- database: explicit, compile-time-checked SQL only (PLAN.md principle 3) ---
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "macros", "migrate"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "macros", "migrate", "json"] }
 pgvector = { version = "0.4", features = ["sqlx"] }
 redis = { version = "0.27", features = ["tokio-comp"] }
 # --- serialization / contracts ---

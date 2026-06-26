@@ -35,6 +35,16 @@ const POLL_LIMIT: u32 = 500;
 const DEFAULT_DISPATCH_MS: u64 = 1_000;
 /// Default cadence of the SLA expiry sweep (ms). Override with `WORKER_SWEEP_MS`.
 const DEFAULT_SWEEP_MS: u64 = 60_000;
+/// Default cadence of the federation delivery drain (ms). Tighter than the sweep because each
+/// tick handles up to `DELIVERY_BATCH` pending shipments; idle ticks are cheap (one indexed
+/// SELECT). Override with `WORKER_DELIVERY_MS`.
+const DEFAULT_DELIVERY_MS: u64 = 2_000;
+/// Max deliveries claimed per delivery tick. Bounds the burst when a Note fans out to many
+/// followers; the queue drains over subsequent ticks.
+const DELIVERY_BATCH: u32 = 50;
+/// Drop a delivery row after this many failed attempts (the worker stops claiming it; the row
+/// stays in DB for ops introspection). Matches the longest reasonable Mastodon retry window.
+const DELIVERY_MAX_ATTEMPTS: i32 = 10;
 
 /// Read a millisecond interval from the environment, falling back to `default`.
 fn env_ms(key: &str, default: u64) -> u64 {
@@ -256,10 +266,17 @@ pub fn spawn(state: AppState) {
     let clock = state.clock.clone();
     tokio::spawn(sweep_loop(consequence, clock, sweep_ms));
 
+    // Federation outbound delivery (ADR-0010 W2.5). Drains `federation_delivery` rows that are
+    // due, signs each with the author citizen's key, POSTs to the recipient inbox. Failures get
+    // exponential backoff inside the DB row; the worker only ships, never schedules.
+    let delivery_ms = env_ms("WORKER_DELIVERY_MS", DEFAULT_DELIVERY_MS);
+    tokio::spawn(federation_delivery_loop(state.clone(), delivery_ms));
+
     tracing::info!(
         subscriptions = count,
         dispatch_ms,
         sweep_ms,
+        delivery_ms,
         "event worker started: consequence loop is live"
     );
 }
@@ -302,6 +319,82 @@ async fn dispatch_loop(queue: EventQueue, subscription: Subscription, period_ms:
                     break;
                 }
             }
+        }
+    }
+}
+
+/// Drain `federation_delivery` rows that are due (ADR-0010 W2.5). On every tick:
+///   1. Claim up to `DELIVERY_BATCH` pending rows (`FOR UPDATE SKIP LOCKED`, so future
+///      multi-worker setups don't race for the same shipment).
+///   2. For each, sign the body with the author's private PEM and POST to the recipient inbox.
+///   3. 2xx → mark delivered (the row becomes inert). Non-2xx / network error → schedule the
+///      next attempt with exponential backoff; after `DELIVERY_MAX_ATTEMPTS` the worker stops
+///      pulling and the row becomes a permanent audit trail.
+///
+/// Concurrent within a batch: each delivery is a fresh tokio task, so a slow remote does not
+/// block the rest of the batch.
+async fn federation_delivery_loop(state: AppState, period_ms: u64) {
+    use dsoc_auth::profile::ProfileService;
+    let svc = ProfileService::from_state(&state);
+    let mut ticker = interval(Duration::from_millis(period_ms));
+    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        ticker.tick().await;
+        let tasks = match svc.claim_deliveries(DELIVERY_BATCH).await {
+            Ok(t) => t,
+            Err(err) => {
+                tracing::warn!(error = %err, "delivery claim failed; retrying next tick");
+                continue;
+            }
+        };
+        if tasks.is_empty() {
+            continue;
+        }
+        tracing::debug!(claimed = tasks.len(), "claimed delivery batch");
+        // Per-task spawn keeps a slow remote from holding up the rest.
+        for task in tasks {
+            let svc = svc.clone();
+            tokio::spawn(async move {
+                if task.attempts > DELIVERY_MAX_ATTEMPTS {
+                    tracing::warn!(
+                        delivery = %task.delivery_id,
+                        attempts = task.attempts,
+                        target = %task.recipient_inbox,
+                        "delivery exceeded max attempts; abandoning"
+                    );
+                    return;
+                }
+                let result = crate::federation::deliver_signed(
+                    &task.actor_url,
+                    &task.private_pem,
+                    &task.recipient_inbox,
+                    &task.payload,
+                )
+                .await;
+                match result {
+                    Ok(()) => {
+                        if let Err(err) = svc.delivery_succeeded(task.delivery_id).await {
+                            tracing::error!(error = %err, "mark delivery succeeded failed");
+                        }
+                    }
+                    Err(err) => {
+                        let msg = err.to_string();
+                        tracing::info!(
+                            delivery = %task.delivery_id,
+                            attempts = task.attempts,
+                            target = %task.recipient_inbox,
+                            error = %msg,
+                            "delivery failed; backoff scheduled"
+                        );
+                        if let Err(err2) = svc
+                            .delivery_failed(task.delivery_id, task.attempts, &msg)
+                            .await
+                        {
+                            tracing::error!(error = %err2, "mark delivery failed errored");
+                        }
+                    }
+                }
+            });
         }
     }
 }

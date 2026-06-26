@@ -376,3 +376,10 @@ export const lookupRemoteActor = (acct: string) =>
 /** Send a Follow to a remote actor (uses the URL from `lookupRemoteActor`). */
 export const followRemoteActor = (remote_actor_url: string) =>
   apiPost<{ status: string }>('/api/v1/me/follow', { remote_actor_url });
+
+/** Publish a public Note. Fan-out happens in the background; the response is fast. */
+export const postNote = (content: string) =>
+  apiPost<{ activity_id: string; fanout_count: number; status: string }>(
+    '/api/v1/me/notes',
+    { content },
+  );
