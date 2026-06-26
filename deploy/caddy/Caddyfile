@@ -1,7 +1,17 @@
 # DemocraciaBR reverse proxy — automatic HTTPS (Let's Encrypt over IPv6) on the sovereign VM.
-# The gateway serves BOTH the static site and /api/v1, so everything is one origin behind the domain
-# (no CORS). Installed via `apt install caddy`; config at /etc/caddy/Caddyfile.
+# The gateway serves BOTH the static site and /api/v1, so everything is one origin (no CORS).
 democracia.social.br {
 	encode zstd gzip
+
+	# Hashed Astro assets are immutable -> cache hard. HTML must revalidate so a new deploy is
+	# picked up immediately (avoids stale bundles referencing an old API base).
+	@assets path /_astro/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+	@nocache {
+		not path /_astro/*
+		not path /api/*
+	}
+	header @nocache Cache-Control "no-cache"
+
 	reverse_proxy [::1]:8080
 }
