@@ -17,13 +17,15 @@ use serde::Deserialize;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use dsoc_api_contract::ApiResponse;
-use dsoc_app::AppState;
+use dsoc_api_contract::{ApiResponse, ProfileUpdateDto};
+use dsoc_app::{AppState, CallerId};
 use dsoc_core::ids::OrgId;
 use dsoc_core::{Error, Result};
 
 use crate::domain::{KeySource, TokenValidator, DEFAULT_SESSION_TTL_SECS, IDENTITY_DEPENDENCY};
 use crate::dto::{CreateSessionRequest, LoginRequest, MeDto, RegisterRequest, SessionDto};
+use crate::password_reset::PasswordResetService;
+use crate::profile::{ProfileService, ProfileUpdate};
 use crate::service::{IssuedSession, ZitadelAuth};
 
 /// Build the routed service surface. Reads sovereign-issuer configuration from the environment
@@ -31,13 +33,22 @@ use crate::service::{IssuedSession, ZitadelAuth};
 /// reject with a dependency error rather than panicking.
 pub fn routes(state: AppState) -> Router<()> {
     let svc = build_service(&state);
-    Router::new()
+    // Profile routes carry AppState (the CallerId extractor pulls identity from middleware-set
+    // headers, and the ProfileService is built per-request from state — cheap, no shared mutable
+    // surface). Auth routes carry Arc<ZitadelAuth>; the two sub-routers are merged.
+    let auth_routes = Router::new()
         .route("/auth/register", post(register))
         .route("/auth/login", post(login))
         .route("/auth/logout", post(logout))
         .route("/auth/session", post(create_session))
         .route("/auth/me", get(me))
-        .with_state(svc)
+        .with_state(svc);
+    let profile_routes = Router::new()
+        .route("/me", get(get_me_profile).patch(patch_me_profile))
+        .route("/auth/password-reset/request", post(password_reset_request))
+        .route("/auth/password-reset/confirm", post(password_reset_confirm))
+        .with_state(state);
+    auth_routes.merge(profile_routes)
 }
 
 fn build_service(state: &AppState) -> Arc<ZitadelAuth> {
@@ -245,6 +256,7 @@ fn message_for(error: &Error) -> &'static str {
         Error::Conflict(reason) => match reason.as_str() {
             "email_taken" => "Este e-mail já está cadastrado. Tente entrar na sua conta.",
             "cpf_taken" => "Este CPF já está cadastrado nesta plataforma.",
+            "handle_taken" => "Esse nome de usuário já está em uso. Escolha outro.",
             _ => "Conflito de estado.",
         },
         Error::Dependency { .. } => "Falha ao contatar dependência soberana.",
@@ -388,6 +400,98 @@ impl KeySource for UnconfiguredKeySource {
 
     fn expected_audience(&self) -> Option<&str> {
         None
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Password reset — request + confirm flow (ADR-0010, W1).
+// ---------------------------------------------------------------------------
+
+/// Body for `POST /auth/password-reset/request`. The org is required because the same e-mail
+/// can exist in multiple tenants (the existing register/login surfaces have the same shape).
+#[derive(Debug, Deserialize)]
+struct PasswordResetRequestBody {
+    org_id: Uuid,
+    email: String,
+}
+
+/// Body for `POST /auth/password-reset/confirm`.
+#[derive(Debug, Deserialize)]
+struct PasswordResetConfirmBody {
+    token: String,
+    password: String,
+}
+
+/// `POST /auth/password-reset/request` — start a reset. ALWAYS returns 200 OK regardless of
+/// whether the e-mail is registered (enumeration-resistant). The user receives the e-mail iff
+/// the account exists.
+async fn password_reset_request(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<PasswordResetRequestBody>,
+) -> Response {
+    let svc = PasswordResetService::from_state(&state);
+    // Best-effort source IP for the audit column. The deployment is behind Caddy, which sets
+    // `X-Forwarded-For`; falling back to the RemoteAddr would require Axum's `ConnectInfo`,
+    // which we do not wire here — `None` is acceptable.
+    let request_ip = headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(',').next())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    if let Err(error) = svc
+        .request(OrgId::from_uuid(body.org_id), &body.email, request_ip)
+        .await
+    {
+        // A hard storage failure is logged but still surfaces success at the wire — the user
+        // experience must not depend on whether their e-mail exists.
+        tracing::error!(error = ?error, "password-reset request storage failure");
+    }
+    (StatusCode::OK, Json(ApiResponse::<()>::ok(()))).into_response()
+}
+
+/// `POST /auth/password-reset/confirm` — redeem a token and set a new password. Failures are
+/// uniformly mapped to `Unauthorized` so the caller never learns whether the token was bad,
+/// expired, or already used.
+async fn password_reset_confirm(
+    State(state): State<AppState>,
+    Json(body): Json<PasswordResetConfirmBody>,
+) -> Response {
+    let svc = PasswordResetService::from_state(&state);
+    match svc.confirm(&body.token, &body.password).await {
+        Ok(()) => (StatusCode::OK, Json(ApiResponse::<()>::ok(()))).into_response(),
+        Err(error) => error_response(&error),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Profile (`/me`) — the social-substrate surface (ADR-0010).
+// ---------------------------------------------------------------------------
+
+/// `GET /me` — the authenticated citizen's profile. The identity comes from the gateway's
+/// cookie-resolution middleware via `CallerId`; an unauthenticated request is rejected by the
+/// extractor with 401 before we get here.
+async fn get_me_profile(State(state): State<AppState>, caller: CallerId) -> Response {
+    let svc = ProfileService::from_state(&state);
+    match svc.get(caller.citizen, caller.org).await {
+        Ok(profile) => (StatusCode::OK, Json(ApiResponse::ok(profile))).into_response(),
+        Err(error) => error_response(&error),
+    }
+}
+
+/// `PATCH /me` — update display name / bio / handle / privacy. Returns the refreshed profile so
+/// the client never has to re-fetch.
+async fn patch_me_profile(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Json(body): Json<ProfileUpdateDto>,
+) -> Response {
+    let svc = ProfileService::from_state(&state);
+    let update = ProfileUpdate::from(body);
+    match svc.update(caller.citizen, caller.org, update).await {
+        Ok(profile) => (StatusCode::OK, Json(ApiResponse::ok(profile))).into_response(),
+        Err(error) => error_response(&error),
     }
 }
 

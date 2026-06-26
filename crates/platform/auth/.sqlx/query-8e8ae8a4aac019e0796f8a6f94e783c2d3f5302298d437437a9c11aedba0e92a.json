@@ -1,0 +1,84 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE citizen\n           SET display_name       = CASE WHEN $2 THEN NULLIF($3, '') ELSE display_name END,\n               bio                = CASE WHEN $4 THEN NULLIF($5, '') ELSE bio END,\n               handle             = CASE WHEN $6 THEN NULLIF($7, '') ELSE handle END,\n               is_public          = CASE WHEN $8 THEN $9 ELSE is_public END,\n               profile_updated_at = now()\n         WHERE id = $1\n        RETURNING id AS citizen_id,\n                  org_id,\n                  handle,\n                  display_name,\n                  bio,\n                  avatar_object_key,\n                  cover_object_key,\n                  is_public,\n                  verification_level,\n                  created_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "citizen_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "org_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "handle",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "display_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "bio",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "avatar_object_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "cover_object_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "is_public",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "verification_level",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "Text",
+        "Bool",
+        "Text",
+        "Bool",
+        "Text",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "8e8ae8a4aac019e0796f8a6f94e783c2d3f5302298d437437a9c11aedba0e92a"
+}

@@ -54,6 +54,51 @@ pub enum SlaStatus {
     Ignored,
 }
 
+/// The authenticated citizen's own profile (returned by `GET /me`). Sensitive fields
+/// (CPF, e-mail) are NEVER part of this DTO — the federation surface and the public face of
+/// the citizen never derive from credentials (ADR-0008 / ADR-0010 / LGPD).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct ProfileDto {
+    /// Opaque internal id.
+    pub citizen_id: Uuid,
+    /// Org / tenant the citizen belongs to.
+    pub org_id: Uuid,
+    /// User-chosen federation handle (`@handle@host`), or `None` if not yet picked.
+    pub handle: Option<String>,
+    /// Stable opaque handle (`u-<hex>`) shown until the citizen picks one.
+    pub public_handle: String,
+    /// Friendly name shown in the header and on civic content.
+    pub display_name: Option<String>,
+    /// Short self-description (Portuguese, ≤ 500 chars from the UI; DB allows 1000 as guard).
+    pub bio: Option<String>,
+    /// Avatar URL (publicly resolvable) — or `None` to fall back to the default rendered SVG.
+    pub avatar_url: Option<String>,
+    /// Cover image URL — or `None`.
+    pub cover_url: Option<String>,
+    /// Privacy gate. `false` (default) = local only, federation Actor is NOT materialized.
+    pub is_public: bool,
+    /// Verification level reached (`anonymous` / `email` / `directory` / `strong`). Cosmetic
+    /// badge today; gates some operations elsewhere in the platform.
+    pub verification_level: String,
+    /// First seen on the platform.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Editable subset of [`ProfileDto`] accepted by `PATCH /me`. Every field is optional so the
+/// caller can patch one attribute at a time; `None` means "leave as-is". To CLEAR an optional
+/// field (e.g. wipe the bio), send `Some("")` — the service interprets empty strings as `NULL`.
+#[derive(Debug, Clone, Default, Deserialize, ToSchema)]
+pub struct ProfileUpdateDto {
+    /// New display name (`""` to clear).
+    pub display_name: Option<String>,
+    /// New bio (`""` to clear).
+    pub bio: Option<String>,
+    /// New handle (validated server-side; rejected if already taken in this org).
+    pub handle: Option<String>,
+    /// Toggle federation visibility. `true` materializes the citizen as an ActivityPub Actor.
+    pub is_public: Option<bool>,
+}
+
 /// Public per-politician scorecard summary.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ScorecardDto {

@@ -29,6 +29,10 @@ utoipa = { workspace = true }
 jsonwebtoken = { workspace = true }
 argon2 = { workspace = true }
 reqwest = { workspace = true }
+lettre = { workspace = true }
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.8"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

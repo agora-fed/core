@@ -8,7 +8,7 @@
 pub mod dto;
 pub mod envelope;
 
-pub use dto::{MandateDto, ProposalDto, ScorecardDto, SlaStatus};
+pub use dto::{MandateDto, ProfileDto, ProfileUpdateDto, ProposalDto, ScorecardDto, SlaStatus};
 pub use envelope::{ApiError, ApiResponse, PageMeta};
 
 use utoipa::OpenApi;
@@ -24,6 +24,8 @@ use utoipa::OpenApi;
     components(schemas(
         dto::ProposalDto,
         dto::MandateDto,
+        dto::ProfileDto,
+        dto::ProfileUpdateDto,
         dto::ScorecardDto,
         dto::SlaStatus,
         envelope::ApiError,
