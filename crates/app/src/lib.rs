@@ -14,7 +14,7 @@ pub use caller::CallerId;
 
 use std::sync::Arc;
 
-use dsoc_core::{Authorization, Clock, EventBus};
+use dsoc_core::{Authorization, Clock, EventBus, Storage};
 use dsoc_db::Db;
 
 /// Shared, cheaply-cloneable application state injected into every crate's router.
@@ -28,6 +28,9 @@ pub struct AppState {
     pub authz: Arc<dyn Authorization>,
     /// The injected clock (never read time ambiently — TESTING.md).
     pub clock: Arc<dyn Clock>,
+    /// Blob storage port (ADR-0010 W1.2). `None` when no `STORAGE_*` env is configured — the
+    /// gateway then returns 503 on upload endpoints and avatar URLs render as `None` everywhere.
+    pub storage: Option<Arc<dyn Storage>>,
 }
 
 impl std::fmt::Debug for AppState {

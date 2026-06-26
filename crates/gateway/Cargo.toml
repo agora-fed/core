@@ -26,6 +26,7 @@ dsoc-events = { path = "../platform/events" }
 dsoc-consensus = { path = "../platform/consensus" }
 dsoc-moderation = { path = "../platform/moderation" }
 dsoc-admin = { path = "../platform/admin" }
+dsoc-storage = { path = "../platform/storage" }
 # spaces
 dsoc-processes = { path = "../spaces/processes" }
 dsoc-assemblies = { path = "../spaces/assemblies" }

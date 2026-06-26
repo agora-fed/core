@@ -103,6 +103,7 @@ fn app_state(db: Db, level: VerificationLevel) -> AppState {
         bus: Arc::new(RecordingEventBus::new()) as Arc<dyn EventBus>,
         authz: Arc::new(StubAuthz { level }) as Arc<dyn Authorization>,
         clock: Arc::new(FixedClock(now())) as Arc<dyn Clock>,
+        storage: None,
     }
 }
 

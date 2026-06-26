@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT avatar_object_key, cover_object_key FROM citizen WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "avatar_object_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "cover_object_key",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "38f9b3061be521071688c0b392a43f6db7d484d37cd469ec19cef349ccd3a60a"
+}

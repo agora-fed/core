@@ -45,8 +45,13 @@ pub fn routes(state: AppState) -> Router<()> {
         .with_state(svc);
     let profile_routes = Router::new()
         .route("/me", get(get_me_profile).patch(patch_me_profile))
+        .route("/me/avatar", post(post_me_avatar))
+        .route("/me/cover", post(post_me_cover))
         .route("/auth/password-reset/request", post(password_reset_request))
         .route("/auth/password-reset/confirm", post(password_reset_confirm))
+        // Multipart body cap: avatar/cover code re-validates at 5 MiB, but we cap the framework
+        // intake at 6 MiB so a 5 GB upload is rejected before we touch RAM.
+        .layer(axum::extract::DefaultBodyLimit::max(6 * 1024 * 1024))
         .with_state(state);
     auth_routes.merge(profile_routes)
 }
@@ -478,6 +483,84 @@ async fn get_me_profile(State(state): State<AppState>, caller: CallerId) -> Resp
         Ok(profile) => (StatusCode::OK, Json(ApiResponse::ok(profile))).into_response(),
         Err(error) => error_response(&error),
     }
+}
+
+/// `POST /me/avatar` — multipart upload (`file` field). On success returns the refreshed
+/// profile, so the client renders the new URL without a second round trip. The service
+/// re-validates the bytes (the multipart Content-Type is untrusted), resizes to 512×512 PNG,
+/// strips EXIF, and persists into MinIO.
+async fn post_me_avatar(
+    State(state): State<AppState>,
+    caller: CallerId,
+    multipart: axum::extract::Multipart,
+) -> Response {
+    upload_media(state, caller, multipart, MediaSlot::Avatar).await
+}
+
+/// `POST /me/cover` — mirror of `post_me_avatar` for the wide cover banner (1500×500).
+async fn post_me_cover(
+    State(state): State<AppState>,
+    caller: CallerId,
+    multipart: axum::extract::Multipart,
+) -> Response {
+    upload_media(state, caller, multipart, MediaSlot::Cover).await
+}
+
+/// Which profile media slot a request is targeting; small enum so the multipart handler is
+/// shared between avatar and cover.
+#[derive(Clone, Copy)]
+enum MediaSlot {
+    Avatar,
+    Cover,
+}
+
+/// Shared multipart-handling body. Pulls the first part named `file` and hands its bytes off
+/// to the service, which does all the validation.
+async fn upload_media(
+    state: AppState,
+    caller: CallerId,
+    mut multipart: axum::extract::Multipart,
+    slot: MediaSlot,
+) -> Response {
+    let bytes = match read_file_part(&mut multipart).await {
+        Ok(Some(b)) => b,
+        Ok(None) => {
+            return error_response(&Error::Validation(
+                "envie o arquivo no campo `file`".to_owned(),
+            ))
+        }
+        Err(error) => return error_response(&error),
+    };
+    let svc = ProfileService::from_state(&state);
+    let result = match slot {
+        MediaSlot::Avatar => svc.set_avatar(caller.citizen, caller.org, bytes).await,
+        MediaSlot::Cover => svc.set_cover(caller.citizen, caller.org, bytes).await,
+    };
+    match result {
+        Ok(profile) => (StatusCode::OK, Json(ApiResponse::ok(profile))).into_response(),
+        Err(error) => error_response(&error),
+    }
+}
+
+/// Read the FIRST multipart part whose name is `file`. Other parts are ignored. The body cap
+/// applied at the router level guarantees a hostile upload never grows past 6 MiB.
+async fn read_file_part(
+    multipart: &mut axum::extract::Multipart,
+) -> Result<Option<Vec<u8>>> {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| Error::Validation(format!("upload inválido: {e}")))?
+    {
+        if field.name() == Some("file") {
+            let bytes = field
+                .bytes()
+                .await
+                .map_err(|e| Error::Validation(format!("upload inválido: {e}")))?;
+            return Ok(Some(bytes.to_vec()));
+        }
+    }
+    Ok(None)
 }
 
 /// `PATCH /me` — update display name / bio / handle / privacy. Returns the refreshed profile so

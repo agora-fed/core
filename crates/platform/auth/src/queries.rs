@@ -382,6 +382,55 @@ pub(crate) async fn find_profile<'e, E: PgExecutor<'e>>(
     Ok(row)
 }
 
+/// Read the citizen's current avatar/cover keys (before an update). Two-step (read + update)
+/// avoids the SQL gymnastics needed to coax the pre-update value out of `RETURNING`; the race
+/// window between the two statements only matters for the same citizen uploading two avatars
+/// within microseconds (harmless — worst case one orphan object in storage).
+pub(crate) async fn current_media_keys<'e, E: PgExecutor<'e>>(
+    ex: E,
+    citizen_id: Uuid,
+) -> Result<Option<(Option<String>, Option<String>)>, sqlx::Error> {
+    let row = sqlx::query!(
+        "SELECT avatar_object_key, cover_object_key FROM citizen WHERE id = $1",
+        citizen_id,
+    )
+    .fetch_optional(ex)
+    .await?;
+    Ok(row.map(|r| (r.avatar_object_key, r.cover_object_key)))
+}
+
+/// Update the citizen's avatar object key (the bytes already live in S3/MinIO at `key`).
+pub(crate) async fn update_avatar_object_key<'e, E: PgExecutor<'e>>(
+    ex: E,
+    citizen_id: Uuid,
+    new_key: &str,
+) -> Result<u64, sqlx::Error> {
+    let r = sqlx::query!(
+        "UPDATE citizen SET avatar_object_key = $2, profile_updated_at = now() WHERE id = $1",
+        citizen_id,
+        new_key,
+    )
+    .execute(ex)
+    .await?;
+    Ok(r.rows_affected())
+}
+
+/// Same shape as [`update_avatar_object_key`] but for the cover image.
+pub(crate) async fn update_cover_object_key<'e, E: PgExecutor<'e>>(
+    ex: E,
+    citizen_id: Uuid,
+    new_key: &str,
+) -> Result<u64, sqlx::Error> {
+    let r = sqlx::query!(
+        "UPDATE citizen SET cover_object_key = $2, profile_updated_at = now() WHERE id = $1",
+        citizen_id,
+        new_key,
+    )
+    .execute(ex)
+    .await?;
+    Ok(r.rows_affected())
+}
+
 /// One row from `auth_password_reset` (live or used). Carries the citizen id needed to update
 /// the matching credential on confirmation.
 #[derive(Debug, Clone)]

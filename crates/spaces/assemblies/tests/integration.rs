@@ -407,6 +407,7 @@ async fn from_state_constructors_are_wired() {
             level: VerificationLevel::Email,
         }),
         clock: Arc::new(FixedClock(now())),
+        storage: None,
     };
     let svc = AssembliesService::from_state(&state);
     let assembly = svc

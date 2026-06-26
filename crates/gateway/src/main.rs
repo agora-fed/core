@@ -20,11 +20,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let clock = Arc::new(SystemClock);
     let bus = Arc::new(PgEventBus::new(db.clone()));
     let authz = dsoc_auth::authorization(db.clone(), clock.clone(), bus.clone());
+    // Storage is optional: when STORAGE_* env is unset the upload endpoints return 503 and
+    // avatars stay blank — useful for dev/test loops that don't need MinIO running. Built
+    // async because the AWS SDK loads its default sleep impl + HTTP connector through
+    // `aws_config::defaults`.
+    let storage = match dsoc_storage::S3Storage::from_env().await {
+        Some(s) => Some(s.into_dyn()),
+        None => None,
+    };
+    if storage.is_none() {
+        tracing::warn!("STORAGE_* env unset; blob uploads disabled (avatars/covers stay blank)");
+    }
     let state = AppState {
         db,
         bus,
         authz,
         clock,
+        storage,
     };
 
     let port: u16 = std::env::var("GATEWAY_PORT")

@@ -22,4 +22,4 @@ pub mod traits;
 pub use clock::{Clock, SystemClock};
 pub use error::{Error, Result};
 pub use events::{Event, EventEnvelope, EventTopic};
-pub use traits::{Authorization, Component, EventBus, Space, VerificationLevel};
+pub use traits::{Authorization, Component, EventBus, Space, Storage, VerificationLevel};

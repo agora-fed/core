@@ -51,6 +51,23 @@ pub trait EventBus: Send + Sync {
     async fn publish(&self, envelope: EventEnvelope) -> Result<()>;
 }
 
+/// Blob storage port (ADR-0010 W1.2). Concrete implementation lives in `dsoc-storage` (S3 /
+/// MinIO), injected as `Arc<dyn Storage>` so component crates depend on the port — not on the
+/// vendor SDK — and a future swap (AWS S3, Cloudflare R2, etc.) is one wiring change.
+///
+/// `put` is content-addressed at the caller's discretion: the caller chooses the key (typically
+/// `<scope>/<uuid>.<ext>`) so the URL is stable and the caller controls the cache strategy.
+#[async_trait::async_trait]
+pub trait Storage: Send + Sync {
+    /// Upload `bytes` to `key` with the declared `content_type` (used to set the object's
+    /// `Content-Type` header for the public CDN/proxy). Overwrites if the key exists — the
+    /// caller picks unique keys when overwriting is wrong.
+    async fn put(&self, key: &str, content_type: &str, bytes: Vec<u8>) -> Result<()>;
+
+    /// Delete an object by key. Idempotent: a missing key is not an error.
+    async fn delete(&self, key: &str) -> Result<()>;
+}
+
 /// A participation **space** (process, assembly, initiative, consultation, mandate).
 /// Implemented by each crate under `crates/spaces`.
 pub trait Space: Send + Sync {

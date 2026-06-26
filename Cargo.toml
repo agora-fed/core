@@ -26,7 +26,7 @@ rust-version = "1.86"
 [workspace.dependencies]
 # --- async runtime / web ---
 tokio = { version = "1.43", features = ["rt-multi-thread", "macros", "net", "time", "signal"] }
-axum = { version = "0.8", features = ["macros"] }
+axum = { version = "0.8", features = ["macros", "multipart"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "cors", "limit", "timeout", "fs"] }
 # --- database: explicit, compile-time-checked SQL only (PLAN.md principle 3) ---
@@ -41,6 +41,10 @@ utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
 jsonwebtoken = "9"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder"] }
+# --- object storage (S3-compatible; MinIO is the sovereign default per ADR-0010) ---
+aws-config = { version = "1.5", default-features = false, features = ["rustls", "behavior-version-latest", "rt-tokio"] }
+aws-sdk-s3 = { version = "1", default-features = false, features = ["rustls", "behavior-version-latest", "rt-tokio"] }
+aws-credential-types = "1"
 # --- ids / time / errors / logging ---
 uuid = { version = "1", features = ["v7", "serde"] }
 chrono = { version = "0.4", default-features = false, features = ["serde", "clock"] }
@@ -49,6 +53,8 @@ async-trait = "0.1"
 argon2 = "0.5"
 anyhow = "1"
 tracing = "0.1"
+# --- image processing (avatar/cover resize, ADR-0010 W1.2) ---
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 [workspace.lints.rust]

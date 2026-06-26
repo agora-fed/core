@@ -10,12 +10,15 @@
 //! social face of the citizen. That separation is what lets us federate (W2) without leaking
 //! sovereign credentials.
 
+use std::sync::Arc;
+
 use dsoc_api_contract::ProfileDto;
 use dsoc_core::ids::{CitizenId, OrgId};
-use dsoc_core::{Error, Result};
+use dsoc_core::{Error, Result, Storage};
 use dsoc_db::Db;
 
 use crate::domain;
+use crate::media::{self, MediaKind};
 use crate::queries::{self, ProfileRow};
 
 /// Max accepted bio length from the API (DB caps at 1000 as the last-line guard).
@@ -29,32 +32,135 @@ const HANDLE_MAX: usize = 32;
 /// The profile service. Holds the database handle and the avatar/cover URL base used to project
 /// stored object keys into publicly resolvable URLs (the storage crate owns the actual bytes;
 /// this only renders the URL prefix).
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ProfileService {
     db: Db,
     media_base_url: String,
+    storage: Option<Arc<dyn Storage>>,
+}
+
+impl std::fmt::Debug for ProfileService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProfileService")
+            .field("media_base_url", &self.media_base_url)
+            .field("storage_configured", &self.storage.is_some())
+            .finish()
+    }
 }
 
 impl ProfileService {
     /// Build the service. `media_base_url` is the public origin under which avatar/cover object
     /// keys resolve, e.g. `https://democracia.social.br/media`. Trailing slash is normalized.
     #[must_use]
-    pub fn new(db: Db, media_base_url: impl Into<String>) -> Self {
+    pub fn new(
+        db: Db,
+        media_base_url: impl Into<String>,
+        storage: Option<Arc<dyn Storage>>,
+    ) -> Self {
         let raw = media_base_url.into();
         let trimmed = raw.trim_end_matches('/').to_owned();
         Self {
             db,
             media_base_url: trimmed,
+            storage,
         }
     }
 
-    /// Build from `AppState`. The media base comes from `MEDIA_BASE_URL`; until the storage crate
-    /// (W1.2) lands, the env var may be unset and avatar/cover URLs render as `None` regardless
-    /// of the object key — handlers don't have to know.
+    /// Build from `AppState`. The media base comes from `MEDIA_BASE_URL` (default
+    /// `/media` — relative same-origin path, so Caddy serves it). Storage is whatever the gateway
+    /// wired (S3/MinIO when configured, `None` otherwise — handlers map missing storage to a
+    /// dependency error).
     #[must_use]
     pub fn from_state(state: &dsoc_app::AppState) -> Self {
-        let base = std::env::var("MEDIA_BASE_URL").unwrap_or_default();
-        Self::new(state.db.clone(), base)
+        let base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+        Self::new(state.db.clone(), base, state.storage.clone())
+    }
+
+    /// Upload + persist the caller's avatar. Returns the refreshed profile.
+    ///
+    /// # Errors
+    /// [`Error::Validation`] for an invalid image; [`Error::Dependency`] if storage is not
+    /// wired; [`Error::Storage`] on a persistence failure; [`Error::NotFound`] if the citizen
+    /// row vanished out from under the upload.
+    pub async fn set_avatar(
+        &self,
+        caller: CitizenId,
+        expected_org: OrgId,
+        raw: Vec<u8>,
+    ) -> Result<ProfileDto> {
+        self.set_media(caller, expected_org, MediaKind::Avatar, raw).await
+    }
+
+    /// Upload + persist the caller's cover image. Same shape as [`Self::set_avatar`].
+    ///
+    /// # Errors
+    /// See [`Self::set_avatar`].
+    pub async fn set_cover(
+        &self,
+        caller: CitizenId,
+        expected_org: OrgId,
+        raw: Vec<u8>,
+    ) -> Result<ProfileDto> {
+        self.set_media(caller, expected_org, MediaKind::Cover, raw).await
+    }
+
+    /// Shared body of [`Self::set_avatar`] / [`Self::set_cover`]. Validates the caller's
+    /// citizen row, reads the prior object key (for cleanup), uploads the new image, updates
+    /// the row, then best-effort deletes the prior object from storage.
+    async fn set_media(
+        &self,
+        caller: CitizenId,
+        expected_org: OrgId,
+        kind: MediaKind,
+        raw: Vec<u8>,
+    ) -> Result<ProfileDto> {
+        // Org binding (same protection as get/update).
+        let current = queries::find_profile(&self.db, caller.as_uuid())
+            .await
+            .map_err(map_sqlx)?
+            .ok_or_else(|| Error::NotFound("citizen not found".to_owned()))?;
+        if current.org_id != expected_org.as_uuid() {
+            return Err(Error::Unauthorized);
+        }
+
+        let keys = queries::current_media_keys(&self.db, caller.as_uuid())
+            .await
+            .map_err(map_sqlx)?;
+        let prior = match (keys, kind) {
+            (Some((avatar, _)), MediaKind::Avatar) => avatar,
+            (Some((_, cover)), MediaKind::Cover) => cover,
+            (None, _) => None,
+        };
+
+        let new_key = media::upload_image(self.storage.as_ref(), caller, kind, raw).await?;
+
+        match kind {
+            MediaKind::Avatar => {
+                queries::update_avatar_object_key(&self.db, caller.as_uuid(), &new_key)
+                    .await
+                    .map_err(map_sqlx)?;
+            }
+            MediaKind::Cover => {
+                queries::update_cover_object_key(&self.db, caller.as_uuid(), &new_key)
+                    .await
+                    .map_err(map_sqlx)?;
+            }
+        }
+
+        // Best-effort cleanup of the prior object. A failure here is logged but doesn't fail the
+        // upload — the bytes are already swapped in the DB; the worst case is one orphan.
+        if let (Some(prior), Some(storage)) = (prior, self.storage.as_ref()) {
+            if let Err(err) = storage.delete(&prior).await {
+                tracing::warn!(error = ?err, key = %prior, "failed to delete prior media object");
+            }
+        }
+
+        // Re-read so the DTO reflects the persisted state (and renders the new URL).
+        let row = queries::find_profile(&self.db, caller.as_uuid())
+            .await
+            .map_err(map_sqlx)?
+            .ok_or_else(|| Error::NotFound("citizen not found".to_owned()))?;
+        Ok(self.row_to_dto(row))
     }
 
     /// Read the caller's profile. The org is taken from the authenticated `CallerId` (never from

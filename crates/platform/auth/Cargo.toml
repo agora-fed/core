@@ -33,6 +33,7 @@ lettre = { workspace = true }
 sha2 = "0.10"
 base64 = "0.22"
 rand = "0.8"
+image = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

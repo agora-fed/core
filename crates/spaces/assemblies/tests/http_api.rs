@@ -77,6 +77,7 @@ fn state(db: Db, level: VerificationLevel) -> AppState {
         bus: Arc::new(RecordingEventBus::new()),
         authz: Arc::new(StubAuthz { level }),
         clock: Arc::new(FixedClock(now())),
+        storage: None,
     }
 }
 
