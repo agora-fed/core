@@ -11,6 +11,7 @@ const isActive = (href: string) =>
 const links = [
   { href: '/politicos', label: 'Políticos' },
   { href: '/propostas', label: 'Propostas' },
+  { href: '/propor', label: 'Propor', cta: true },
   { href: '/debates', label: 'Debates' },
   { href: '/consultas', label: 'Consultas' },
 ];
@@ -45,7 +46,10 @@ const links = [
           links.map((l) => (
             <a
               href={l.href}
-              class:list={['nav-link', { active: isActive(l.href) }]}
+              class:list={[
+                'nav-link',
+                { active: isActive(l.href), cta: l.cta },
+              ]}
               aria-current={isActive(l.href) ? 'page' : undefined}
             >
               {l.label}
@@ -118,6 +122,19 @@ const links = [
   .nav-link.active {
     color: var(--c-green-dark);
     background: var(--c-green-soft);
+  }
+  .nav-link.cta {
+    background: var(--c-green-dark);
+    color: white;
+  }
+  .nav-link.cta:hover {
+    background: var(--c-green-dark);
+    filter: brightness(1.1);
+  }
+  .nav-link.cta.active {
+    background: var(--c-green-dark);
+    color: white;
+    box-shadow: inset 0 0 0 2px white, 0 0 0 2px var(--c-green-dark);
   }
   .actions {
     display: flex;

@@ -200,14 +200,24 @@ impl From<Office> for OfficeDto {
 
 /// Map the registry's `MandateView` onto the shared `api-contract` `MandateDto` (the public
 /// contract shape clients consume). The derived onboarding status collapses to the `onboarded`
-/// boolean the contract exposes.
+/// boolean the contract exposes. Avatar URL is composed from `MEDIA_BASE_URL` (or `/media` for
+/// the same-origin default) + the stored object key.
 fn to_mandate_dto(view: MandateView) -> MandateDto {
+    let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+    let media_base = media_base.trim_end_matches('/');
+    let avatar_url = view
+        .avatar_object_key
+        .map(|k| format!("{media_base}/{k}"));
     MandateDto {
         id: view.id.as_uuid(),
         office: view.office,
         display_name: view.display_name,
         is_candidate: view.is_candidate,
         onboarded: matches!(view.status, OnboardingStatus::Onboarded),
+        party: view.party,
+        uf: view.uf,
+        house: view.house,
+        avatar_url,
     }
 }
 
@@ -484,6 +494,10 @@ mod tests {
             is_candidate: false,
             status,
             public_handle: "m-abc".to_owned(),
+            party: None,
+            uf: None,
+            house: None,
+            avatar_object_key: None,
         };
         assert!(to_mandate_dto(mk(OnboardingStatus::Onboarded)).onboarded);
         assert!(!to_mandate_dto(mk(OnboardingStatus::Invited)).onboarded);

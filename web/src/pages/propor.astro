@@ -1,0 +1,47 @@
+---
+// Página dedicada pra criar uma proposta. Aceita ?mandate=<id> pra pré-selecionar o
+// parlamentar quando o usuário vem de /politicos/<id>/[Propor demanda]. O composer (já
+// existente) detecta esse parâmetro client-side.
+import BaseLayout from '../layouts/BaseLayout.astro';
+import ColorBar from '../components/illustrations/ColorBar.astro';
+import ProposeForm from '../components/islands/ProposeForm.svelte';
+
+const description =
+  'Proponha uma demanda pública direcionada a um parlamentar. Ao atingir o limiar de apoios, o relógio de resposta começa a correr.';
+---
+
+<BaseLayout title="Propor demanda" {description}>
+  <section class="section">
+    <div class="container narrow">
+      <header class="head">
+        <ColorBar class="head-bar" />
+        <h1>Propor uma demanda</h1>
+        <p class="muted lede">
+          Escreva a sua demanda dirigida a um parlamentar. Quando outras
+          pessoas <strong>apoiarem</strong> e o limiar for atingido, o
+          <strong>relógio de resposta</strong> começa a correr — silêncio vira
+          registro público.
+        </p>
+      </header>
+      <ProposeForm client:load />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .narrow {
+    max-width: 38rem;
+  }
+  .head {
+    margin-bottom: 1.5rem;
+  }
+  .head-bar {
+    margin-bottom: 0.9rem;
+  }
+  h1 {
+    margin: 0 0 0.5rem;
+  }
+  .lede {
+    font-size: 1.05rem;
+  }
+</style>

@@ -71,6 +71,10 @@ export interface MandateDto {
   display_name: string;
   is_candidate: boolean;
   onboarded: boolean;
+  party: string | null;
+  uf: string | null;
+  house: 'camara' | 'senado' | null;
+  avatar_url: string | null;
 }
 
 /** State of a consequence SLA — the emotional core of the UI. */

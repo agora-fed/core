@@ -74,6 +74,14 @@ pub struct MandateView {
     pub status: OnboardingStatus,
     /// Stable public handle (ADR-0005 federation seam).
     pub public_handle: String,
+    /// Sigla do partido (when this is a real seated parliamentarian).
+    pub party: Option<String>,
+    /// Sigla da UF.
+    pub uf: Option<String>,
+    /// Casa: `camara` | `senado`.
+    pub house: Option<String>,
+    /// Object key in MinIO under bucket `dsoc-media`. Renders as `<MEDIA_BASE_URL>/<key>`.
+    pub avatar_object_key: Option<String>,
 }
 
 /// A term-bound office record.
@@ -456,6 +464,10 @@ impl MandateRegistry {
             is_candidate: row.is_candidate,
             status,
             public_handle: domain::public_handle(id),
+            party: row.party,
+            uf: row.uf,
+            house: row.house,
+            avatar_object_key: row.avatar_object_key,
         })
     }
 
@@ -493,6 +505,10 @@ impl MandateRegistry {
                 is_candidate: row.is_candidate,
                 status,
                 public_handle: domain::public_handle(id),
+                party: row.party,
+                uf: row.uf,
+                house: row.house,
+                avatar_object_key: row.avatar_object_key,
             });
         }
         Ok(views)

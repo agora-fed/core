@@ -38,6 +38,15 @@ pub struct MandateDto {
     pub is_candidate: bool,
     /// Whether the official has completed onboarding.
     pub onboarded: bool,
+    /// Sigla do partido (e.g. `PT`, `PSOL`). `None` for legacy/fictional mandates.
+    pub party: Option<String>,
+    /// Sigla da UF (e.g. `BA`, `SP`). `None` when not applicable.
+    pub uf: Option<String>,
+    /// Casa: `camara` | `senado`. `None` for legacy.
+    pub house: Option<String>,
+    /// Avatar URL (resolved via `MEDIA_BASE_URL` from the stored object key). `None` ⇒ UI
+    /// shows initials.
+    pub avatar_url: Option<String>,
 }
 
 /// State of a consequence SLA, surfaced to clients (the emotional core of the UI).

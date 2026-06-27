@@ -32,11 +32,22 @@
   }
 
   onMount(async () => {
-    const res = await getMandates();
+    const res = await getMandates(undefined, 500);
     mandatesLoading = false;
     if (res.ok && res.data) {
       mandates = res.data;
-      if (mandates.length === 1) mandateId = mandates[0].id;
+      // Pre-select when the URL carries `?mandate=<id>` (linked from /politicos/<id>).
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const pre = params.get('mandate');
+        if (pre && mandates.some((m) => m.id === pre)) {
+          mandateId = pre;
+        } else if (mandates.length === 1) {
+          mandateId = mandates[0].id;
+        }
+      } catch {
+        if (mandates.length === 1) mandateId = mandates[0].id;
+      }
     } else {
       mandatesError =
         res.error ?? 'Não foi possível carregar a lista de políticos.';

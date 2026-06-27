@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, office, display_name, public_email, is_candidate, onboarded_at\n        FROM mandate\n        WHERE org_id = $1\n        ORDER BY display_name ASC\n        LIMIT $2 OFFSET $3\n        ",
+  "query": "\n        SELECT id, office, display_name, public_email, is_candidate, onboarded_at,\n               party, uf, house, avatar_object_key\n        FROM mandate\n        WHERE org_id = $1\n        ORDER BY display_name ASC\n        LIMIT $2 OFFSET $3\n        ",
   "describe": {
     "columns": [
       {
@@ -32,6 +32,26 @@
         "ordinal": 5,
         "name": "onboarded_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "party",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "uf",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "house",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "avatar_object_key",
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -47,8 +67,12 @@
       false,
       false,
       false,
+      true,
+      true,
+      true,
+      true,
       true
     ]
   },
-  "hash": "ef3593f4be94d873fd1a4740444f713a32280206e9717d7f9c546e906c2a6aa1"
+  "hash": "279b5f8851687ff70f00a475663e6255ce59e37ce7d8c2a2877637f54e18aa59"
 }

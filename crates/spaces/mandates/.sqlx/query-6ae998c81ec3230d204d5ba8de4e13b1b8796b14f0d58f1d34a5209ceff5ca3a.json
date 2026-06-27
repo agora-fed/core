@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, office, display_name, public_email, is_candidate, onboarded_at\n        FROM mandate\n        WHERE org_id = $1 AND id = $2\n        ",
+  "query": "\n        SELECT id, office, display_name, public_email, is_candidate, onboarded_at,\n               party, uf, house, avatar_object_key\n        FROM mandate\n        WHERE org_id = $1 AND id = $2\n        ",
   "describe": {
     "columns": [
       {
@@ -32,6 +32,26 @@
         "ordinal": 5,
         "name": "onboarded_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "party",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "uf",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "house",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "avatar_object_key",
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -46,8 +66,12 @@
       false,
       false,
       false,
+      true,
+      true,
+      true,
+      true,
       true
     ]
   },
-  "hash": "ba943c5401bcbc6285d34fb7bbdc62ae7f2b522be2ef86fea7f2609578894620"
+  "hash": "6ae998c81ec3230d204d5ba8de4e13b1b8796b14f0d58f1d34a5209ceff5ca3a"
 }

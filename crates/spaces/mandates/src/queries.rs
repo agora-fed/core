@@ -12,7 +12,9 @@ use sqlx::PgExecutor;
 use uuid::Uuid;
 
 /// A mandate row read for invite / display (core-owned `mandate` table; the `mandates` crate owns
-/// its lifecycle). No `SELECT *` — only the columns the lifecycle needs.
+/// its lifecycle). No `SELECT *` — only the columns the lifecycle needs. The "real parliament"
+/// columns (party/uf/house/avatar_object_key, added in migration 0201) are optional so the
+/// historical seed rows keep loading without backfill.
 #[derive(Debug, Clone)]
 pub(crate) struct MandateRow {
     pub id: Uuid,
@@ -21,6 +23,10 @@ pub(crate) struct MandateRow {
     pub public_email: String,
     pub is_candidate: bool,
     pub onboarded_at: Option<DateTime<Utc>>,
+    pub party: Option<String>,
+    pub uf: Option<String>,
+    pub house: Option<String>,
+    pub avatar_object_key: Option<String>,
 }
 
 /// The invitation + its mandate's onboarding marker, read under a row lock during acceptance.
@@ -72,7 +78,8 @@ pub(crate) async fn find_mandate<'e, E: PgExecutor<'e>>(
     let row = sqlx::query_as!(
         MandateRow,
         r#"
-        SELECT id, office, display_name, public_email, is_candidate, onboarded_at
+        SELECT id, office, display_name, public_email, is_candidate, onboarded_at,
+               party, uf, house, avatar_object_key
         FROM mandate
         WHERE org_id = $1 AND id = $2
         "#,
@@ -97,7 +104,8 @@ pub(crate) async fn list_mandates<'e, E: PgExecutor<'e>>(
     let rows = sqlx::query_as!(
         MandateRow,
         r#"
-        SELECT id, office, display_name, public_email, is_candidate, onboarded_at
+        SELECT id, office, display_name, public_email, is_candidate, onboarded_at,
+               party, uf, house, avatar_object_key
         FROM mandate
         WHERE org_id = $1
         ORDER BY display_name ASC

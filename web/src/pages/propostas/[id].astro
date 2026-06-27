@@ -1,128 +1,26 @@
 ---
+// Página individual da proposta. SSG: uma página por proposta existente no build, mas o
+// conteúdo (apoios, SLA, comentários) é CARREGADO CLIENT-SIDE pela ilha — assim a contagem
+// reflete em tempo real e novas propostas aparecem no próximo rebuild (em vez de 404).
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import SlaClock from '../../components/islands/SlaClock.svelte';
-import VoteButton from '../../components/islands/VoteButton.svelte';
-import CommentForm from '../../components/islands/CommentForm.svelte';
-import { getProposals, getSlas, DEFAULT_ORG_ID } from '../../lib/api';
-import { formatDate } from '../../lib/format';
-import type { ProposalDto, SlaDto } from '../../lib/types';
+import ProposalDetail from '../../components/islands/ProposalDetail.svelte';
+import { getProposals, DEFAULT_ORG_ID } from '../../lib/api';
 
-// One static page per proposal, enumerated at build time.
 export async function getStaticPaths() {
-  const proposals = await getProposals(DEFAULT_ORG_ID, 200);
-  if (!proposals.ok || !proposals.data) return [];
-
-  const slas = await getSlas(DEFAULT_ORG_ID, 200);
-  const slaList = slas.ok ? (slas.data ?? []) : [];
-
-  return proposals.data.map((proposal) => ({
-    params: { id: proposal.id },
-    props: {
-      proposal,
-      sla: slaList.find((s) => s.proposal_id === proposal.id) ?? null,
-    },
-  }));
+  const res = await getProposals(DEFAULT_ORG_ID, 500);
+  if (!res.ok || !res.data) return [];
+  return res.data.map((p) => ({ params: { id: p.id } }));
 }
 
-interface Props {
-  proposal: ProposalDto;
-  sla: SlaDto | null;
-}
-
-const { proposal, sla } = Astro.props as Props;
-
+const { id } = Astro.params;
 const description =
-  proposal.body.length > 160
-    ? `${proposal.body.slice(0, 157)}…`
-    : proposal.body;
-
-const jsonLd = {
-  '@context': 'https://schema.org',
-  '@type': 'CreativeWork',
-  name: proposal.title,
-  text: proposal.body,
-  inLanguage: 'pt-BR',
-  dateCreated: proposal.created_at,
-  interactionStatistic: {
-    '@type': 'InteractionCounter',
-    interactionType: 'https://schema.org/EndorseAction',
-    userInteractionCount: proposal.support_count,
-  },
-};
+  'Demanda pública dirigida a um parlamentar — apoie, comente, acompanhe o prazo de resposta.';
 ---
 
-<BaseLayout title={proposal.title} {description} {jsonLd}>
-  <article class="section">
-    <div class="container narrow">
-      <a href="/propostas" class="back muted">← Todas as propostas</a>
-
-      <h1>{proposal.title}</h1>
-      <p class="meta muted">
-        Publicada em <time datetime={proposal.created_at}
-          >{formatDate(proposal.created_at)}</time
-        >
-      </p>
-
-      {
-        sla && (
-          <div class="sla-wrap">
-            <SlaClock
-              client:visible
-              dueAt={sla.due_at}
-              startedAt={sla.started_at}
-              status={sla.status}
-            />
-          </div>
-        )
-      }
-
-      <div class="body">
-        {proposal.body.split(/\n{2,}/).map((para) => <p>{para}</p>)}
-      </div>
-
-      <div class="actions card">
-        <VoteButton
-          client:visible
-          proposalId={proposal.id}
-          initialCount={proposal.support_count}
-        />
-      </div>
-
-      <section class="comments" aria-labelledby="comments-h">
-        <h2 id="comments-h">Debate</h2>
-        <p class="muted">
-          Contribua com argumentos e dados. O debate qualifica a demanda antes
-          de ela cobrar uma resposta.
-        </p>
-        <CommentForm client:visible proposalId={proposal.id} />
-      </section>
+<BaseLayout title="Demanda pública" {description} noindex>
+  <section class="section">
+    <div class="container">
+      <ProposalDetail client:load proposalId={id!} />
     </div>
-  </article>
+  </section>
 </BaseLayout>
-
-<style>
-  .narrow {
-    max-width: 44rem;
-  }
-  .back {
-    display: inline-block;
-    margin-bottom: 1rem;
-    text-decoration: none;
-  }
-  .meta {
-    margin-top: -0.4rem;
-  }
-  .sla-wrap {
-    margin: 1.5rem 0;
-  }
-  .body {
-    font-size: 1.08rem;
-    margin: 1.5rem 0 2rem;
-  }
-  .actions {
-    margin-bottom: 2.5rem;
-  }
-  .comments {
-    margin-top: 1rem;
-  }
-</style>
