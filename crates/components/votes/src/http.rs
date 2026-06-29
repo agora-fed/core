@@ -4,10 +4,11 @@
 //! `dsoc_core::Error` is mapped to HTTP status without leaking internal detail (SECURITY.md).
 //!
 //! ## Authorization (mutations)
-//! [`cast`] is the only mutating handler. It authorizes the caller through the injected
-//! `Arc<dyn Authorization>` (`require(org, citizen, Email)`) **before** any write: an anonymous or
-//! merely-unknown caller gets `403 Forbidden` and never reaches the service. The `citizen_id` from
-//! the body is never trusted blind — it is exactly what `require` checks.
+//! [`cast`] is the only mutating handler. Per ADR-0007, the acting citizen identity comes from
+//! the authenticated `CallerId` extractor (cookie middleware), **never** from the request body —
+//! trusting a body-supplied `citizen_id` would let any logged-in user impersonate another. After
+//! the extractor proves who the caller is, `Arc<dyn Authorization>::require` then asserts the
+//! caller meets the minimum verification level (anonymous ⇒ Forbidden).
 
 use axum::extract::{Json, Path, Query, State};
 use axum::http::StatusCode;
@@ -18,8 +19,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use dsoc_api_contract::{ApiResponse, PageMeta};
-use dsoc_app::AppState;
-use dsoc_core::ids::{CitizenId, OrgId, ProposalId};
+use dsoc_app::{AppState, CallerId};
+use dsoc_core::ids::ProposalId;
 use dsoc_core::Error;
 
 use crate::domain::MIN_VOTE_LEVEL;
@@ -44,20 +45,22 @@ pub struct ListParams {
     pub limit: Option<i64>,
 }
 
-/// `POST /votes` — cast a support signal. Mutating: authorizes the caller (email-verified minimum)
-/// before recording the vote. Returns `201 Created` with the voter's receipt.
-pub async fn cast(State(state): State<AppState>, Json(req): Json<CastVoteRequest>) -> Response {
-    let org = OrgId::from_uuid(req.org_id);
-    let citizen = CitizenId::from_uuid(req.citizen_id);
-
+/// `POST /votes` — cast a support signal. Identity comes from the authenticated `CallerId`
+/// (cookie middleware) — the request body's `citizen_id`/`org_id` are ignored to close the
+/// "trust the body" impersonation hole (ADR-0007). Returns `201 Created` with the receipt.
+pub async fn cast(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Json(req): Json<CastVoteRequest>,
+) -> Response {
     // Authorize the authenticated caller BEFORE any write. Anonymous/unknown ⇒ Forbidden.
-    if let Err(e) = state.authz.require(org, citizen, MIN_VOTE_LEVEL).await {
+    if let Err(e) = state.authz.require(caller.org, caller.citizen, MIN_VOTE_LEVEL).await {
         return error_response::<VoteReceiptDto>(&e);
     }
 
     let proposal = ProposalId::from_uuid(req.proposal_id);
     let svc = VoteService::from_state(&state);
-    match svc.cast(org, proposal, citizen).await {
+    match svc.cast(caller.org, proposal, caller.citizen).await {
         Ok(receipt) => (
             StatusCode::CREATED,
             Json(ApiResponse::ok(VoteReceiptDto::from(receipt))),

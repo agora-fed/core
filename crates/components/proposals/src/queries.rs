@@ -33,6 +33,13 @@ pub struct ProposalRow {
     pub threshold_crossed_at: Option<DateTime<Utc>>,
     /// When the proposal was published, if it has been.
     pub published_at: Option<DateTime<Utc>>,
+    /// Citizen who proposed (`None` for legacy / platform-seeded rows).
+    pub author_citizen_id: Option<Uuid>,
+    /// Author user-chosen handle (JOIN from citizen). `None` if no author OR author hasn't set
+    /// a handle yet.
+    pub author_handle: Option<String>,
+    /// Author avatar object key (JOIN from citizen). Composed into a URL at the http layer.
+    pub author_avatar_object_key: Option<String>,
     /// Creation time.
     pub created_at: DateTime<Utc>,
 }
@@ -68,12 +75,14 @@ pub async fn insert_proposal(
     body: &str,
     threshold: i32,
     created_at: DateTime<Utc>,
+    author_citizen_id: Option<Uuid>,
 ) -> Result<ProposalRow, sqlx::Error> {
     let row = sqlx::query!(
-        r#"INSERT INTO proposal (id, org_id, mandate_id, title, body, threshold, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
+        r#"INSERT INTO proposal (id, org_id, mandate_id, title, body, threshold, created_at, author_citizen_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            RETURNING id, org_id, mandate_id, cluster_id, title, body, status,
-                     support_count, threshold, threshold_crossed_at, published_at, created_at"#,
+                     support_count, threshold, threshold_crossed_at, published_at,
+                     author_citizen_id, created_at"#,
         id,
         org_id,
         mandate_id,
@@ -81,6 +90,7 @@ pub async fn insert_proposal(
         body,
         threshold,
         created_at,
+        author_citizen_id,
     )
     .fetch_one(executor)
     .await?;
@@ -96,6 +106,11 @@ pub async fn insert_proposal(
         threshold: row.threshold,
         threshold_crossed_at: row.threshold_crossed_at,
         published_at: row.published_at,
+        author_citizen_id: row.author_citizen_id,
+        // INSERT path doesn't surface handle/avatar — the freshly-inserted DTO doesn't need them
+        // for the immediate response; the read path joins citizen and surfaces them.
+        author_handle: None,
+        author_avatar_object_key: None,
         created_at: row.created_at,
     })
 }
@@ -109,10 +124,14 @@ pub async fn get_proposal(
     id: Uuid,
 ) -> Result<ProposalRow, sqlx::Error> {
     let row = sqlx::query!(
-        r#"SELECT id, org_id, mandate_id, cluster_id, title, body, status,
-                  support_count, threshold, threshold_crossed_at, published_at, created_at
-           FROM proposal
-           WHERE id = $1"#,
+        r#"SELECT p.id, p.org_id, p.mandate_id, p.cluster_id, p.title, p.body, p.status,
+                  p.support_count, p.threshold, p.threshold_crossed_at, p.published_at,
+                  p.author_citizen_id, p.created_at,
+                  c.handle              AS "author_handle?",
+                  c.avatar_object_key   AS "author_avatar_object_key?"
+           FROM proposal p
+           LEFT JOIN citizen c ON c.id = p.author_citizen_id
+           WHERE p.id = $1"#,
         id,
     )
     .fetch_one(executor)
@@ -129,6 +148,9 @@ pub async fn get_proposal(
         threshold: row.threshold,
         threshold_crossed_at: row.threshold_crossed_at,
         published_at: row.published_at,
+        author_citizen_id: row.author_citizen_id,
+        author_handle: row.author_handle,
+        author_avatar_object_key: row.author_avatar_object_key,
         created_at: row.created_at,
     })
 }
@@ -142,9 +164,12 @@ pub async fn lock_proposal(
     executor: impl sqlx::PgExecutor<'_>,
     id: Uuid,
 ) -> Result<Option<ProposalRow>, sqlx::Error> {
+    // Internal locked read — author handle/avatar are presentation data, never consulted under
+    // the lock, so we skip the JOIN to keep the lock tight.
     let row = sqlx::query!(
         r#"SELECT id, org_id, mandate_id, cluster_id, title, body, status,
-                  support_count, threshold, threshold_crossed_at, published_at, created_at
+                  support_count, threshold, threshold_crossed_at, published_at,
+                  author_citizen_id, created_at
            FROM proposal
            WHERE id = $1
            FOR UPDATE"#,
@@ -164,6 +189,9 @@ pub async fn lock_proposal(
         threshold: row.threshold,
         threshold_crossed_at: row.threshold_crossed_at,
         published_at: row.published_at,
+        author_citizen_id: row.author_citizen_id,
+        author_handle: None,
+        author_avatar_object_key: None,
         created_at: row.created_at,
     }))
 }
@@ -180,11 +208,15 @@ pub async fn list_proposals(
     limit: i64,
 ) -> Result<Vec<ProposalRow>, sqlx::Error> {
     let rows = sqlx::query!(
-        r#"SELECT id, org_id, mandate_id, cluster_id, title, body, status,
-                  support_count, threshold, threshold_crossed_at, published_at, created_at
-           FROM proposal
-           WHERE org_id = $1 AND ($2::uuid IS NULL OR id > $2)
-           ORDER BY id
+        r#"SELECT p.id, p.org_id, p.mandate_id, p.cluster_id, p.title, p.body, p.status,
+                  p.support_count, p.threshold, p.threshold_crossed_at, p.published_at,
+                  p.author_citizen_id, p.created_at,
+                  c.handle              AS "author_handle?",
+                  c.avatar_object_key   AS "author_avatar_object_key?"
+           FROM proposal p
+           LEFT JOIN citizen c ON c.id = p.author_citizen_id
+           WHERE p.org_id = $1 AND ($2::uuid IS NULL OR p.id > $2)
+           ORDER BY p.id
            LIMIT $3"#,
         org_id,
         after,
@@ -206,6 +238,9 @@ pub async fn list_proposals(
             threshold: row.threshold,
             threshold_crossed_at: row.threshold_crossed_at,
             published_at: row.published_at,
+            author_citizen_id: row.author_citizen_id,
+            author_handle: row.author_handle,
+            author_avatar_object_key: row.author_avatar_object_key,
             created_at: row.created_at,
         })
         .collect())

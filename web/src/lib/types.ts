@@ -30,6 +30,14 @@ export interface ProposalDto {
   mandate_id: string;
   cluster_id: string | null;
   support_count: number;
+  /** Support count at which the consequence loop fires. */
+  threshold: number;
+  /** Author user-chosen handle (`@fulana`). `null` for anonymous / platform-seeded proposals. */
+  author_handle: string | null;
+  /** Opaque public handle (`u-<hex>`) of the author. UI fallback when no @handle. */
+  author_public_handle: string | null;
+  /** Author avatar URL (already composed with MEDIA_BASE). `null` ⇒ render initials. */
+  author_avatar_url: string | null;
   created_at: string;
 }
 

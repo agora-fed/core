@@ -87,6 +87,7 @@ impl ProposalService {
         &self,
         org: OrgId,
         mandate: MandateId,
+        author: Option<CitizenId>,
         new: &NewProposal,
     ) -> Result<ProposalRow> {
         let now = self.clock.now();
@@ -102,6 +103,7 @@ impl ProposalService {
             &new.body,
             new.threshold,
             now,
+            author.map(|c| c.as_uuid()),
         )
         .await
         .map_err(map_sqlx)?;

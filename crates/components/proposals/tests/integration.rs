@@ -154,8 +154,7 @@ async fn create_persists_and_emits_proposal_created() {
     let org = seed_org(&db).await;
     let mandate = seed_mandate(&db, org).await;
 
-    let row = svc
-        .create(org, mandate, &proposal_text())
+    let row = svc.create(org, mandate, None, &proposal_text())
         .await
         .expect("create proposal");
 
@@ -188,8 +187,7 @@ async fn cluster_merge_event_links_and_sets_clustered() {
     let org = seed_org(&db).await;
     let mandate = seed_mandate(&db, org).await;
 
-    let row = svc
-        .create(org, mandate, &proposal_text())
+    let row = svc.create(org, mandate, None, &proposal_text())
         .await
         .expect("create");
     let proposal = ProposalId::from_uuid(row.id);
@@ -225,8 +223,7 @@ async fn duplicate_cluster_link_is_idempotent() {
     let svc = service(db.clone());
     let org = seed_org(&db).await;
     let mandate = seed_mandate(&db, org).await;
-    let row = svc
-        .create(org, mandate, &proposal_text())
+    let row = svc.create(org, mandate, None, &proposal_text())
         .await
         .expect("create");
     let proposal = ProposalId::from_uuid(row.id);
@@ -262,7 +259,7 @@ async fn clustered_proposal_crosses_threshold_exactly_once_with_cluster_id() {
 
     // threshold = 3 for a compact test.
     let np = NewProposal::validate("Iluminação na praça", "Trocar postes", 3).expect("valid");
-    let row = svc.create(org, mandate, &np).await.expect("create");
+    let row = svc.create(org, mandate, None, &np).await.expect("create");
     let proposal = ProposalId::from_uuid(row.id);
     let cluster = ClusterId::new();
 
@@ -346,8 +343,7 @@ async fn redelivered_event_id_is_deduped_by_the_consumed_ledger() {
     let svc = service(db.clone());
     let org = seed_org(&db).await;
     let mandate = seed_mandate(&db, org).await;
-    let row = svc
-        .create(org, mandate, &proposal_text())
+    let row = svc.create(org, mandate, None, &proposal_text())
         .await
         .expect("create");
     let proposal = ProposalId::from_uuid(row.id);
@@ -419,7 +415,7 @@ async fn unclustered_proposal_cannot_cross_even_over_threshold() {
     let mandate = seed_mandate(&db, org).await;
 
     let np = NewProposal::validate("Sem cluster", "Proposta isolada", 3).expect("valid");
-    let row = svc.create(org, mandate, &np).await.expect("create");
+    let row = svc.create(org, mandate, None, &np).await.expect("create");
     let proposal = ProposalId::from_uuid(row.id);
 
     // Pile on support WAY past the threshold, but the proposal has no cluster.
@@ -457,7 +453,7 @@ async fn crossing_also_fires_when_cluster_link_arrives_after_support() {
     let org = seed_org(&db).await;
     let mandate = seed_mandate(&db, org).await;
     let np = NewProposal::validate("Ordem inversa", "Apoio antes do cluster", 5).expect("valid");
-    let row = svc.create(org, mandate, &np).await.expect("create");
+    let row = svc.create(org, mandate, None, &np).await.expect("create");
     let proposal = ProposalId::from_uuid(row.id);
 
     // Support over threshold, still unclustered => no crossing yet.
@@ -496,8 +492,7 @@ async fn moderation_cleared_publishes_and_emits_published_once() {
     let svc = service(db.clone());
     let org = seed_org(&db).await;
     let mandate = seed_mandate(&db, org).await;
-    let row = svc
-        .create(org, mandate, &proposal_text())
+    let row = svc.create(org, mandate, None, &proposal_text())
         .await
         .expect("create");
     let proposal = ProposalId::from_uuid(row.id);
@@ -546,8 +541,7 @@ async fn revisions_are_append_only_and_preserve_history() {
     let org = seed_org(&db).await;
     let mandate = seed_mandate(&db, org).await;
     let citizen = seed_citizen(&db, org).await;
-    let row = svc
-        .create(org, mandate, &proposal_text())
+    let row = svc.create(org, mandate, None, &proposal_text())
         .await
         .expect("create");
     let proposal = ProposalId::from_uuid(row.id);
@@ -653,8 +647,8 @@ async fn list_paginates_by_keyset() {
     let org = seed_org(&db).await;
     let mandate = seed_mandate(&db, org).await;
 
-    let a = svc.create(org, mandate, &proposal_text()).await.expect("a");
-    let b = svc.create(org, mandate, &proposal_text()).await.expect("b");
+    let a = svc.create(org, mandate, None, &proposal_text()).await.expect("a");
+    let b = svc.create(org, mandate, None, &proposal_text()).await.expect("b");
 
     let (page, total) = svc.list(org, None, 20).await.expect("list");
     assert_eq!(total, 2);
@@ -677,8 +671,7 @@ async fn create_with_unknown_mandate_conflicts() {
     let svc = service(db.clone());
     let org = seed_org(&db).await;
     // mandate_id not seeded => foreign-key violation mapped to Conflict.
-    let err = svc
-        .create(org, MandateId::new(), &proposal_text())
+    let err = svc.create(org, MandateId::new(), None, &proposal_text())
         .await
         .expect_err("unknown mandate");
     assert_eq!(err.code(), "conflict");

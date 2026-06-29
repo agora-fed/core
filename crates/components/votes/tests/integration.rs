@@ -278,11 +278,12 @@ async fn anonymous_caller_is_forbidden_by_handler() {
     // write (CRATE spec: anonymous cannot vote).
     let state = app_state(db.clone(), VerificationLevel::Anonymous);
     let req = CastVoteRequest {
-        org_id: org.as_uuid(),
         proposal_id: proposal.as_uuid(),
-        citizen_id: citizen.as_uuid(),
+        org_id: None,
+        citizen_id: None,
     };
-    let response = dsoc_votes::http::cast(State(state), Json(req)).await;
+    let caller = dsoc_app::CallerId { citizen, org };
+    let response = dsoc_votes::http::cast(State(state), caller, Json(req)).await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
     // Nothing was written — the gate fired before the service ran.
@@ -310,11 +311,12 @@ async fn email_verified_caller_votes_via_handler() {
 
     let state = app_state(db.clone(), VerificationLevel::Email);
     let req = CastVoteRequest {
-        org_id: org.as_uuid(),
         proposal_id: proposal.as_uuid(),
-        citizen_id: citizen.as_uuid(),
+        org_id: None,
+        citizen_id: None,
     };
-    let response = dsoc_votes::http::cast(State(state), Json(req)).await;
+    let caller = dsoc_app::CallerId { citizen, org };
+    let response = dsoc_votes::http::cast(State(state), caller, Json(req)).await;
     assert_eq!(response.status(), StatusCode::CREATED);
 
     let count: i64 =

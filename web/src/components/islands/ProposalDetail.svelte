@@ -11,6 +11,7 @@
     DEFAULT_ORG_ID,
     apiPost,
   } from '../../lib/api';
+  // (DEFAULT_ORG_ID still imported because getSlas() defaults are convenient — left for future.)
   import type { ProposalDto, MandateDto, SlaDto, SlaStatus } from '../../lib/types';
   import SlaClock from './SlaClock.svelte';
   import CommentForm from './CommentForm.svelte';
@@ -29,14 +30,21 @@
   let voting = $state(false);
   let voteMsg = $state<{ kind: 'error' | 'info' | 'ok'; text: string } | null>(null);
 
-  // Threshold é informação local; o backend conhece mas não retorna no ProposalDto. Por ora,
-  // um padrão visual: barra cresce até 100 apoios (depois acumula). Quando a SLA existe,
-  // significa que o threshold foi atingido.
-  const SOFT_THRESHOLD = 100;
+  // Threshold real vem do backend (P2.2). Quando a SLA existe, o limiar foi cruzado.
+  let threshold = $derived(proposal?.threshold ?? 100);
   let progressPct = $derived(
-    sla ? 100 : Math.min(100, Math.round((count / SOFT_THRESHOLD) * 100)),
+    sla
+      ? 100
+      : threshold > 0
+        ? Math.min(100, Math.round((count / threshold) * 100))
+        : 0,
   );
   let thresholdCrossed = $derived(sla !== null);
+  let authorLabel = $derived(
+    proposal?.author_handle
+      ? `@${proposal.author_handle}`
+      : proposal?.author_public_handle ?? null,
+  );
 
   onMount(async () => {
     const [pr, slr] = await Promise.all([
@@ -70,8 +78,10 @@
     if (voting || supported) return;
     voting = true;
     voteMsg = null;
-    const citizenId = readCitizenId();
-    if (!citizenId) {
+    // Soft auth check: if the citizen never logged in (no marker in localStorage), guide them
+    // before the round-trip. Identity itself comes from the HttpOnly cookie via the gateway
+    // middleware — we never send citizen_id in the body anymore (ADR-0007).
+    if (!readCitizenId()) {
       voteMsg = { kind: 'info', text: 'Entre na sua conta para apoiar.' };
       voting = false;
       return;
@@ -79,17 +89,23 @@
     count += 1;
     supported = true;
     const res = await apiPost<ProposalDto>('/api/v1/votes', {
-      org_id: DEFAULT_ORG_ID,
       proposal_id: proposalId,
-      citizen_id: citizenId,
     });
     if (!res.success) {
       count -= 1;
       supported = false;
-      voteMsg = {
-        kind: 'error',
-        text: res.error?.message ?? 'Não foi possível apoiar.',
-      };
+      const code = res.error?.code;
+      // 409 = "you already supported" — keep the optimistic state, just flip the label.
+      if (code === 'conflict') {
+        count += 1;
+        supported = true;
+        voteMsg = { kind: 'ok', text: 'Você já tinha apoiado esta proposta.' };
+      } else {
+        voteMsg = {
+          kind: 'error',
+          text: res.error?.message ?? 'Não foi possível apoiar.',
+        };
+      }
     } else {
       voteMsg = { kind: 'ok', text: 'Apoio registrado. Obrigado.' };
     }
@@ -138,6 +154,18 @@
 
     <h1>{proposal.title}</h1>
 
+    {#if authorLabel}
+      <p class="author">
+        {#if proposal.author_avatar_url}
+          <img class="author-avatar" src={proposal.author_avatar_url} alt="" />
+        {:else}
+          <span class="author-avatar avatar-placeholder">👤</span>
+        {/if}
+        <span class="muted">Proposto por</span>
+        <strong>{authorLabel}</strong>
+      </p>
+    {/if}
+
     <!-- Bloco GRANDE de votação — o coração da página -->
     <section class="vote-block" class:crossed={thresholdCrossed}>
       <div class="vote-stats">
@@ -151,8 +179,8 @@
           </p>
         {:else}
           <p class="threshold muted">
-            Quando atingir <strong>{SOFT_THRESHOLD}</strong> apoios, começa o
-            prazo de resposta.
+            Quando atingir <strong>{threshold.toLocaleString('pt-BR')}</strong> apoios,
+            começa o prazo de resposta.
           </p>
         {/if}
       </div>
@@ -260,8 +288,25 @@
   }
   h1 {
     font-size: 1.7rem;
-    margin: 0 0 1.5rem;
+    margin: 0 0 0.6rem;
     line-height: 1.25;
+  }
+  .author {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 1.5rem;
+    font-size: 0.95rem;
+  }
+  .author-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: var(--c-bg);
+  }
+  .author .muted {
+    font-size: 0.88rem;
   }
   .vote-block {
     background: var(--c-paper);

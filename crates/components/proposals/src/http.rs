@@ -75,8 +75,21 @@ impl From<RevisionRow> for RevisionDto {
     }
 }
 
-/// Map an internal proposal row onto the shared public DTO.
+/// Map an internal proposal row onto the shared public DTO. Avatar URL is composed from
+/// `MEDIA_BASE_URL` (or `/media` for same-origin default) + the stored object key — same
+/// convention the mandate DTO uses. The `author_public_handle` always travels when there IS an
+/// author so the UI can fall back to "u-xxxx" if the citizen never picked a `@handle`.
 fn proposal_dto(row: ProposalRow) -> ProposalDto {
+    let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+    let media_base = media_base.trim_end_matches('/').to_owned();
+    let author_avatar_url = row
+        .author_avatar_object_key
+        .as_ref()
+        .map(|k| format!("{media_base}/{k}"));
+    let author_public_handle = row.author_citizen_id.map(|cid| {
+        // Mirrors the format `dsoc_auth::domain::public_handle` emits — `u-` + simple uuid.
+        format!("u-{}", cid.as_simple())
+    });
     ProposalDto {
         id: row.id,
         title: row.title,
@@ -84,6 +97,10 @@ fn proposal_dto(row: ProposalRow) -> ProposalDto {
         mandate_id: row.mandate_id,
         cluster_id: row.cluster_id,
         support_count: u64::try_from(row.support_count).unwrap_or(0),
+        threshold: u64::try_from(row.threshold).unwrap_or(0),
+        author_handle: row.author_handle,
+        author_public_handle,
+        author_avatar_url,
         created_at: row.created_at,
     }
 }
@@ -143,7 +160,12 @@ async fn create(
     };
     let svc = ProposalService::from_state(&state);
     match svc
-        .create(caller.org, MandateId::from_uuid(req.mandate_id), &new)
+        .create(
+            caller.org,
+            MandateId::from_uuid(req.mandate_id),
+            Some(caller.citizen),
+            &new,
+        )
         .await
     {
         Ok(row) => (
@@ -279,6 +301,9 @@ mod tests {
             threshold: 100,
             threshold_crossed_at: None,
             published_at: None,
+            author_citizen_id: None,
+            author_handle: None,
+            author_avatar_object_key: None,
             created_at: Utc::now(),
         };
         let dto = proposal_dto(row.clone());

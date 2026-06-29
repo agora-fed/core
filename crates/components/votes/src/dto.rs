@@ -13,17 +13,20 @@ use uuid::Uuid;
 use crate::domain::TallyView;
 use crate::service::CastReceipt;
 
-/// `POST /votes` body: a citizen casts a support signal for a proposal. `citizen_id` is the
-/// authenticated caller; the handler authorizes it against the org (email-verified minimum) before
-/// any write — the id is never trusted blind.
+/// `POST /votes` body: only the proposal id is meaningful. The caller's identity (org +
+/// citizen) comes from the authenticated `CallerId` extractor — the legacy `org_id` /
+/// `citizen_id` fields are accepted for wire compatibility with older web builds but the
+/// handler ignores them (ADR-0007: never trust body-supplied identity).
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct CastVoteRequest {
-    /// Organization/tenant the vote belongs to.
-    pub org_id: Uuid,
     /// The proposal being supported.
     pub proposal_id: Uuid,
-    /// The authenticated citizen casting the support signal.
-    pub citizen_id: Uuid,
+    /// Legacy — ignored (kept so old clients don't 400 on the unknown field).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub org_id: Option<Uuid>,
+    /// Legacy — ignored (kept so old clients don't 400 on the unknown field).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub citizen_id: Option<Uuid>,
 }
 
 /// `POST /votes` response: the voter's own receipt. Returned only to the caster, it confirms their

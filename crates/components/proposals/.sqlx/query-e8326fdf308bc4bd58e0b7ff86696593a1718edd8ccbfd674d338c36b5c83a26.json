@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, org_id, mandate_id, cluster_id, title, body, status,\n                  support_count, threshold, threshold_crossed_at, published_at, created_at\n           FROM proposal\n           WHERE id = $1",
+  "query": "SELECT p.id, p.org_id, p.mandate_id, p.cluster_id, p.title, p.body, p.status,\n                  p.support_count, p.threshold, p.threshold_crossed_at, p.published_at,\n                  p.author_citizen_id, p.created_at,\n                  c.handle              AS \"author_handle?\",\n                  c.avatar_object_key   AS \"author_avatar_object_key?\"\n           FROM proposal p\n           LEFT JOIN citizen c ON c.id = p.author_citizen_id\n           WHERE p.id = $1",
   "describe": {
     "columns": [
       {
@@ -60,8 +60,23 @@
       },
       {
         "ordinal": 11,
+        "name": "author_citizen_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 12,
         "name": "created_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "author_handle?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "author_avatar_object_key?",
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -81,8 +96,11 @@
       false,
       true,
       true,
-      false
+      true,
+      false,
+      true,
+      true
     ]
   },
-  "hash": "4cbb4b7b5c0652fa28e26232021e32be02d5eea27e17a47c00dab4b25dc3ae5c"
+  "hash": "e8326fdf308bc4bd58e0b7ff86696593a1718edd8ccbfd674d338c36b5c83a26"
 }

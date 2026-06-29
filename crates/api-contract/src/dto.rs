@@ -21,6 +21,15 @@ pub struct ProposalDto {
     pub cluster_id: Option<Uuid>,
     /// Aggregate support count (never per-citizen linkage).
     pub support_count: u64,
+    /// Support count at which the consequence loop fires (resolves SLA clock UI).
+    pub threshold: u64,
+    /// Author (citizen who proposed). `None` for legacy / platform-seeded rows.
+    pub author_handle: Option<String>,
+    /// Public opaque handle (`u-<hex>`) of the author. Always present when there IS an author —
+    /// the UI falls back to this if the user-chosen handle is unset.
+    pub author_public_handle: Option<String>,
+    /// Author avatar URL (resolved server-side from `MEDIA_BASE_URL`). `None` if no avatar.
+    pub author_avatar_url: Option<String>,
     /// Creation time.
     pub created_at: DateTime<Utc>,
 }

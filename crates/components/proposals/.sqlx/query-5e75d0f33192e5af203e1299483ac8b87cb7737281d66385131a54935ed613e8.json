@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, org_id, mandate_id, cluster_id, title, body, status,\n                  support_count, threshold, threshold_crossed_at, published_at, created_at\n           FROM proposal\n           WHERE org_id = $1 AND ($2::uuid IS NULL OR id > $2)\n           ORDER BY id\n           LIMIT $3",
+  "query": "SELECT id, org_id, mandate_id, cluster_id, title, body, status,\n                  support_count, threshold, threshold_crossed_at, published_at,\n                  author_citizen_id, created_at\n           FROM proposal\n           WHERE id = $1\n           FOR UPDATE",
   "describe": {
     "columns": [
       {
@@ -60,15 +60,18 @@
       },
       {
         "ordinal": 11,
+        "name": "author_citizen_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 12,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Uuid",
-        "Int8"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -83,8 +86,9 @@
       false,
       true,
       true,
+      true,
       false
     ]
   },
-  "hash": "24772ae09f03d1d70eb17dcc8d1874ce27effa73fc4137137fa1cf56b270d6a9"
+  "hash": "5e75d0f33192e5af203e1299483ac8b87cb7737281d66385131a54935ed613e8"
 }
