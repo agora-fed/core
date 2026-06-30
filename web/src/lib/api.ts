@@ -6,6 +6,7 @@ import type {
   ConsultationDto,
   DebateDto,
   MandateDto,
+  MyMandateDto,
   ProfileDto,
   ProfileUpdateDto,
   ProposalDto,
@@ -15,7 +16,13 @@ import type {
   SlaDto,
 } from './types';
 
-export type { MandateDto, ProfileDto, ProfileUpdateDto, SessionInfoDto };
+export type {
+  MandateDto,
+  MyMandateDto,
+  ProfileDto,
+  ProfileUpdateDto,
+  SessionInfoDto,
+};
 
 /** Default to a RELATIVE base (same origin that served the page) so the API call always reaches the
  *  gateway that serves this site — no CORS, no IPv6/host mismatch. Override via PUBLIC_API_BASE only
@@ -202,6 +209,17 @@ export const getMandates = (orgId = DEFAULT_ORG_ID, limit = 50) =>
 
 /** Read the authenticated citizen's own profile (cookie required). */
 export const getMyProfile = () => apiGetCredentialed<ProfileDto>('/api/v1/me');
+
+/** Reverse lookup: does the authenticated citizen operate a mandate? */
+export const getMyMandate = () =>
+  apiGetCredentialed<MyMandateDto>('/api/v1/me/mandate');
+
+/** An official records a public response to an SLA. Identity comes from the cookie. */
+export const respondToSla = (slaId: string, body: string, committed: boolean) =>
+  apiPost<{ outcome: string }>(
+    `/api/v1/consequence/slas/${encodeURIComponent(slaId)}/responses`,
+    { body, committed },
+  );
 
 /** Patch the authenticated citizen's profile. Returns the refreshed profile. */
 export const updateMyProfile = (patch: ProfileUpdateDto) =>

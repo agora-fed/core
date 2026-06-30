@@ -56,6 +56,12 @@ export interface ProfileDto {
   created_at: string;
 }
 
+/** What `GET /me/mandate` returns — the mandate the authenticated citizen operates, if any. */
+export interface MyMandateDto {
+  mandate: MandateDto | null;
+  binding_level: string | null;
+}
+
 /** One active session of the authenticated citizen, returned by `GET /me/sessions`. */
 export interface SessionInfoDto {
   id: string;

@@ -20,6 +20,8 @@
   let search = $state('');
   let activeParty = $state<string | 'TODOS'>('TODOS');
   let activeHouse = $state<'todos' | 'camara' | 'senado'>('todos');
+  // Ordenação: nome (alfabético), resposta (% maior), silêncio (% ignorada maior).
+  let sortBy = $state<'nome' | 'resposta' | 'silencio'>('nome');
 
   // Reactive views derived from filters.
   let parties = $derived(
@@ -40,13 +42,38 @@
     }),
   );
 
+  let sorted = $derived(
+    [...filtered].sort((a, b) => {
+      const ca = cards.get(a.id);
+      const cb = cards.get(b.id);
+      const totalA = (ca?.answered ?? 0) + (ca?.ignored ?? 0);
+      const totalB = (cb?.answered ?? 0) + (cb?.ignored ?? 0);
+      if (sortBy === 'resposta') {
+        // Quem responde mais — quem não tem nada vai pro fim.
+        const ra = totalA > 0 ? (ca!.answered / totalA) : -1;
+        const rb = totalB > 0 ? (cb!.answered / totalB) : -1;
+        if (rb !== ra) return rb - ra;
+      } else if (sortBy === 'silencio') {
+        // Quem ignora mais — destaque negativo. Sem dados, vai pro fim.
+        const ia = totalA > 0 ? (ca!.ignored / totalA) : -1;
+        const ib = totalB > 0 ? (cb!.ignored / totalB) : -1;
+        if (ib !== ia) return ib - ia;
+      }
+      // Default / fallback secundário: nome.
+      return a.display_name.localeCompare(b.display_name, 'pt-BR');
+    }),
+  );
+
+  // Agrupar só faz sentido na ordenação por nome — nas ordenações por placar, lista contínua.
   let groupedByParty = $derived(
-    filtered.reduce<Record<string, MandateDto[]>>((acc, m) => {
-      const k = m.party ?? '—';
-      acc[k] ??= [];
-      acc[k].push(m);
-      return acc;
-    }, {}),
+    sortBy === 'nome'
+      ? sorted.reduce<Record<string, MandateDto[]>>((acc, m) => {
+          const k = m.party ?? '—';
+          acc[k] ??= [];
+          acc[k].push(m);
+          return acc;
+        }, {})
+      : null,
   );
 
   onMount(async () => {
@@ -124,40 +151,65 @@
         onclick={() => (activeHouse = 'senado')}
       >Senado</button>
     </div>
-    <p class="count muted">{filtered.length} mostrando</p>
+    <div class="chips" aria-label="Ordenar por">
+      <span class="chip-label muted">Ordenar:</span>
+      <button type="button" class={`chip small ${sortBy === 'nome' ? 'active' : ''}`}
+        onclick={() => (sortBy = 'nome')}>nome</button>
+      <button type="button" class={`chip small ${sortBy === 'resposta' ? 'active' : ''}`}
+        onclick={() => (sortBy = 'resposta')}>quem mais responde</button>
+      <button type="button" class={`chip small ${sortBy === 'silencio' ? 'active' : ''}`}
+        onclick={() => (sortBy = 'silencio')}>quem mais ignora</button>
+    </div>
+    <p class="count muted">{sorted.length} mostrando</p>
   </section>
 
-  {#if filtered.length === 0}
+  {#if sorted.length === 0}
     <p class="muted center">Ninguém bate esse filtro.</p>
-  {:else}
+  {:else if groupedByParty}
     {#each Object.entries(groupedByParty) as [party, group] (party)}
       <section class="party-group">
         <h2>{party} <span class="muted">({group.length})</span></h2>
         <ul class="grid">
           {#each group as m (m.id)}
-            {@const b = badge(cards.get(m.id))}
-            <li class="card">
-              <a class="link" href={`/politicos/${m.id}`}>
-                {#if m.avatar_url}
-                  <img class="avatar" src={m.avatar_url} alt="" loading="lazy" />
-                {:else}
-                  <span class="avatar avatar-placeholder">👤</span>
-                {/if}
-                <div class="meta">
-                  <strong class="name">{m.display_name}</strong>
-                  <span class="muted office">
-                    {m.party}/{m.uf} ·
-                    {m.house === 'camara' ? 'Câmara' : m.house === 'senado' ? 'Senado' : ''}
-                  </span>
-                  <span class={`badge ${b.cls}`}>{b.label}</span>
-                </div>
-              </a>
-            </li>
+            {@render politicoCard(m)}
           {/each}
         </ul>
       </section>
     {/each}
+  {:else}
+    <ul class="grid">
+      {#each sorted as m (m.id)}
+        {@render politicoCard(m)}
+      {/each}
+    </ul>
   {/if}
+
+{#snippet politicoCard(m: MandateDto)}
+  {@const c = cards.get(m.id)}
+  {@const b = badge(c)}
+  <li class="card">
+    <a class="link" href={`/politicos/${m.id}`}>
+      {#if m.avatar_url}
+        <img class="avatar" src={m.avatar_url} alt="" loading="lazy" />
+      {:else}
+        <span class="avatar avatar-placeholder">👤</span>
+      {/if}
+      <div class="meta">
+        <strong class="name">{m.display_name}</strong>
+        <span class="muted office">
+          {m.party}/{m.uf} ·
+          {m.house === 'camara' ? 'Câmara' : m.house === 'senado' ? 'Senado' : ''}
+        </span>
+        <span class={`badge ${b.cls}`}>{b.label}</span>
+        {#if c && (c.answered + c.ignored) > 0}
+          <span class="stats-mini muted">
+            ✓ {c.answered} · ✗ {c.ignored}
+          </span>
+        {/if}
+      </div>
+    </a>
+  </li>
+{/snippet}
 {/if}
 
 <style>
@@ -271,6 +323,15 @@
   .badge {
     margin-top: 0.2rem;
     align-self: start;
+  }
+  .stats-mini {
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .chip-label {
+    align-self: center;
+    font-size: 0.85rem;
+    margin-right: 0.3rem;
   }
   .center {
     text-align: center;

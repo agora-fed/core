@@ -69,6 +69,47 @@ pub(crate) struct IdentityBindingRow {
     pub verified_at: DateTime<Utc>,
 }
 
+/// Reverse lookup: given a citizen, find the mandate they operate (if any). Used by `GET /me/
+/// mandate` so the front knows whether to render the parliamentarian dashboard. Returns the
+/// latest binding row's `verification_level` alongside the mandate row.
+pub(crate) async fn find_mandate_by_operator<'e, E: PgExecutor<'e>>(
+    exec: E,
+    org_id: Uuid,
+    citizen_id: Uuid,
+) -> Result<Option<(MandateRow, String)>, sqlx::Error> {
+    let row = sqlx::query!(
+        r#"
+        SELECT m.id, m.office, m.display_name, m.public_email, m.is_candidate, m.onboarded_at,
+               m.party, m.uf, m.house, m.avatar_object_key,
+               b.verification_level
+          FROM mandate_identity_binding b
+          JOIN mandate m ON m.id = b.mandate_id
+         WHERE b.citizen_id = $1 AND m.org_id = $2
+         ORDER BY b.verified_at DESC
+         LIMIT 1
+        "#,
+        citizen_id,
+        org_id,
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(row.map(|r| (
+        MandateRow {
+            id: r.id,
+            office: r.office,
+            display_name: r.display_name,
+            public_email: r.public_email,
+            is_candidate: r.is_candidate,
+            onboarded_at: r.onboarded_at,
+            party: r.party,
+            uf: r.uf,
+            house: r.house,
+            avatar_object_key: r.avatar_object_key,
+        },
+        r.verification_level,
+    )))
+}
+
 /// Find a mandate within an organization (read for invite / display).
 pub(crate) async fn find_mandate<'e, E: PgExecutor<'e>>(
     exec: E,

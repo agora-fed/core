@@ -102,6 +102,16 @@ pub struct ProfileDto {
     pub created_at: DateTime<Utc>,
 }
 
+/// What `GET /me/mandate` returns — the mandate the authenticated citizen operates, if any.
+/// Drives the "Painel do mandato" page (lists SLAs the citizen is responsible for).
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct MyMandateDto {
+    /// The mandate this citizen represents, if they are bound to one.
+    pub mandate: Option<MandateDto>,
+    /// The verification level recorded on the binding row (`email`/`directory`/`strong`).
+    pub binding_level: Option<String>,
+}
+
 /// One active (or expired-but-not-cleaned) session of the authenticated citizen, returned by
 /// `GET /me/sessions`. Carries no credentials — just the opaque session id (which the user can
 /// then revoke), the timestamps, and a `current` flag so the UI can clearly mark "this device".

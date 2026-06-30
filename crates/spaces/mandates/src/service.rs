@@ -471,6 +471,44 @@ impl MandateRegistry {
         })
     }
 
+    /// Reverse-lookup: given a citizen, find the mandate they OPERATE (the binding from
+    /// migration 0202). Drives the "Painel do mandato" — if `Ok(None)`, the citizen is just a
+    /// regular voter; otherwise the painel shows their SLA queue. Returns the binding level
+    /// alongside so the painel can display "verificado(a) pelo diretório".
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on persistence failure.
+    pub async fn find_my_mandate(
+        &self,
+        org: OrgId,
+        citizen: dsoc_core::ids::CitizenId,
+    ) -> Result<Option<(MandateView, String)>> {
+        let pair = queries::find_mandate_by_operator(&self.db, org.as_uuid(), citizen.as_uuid())
+            .await
+            .map_err(map_sqlx)?;
+        let Some((row, level)) = pair else { return Ok(None) };
+        let has_invitation = queries::mandate_has_invitation(&self.db, row.id)
+            .await
+            .map_err(map_sqlx)?;
+        let status = domain::onboarding_status(row.onboarded_at, has_invitation);
+        let id = MandateId::from_uuid(row.id);
+        Ok(Some((
+            MandateView {
+                id,
+                office: row.office,
+                display_name: row.display_name,
+                is_candidate: row.is_candidate,
+                status,
+                public_handle: domain::public_handle(id),
+                party: row.party,
+                uf: row.uf,
+                house: row.house,
+                avatar_object_key: row.avatar_object_key,
+            },
+            level,
+        )))
+    }
+
     /// List mandates in an organization, alphabetical by `display_name`. Public read (no auth)
     /// because the directory of mandates is itself the citizens' map of who they can address; a
     /// hidden mandate would defeat the platform's accountability promise. Drives the front-end

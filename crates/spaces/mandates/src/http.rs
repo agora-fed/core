@@ -22,7 +22,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use dsoc_api_contract::envelope::ApiResponse;
-use dsoc_api_contract::MandateDto;
+use dsoc_api_contract::{MandateDto, MyMandateDto};
 use dsoc_app::{AppState, CallerId};
 use dsoc_core::ids::{MandateId, OrgId};
 use dsoc_core::Error;
@@ -232,6 +232,7 @@ fn to_mandate_dto(view: MandateView) -> MandateDto {
 pub fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/mandates", get(list_mandates))
+        .route("/me/mandate", get(get_my_mandate))
         .route("/mandates/invitations/accept", post(accept_invitation))
         .route("/mandates/{mandate_id}", get(get_mandate))
         .route("/mandates/{mandate_id}/invitations", post(invite))
@@ -360,6 +361,28 @@ async fn list_mandates(
     Ok(Json(ApiResponse::ok(
         views.into_iter().map(to_mandate_dto).collect(),
     )))
+}
+
+/// `GET /me/mandate` — does the authenticated citizen represent a parliamentarian? Drives the
+/// "Painel do mandato" UI: if `mandate` is null the page renders nothing; if present, the
+/// painel lists that mandate's SLAs and offers the respond surface.
+async fn get_my_mandate(
+    State(state): State<AppState>,
+    caller: CallerId,
+) -> Result<Json<ApiResponse<MyMandateDto>>, ApiErr> {
+    let svc = MandateRegistry::from_state(&state);
+    let pair = svc.find_my_mandate(caller.org, caller.citizen).await?;
+    let dto = match pair {
+        Some((view, level)) => MyMandateDto {
+            mandate: Some(to_mandate_dto(view)),
+            binding_level: Some(level),
+        },
+        None => MyMandateDto {
+            mandate: None,
+            binding_level: None,
+        },
+    };
+    Ok(Json(ApiResponse::ok(dto)))
 }
 
 async fn list_offices(

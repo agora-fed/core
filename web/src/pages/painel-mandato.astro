@@ -1,0 +1,24 @@
+---
+// Painel do(a) parlamentar. Quem ENTRA aqui é o(a) político(a) vinculado(a) à conta —
+// responde demandas com prazo correndo, vê o histórico. Sem essa página, o consequence loop
+// é unilateral: cidadã cobra, oficial nunca responde (só o silêncio público existe).
+import BaseLayout from '../layouts/BaseLayout.astro';
+import MandatePanel from '../components/islands/MandatePanel.svelte';
+
+const description =
+  'Painel do(a) parlamentar: demandas direcionadas a você, prazos correndo, espaço público para resposta.';
+---
+
+<BaseLayout title="Painel do mandato" {description} noindex>
+  <section class="section">
+    <div class="container narrow">
+      <MandatePanel client:load />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .narrow {
+    max-width: 46rem;
+  }
+</style>
