@@ -24,7 +24,7 @@ use dsoc_core::{Error, Result};
 
 use crate::domain::{KeySource, TokenValidator, DEFAULT_SESSION_TTL_SECS, IDENTITY_DEPENDENCY};
 use crate::dto::{CreateSessionRequest, LoginRequest, MeDto, RegisterRequest, SessionDto};
-use crate::service::ZitadelAuth;
+use crate::service::{IssuedSession, ZitadelAuth};
 
 /// Build the routed service surface. Reads sovereign-issuer configuration from the environment
 /// (never hardcoded — PLAN.md principle 8). When the issuer/JWKS is unconfigured the endpoints
@@ -90,6 +90,16 @@ pub fn authorization(
     std::sync::Arc::new(build_zitadel(db, clock, bus))
 }
 
+/// Build the session cookie (HttpOnly, Secure, SameSite=Lax) carrying the opaque session id, so
+/// the browser persists the login and the gateway's auth middleware can resolve the caller.
+fn session_cookie(s: &IssuedSession) -> String {
+    let max_age = (s.expires_at - s.issued_at).num_seconds().max(0);
+    format!(
+        "dsoc_session={}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age={}",
+        s.id, max_age
+    )
+}
+
 /// Query parameters for `GET /auth/me`.
 #[derive(Debug, Deserialize)]
 struct MeQuery {
@@ -103,11 +113,15 @@ async fn register(
 ) -> Response {
     let org = OrgId::from_uuid(req.org_id);
     match svc.register(org, &req.email, &req.password, &req.cpf).await {
-        Ok(session) => (
-            StatusCode::CREATED,
-            Json(ApiResponse::ok(SessionDto::from(session))),
-        )
-            .into_response(),
+        Ok(session) => {
+            let cookie = session_cookie(&session);
+            (
+                StatusCode::CREATED,
+                [(header::SET_COOKIE, cookie)],
+                Json(ApiResponse::ok(SessionDto::from(session))),
+            )
+                .into_response()
+        }
         Err(error) => error_response(&error),
     }
 }
@@ -116,11 +130,15 @@ async fn register(
 async fn login(State(svc): State<Arc<ZitadelAuth>>, Json(req): Json<LoginRequest>) -> Response {
     let org = OrgId::from_uuid(req.org_id);
     match svc.login(org, &req.email, &req.password).await {
-        Ok(session) => (
-            StatusCode::OK,
-            Json(ApiResponse::ok(SessionDto::from(session))),
-        )
-            .into_response(),
+        Ok(session) => {
+            let cookie = session_cookie(&session);
+            (
+                StatusCode::OK,
+                [(header::SET_COOKIE, cookie)],
+                Json(ApiResponse::ok(SessionDto::from(session))),
+            )
+                .into_response()
+        }
         Err(error) => error_response(&error),
     }
 }
@@ -131,11 +149,15 @@ async fn create_session(
 ) -> Response {
     let org = OrgId::from_uuid(request.org_id);
     match svc.create_session(org, &request.token).await {
-        Ok(session) => (
-            StatusCode::CREATED,
-            Json(ApiResponse::ok(SessionDto::from(session))),
-        )
-            .into_response(),
+        Ok(session) => {
+            let cookie = session_cookie(&session);
+            (
+                StatusCode::CREATED,
+                [(header::SET_COOKIE, cookie)],
+                Json(ApiResponse::ok(SessionDto::from(session))),
+            )
+                .into_response()
+        }
         Err(error) => error_response(&error),
     }
 }

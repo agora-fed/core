@@ -50,3 +50,15 @@ mod tests {
         assert_eq!(CRATE_NAME, "dsoc-auth");
     }
 }
+
+/// Resolve a session cookie's id to the caller's `(citizen_id, org_id)` if the session is live.
+/// Used by the gateway's auth middleware. Returns `Ok(None)` for missing/expired sessions.
+///
+/// # Errors
+/// Propagates the underlying `sqlx::Error`.
+pub async fn session_identity(
+    db: &dsoc_db::Db,
+    session_id: uuid::Uuid,
+) -> Result<Option<(uuid::Uuid, uuid::Uuid)>, sqlx::Error> {
+    queries::session_identity(db, session_id).await
+}
