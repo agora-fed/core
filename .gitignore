@@ -18,3 +18,5 @@ deploy/helm/**/*.tgz
 /coverage
 lcov.info
 *.profraw
+deploy/docker/dsoc-gateway
+deploy/docker/web/

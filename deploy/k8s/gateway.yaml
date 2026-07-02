@@ -25,7 +25,7 @@ spec:
       dnsPolicy: ClusterFirstWithHostNet
       containers:
       - name: gateway
-        image: dsoc-gateway:0.3.1
+        image: dsoc-gateway:0.8.0
         imagePullPolicy: Never        # image imported into containerd (k8s.io ns) on this node
         envFrom: [ { secretRef: { name: dsoc-gateway-secrets } } ]
         env:
