@@ -8,7 +8,7 @@
   import {
     register,
     registerPolitician,
-    getMandates,
+    getAllMandates,
     DEFAULT_ORG_ID,
     type MandateDto,
   } from '../../lib/api';
@@ -55,7 +55,7 @@
 
   async function ensureMandates() {
     if (mandatesLoaded) return;
-    const r = await getMandates(DEFAULT_ORG_ID, 500);
+    const r = await getAllMandates(DEFAULT_ORG_ID);
     if (r.ok && r.data) {
       mandates = r.data;
     }

@@ -1,0 +1,44 @@
+---
+// Partidos (Fase 2, fatia A). Catálogo derivado dos mandatos reais; CSR pela ilha pra refletir
+// novos seeds sem rebuild. Diretórios (subgrupos estaduais/municipais) e administração por pessoas
+// físicas entram na fatia B.
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import ColorBar from '../../components/illustrations/ColorBar.astro';
+import PartidosBrowser from '../../components/islands/PartidosBrowser.svelte';
+
+const description =
+  'Partidos na DemocraciaBR — por esfera (federal, estadual, municipal), com seus candidatos e representantes.';
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'CollectionPage',
+  name: 'Partidos · DemocraciaBR',
+  inLanguage: 'pt-BR',
+  description,
+};
+---
+
+<BaseLayout title="Partidos" {description} {jsonLd}>
+  <section class="section">
+    <div class="container">
+      <header class="page-head">
+        <ColorBar class="head-bar" />
+        <h1>Partidos</h1>
+        <p class="muted lede">
+          Os <strong>partidos</strong> estruturam a representação. Aqui você vê cada um por esfera —
+          federal, estadual e municipal — e navega até seus candidatos e representantes.
+        </p>
+      </header>
+      <PartidosBrowser client:load />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .page-head {
+    max-width: 46rem;
+    margin-bottom: 2rem;
+  }
+  .head-bar { margin-bottom: 0.9rem; }
+  .lede { font-size: 1.05rem; }
+</style>

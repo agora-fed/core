@@ -2,7 +2,7 @@
   // Propose form — create a civic proposal directed at a specific mandate.
   // The mandate is selected from a picker so the user never has to type a UUID by hand.
   import { onMount } from 'svelte';
-  import { apiPost, DEFAULT_ORG_ID, getMandates, type MandateDto } from '../../lib/api';
+  import { apiPost, DEFAULT_ORG_ID, getAllMandates, type MandateDto } from '../../lib/api';
   import type { ProposalDto } from '../../lib/types';
 
   let title = $state('');
@@ -32,7 +32,7 @@
   }
 
   onMount(async () => {
-    const res = await getMandates(undefined, 500);
+    const res = await getAllMandates(DEFAULT_ORG_ID);
     mandatesLoading = false;
     if (res.ok && res.data) {
       mandates = res.data;

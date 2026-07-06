@@ -4,7 +4,7 @@
   // partido/UF, e o pequeno badge de placar quando há scorecard registrado.
   import { onMount } from 'svelte';
   import {
-    getMandates,
+    getAllMandates,
     getScorecards,
     DEFAULT_ORG_ID,
     type MandateDto,
@@ -89,8 +89,8 @@
 
   onMount(async () => {
     const [mr, sr] = await Promise.all([
-      getMandates(DEFAULT_ORG_ID, 500),
-      getScorecards(DEFAULT_ORG_ID, 500),
+      getAllMandates(DEFAULT_ORG_ID),
+      getScorecards(DEFAULT_ORG_ID, 200),
     ]);
     loading = false;
     if (mr.ok && mr.data) {

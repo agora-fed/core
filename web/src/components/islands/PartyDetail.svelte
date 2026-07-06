@@ -4,7 +4,7 @@
   // tabela. Dentro do federal, subdivide por casa (Câmara/Senado). CSR filtrando getMandates pela
   // sigla recebida via prop (o Astro resolve o slug->sigla no build).
   import { onMount } from 'svelte';
-  import { getMandates, DEFAULT_ORG_ID, type MandateDto } from '../../lib/api';
+  import { getAllMandates, DEFAULT_ORG_ID, type MandateDto } from '../../lib/api';
   import { partyColor } from '../../lib/parties';
 
   let { sigla }: { sigla: string } = $props();
@@ -31,7 +31,7 @@
   let accent = $derived(partyColor(sigla));
 
   onMount(async () => {
-    const res = await getMandates(DEFAULT_ORG_ID, 500);
+    const res = await getAllMandates(DEFAULT_ORG_ID);
     loading = false;
     if (res.ok && res.data) {
       members = res.data.filter((m) => m.party === sigla);
@@ -64,7 +64,7 @@
 {:else if members.length === 0}
   <div class="card center">
     <p>Nenhum representante deste partido carregado ainda.</p>
-    <p class="muted"><a href="/organizacoes">Voltar às organizações</a></p>
+    <p class="muted"><a href="/partidos">Voltar aos partidos</a></p>
   </div>
 {:else}
   {#each SPHERES as s (s.key)}

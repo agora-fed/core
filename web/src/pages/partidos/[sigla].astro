@@ -4,11 +4,11 @@
 // filtrar getMandates. Conteúdo (lista de representantes) hidrata client-side.
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import PartyDetail from '../../components/islands/PartyDetail.svelte';
-import { getMandates, DEFAULT_ORG_ID } from '../../lib/api';
+import { getAllMandates, DEFAULT_ORG_ID } from '../../lib/api';
 import { partySlug } from '../../lib/parties';
 
 export async function getStaticPaths() {
-  const res = await getMandates(DEFAULT_ORG_ID, 500);
+  const res = await getAllMandates(DEFAULT_ORG_ID);
   if (!res.ok || !res.data) return [];
   const siglas = Array.from(
     new Set(res.data.map((m) => m.party).filter((p): p is string => !!p)),
@@ -23,10 +23,10 @@ const { sigla } = Astro.props as { sigla: string };
 const description = `Partido ${sigla} na DemocraciaBR — representantes por esfera (federal, estadual, municipal).`;
 ---
 
-<BaseLayout title={`${sigla} · Organizações`} {description} noindex>
+<BaseLayout title={`${sigla} · Partidos`} {description} noindex>
   <section class="section">
     <div class="container party-shell">
-      <p class="crumb"><a href="/organizacoes">← Organizações</a></p>
+      <p class="crumb"><a href="/partidos">← Partidos</a></p>
       <PartyDetail client:load {sigla} />
     </div>
   </section>

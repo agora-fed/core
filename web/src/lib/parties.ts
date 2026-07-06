@@ -1,8 +1,8 @@
-// Helpers para a seção Organizações (partidos). O catálogo é derivado dos mandatos, então estas
+// Helpers para a seção Partidos. O catálogo é derivado dos mandatos, então estas
 // funções operam sobre a sigla (mandate.party) tal como vem da base oficial (case preservado:
 // "PCdoB", "PT", "PSOL"…).
 
-/** URL-safe slug de uma sigla de partido. "PCdoB" -> "pcdob". Usado nas rotas /organizacoes/{slug}. */
+/** URL-safe slug de uma sigla de partido. "PCdoB" -> "pcdob". Usado nas rotas /partidos/{slug}. */
 export function partySlug(sigla: string): string {
   return sigla
     .normalize('NFD')

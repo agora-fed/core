@@ -5,12 +5,13 @@
 // rebuild. SSR seria mais limpo mas exigiria um adapter (ADR-0009 manda SSG por ora).
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import MandateDetail from '../../components/islands/MandateDetail.svelte';
-import { getMandates, DEFAULT_ORG_ID } from '../../lib/api';
+import { getAllMandates, DEFAULT_ORG_ID } from '../../lib/api';
 
 export async function getStaticPaths() {
   // Puxa TODOS os mandatos no build — não os com scorecard, como era antes (que dava 404 pra
-  // 95% dos políticos seedados sem demandas ainda).
-  const res = await getMandates(DEFAULT_ORG_ID, 500);
+  // 95% dos políticos seedados sem demandas ainda). Pagina o offset porque o servidor limita
+  // uma página a 100 e já temos ~594 parlamentares.
+  const res = await getAllMandates(DEFAULT_ORG_ID);
   if (!res.ok || !res.data) return [];
   return res.data.map((m) => ({ params: { mandate: m.id } }));
 }

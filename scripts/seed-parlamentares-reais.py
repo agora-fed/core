@@ -34,8 +34,10 @@ import urllib.request
 import urllib.parse
 
 ORG_ID = "11111111-1111-1111-1111-111111111111"
-PARTIES_WANTED = {"PT", "PCdoB", "PSOL", "PV", "REDE"}
-PARTIES_FILTER_CAMARA = ["PT", "PCdoB", "PSOL", "PV", "REDE"]  # Câmara accepts ?siglaPartido=
+# Cobertura TOTAL: todos os deputados federais + senadores em exercício, de TODOS os partidos.
+# (Antes o seed era restrito ao bloco de esquerda; o usuário pediu "todos os partidos".)
+# `None` = sem filtro de partido.
+PARTIES_WANTED: Optional[set[str]] = None
 
 PHOTOS_DIR = Path("/tmp/dsoc-fotos")
 SQL_OUT = Path("/tmp/dsoc-mandates.sql")
@@ -79,22 +81,34 @@ def _get_image(url: str, timeout: int = 15) -> bytes:
         return resp.read()
 
 
-def fetch_camara(party: str) -> list[Parlamentar]:
-    """One server-side-filtered call per party."""
-    qs = urllib.parse.urlencode({"siglaPartido": party, "itens": 200, "ordem": "ASC", "ordenarPor": "nome"})
-    payload = json.loads(_get(f"https://dadosabertos.camara.leg.br/api/v2/deputados?{qs}"))
-    out = []
-    for d in payload.get("dados", []):
-        out.append(Parlamentar(
-            source="camara",
-            external_id=str(d["id"]),
-            name=d["nome"],
-            party=d["siglaPartido"],
-            uf=d["siglaUf"],
-            house="camara",
-            photo_url=d.get("urlFoto"),
-            public_email=d.get("email"),
-        ))
+def fetch_camara_all() -> list[Parlamentar]:
+    """ALL sitting deputados, every party — paginated (the API caps ~100/page)."""
+    out: list[Parlamentar] = []
+    page = 1
+    while True:
+        qs = urllib.parse.urlencode(
+            {"itens": 100, "pagina": page, "ordem": "ASC", "ordenarPor": "nome"}
+        )
+        payload = json.loads(_get(f"https://dadosabertos.camara.leg.br/api/v2/deputados?{qs}"))
+        dados = payload.get("dados", [])
+        if not dados:
+            break
+        for d in dados:
+            out.append(Parlamentar(
+                source="camara",
+                external_id=str(d["id"]),
+                name=d["nome"],
+                party=d["siglaPartido"],
+                uf=d["siglaUf"],
+                house="camara",
+                photo_url=d.get("urlFoto"),
+                public_email=d.get("email"),
+            ))
+        # Stop when there is no `next` link (last page).
+        has_next = any(l.get("rel") == "next" for l in payload.get("links", []))
+        if not has_next:
+            break
+        page += 1
     return out
 
 
@@ -108,7 +122,9 @@ def fetch_senado_all() -> list[Parlamentar]:
     for p in raw:
         ip = p.get("IdentificacaoParlamentar", {})
         party = ip.get("SiglaPartidoParlamentar")
-        if not party or party not in PARTIES_WANTED:
+        if not party:
+            continue
+        if PARTIES_WANTED is not None and party not in PARTIES_WANTED:
             continue
         # The Senado photo URL is http://... — rewrite to https.
         photo = ip.get("UrlFotoParlamentar")
@@ -204,15 +220,17 @@ def sql_quote(s: Optional[str]) -> str:
 
 
 def main() -> int:
-    print("=== Câmara dos Deputados ===", flush=True)
-    camara: list[Parlamentar] = []
-    for party in PARTIES_FILTER_CAMARA:
-        try:
-            chunk = fetch_camara(party)
-            print(f"  {party}: {len(chunk)}", flush=True)
-            camara.extend(chunk)
-        except Exception as e:
-            print(f"  {party}: FALHOU ({e})", flush=True)
+    print("=== Câmara dos Deputados (todos os partidos) ===", flush=True)
+    try:
+        camara = fetch_camara_all()
+    except Exception as e:
+        print(f"  Câmara FALHOU ({e})", flush=True)
+        camara = []
+    cam_by_party: dict[str, int] = {}
+    for p in camara:
+        cam_by_party[p.party] = cam_by_party.get(p.party, 0) + 1
+    for k, v in sorted(cam_by_party.items()):
+        print(f"  {k}: {v}", flush=True)
 
     print("\n=== Senado Federal ===", flush=True)
     try:

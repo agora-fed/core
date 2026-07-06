@@ -204,8 +204,30 @@ export const getMandate = (mandateId: string) =>
 
 /** Directory of mandates in an org — drives the "Propor" form's picker so the user does not have
  *  to type a UUID by hand. Public read. */
-export const getMandates = (orgId = DEFAULT_ORG_ID, limit = 50) =>
-  apiGet<MandateDto[]>(`/api/v1/mandates${orgQuery(orgId, `&limit=${limit}`)}`);
+export const getMandates = (orgId = DEFAULT_ORG_ID, limit = 50, offset = 0) =>
+  apiGet<MandateDto[]>(
+    `/api/v1/mandates${orgQuery(orgId, `&limit=${limit}&offset=${offset}`)}`,
+  );
+
+/** Full mandate directory, walking the server's `offset`/`limit` window (server caps a single
+ *  page at 100). We need every parlamentar for /politicos and /partidos, so page until a short
+ *  page comes back. `hardCap` guards against an unbounded loop if the API ever misbehaves. */
+export async function getAllMandates(
+  orgId = DEFAULT_ORG_ID,
+  hardCap = 5000,
+): Promise<Fetched<MandateDto[]>> {
+  const page = 100;
+  const all: MandateDto[] = [];
+  for (let offset = 0; offset < hardCap; offset += page) {
+    const res = await getMandates(orgId, page, offset);
+    if (!res.ok || !res.data) {
+      return all.length ? { ok: true, data: all, error: null } : res;
+    }
+    all.push(...res.data);
+    if (res.data.length < page) break;
+  }
+  return { ok: true, data: all, error: null };
+}
 
 /** Read the authenticated citizen's own profile (cookie required). */
 export const getMyProfile = () => apiGetCredentialed<ProfileDto>('/api/v1/me');

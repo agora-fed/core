@@ -1,11 +1,11 @@
 <script lang="ts">
-  // Organizações = partidos. Fase 2 (fatia A): o catálogo de partidos é DERIVADO dos mandatos
+  // Partidos. Fase 2 (fatia A): o catálogo de partidos é DERIVADO dos mandatos
   // (mandate.party/uf/sphere/house) — sem tabela própria ainda. Cada partido vira um card com a
   // contagem por esfera (federal/estadual/municipal), prenunciando os "diretórios" (subgrupos) que
-  // a fatia B vai formalizar. Clicar leva a /organizacoes/{sigla}. CSR pra refletir novos seeds
+  // a fatia B vai formalizar. Clicar leva a /partidos/{sigla}. CSR pra refletir novos seeds
   // sem rebuild.
   import { onMount } from 'svelte';
-  import { getMandates, DEFAULT_ORG_ID, type MandateDto } from '../../lib/api';
+  import { getAllMandates, DEFAULT_ORG_ID, type MandateDto } from '../../lib/api';
   import { partySlug, partyColor } from '../../lib/parties';
 
   interface PartyAgg {
@@ -49,18 +49,18 @@
   let totalPoliticos = $derived(parties.reduce((n, p) => n + p.total, 0));
 
   onMount(async () => {
-    const res = await getMandates(DEFAULT_ORG_ID, 500);
+    const res = await getAllMandates(DEFAULT_ORG_ID);
     loading = false;
     if (res.ok && res.data) {
       mandates = res.data;
     } else {
-      loadError = res.error ?? 'Não foi possível carregar as organizações.';
+      loadError = res.error ?? 'Não foi possível carregar os partidos.';
     }
   });
 </script>
 
 {#if loading}
-  <p class="muted">Carregando organizações…</p>
+  <p class="muted">Carregando partidos…</p>
 {:else if loadError}
   <p class="hint hint-error" role="alert">{loadError}</p>
 {:else}
@@ -91,7 +91,7 @@
     <ul class="grid">
       {#each parties as p (p.sigla)}
         <li class="card" style={`--party-accent:${partyColor(p.sigla)}`}>
-          <a class="link" href={`/organizacoes/${partySlug(p.sigla)}`}>
+          <a class="link" href={`/partidos/${partySlug(p.sigla)}`}>
             <span class="crest" aria-hidden="true">{p.sigla.slice(0, 3)}</span>
             <div class="meta">
               <strong class="name">{p.sigla}</strong>
