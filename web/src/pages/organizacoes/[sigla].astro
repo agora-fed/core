@@ -1,0 +1,40 @@
+---
+// Página de um partido. SSG: uma página por sigla distinta existente no build (derivada dos
+// mandatos). O slug (ex.: "pcdob") vira param; a sigla real ("PCdoB") vai por prop pra a ilha
+// filtrar getMandates. Conteúdo (lista de representantes) hidrata client-side.
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PartyDetail from '../../components/islands/PartyDetail.svelte';
+import { getMandates, DEFAULT_ORG_ID } from '../../lib/api';
+import { partySlug } from '../../lib/parties';
+
+export async function getStaticPaths() {
+  const res = await getMandates(DEFAULT_ORG_ID, 500);
+  if (!res.ok || !res.data) return [];
+  const siglas = Array.from(
+    new Set(res.data.map((m) => m.party).filter((p): p is string => !!p)),
+  );
+  return siglas.map((sigla) => ({
+    params: { sigla: partySlug(sigla) },
+    props: { sigla },
+  }));
+}
+
+const { sigla } = Astro.props as { sigla: string };
+const description = `Partido ${sigla} na DemocraciaBR — representantes por esfera (federal, estadual, municipal).`;
+---
+
+<BaseLayout title={`${sigla} · Organizações`} {description} noindex>
+  <section class="section">
+    <div class="container party-shell">
+      <p class="crumb"><a href="/organizacoes">← Organizações</a></p>
+      <PartyDetail client:load {sigla} />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .party-shell { max-width: 52rem; }
+  .crumb { margin: 0 0 1rem; font-size: 0.9rem; }
+  .crumb a { text-decoration: none; color: var(--c-text-muted, #666); }
+  .crumb a:hover { color: var(--c-green-dark); }
+</style>
