@@ -143,6 +143,22 @@ impl EventHandler for CommentsSub {
     }
 }
 
+/// `notify`: fan-out for the SLA-lifecycle events. Looks up the operator citizen on the mandate's
+/// identity binding and enqueues a channel-appropriate notification (`dsoc-notify` picks the
+/// channel via its plan). Unbound mandates are info-logged and skipped — no error, no retry.
+struct NotifySlaSub {
+    notify: dsoc_notify::NotifyService,
+    db: dsoc_db::Db,
+}
+
+#[async_trait]
+impl EventHandler for NotifySlaSub {
+    async fn handle(&self, envelope: &EventEnvelope) -> Result<()> {
+        dsoc_notify::handle_sla_event(&self.notify, &self.db, envelope).await?;
+        Ok(())
+    }
+}
+
 // --- Subscription wiring ----------------------------------------------------------------------
 
 /// One durable subscription: a named cursor over a topic, driving a handler. The same topic may be
@@ -229,6 +245,25 @@ fn subscriptions(state: &AppState) -> Vec<Subscription> {
             EventTopic::Moderation,
             Arc::new(CommentsSub {
                 comments: dsoc_comments::CommentService::from_state(state),
+            }),
+        ),
+        // SLA-lifecycle notifications to the operator of the targeted mandate. Two subscriptions
+        // (distinct cursors) because the three events live under two topics: `proposals` carries
+        // `proposals.threshold.crossed`, `consequence` carries the SLA started/expired events.
+        sub(
+            "notify-sla-proposals-worker",
+            EventTopic::Proposals,
+            Arc::new(NotifySlaSub {
+                notify: dsoc_notify::NotifyService::from_state(state),
+                db: state.db.clone(),
+            }),
+        ),
+        sub(
+            "notify-sla-consequence-worker",
+            EventTopic::Consequence,
+            Arc::new(NotifySlaSub {
+                notify: dsoc_notify::NotifyService::from_state(state),
+                db: state.db.clone(),
             }),
         ),
     ]

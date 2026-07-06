@@ -221,6 +221,7 @@ fn to_mandate_dto(view: MandateView) -> MandateDto {
         avatar_url,
         public_email,
         sphere: view.sphere,
+        has_verified_operator: view.has_verified_operator,
     }
 }
 
@@ -533,6 +534,9 @@ mod tests {
             uf: None,
             house: None,
             avatar_object_key: None,
+            public_email: "fulana@example.test".to_owned(),
+            sphere: "federal".to_owned(),
+            has_verified_operator: false,
         };
         assert!(to_mandate_dto(mk(OnboardingStatus::Onboarded)).onboarded);
         assert!(!to_mandate_dto(mk(OnboardingStatus::Invited)).onboarded);

@@ -13,6 +13,7 @@ Multi-channel fan-out: push (mobile), email (SMTP), and WhatsApp/Chatwoot. Owns 
 |-----------|-------|
 | emits | `notify.dispatched` |
 | emits | `notify.delivery.failed` |
+| consumes | `proposals.threshold.crossed` |
 | consumes | `consequence.sla.started` |
 | consumes | `consequence.sla.expired` |
 | consumes | `proposals.published` |

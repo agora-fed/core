@@ -211,6 +211,8 @@ pub fn plan_for_event(event: &Event) -> Option<NotificationPlan> {
                 "mandate": mandate.as_uuid(),
                 "cluster": cluster.as_uuid(),
                 "due": due,
+                "title": "SLA iniciado",
+                "body": "Um SLA de resposta acaba de começar para uma demanda dirigida ao seu mandato. Responda pelo painel antes do prazo.",
             }),
         }),
         Event::ConsequenceSlaExpired { sla, mandate } => Some(NotificationPlan {
@@ -219,6 +221,25 @@ pub fn plan_for_event(event: &Event) -> Option<NotificationPlan> {
                 "kind": "consequence.sla.expired",
                 "sla": sla.as_uuid(),
                 "mandate": mandate.as_uuid(),
+                "title": "SLA expirou",
+                "body": "O prazo de resposta expirou. O silêncio ficará registrado no seu placar público.",
+            }),
+        }),
+        // A directed proposal crossed its threshold — forewarn the operator before the SLA clock
+        // starts. Push keeps the loop feeling live without piling on transactional email volume.
+        Event::ProposalThresholdCrossed {
+            proposal,
+            cluster,
+            mandate,
+        } => Some(NotificationPlan {
+            channel: ChannelKind::Push,
+            payload: json!({
+                "kind": "proposals.threshold.crossed",
+                "proposal": proposal.as_uuid(),
+                "cluster": cluster.as_uuid(),
+                "mandate": mandate.as_uuid(),
+                "title": "Uma demanda atingiu o limiar",
+                "body": "Uma proposta dirigida ao seu mandato acaba de atingir o limiar de apoio. Um SLA de resposta vai começar em breve.",
             }),
         }),
         Event::ProposalPublished { proposal, mandate } => Some(NotificationPlan {

@@ -184,6 +184,27 @@ pub(crate) async fn mandate_has_invitation<'e, E: PgExecutor<'e>>(
     Ok(exists)
 }
 
+/// Whether a mandate has a verified operator citizen bound (an entry in `mandate_identity_binding`
+/// with a non-null `citizen_id` — the same semantics `find_mandate_by_operator` uses to populate
+/// `MyMandateDto.binding_level`). Drives the public "vínculo verificado" badge on the mandate
+/// profile without leaking the operator's identity — only the boolean.
+///
+/// Runtime `sqlx::query_scalar` (not the macro) so the committed `.sqlx/` offline cache does not
+/// need regenerating on a DB-less build host (mirrors `parlamentar_activity::load_mandate_source`).
+pub(crate) async fn mandate_has_verified_operator<'e, E: PgExecutor<'e>>(
+    exec: E,
+    mandate_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM mandate_identity_binding \
+         WHERE mandate_id = $1 AND citizen_id IS NOT NULL)",
+    )
+    .bind(mandate_id)
+    .fetch_one(exec)
+    .await?;
+    Ok(exists)
+}
+
 /// Persist a fresh invitation. The plaintext `token` is hashed in-database with SHA-256; only the
 /// hex digest is stored in `token_hash`. Returns the REAL stored id and send time (RETURNING) —
 /// never a pre-generated/phantom id.

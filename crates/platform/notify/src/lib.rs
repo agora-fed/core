@@ -4,7 +4,8 @@
 //!
 //! ## Contract
 //! - **Emits:** notify.dispatched, notify.delivery.failed
-//! - **Consumes:** consequence.sla.started, consequence.sla.expired, proposals.published
+//! - **Consumes:** proposals.threshold.crossed, consequence.sla.started, consequence.sla.expired,
+//!   proposals.published
 //! - **Owns tables:** notify_outbox, notify_delivery_receipt, notify_device_token
 //!
 //! This crate talks to the rest of the system ONLY through `dsoc-core` traits,
@@ -16,6 +17,8 @@
 //! - [`queries`] — compile-time-checked `sqlx` statements (no ORM, no `SELECT *`).
 //! - [`service`] — [`service::NotifyService`]: enqueue → dispatch → receipt + error mapping.
 //! - [`events`] — emit `notify.*` via the injected `EventBus`.
+//! - [`sla_subscriber`] — the idempotent consume seam for the SLA-lifecycle events (looks up the
+//!   mandate's operator and delegates to [`service::NotifyService::enqueue_for_event`]).
 //! - [`http`] — Axum [`routes`] mounted by the gateway (binds no socket).
 
 #![forbid(unsafe_code)]
@@ -25,11 +28,13 @@ pub mod events;
 pub mod http;
 pub mod queries;
 pub mod service;
+pub mod sla_subscriber;
 
 pub use http::routes;
 pub use service::{
     Channel, ChannelError, DeliveryReport, NoopChannel, NotifyService, OutboundMessage,
 };
+pub use sla_subscriber::handle_event as handle_sla_event;
 
 /// Compile-time marker proving the crate name is wired into the workspace.
 pub const CRATE_NAME: &str = "dsoc-notify";

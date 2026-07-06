@@ -86,6 +86,10 @@ pub struct MandateView {
     pub public_email: String,
     /// Federative sphere: `federal` | `estadual` | `municipal` (migration 0203).
     pub sphere: String,
+    /// Whether this mandate has a **verified operator** (a `mandate_identity_binding` row with
+    /// `citizen_id IS NOT NULL`). Aggregate signal only — the operator's identity itself is never
+    /// exposed on the public surface (LGPD; that lives on the auth-only `MyMandateDto`).
+    pub has_verified_operator: bool,
 }
 
 /// A term-bound office record.
@@ -460,6 +464,9 @@ impl MandateRegistry {
             .await
             .map_err(map_sqlx)?;
         let status = domain::onboarding_status(row.onboarded_at, has_invitation);
+        let has_verified_operator = queries::mandate_has_verified_operator(&self.db, row.id)
+            .await
+            .map_err(map_sqlx)?;
         let id = MandateId::from_uuid(row.id);
         Ok(MandateView {
             id,
@@ -474,6 +481,7 @@ impl MandateRegistry {
             avatar_object_key: row.avatar_object_key,
             public_email: row.public_email.clone(),
             sphere: row.sphere.clone(),
+            has_verified_operator,
         })
     }
 
@@ -497,6 +505,8 @@ impl MandateRegistry {
             .await
             .map_err(map_sqlx)?;
         let status = domain::onboarding_status(row.onboarded_at, has_invitation);
+        // The caller is BY DEFINITION the verified operator here, so we know the badge is true
+        // without a second query.
         let id = MandateId::from_uuid(row.id);
         Ok(Some((
             MandateView {
@@ -512,6 +522,7 @@ impl MandateRegistry {
                 avatar_object_key: row.avatar_object_key,
                 public_email: row.public_email.clone(),
                 sphere: row.sphere.clone(),
+                has_verified_operator: true,
             },
             level,
         )))
@@ -544,6 +555,9 @@ impl MandateRegistry {
                 .await
                 .map_err(map_sqlx)?;
             let status = domain::onboarding_status(row.onboarded_at, has_invitation);
+            let has_verified_operator = queries::mandate_has_verified_operator(&self.db, row.id)
+                .await
+                .map_err(map_sqlx)?;
             let id = MandateId::from_uuid(row.id);
             views.push(MandateView {
                 id,
@@ -558,6 +572,7 @@ impl MandateRegistry {
                 avatar_object_key: row.avatar_object_key,
                 public_email: row.public_email.clone(),
                 sphere: row.sphere.clone(),
+                has_verified_operator,
             });
         }
         Ok(views)

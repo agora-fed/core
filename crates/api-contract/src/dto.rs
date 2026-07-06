@@ -64,6 +64,15 @@ pub struct MandateDto {
     /// Legacy DTOs that predate the field will default to `federal` under Serde.
     #[serde(default = "default_sphere")]
     pub sphere: String,
+    /// Whether this mandate has a **verified operator** bound (an entry in
+    /// `mandate_identity_binding` with a non-null `citizen_id`). Aggregate signal only — the
+    /// operator's identity itself never appears on the public surface (LGPD; that lives on the
+    /// auth-only `MyMandateDto.binding_level`). Drives the "vínculo verificado" badge.
+    ///
+    /// `#[serde(default)]` so a legacy client parsing a fresh payload — or a fresh client
+    /// parsing a legacy payload — treats the missing field as `false` (the safe fallback).
+    #[serde(default)]
+    pub has_verified_operator: bool,
 }
 
 fn default_sphere() -> String {
