@@ -2,11 +2,15 @@
 // Base URL comes from PUBLIC_API_BASE (IPv6-first, per platform principle 4).
 
 import type {
+  ActivityDto,
   ApiResponse,
   ConsultationDto,
   DebateDto,
   MandateDto,
+  MandateInviteSummaryDto,
   MyMandateDto,
+  PartyDetailDto,
+  PartyDto,
   ProfileDto,
   ProfileUpdateDto,
   ProposalDto,
@@ -17,8 +21,12 @@ import type {
 } from './types';
 
 export type {
+  ActivityDto,
   MandateDto,
+  MandateInviteSummaryDto,
   MyMandateDto,
+  PartyDetailDto,
+  PartyDto,
   ProfileDto,
   ProfileUpdateDto,
   SessionInfoDto,
@@ -202,6 +210,13 @@ export const getScorecard = (mandateId: string) =>
 export const getMandate = (mandateId: string) =>
   apiGet<MandateDto>(`/api/v1/mandates/${encodeURIComponent(mandateId)}`);
 
+/** Normalized public activity for a mandate (proxy Câmara/Senado). Always OK with empty
+ *  sections when the mandate has no linked house profile or an upstream fails. */
+export const getMandateActivity = (mandateId: string, orgId = DEFAULT_ORG_ID) =>
+  apiGet<ActivityDto>(
+    `/api/v1/mandates/${encodeURIComponent(mandateId)}/atividade${orgQuery(orgId)}`,
+  );
+
 /** Directory of mandates in an org — drives the "Propor" form's picker so the user does not have
  *  to type a UUID by hand. Public read. */
 export const getMandates = (orgId = DEFAULT_ORG_ID, limit = 50, offset = 0) =>
@@ -228,6 +243,16 @@ export async function getAllMandates(
   }
   return { ok: true, data: all, error: null };
 }
+
+/** Party catalogue (Fase 2B) — parties ordered by mandate_count DESC. */
+export const getParties = (orgId = DEFAULT_ORG_ID) =>
+  apiGet<PartyDto[]>(`/api/v1/parties${orgQuery(orgId)}`);
+
+/** Single party detail: directories + (privacy-safe) administrators. */
+export const getParty = (sigla: string, orgId = DEFAULT_ORG_ID) =>
+  apiGet<PartyDetailDto>(
+    `/api/v1/parties/${encodeURIComponent(sigla)}${orgQuery(orgId)}`,
+  );
 
 /** Read the authenticated citizen's own profile (cookie required). */
 export const getMyProfile = () => apiGetCredentialed<ProfileDto>('/api/v1/me');
@@ -412,6 +437,40 @@ export const login = (email: string, password: string, orgId = DEFAULT_ORG_ID) =
     email: email.trim(),
     password,
   });
+
+/**
+ * F1.4 bypass — admin dispatches a mandate invite to any e-mail, independent of the
+ * `mandate.public_email` on file. Any authenticated citizen may call today; TODO gate by
+ * admin role. Response NEVER carries the token (only id + expiry).
+ */
+export const sendMandateInvite = (mandateId: string, email: string) =>
+  apiPost<{ id: string; expires_at: string }>(
+    `/api/v1/mandates/${encodeURIComponent(mandateId)}/invites`,
+    { email: email.trim() },
+  );
+
+/** Public accept-page summary (nothing personal). 404 collapses expired/revoked/unknown. */
+export const getMandateInvite = (token: string) =>
+  apiGet<MandateInviteSummaryDto>(
+    `/api/v1/mandate-invites/${encodeURIComponent(token)}`,
+  );
+
+/** Accept the invite: creates citizen + credential + directory binding + session. */
+export const acceptMandateInvite = (
+  token: string,
+  body: { password: string; cpf: string; display_name: string },
+) =>
+  apiPost<SessionData>(
+    `/api/v1/mandate-invites/${encodeURIComponent(token)}/accept`,
+    body,
+  );
+
+/** Optional — inviter revokes a pending invite. */
+export const revokeMandateInvite = (token: string) =>
+  apiPost<null>(
+    `/api/v1/mandate-invites/${encodeURIComponent(token)}/revoke`,
+    {},
+  );
 
 /** Request a password reset link (enumeration-resistant: always returns success). */
 export const requestPasswordReset = (email: string, orgId = DEFAULT_ORG_ID) =>

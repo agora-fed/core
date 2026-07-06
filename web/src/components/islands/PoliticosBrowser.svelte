@@ -235,7 +235,16 @@
         <span class="avatar avatar-placeholder">👤</span>
       {/if}
       <div class="meta">
-        <strong class="name">{m.display_name}</strong>
+        <strong class="name">
+          {m.display_name}
+          {#if m.has_verified_operator}
+            <span
+              class="badge-verified badge-verified-small"
+              title="Mandato com operador verificado"
+              aria-label="Vínculo verificado"
+            >✓</span>
+          {/if}
+        </strong>
         <span class="muted office">
           {m.party}/{m.uf} ·
           {m.house === 'camara' ? 'Câmara' : m.house === 'senado' ? 'Senado' : ''}
@@ -391,6 +400,25 @@
   .stats-mini {
     font-size: 0.78rem;
     font-variant-numeric: tabular-nums;
+  }
+  /* Verified-operator badge: subtle inline check, matches the .badge-answered green so it reads
+     as "positivo" without competing visually with the scorecard badge below. */
+  .badge-verified {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--c-green-soft, #d4edda);
+    color: var(--c-green-dark, #1e6b3a);
+    font-weight: 700;
+    border-radius: 999px;
+    line-height: 1;
+    padding: 0.15rem 0.45rem;
+    margin-left: 0.35rem;
+    vertical-align: middle;
+  }
+  .badge-verified-small {
+    font-size: 0.7rem;
+    padding: 0.1rem 0.35rem;
   }
   .chip-label {
     align-self: center;

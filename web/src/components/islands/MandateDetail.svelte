@@ -5,10 +5,12 @@
   import { onMount } from 'svelte';
   import {
     getMandate,
+    getMandateActivity,
     getProposals,
     getScorecard,
     getSlas,
     DEFAULT_ORG_ID,
+    type ActivityDto,
     type MandateDto,
   } from '../../lib/api';
   import type { ProposalDto, ScorecardDto, SlaDto } from '../../lib/types';
@@ -22,17 +24,27 @@
   let myProposals = $state<ProposalDto[]>([]);
   let mySlas = $state<SlaDto[]>([]);
   let loadError = $state<string | null>(null);
+  let activity = $state<ActivityDto | null>(null);
+  let activityLoading = $state(true);
 
   let pendingSlas = $derived(mySlas.filter((s) => s.status === 'pending'));
 
+  const brlFormatter = new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  });
+  const formatBrl = (v: number) => brlFormatter.format(v);
+
   onMount(async () => {
-    const [mr, scr, pr, slr] = await Promise.all([
+    const [mr, scr, pr, slr, ar] = await Promise.all([
       getMandate(mandateId),
       getScorecard(mandateId),
       getProposals(DEFAULT_ORG_ID, 200),
       getSlas(DEFAULT_ORG_ID, 200),
+      getMandateActivity(mandateId),
     ]);
     loading = false;
+    activityLoading = false;
     if (!mr.ok || !mr.data) {
       loadError =
         mr.error?.includes('encontrado') || mr.error?.includes('not found')
@@ -48,6 +60,8 @@
     if (slr.ok && slr.data) {
       mySlas = slr.data.filter((s) => s.mandate_id === mandateId);
     }
+    // Activity is best-effort: never blocks the page. If failed, section just doesn't render.
+    if (ar.ok && ar.data) activity = ar.data;
   });
 
   function badgeRate(s: ScorecardDto | null) {
@@ -68,6 +82,38 @@
       return iso;
     }
   }
+
+  function truncate(text: string, max = 200): string {
+    return text.length > max ? text.slice(0, max - 3) + '…' : text;
+  }
+
+  function productionLabel(p: {
+    kind: string | null;
+    number: string | null;
+    year: string | null;
+    summary: string | null;
+  }): string {
+    const head = [p.kind, p.number && p.year ? `${p.number}/${p.year}` : (p.number ?? p.year)]
+      .filter(Boolean)
+      .join(' ');
+    if (head && p.summary) return `${head} — ${p.summary}`;
+    return head || p.summary || 'Proposição';
+  }
+
+  function houseName(source: string | null | undefined): string {
+    if (source === 'camara') return 'Câmara dos Deputados';
+    if (source === 'senado') return 'Senado Federal';
+    return 'casa';
+  }
+
+  let hasActivity = $derived(
+    !!activity &&
+      (activity.agenda.length > 0 ||
+        activity.production.length > 0 ||
+        activity.speeches.length > 0 ||
+        activity.votes.length > 0 ||
+        activity.expenses !== null),
+  );
 </script>
 
 {#if loading}
@@ -88,6 +134,16 @@
     {/if}
     <div class="head-meta">
       <h1>{mandate.display_name}</h1>
+      {#if mandate.has_verified_operator}
+        <p class="verified-line">
+          <span
+            class="badge-verified"
+            title="Mandato com operador verificado"
+            aria-label="Vínculo verificado">✓</span
+          >
+          <span class="muted">Vínculo verificado</span>
+        </p>
+      {/if}
       <p class="office">
         {#if mandate.party && mandate.uf}
           <strong>{mandate.party}</strong>/{mandate.uf} ·
@@ -157,6 +213,118 @@
       </ul>
     {/if}
   </section>
+
+  {#if !activityLoading && activity && hasActivity}
+    <section class="activity">
+      <header class="activity-head">
+        <h2>Atividade oficial na {houseName(activity.source)}</h2>
+        <p class="muted">fonte: dados abertos</p>
+      </header>
+
+      {#if activity.agenda.length > 0}
+        <div class="sub">
+          <h3>Agenda pública</h3>
+          <ul class="act-list">
+            {#each activity.agenda as ev, i (ev.url ?? `${ev.title}-${i}`)}
+              <li class="card">
+                <p class="act-title">
+                  {#if ev.url}
+                    <a href={ev.url} target="_blank" rel="noopener noreferrer">{ev.title}</a>
+                  {:else}
+                    {ev.title}
+                  {/if}
+                </p>
+                <p class="muted meta">
+                  {#if ev.date_time}<span>{formatDateTime(ev.date_time)}</span>{/if}
+                  {#if ev.location}<span>· {ev.location}</span>{/if}
+                  {#if ev.kind}<span>· {ev.kind}</span>{/if}
+                </p>
+              </li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
+
+      {#if activity.production.length > 0}
+        <div class="sub">
+          <h3>Produção legislativa</h3>
+          <ul class="act-list">
+            {#each activity.production as p, i (p.id ?? `${p.kind}-${p.number}-${i}`)}
+              <li class="card">
+                <p class="act-title">
+                  {#if p.url}
+                    <a href={p.url} target="_blank" rel="noopener noreferrer">{productionLabel(p)}</a>
+                  {:else}
+                    {productionLabel(p)}
+                  {/if}
+                </p>
+              </li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
+
+      {#if activity.speeches.length > 0}
+        <div class="sub">
+          <h3>Discursos recentes</h3>
+          <ul class="act-list">
+            {#each activity.speeches.slice(0, 10) as s, i (s.url ?? `${s.date_time}-${i}`)}
+              <li class="card">
+                <p class="muted meta">
+                  {#if s.date_time}<span>{formatDateTime(s.date_time)}</span>{/if}
+                </p>
+                {#if s.summary}
+                  <p>{truncate(s.summary, 200)}</p>
+                {/if}
+                {#if s.url}
+                  <p class="meta">
+                    <a href={s.url} target="_blank" rel="noopener noreferrer">Ver íntegra</a>
+                  </p>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
+
+      {#if activity.votes.length > 0}
+        <div class="sub">
+          <h3>Votos nominais</h3>
+          <ul class="act-list">
+            {#each activity.votes as v, i (`${v.matter ?? ''}-${v.date ?? ''}-${i}`)}
+              <li class="card">
+                <p class="act-title">{v.matter ?? 'Matéria'}</p>
+                <p class="meta">
+                  {#if v.vote}<span><strong>Voto:</strong> {v.vote}</span>{/if}
+                  {#if v.result}<span>· <strong>Resultado:</strong> {v.result}</span>{/if}
+                  {#if v.date}<span class="muted">· {v.date}</span>{/if}
+                </p>
+              </li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
+
+      {#if activity.expenses}
+        <div class="sub">
+          <h3>Despesas — cota parlamentar{activity.expenses.year ? ` (${activity.expenses.year})` : ''}</h3>
+          <div class="card">
+            <p class="act-title">Total: <strong>{formatBrl(activity.expenses.total)}</strong></p>
+            {#if activity.expenses.top_categories.length > 0}
+              <ul class="cat-list">
+                {#each activity.expenses.top_categories as cat (cat.name)}
+                  <li>
+                    <span>{cat.name}</span>
+                    <span class="cat-amount">{formatBrl(cat.amount)}</span>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+        </div>
+      {/if}
+    </section>
+  {/if}
 {/if}
 
 <style>
@@ -195,6 +363,24 @@
   .head h1 {
     margin: 0 0 0.3rem;
     font-size: 1.6rem;
+  }
+  .badge-verified {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--c-green-soft, #d4edda);
+    color: var(--c-green-dark, #1e6b3a);
+    font-weight: 700;
+    border-radius: 999px;
+    line-height: 1;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.85rem;
+    margin-right: 0.35rem;
+    vertical-align: middle;
+  }
+  .verified-line {
+    margin: 0.25rem 0 0.5rem;
+    font-size: 0.85rem;
   }
   .office {
     margin: 0 0 0.6rem;
@@ -284,5 +470,63 @@
   .center {
     text-align: center;
     padding: 2.5rem 1.5rem;
+  }
+  .activity {
+    margin-top: 2.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--c-border);
+  }
+  .activity-head {
+    margin-bottom: 1rem;
+  }
+  .activity-head h2 {
+    margin: 0 0 0.15rem;
+    font-size: 1.05rem;
+  }
+  .activity-head p {
+    margin: 0;
+    font-size: 0.85rem;
+  }
+  .sub {
+    margin-top: 1.5rem;
+  }
+  .sub h3 {
+    margin: 0 0 0.6rem;
+    font-size: 0.98rem;
+  }
+  .act-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.6rem;
+  }
+  .act-list li.card {
+    padding: 0.85rem 1rem;
+  }
+  .act-title {
+    margin: 0 0 0.3rem;
+    font-weight: 600;
+    font-size: 0.96rem;
+  }
+  .act-title a {
+    color: inherit;
+  }
+  .cat-list {
+    list-style: none;
+    padding: 0;
+    margin: 0.6rem 0 0;
+    display: grid;
+    gap: 0.3rem;
+  }
+  .cat-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: 0.92rem;
+  }
+  .cat-amount {
+    font-variant-numeric: tabular-nums;
+    color: var(--c-text-muted);
   }
 </style>

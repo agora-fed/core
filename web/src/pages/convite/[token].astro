@@ -1,0 +1,71 @@
+---
+// Página de aceite de convite de parlamentar — o(a) parlamentar clica no link do e-mail e cai
+// aqui. O token é a credencial (32 bytes URL-safe base64), lido client-side pela ilha.
+//
+// Astro SSG (ADR-0009): a plataforma inteira é estática, então NÃO conseguimos pré-gerar rotas
+// para tokens (que são segredos, de vida curta e únicos). Duas escolhas possíveis:
+//
+//   (a) `getStaticPaths: () => []` + `export const prerender = false;` — só funciona com um
+//       adapter SSR instalado, que a plataforma AINDA NÃO usa. Ficaria como TODO para F2.
+//   (b) O e-mail linka na variante query-string `/convite?token=<t>`, servida por
+//       `web/src/pages/convite.astro`. A ilha `AcceptMandateInvite.svelte` lê o token de
+//       QUALQUER das duas formas (querystring OU path segment), então quando um adapter SSR
+//       for adicionado, essa página aqui passa a atender também sem mudança.
+//
+// Hoje a rota efetiva é (b). Este arquivo fica documentado para que, no dia em que um adapter
+// SSR entrar em cena (Node/Cloudflare/etc.), baste remover o `getStaticPaths` vazio e ligar
+// `prerender = false` — a ilha já sabe ler o path segment.
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import AcceptMandateInvite from '../../components/islands/AcceptMandateInvite.svelte';
+
+export async function getStaticPaths() {
+  // Zero rotas geradas hoje (SSG puro; tokens são segredos). Ver comentário acima.
+  return [];
+}
+
+const description =
+  'Aceite o convite para assumir o mandato na plataforma DemocraciaBR.';
+---
+
+<BaseLayout title="Aceitar convite" {description} noindex>
+  <section class="section">
+    <div class="container auth-shell">
+      <div class="auth-card card">
+        <img
+          src="/logo.png"
+          width="180"
+          height="120"
+          alt="DemocraciaBR"
+          class="logo"
+        />
+        <h1>Aceitar convite</h1>
+        <p class="muted">
+          Você foi convidado(a) a assumir um mandato na plataforma cidadã de
+          cobrança pública.
+        </p>
+        <AcceptMandateInvite client:load />
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .auth-shell {
+    max-width: 30rem;
+  }
+  .auth-card {
+    padding: 2rem;
+  }
+  .logo {
+    height: 44px;
+    width: auto;
+    display: block;
+    margin-bottom: 1rem;
+  }
+  h1 {
+    margin-bottom: 0.25rem;
+  }
+  .auth-card > .muted {
+    margin-bottom: 1.5rem;
+  }
+</style>
