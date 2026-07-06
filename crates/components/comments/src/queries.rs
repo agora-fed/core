@@ -215,6 +215,45 @@ pub async fn list_thread(
         .map_err(Error::from)
 }
 
+/// Presentation-only identity of a comment author (public handle/avatar surface — same
+/// convention `ProposalDto` uses; never carries CPF/e-mail).
+#[derive(Debug, Clone)]
+pub struct AuthorBrief {
+    /// The citizen id the brief belongs to.
+    pub author_id: Uuid,
+    /// User-chosen `@handle`, if any.
+    pub handle: Option<String>,
+    /// Public display name, if any.
+    pub display_name: Option<String>,
+    /// Storage key of the avatar (composed with `MEDIA_BASE_URL` at the HTTP layer).
+    pub avatar_object_key: Option<String>,
+}
+
+/// Fetch the public identity bits for a set of comment authors in one round-trip.
+/// Runtime-bound query (not `query!`): added after the offline `.sqlx` cache was frozen,
+/// and this build host has no database to regenerate it.
+///
+/// # Errors
+/// [`Error::Db`] on a storage failure.
+pub async fn author_briefs(db: &Db, author_ids: &[Uuid]) -> Result<Vec<AuthorBrief>, Error> {
+    use sqlx::Row;
+    let rows = sqlx::query(
+        "SELECT id, handle, display_name, avatar_object_key FROM citizen WHERE id = ANY($1)",
+    )
+    .bind(author_ids)
+    .fetch_all(db)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| AuthorBrief {
+            author_id: r.get("id"),
+            handle: r.get("handle"),
+            display_name: r.get("display_name"),
+            avatar_object_key: r.get("avatar_object_key"),
+        })
+        .collect())
+}
+
 /// Flag every still-`visible` comment of a proposal, returning the number transitioned.
 /// The `status = 'visible'` guard makes this an optimistic state transition: a redundant
 /// moderation delivery flags zero rows (already-in-target), so the consumer is idempotent.

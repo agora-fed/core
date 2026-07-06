@@ -211,7 +211,47 @@ export interface CommentDto {
   depth: number;
   /** `visible` | `flagged` | `hidden`. */
   status: string;
+  /** Author user-chosen handle (`@fulana`). `null` if the citizen never picked one. */
+  author_handle: string | null;
+  /** Author public display name, if any. */
+  author_display_name: string | null;
+  /** Opaque public handle (`u-<hex>`) — fallback when there is no `@handle`. */
+  author_public_handle: string | null;
+  /** Author avatar URL (already composed with MEDIA_BASE). `null` ⇒ render initials. */
+  author_avatar_url: string | null;
   created_at: string;
+}
+
+// --- Fediverse feed & reactions (migration 0403) ------------------------------
+
+/** One item in the authenticated citizen's federated feed (own + followed notes). */
+export interface FeedItemDto {
+  /** Canonical ActivityPub object URI of the note (stable reaction target). */
+  object_uri: string;
+  /** `@user` for local authors, `user@remote.tld` for remote ones. */
+  author_handle: string;
+  author_display_name: string | null;
+  author_avatar_url: string | null;
+  /** Sanitized HTML content of the note. */
+  content_html: string;
+  published_at: string;
+  is_remote: boolean;
+  like_count: number;
+  boost_count: number;
+  liked_by_me: boolean;
+  boosted_by_me: boolean;
+}
+
+/** Result of toggling a Like on a note. */
+export interface LikeResultDto {
+  liked: boolean;
+  like_count: number;
+}
+
+/** Result of toggling an Announce (boost) on a note. */
+export interface BoostResultDto {
+  boosted: boolean;
+  boost_count: number;
 }
 
 // --- Parliamentarian public activity (proxy Câmara/Senado) ---

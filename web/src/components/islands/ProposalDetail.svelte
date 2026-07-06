@@ -117,10 +117,12 @@
 
   // --- Debate helpers --------------------------------------------------------
 
-  /** Short, opaque author label. Backend does not expose handle/display_name on
-   *  CommentDto, so we render a stable short-id fallback until the DTO grows
-   *  those fields. Keeps N+1 profile lookups off the deliberation page. */
+  /** Public author label: display name, else `@handle`, else the opaque public
+   *  handle, else a stable short-id fallback. */
   function authorLabelFor(c: CommentDto): string {
+    if (c.author_display_name) return c.author_display_name;
+    if (c.author_handle) return `@${c.author_handle}`;
+    if (c.author_public_handle) return c.author_public_handle;
     const short = c.author_id.replace(/-/g, '').slice(0, 6);
     return `Cidadão · ${short}`;
   }

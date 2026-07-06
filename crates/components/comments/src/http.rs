@@ -60,12 +60,21 @@ pub struct CommentDto {
     pub depth: i32,
     /// Lifecycle status (`visible` | `flagged` | `hidden`).
     pub status: String,
+    /// Author user-chosen handle (`@fulana`), `null` if the citizen never picked one.
+    pub author_handle: Option<String>,
+    /// Author public display name, if any.
+    pub author_display_name: Option<String>,
+    /// Opaque public handle (`u-<hex>`) — UI fallback when there is no `@handle`.
+    pub author_public_handle: Option<String>,
+    /// Author avatar URL (already composed with `MEDIA_BASE_URL`). `null` ⇒ render initials.
+    pub author_avatar_url: Option<String>,
     /// Creation time.
     pub created_at: DateTime<Utc>,
 }
 
 impl From<Comment> for CommentDto {
     fn from(c: Comment) -> Self {
+        let author_public_handle = Some(format!("u-{}", c.author_id.as_simple()));
         Self {
             id: c.id,
             org_id: c.org_id,
@@ -75,7 +84,39 @@ impl From<Comment> for CommentDto {
             body: c.body,
             depth: c.depth,
             status: c.status.as_str().to_owned(),
+            author_handle: None,
+            author_display_name: None,
+            author_public_handle,
+            author_avatar_url: None,
             created_at: c.created_at,
+        }
+    }
+}
+
+/// Fill the presentation identity of the DTOs' authors in one query. Best-effort: on a
+/// storage failure the thread still renders with the opaque `u-<hex>` fallback.
+async fn enrich_authors(state: &AppState, dtos: &mut [CommentDto]) {
+    let mut ids: Vec<Uuid> = dtos.iter().map(|d| d.author_id).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    if ids.is_empty() {
+        return;
+    }
+    let Ok(briefs) = crate::queries::author_briefs(&state.db, &ids).await else {
+        return;
+    };
+    let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+    let media_base = media_base.trim_end_matches('/').to_owned();
+    let by_id: std::collections::HashMap<Uuid, _> =
+        briefs.into_iter().map(|b| (b.author_id, b)).collect();
+    for dto in dtos.iter_mut() {
+        if let Some(b) = by_id.get(&dto.author_id) {
+            dto.author_handle = b.handle.clone();
+            dto.author_display_name = b.display_name.clone();
+            dto.author_avatar_url = b
+                .avatar_object_key
+                .as_ref()
+                .map(|k| format!("{media_base}/{k}"));
         }
     }
 }
@@ -224,11 +265,12 @@ async fn cast_vote(
 async fn get_comment(State(state): State<AppState>, Path(id): Path<Uuid>) -> Response {
     let svc = CommentService::from_state(&state);
     match svc.get_comment(CommentId::from_uuid(id)).await {
-        Ok(comment) => (
-            StatusCode::OK,
-            Json(ApiResponse::ok(CommentDto::from(comment))),
-        )
-            .into_response(),
+        Ok(comment) => {
+            let mut dtos = [CommentDto::from(comment)];
+            enrich_authors(&state, &mut dtos).await;
+            let [dto] = dtos;
+            (StatusCode::OK, Json(ApiResponse::ok(dto))).into_response()
+        }
         Err(e) => error_response::<CommentDto>(&e),
     }
 }
@@ -248,7 +290,8 @@ async fn list_thread(State(state): State<AppState>, Query(params): Query<ListPar
         .await
     {
         Ok(comments) => {
-            let dtos: Vec<CommentDto> = comments.into_iter().map(CommentDto::from).collect();
+            let mut dtos: Vec<CommentDto> = comments.into_iter().map(CommentDto::from).collect();
+            enrich_authors(&state, &mut dtos).await;
             (StatusCode::OK, Json(paged(dtos, limit))).into_response()
         }
         Err(e) => error_response::<Vec<CommentDto>>(&e),
