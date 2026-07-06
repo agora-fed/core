@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "PUBLIC_API_BASE=${PUBLIC_API_BASE:-https://democracia.social.br} astro build",
     "preview": "astro preview",
     "astro": "astro",
     "test": "vitest run"

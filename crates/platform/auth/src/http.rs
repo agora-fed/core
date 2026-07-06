@@ -53,6 +53,7 @@ pub fn routes(state: AppState) -> Router<()> {
         .route("/me/cover", post(post_me_cover))
         .route("/me/sessions", get(list_me_sessions))
         .route("/me/sessions/{session_id}", axum::routing::delete(delete_me_session))
+        .route("/profiles/{handle}", get(get_public_profile))
         .route("/auth/password-reset/request", post(password_reset_request))
         .route("/auth/password-reset/confirm", post(password_reset_confirm))
         // Multipart body cap: avatar/cover code re-validates at 5 MiB, but we cap the framework
@@ -513,6 +514,28 @@ async fn password_reset_confirm(
 async fn get_me_profile(State(state): State<AppState>, caller: CallerId) -> Response {
     let svc = ProfileService::from_state(&state);
     match svc.get(caller.citizen, caller.org).await {
+        Ok(profile) => (StatusCode::OK, Json(ApiResponse::ok(profile))).into_response(),
+        Err(error) => error_response(&error),
+    }
+}
+
+/// Query for `GET /profiles/{handle}` — needs to know which org (tenant) the handle lives in.
+#[derive(Debug, Deserialize)]
+struct PublicProfileQuery {
+    org_id: Uuid,
+}
+
+/// `GET /profiles/{handle}?org_id=` — public read of a citizen's profile by their chosen
+/// handle. Gated by `is_public=true` inside the service; hidden citizens 404 just like
+/// unknown ones (no signal that the handle exists). Drives the human `/perfil/{handle}`
+/// page and the follow-back render on federation cards.
+async fn get_public_profile(
+    State(state): State<AppState>,
+    axum::extract::Path(handle): axum::extract::Path<String>,
+    Query(q): Query<PublicProfileQuery>,
+) -> Response {
+    let svc = ProfileService::from_state(&state);
+    match svc.find_public_by_handle(OrgId::from_uuid(q.org_id), &handle).await {
         Ok(profile) => (StatusCode::OK, Json(ApiResponse::ok(profile))).into_response(),
         Err(error) => error_response(&error),
     }

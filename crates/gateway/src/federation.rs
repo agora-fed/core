@@ -116,6 +116,26 @@ async fn actor_handler(
     headers: HeaderMap,
     Path(handle): Path<String>,
 ) -> Response {
+    // Content-negotiation: a browser landing on `/actors/<handle>` expects a human page,
+    // not JSON-LD. The Fediverse spec (ActivityPub) advertises `application/activity+json` /
+    // `application/ld+json`; anything without those (typical browser `text/html,…` header)
+    // gets a 302 to the human `/perfil/?u=<handle>` page served by the SPA. The handle rides in
+    // a query param (not the path) because the SPA is pure SSG (ADR-0009): it cannot pre-render one
+    // HTML file per arbitrary citizen handle at build time, so a single `/perfil/` page reads the
+    // handle client-side and hydrates the profile. Substring check covers Mastodon-style
+    // `application/activity+json; profile=…` variants. Handles are `[a-z0-9_-]` (CHECK-constrained),
+    // so no URL-encoding is needed.
+    let wants_activitypub = headers
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|accept| {
+            accept.contains("application/activity+json")
+                || accept.contains("application/ld+json")
+        });
+    if !wants_activitypub {
+        let location = format!("/perfil/?u={handle}");
+        return (StatusCode::FOUND, [(header::LOCATION, location)]).into_response();
+    }
     let Some(host) = host_from(&headers) else {
         return StatusCode::BAD_REQUEST.into_response();
     };

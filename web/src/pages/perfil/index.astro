@@ -1,0 +1,24 @@
+---
+// Perfil público humano (cidadão ou político). SSG single-page: o handle vem em `?u=<handle>`
+// e a ilha resolve/hidrata client-side (ADR-0009 — não dá pra pré-gerar um HTML por handle
+// arbitrário no build). É o alvo do 302 que o gateway emite quando um navegador acessa
+// /actors/{handle} (content-negotiation em crates/gateway/src/federation.rs).
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import ProfilePublic from '../../components/islands/ProfilePublic.svelte';
+
+const description = 'Perfil público de uma cidadã, cidadão ou representante na DemocraciaBR.';
+---
+
+<BaseLayout title="Perfil" {description} noindex>
+  <section class="section">
+    <div class="container profile-shell">
+      <ProfilePublic client:load />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .profile-shell {
+    max-width: 42rem;
+  }
+</style>

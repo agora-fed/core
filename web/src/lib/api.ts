@@ -210,6 +210,13 @@ export const getMandates = (orgId = DEFAULT_ORG_ID, limit = 50) =>
 /** Read the authenticated citizen's own profile (cookie required). */
 export const getMyProfile = () => apiGetCredentialed<ProfileDto>('/api/v1/me');
 
+/** Read another citizen's public profile by handle (no auth). Gated by `is_public=true` on
+ *  the server; hidden citizens 404 the same as unknown ones. Drives `/perfil/<handle>`. */
+export const getPublicProfile = (handle: string, orgId = DEFAULT_ORG_ID) =>
+  apiGet<ProfileDto>(
+    `/api/v1/profiles/${encodeURIComponent(handle)}${orgQuery(orgId)}`,
+  );
+
 /** Reverse lookup: does the authenticated citizen operate a mandate? */
 export const getMyMandate = () =>
   apiGetCredentialed<MyMandateDto>('/api/v1/me/mandate');
