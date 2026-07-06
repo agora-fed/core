@@ -306,8 +306,14 @@ const jsonLd = {
   .pilares {
     display: grid;
     gap: 1rem;
-    grid-template-columns: repeat(2, 1fr);
+    /* 1 coluna em telas mínimas (≤480px o par ficava apertado), 2 no médio, 4 no largo. */
+    grid-template-columns: 1fr;
     margin-bottom: 1.75rem;
+  }
+  @media (min-width: 480px) {
+    .pilares {
+      grid-template-columns: repeat(2, 1fr);
+    }
   }
   @media (min-width: 860px) {
     .pilares {

@@ -1,7 +1,15 @@
 <script lang="ts">
   // Caixa de texto pra publicar uma Note pública. Conta caracteres, mostra fan-out na resposta
   // ("publicado, entregue a 12 seguidores"), reseta o textarea no sucesso.
+  // Reutilizável: em /configuracoes rende como seção standalone (variant="settings", default);
+  // no /feed rende compacto dentro do card do feed (variant="feed") e avisa o pai via `onposted`
+  // pra ele recarregar a lista.
   import { postNote } from '../../lib/api';
+
+  let {
+    variant = 'settings',
+    onposted,
+  }: { variant?: 'settings' | 'feed'; onposted?: () => void } = $props();
 
   let content = $state('');
   let busy = $state(false);
@@ -32,6 +40,7 @@
             : `Publicado. Entregando a ${n} ${n === 1 ? 'seguidor' : 'seguidores'} no fediverso.`,
       };
       content = '';
+      onposted?.();
     } else {
       status = {
         kind: 'error',
@@ -41,12 +50,14 @@
   }
 </script>
 
-<section class="composer">
-  <h2>Publicar uma nota</h2>
-  <p class="muted">
-    Sua nota vai pro fediverso público — seguidores de qualquer instância recebem.
-    Precisa ter perfil público.
-  </p>
+<section class={`composer ${variant === 'feed' ? 'in-feed' : ''}`}>
+  {#if variant === 'settings'}
+    <h2>Publicar uma nota</h2>
+    <p class="muted">
+      Sua nota vai pro fediverso público — seguidores de qualquer instância recebem.
+      Precisa ter perfil público.
+    </p>
+  {/if}
 
   <form onsubmit={submit} novalidate>
     <textarea
@@ -86,6 +97,11 @@
     padding-top: 1.5rem;
     margin-top: 2rem;
   }
+  .composer.in-feed {
+    border-top: 0;
+    padding-top: 0;
+    margin-top: 0;
+  }
   .composer h2 {
     margin: 0 0 0.4rem;
     font-size: 1.1rem;
@@ -95,6 +111,9 @@
     resize: vertical;
     margin-top: 0.75rem;
     font-family: inherit;
+  }
+  .in-feed textarea.input {
+    margin-top: 0;
   }
   .row {
     display: flex;

@@ -26,6 +26,28 @@ export function formatLatency(hours: number | null | undefined): string {
   return `${h}h`;
 }
 
+const PT_RELATIVE =
+  typeof Intl !== 'undefined' && 'RelativeTimeFormat' in Intl
+    ? new Intl.RelativeTimeFormat('pt-BR', { numeric: 'auto' })
+    : null;
+
+/** Relative pt-BR timestamp for feeds: "agora", "há 5 minutos", "há 2 horas",
+ *  "ontem"/"há 3 dias" — falls back to the full date beyond a week. */
+export function formatRelative(iso: string | undefined | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const diffSec = Math.round((d.getTime() - Date.now()) / 1000);
+  const abs = Math.abs(diffSec);
+  if (abs < 60 || !PT_RELATIVE) {
+    return abs < 60 ? 'agora' : formatDate(iso);
+  }
+  if (abs < 3600) return PT_RELATIVE.format(Math.trunc(diffSec / 60), 'minute');
+  if (abs < 86400) return PT_RELATIVE.format(Math.trunc(diffSec / 3600), 'hour');
+  if (abs < 7 * 86400) return PT_RELATIVE.format(Math.trunc(diffSec / 86400), 'day');
+  return formatDate(iso);
+}
+
 /** Pluralizing count helper: countLabel(3, "proposta", "propostas"). */
 export function countLabel(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;

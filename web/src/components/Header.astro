@@ -9,6 +9,7 @@ const isActive = (href: string) =>
   href === '/' ? path === '/' : path.startsWith(href);
 
 const links = [
+  { href: '/feed', label: 'Feed' },
   { href: '/politicos', label: 'Políticos' },
   { href: '/partidos', label: 'Partidos' },
   { href: '/propostas', label: 'Propostas' },
@@ -30,7 +31,7 @@ const links = [
       />
     </a>
 
-    <!-- Hamburger checkbox (peer of `.drawer`); only visible <840px. Defaults closed. -->
+    <!-- Hamburger checkbox (peer of `.drawer`); only visible <920px. Defaults closed. -->
     <input id="menu-toggle" class="menu-toggle" type="checkbox" aria-hidden="true" />
     <label for="menu-toggle" class="menu-button" aria-label="Abrir menu">
       <span class="bars" aria-hidden="true">
@@ -147,8 +148,10 @@ const links = [
     font-size: 0.92rem;
   }
 
-  /* --- Mobile: hamburger pattern -------------------------------------------- */
-  @media (max-width: 840px) {
+  /* --- Mobile: hamburger pattern --------------------------------------------
+     Breakpoint em 920px: com 7 links + avatar/handle/sair, abaixo disso a linha
+     única quebrava feio antes de caber. */
+  @media (max-width: 920px) {
     .menu-button {
       display: inline-flex;
       align-items: center;

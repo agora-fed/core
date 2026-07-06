@@ -103,11 +103,13 @@
         {#if followState === 'sent'}
           <span class="hint hint-ok">Solicitação enviada ✓</span>
         {:else}
+          <!-- Neste ramo `followState` nunca é 'sent' (o #if acima captura), então basta
+               travar enquanto o pedido está em voo. -->
           <button
             class="btn btn-primary"
             type="button"
             onclick={follow}
-            disabled={following || followState === 'sent'}
+            disabled={following}
           >
             {following ? 'Enviando…' : 'Seguir'}
           </button>
@@ -131,9 +133,11 @@
     display: flex;
     gap: 0.5rem;
     margin: 1rem 0 0.5rem;
+    flex-wrap: wrap;
   }
   .row .input {
     flex: 1;
+    min-width: 12rem;
   }
   .card-result {
     display: flex;

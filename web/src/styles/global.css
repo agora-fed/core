@@ -58,6 +58,9 @@ body {
   line-height: 1.6;
   font-size: 17px;
   -webkit-font-smoothing: antialiased;
+  /* Guarda-corpo: nada empurra a página pro scroll horizontal em telas de 360px.
+     `clip` (e não `hidden`) porque não cria scroll container — sticky continua ok. */
+  overflow-x: clip;
 }
 
 h1,
@@ -116,6 +119,9 @@ img {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 1.25rem;
+  /* Conteúdo vindo de usuários/fediverso pode trazer palavras/URLs enormes. */
+  overflow-wrap: break-word;
+  min-width: 0;
 }
 
 .grid {
@@ -159,6 +165,10 @@ img {
 }
 .btn:active {
   transform: translateY(1px);
+}
+.btn {
+  max-width: 100%;
+  text-align: center;
 }
 .btn-primary {
   background: var(--c-primary);

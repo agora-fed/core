@@ -4,8 +4,11 @@
 import type {
   ActivityDto,
   ApiResponse,
+  BoostResultDto,
   ConsultationDto,
   DebateDto,
+  FeedItemDto,
+  LikeResultDto,
   MandateDto,
   MandateInviteSummaryDto,
   MyMandateDto,
@@ -22,6 +25,9 @@ import type {
 
 export type {
   ActivityDto,
+  BoostResultDto,
+  FeedItemDto,
+  LikeResultDto,
   MandateDto,
   MandateInviteSummaryDto,
   MyMandateDto,
@@ -440,8 +446,8 @@ export const login = (email: string, password: string, orgId = DEFAULT_ORG_ID) =
 
 /**
  * F1.4 bypass — admin dispatches a mandate invite to any e-mail, independent of the
- * `mandate.public_email` on file. Any authenticated citizen may call today; TODO gate by
- * admin role. Response NEVER carries the token (only id + expiry).
+ * `mandate.public_email` on file. Caller must be a platform admin or an admin of the
+ * mandate's party (403 otherwise). Response NEVER carries the token (only id + expiry).
  */
 export const sendMandateInvite = (mandateId: string, email: string) =>
   apiPost<{ id: string; expires_at: string }>(
@@ -510,3 +516,17 @@ export const postNote = (content: string) =>
     '/api/v1/me/notes',
     { content },
   );
+
+/** Federated feed of the authenticated citizen (own notes + followed actors). */
+export const getMyFeed = (limit = 30, offset = 0) =>
+  apiGetCredentialed<FeedItemDto[]>(
+    `/api/v1/me/feed?limit=${limit}&offset=${offset}`,
+  );
+
+/** Toggle a Like (favoritar) on a note by its ActivityPub object URI. */
+export const toggleLike = (object_uri: string) =>
+  apiPost<LikeResultDto>('/api/v1/me/like', { object_uri });
+
+/** Toggle an Announce (republicar) on a note by its ActivityPub object URI. */
+export const toggleBoost = (object_uri: string) =>
+  apiPost<BoostResultDto>('/api/v1/me/boost', { object_uri });

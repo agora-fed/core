@@ -19,6 +19,12 @@ const description = 'Perfil público de uma cidadã, cidadão ou representante n
 
 <style>
   .profile-shell {
-    max-width: 42rem;
+    max-width: 44rem;
+  }
+  /* Em telas pequenas o card do perfil é o herói da página — aproxima do topo. */
+  @media (max-width: 560px) {
+    section.section {
+      padding-block-start: 1.25rem;
+    }
   }
 </style>
