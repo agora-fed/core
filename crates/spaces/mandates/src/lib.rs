@@ -30,6 +30,7 @@
 pub mod domain;
 mod events;
 pub mod http;
+pub mod parties;
 mod queries;
 pub mod service;
 
@@ -42,6 +43,9 @@ use dsoc_core::{Error, Result};
 use dsoc_db::Db;
 
 pub use http::routes;
+/// Party catalog read surface (migration 0204, Fase 2B). Merged separately by the gateway so
+/// the `/api/v1/parties*` routes are visible in the gateway wiring, alongside `/mandates*`.
+pub use parties::routes as parties_routes;
 pub use service::{
     IdentityBinding, Invitation, MandateRegistry, MandateView, Office, OfficeDraft, Onboarding,
     DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT,
