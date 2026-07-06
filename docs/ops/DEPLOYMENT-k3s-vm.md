@@ -47,6 +47,54 @@ curl 'http://[2804:710:d0:9::a000]:8080/api/v1/proposals?org_id=<uuid>'   # pagi
 - Single replica (hostNetwork). For HA/multi-region, move to the Helm chart (`deploy/helm/`) once the
   cluster has capacity, with an Ingress and a real Secret manager.
 
+## SMTP (sovereign relay)
+
+Password reset, mandate invitations, and SLA notifications go through the sovereign relay
+`mail.autonomia.lat` as `sistema@democracia.social.br`. The code (`crates/platform/auth/src/
+password_reset.rs`) reads five discrete env vars: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
+`SMTP_PASS`, `SMTP_FROM`. Port 587 → STARTTLS; port 465 → implicit TLS. Auth is enabled only
+when both USER and PASS are set. Missing `SMTP_HOST` or `SMTP_FROM` drops the service into
+DEV mode — the reset URL is logged instead of sent, and no e-mail leaves the pod.
+
+Bootstrap or update the values on the VM (never commit real credentials):
+
+```sh
+# Read the current secret to confirm shape:
+sudo k3s kubectl get secret dsoc-gateway-secrets -o yaml
+
+# Apply the SMTP block (merge; leaves DATABASE_URL etc. untouched):
+sudo k3s kubectl patch secret dsoc-gateway-secrets --type=merge -p "$(cat <<'JSON'
+{
+  "stringData": {
+    "SMTP_HOST": "mail.autonomia.lat",
+    "SMTP_PORT": "587",
+    "SMTP_USER": "sistema@democracia.social.br",
+    "SMTP_PASS": "<paste-from-.config/settings.env-on-workstation>",
+    "SMTP_FROM": "DemocraciaBR <sistema@democracia.social.br>"
+  }
+}
+JSON
+)"
+
+# envFrom pulls at pod start — restart to load:
+sudo k3s kubectl rollout restart deploy/dsoc-gateway
+sudo k3s kubectl rollout status deploy/dsoc-gateway
+```
+
+Smoke-test via the live enumeration-resistant reset endpoint (returns 200 either way — check
+the pod logs for a real send vs the DEV-mode warn):
+
+```sh
+curl -sS -X POST https://democracia.social.br/api/v1/auth/password-reset/request \
+    -H 'content-type: application/json' \
+    -d '{"org_id":"<uuid>","email":"seu-endereco@dominio.tld"}'
+sudo k3s kubectl logs deploy/dsoc-gateway | grep -i 'password-reset\|smtp\|password_reset'
+```
+
+The VM is IPv6-only — `mail.autonomia.lat` needs an AAAA record (or a reachable IPv4 via
+your egress path). If lookup/connect fails, the pod logs `password-reset e-mail send failed`
+with the transport error; the wire response stays 200 (enumeration-resistance guarantee).
+
 ## HTTPS + domain (Caddy reverse proxy)
 `democracia.social.br` resolves **AAAA → the VM** (the VM has no public IPv4; IPv4 `A` records point
 elsewhere, so the platform is IPv6-reachable only — consistent with the IPv6-first design). TLS is

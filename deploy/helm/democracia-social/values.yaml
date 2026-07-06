@@ -28,7 +28,7 @@ gateway:
 
 # External sovereign dependencies — provided via a Kubernetes Secret created out-of-band.
 externalSecrets:
-  name: democracia-social-secrets   # contains DATABASE_URL, REDIS_URL, OIDC_*, SMTP_URL, ...
+  name: democracia-social-secrets   # contains DATABASE_URL, REDIS_URL, OIDC_*, SMTP_HOST/PORT/USER/PASS/FROM, ...
 
 config:
   oidcIssuer: "https://id.pop.coop"

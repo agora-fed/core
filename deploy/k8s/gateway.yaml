@@ -10,6 +10,15 @@ stringData:
   # Local Postgres over IPv6 loopback; sslmode=disable (same host, no TLS). Replace creds via your
   # secret manager in a real deploy (PLAN.md principle 8) — this value is gitignored in practice.
   DATABASE_URL: "postgres://dsoc:CHANGE_ME@[::1]:5432/democracia_social?sslmode=disable"
+  # Sovereign SMTP relay for password-reset, mandate invite, and SLA notifications. Values here
+  # are placeholders — never commit real credentials. Update on the sovereign VM with:
+  #   sudo k3s kubectl patch secret dsoc-gateway-secrets --type=merge -p '{"stringData":{...}}'
+  # See docs/ops/DEPLOYMENT-k3s-vm.md §SMTP for the exact command.
+  SMTP_HOST: "CHANGE_ME"
+  SMTP_PORT: "587"
+  SMTP_USER: "CHANGE_ME"
+  SMTP_PASS: "CHANGE_ME"
+  SMTP_FROM: "DemocraciaBR <sistema@democracia.social.br>"
 ---
 apiVersion: apps/v1
 kind: Deployment
