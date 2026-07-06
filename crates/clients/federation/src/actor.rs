@@ -58,6 +58,30 @@ impl ActorRole {
     }
 }
 
+/// An ActivityStreams `Image` object, as consumed by Mastodon et al. for an actor's `icon`
+/// (avatar) and `image` (header/cover). The `url` MUST be absolute and publicly dereferenceable —
+/// remote instances fetch and cache it from their own servers, so a relative path renders blank.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MediaImage {
+    #[serde(rename = "type")]
+    pub kind: String,
+    #[serde(rename = "mediaType", skip_serializing_if = "Option::is_none")]
+    pub media_type: Option<String>,
+    pub url: String,
+}
+
+impl MediaImage {
+    /// Build an `Image` object from an already-absolute URL.
+    #[must_use]
+    pub fn new(url: impl Into<String>) -> Self {
+        Self {
+            kind: "Image".to_owned(),
+            media_type: None,
+            url: url.into(),
+        }
+    }
+}
+
 /// An ActivityPub Actor document (`Person`), JSON-LD aware.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Actor {
@@ -82,6 +106,12 @@ pub struct Actor {
     /// The accountability role this identity currently holds (extension term `dsoc:role`).
     #[serde(rename = "dsoc:role", skip_serializing_if = "Option::is_none")]
     pub role: Option<ActorRole>,
+    /// Avatar image (Mastodon `icon`). Absolute URL required.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<MediaImage>,
+    /// Header/cover image (Mastodon `image`). Absolute URL required.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<MediaImage>,
     /// HTTP Signatures public key, when published (extension via the security context).
     #[serde(rename = "publicKey", skip_serializing_if = "Option::is_none")]
     pub public_key: Option<PublicKey>,
@@ -122,6 +152,8 @@ impl Actor {
             preferred_username: handle.to_owned(),
             name,
             role,
+            icon: None,
+            image: None,
             public_key: None,
         }
     }
@@ -130,6 +162,15 @@ impl Actor {
     #[must_use]
     pub fn with_public_key(mut self, key: PublicKey) -> Self {
         self.public_key = Some(key);
+        self
+    }
+
+    /// Attach avatar/cover images. Each argument is an **absolute** URL; `None` leaves the field
+    /// unset (Mastodon then falls back to its default avatar/header).
+    #[must_use]
+    pub fn with_images(mut self, icon_url: Option<String>, image_url: Option<String>) -> Self {
+        self.icon = icon_url.map(MediaImage::new);
+        self.image = image_url.map(MediaImage::new);
         self
     }
 }

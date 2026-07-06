@@ -151,12 +151,18 @@ async fn actor_handler(
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
     let actor_url = actor_id(&host, &handle);
+    // Remote instances (Mastodon/organica.social) fetch avatar/header from their own servers, so
+    // the stored paths (`/media/…`) must be absolutized to `https://{host}/media/…` or they render
+    // blank. `absolutize` leaves already-absolute URLs untouched.
+    let icon_url = profile.avatar_url.as_deref().map(|u| absolutize(&host, u));
+    let image_url = profile.cover_url.as_deref().map(|u| absolutize(&host, u));
     let actor: Actor = Actor::person(
         &host,
         &handle,
         Some(ActorRole::Voter),
         profile.display_name,
     )
+    .with_images(icon_url, image_url)
     .with_public_key(PublicKey::main_key(&actor_url, public_pem));
     match serde_json::to_string(&actor) {
         Ok(body) => ([(header::CONTENT_TYPE, ACTIVITY_JSON)], body).into_response(),
@@ -956,4 +962,17 @@ fn host_from(headers: &HeaderMap) -> Option<String> {
         .get(header::HOST)
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned)
+}
+
+/// Turn a possibly-relative media path (`/media/…`) into an absolute `https://{host}/…` URL.
+/// Already-absolute URLs (`http://`, `https://`) pass through untouched. Needed because the
+/// federation surface hands these URLs to remote instances, which cannot resolve site-relative paths.
+fn absolutize(host: &str, url: &str) -> String {
+    if url.starts_with("http://") || url.starts_with("https://") {
+        url.to_owned()
+    } else if let Some(rest) = url.strip_prefix('/') {
+        format!("https://{host}/{rest}")
+    } else {
+        format!("https://{host}/{url}")
+    }
 }
