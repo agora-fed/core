@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO events_log (id, org_id, topic, event_type, payload, occurred_at)\n           VALUES ($1, $2, $3, $4, $5::text::jsonb, $6)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ec979241e7fa26e12659b08bc2ec4b60675c45cfe0ffdf02ea9b90e6716169f4"
+}

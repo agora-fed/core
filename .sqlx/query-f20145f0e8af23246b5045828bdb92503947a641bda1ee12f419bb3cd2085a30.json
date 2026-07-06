@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM federation_follow\n         WHERE citizen_id = $1 AND direction = 'inbound' AND remote_actor_url = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f20145f0e8af23246b5045828bdb92503947a641bda1ee12f419bb3cd2085a30"
+}

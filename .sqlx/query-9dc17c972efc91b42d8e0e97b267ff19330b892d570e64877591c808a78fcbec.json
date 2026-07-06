@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE citizen\n        SET verification_level = $4\n        WHERE org_id = $1 AND id = $2 AND verification_level = $3\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9dc17c972efc91b42d8e0e97b267ff19330b892d570e64877591c808a78fcbec"
+}

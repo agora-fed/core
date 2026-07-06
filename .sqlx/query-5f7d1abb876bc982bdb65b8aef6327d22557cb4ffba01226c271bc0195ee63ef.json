@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO budget_order_item (order_id, project_id)\n           SELECT $1, pid FROM UNNEST($2::uuid[]) AS pid",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5f7d1abb876bc982bdb65b8aef6327d22557cb4ffba01226c271bc0195ee63ef"
+}

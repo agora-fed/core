@@ -119,6 +119,27 @@ pub struct RegisterRequest {
     pub cpf: String,
 }
 
+/// Registration for a sitting/candidate parliamentarian: the standard sign-up fields plus
+/// a chosen `mandate_id`. The mandate's `public_email` MUST equal `email` — that is the
+/// only credential we can automatically verify without an external OOB channel; anything
+/// weaker would let a random citizen self-declare as any politician. When the check passes
+/// the flow (a) creates the citizen and credential, (b) sets `is_public=true` (transparência
+/// obrigatória para mandatos), and (c) writes an `mandate_identity_binding` at level
+/// `directory`, atomically. Runs against `POST /auth/register/politician` (F1.3/F1.4).
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
+pub struct RegisterPoliticianRequest {
+    /// Organization/tenant the mandate lives in.
+    pub org_id: uuid::Uuid,
+    /// Contact e-mail — MUST match the mandate's `public_email` (case-insensitive).
+    pub email: String,
+    /// Password (>= 8 chars; stored Argon2id-hashed).
+    pub password: String,
+    /// Brazilian CPF (any punctuation; validated by check digits).
+    pub cpf: String,
+    /// Mandate the citizen operates.
+    pub mandate_id: uuid::Uuid,
+}
+
 /// Login with e-mail + senha.
 #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct LoginRequest {

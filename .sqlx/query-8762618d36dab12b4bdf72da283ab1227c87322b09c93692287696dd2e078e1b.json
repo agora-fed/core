@@ -1,0 +1,51 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO mandate_identity_binding\n            (id, mandate_id, verification_level, evidence_ref, verified_at, created_at)\n        VALUES ($1, $2, $3, $4, $5, $6)\n        RETURNING id, mandate_id, verification_level, evidence_ref, verified_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "mandate_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "verification_level",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "evidence_ref",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "verified_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "8762618d36dab12b4bdf72da283ab1227c87322b09c93692287696dd2e078e1b"
+}

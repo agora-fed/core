@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO consequence_response\n               (id, sla_id, mandate_id, body, committed, responded_at, created_at)\n           VALUES ($1, $2, $3, $4, $5, $6, $7)\n           RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Bool",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b8cc1cb4336414b2f020caf6d5b5b8d7eb7d3d6871927b16079c15ba85724faf"
+}

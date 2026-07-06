@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO federation_inbox_seen (activity_id, citizen_id, seen_at)\n        VALUES ($1, $2, $3)\n        ON CONFLICT (activity_id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6ab461e25101eeebe31aa2601819dba6f148725bf5b58189935813a18c1e32c9"
+}

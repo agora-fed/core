@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE comment\n        SET status = 'flagged'\n        WHERE org_id = $1\n          AND proposal_id = $2\n          AND status = 'visible'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e67a60d1a631f0f0422b494482f4a8dca85fc899862db1bbdef98305d2c7e752"
+}

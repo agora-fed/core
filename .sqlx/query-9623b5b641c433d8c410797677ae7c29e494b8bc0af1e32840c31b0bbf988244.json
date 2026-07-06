@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO notify_outbox\n            (id, org_id, citizen_id, channel, payload, status, attempts, created_at)\n        VALUES ($1, $2, $3, $4, $5::text::jsonb, $6, 0, $7)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9623b5b641c433d8c410797677ae7c29e494b8bc0af1e32840c31b0bbf988244"
+}

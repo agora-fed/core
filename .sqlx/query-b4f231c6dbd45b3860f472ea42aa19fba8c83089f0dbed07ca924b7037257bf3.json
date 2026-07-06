@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE auth_credential SET password_hash = $2 WHERE citizen_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b4f231c6dbd45b3860f472ea42aa19fba8c83089f0dbed07ca924b7037257bf3"
+}

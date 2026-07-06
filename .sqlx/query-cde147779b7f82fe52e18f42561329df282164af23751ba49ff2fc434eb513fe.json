@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO federation_follow\n            (id, citizen_id, direction, remote_actor_url, remote_inbox_url,\n             follow_activity_id, accepted_at, created_at)\n        VALUES ($1, $2, 'outbound', $3, $4, $5, NULL, $6)\n        ON CONFLICT (citizen_id, direction, remote_actor_url) DO UPDATE\n            SET remote_inbox_url   = EXCLUDED.remote_inbox_url,\n                follow_activity_id = EXCLUDED.follow_activity_id\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "cde147779b7f82fe52e18f42561329df282164af23751ba49ff2fc434eb513fe"
+}

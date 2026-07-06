@@ -23,7 +23,10 @@ use dsoc_core::ids::OrgId;
 use dsoc_core::{Error, Result};
 
 use crate::domain::{KeySource, TokenValidator, DEFAULT_SESSION_TTL_SECS, IDENTITY_DEPENDENCY};
-use crate::dto::{CreateSessionRequest, LoginRequest, MeDto, RegisterRequest, SessionDto};
+use crate::dto::{
+    CreateSessionRequest, LoginRequest, MeDto, RegisterPoliticianRequest, RegisterRequest,
+    SessionDto,
+};
 use crate::password_reset::PasswordResetService;
 use crate::profile::{ProfileService, ProfileUpdate};
 use crate::service::{IssuedSession, ZitadelAuth};
@@ -38,6 +41,7 @@ pub fn routes(state: AppState) -> Router<()> {
     // surface). Auth routes carry Arc<ZitadelAuth>; the two sub-routers are merged.
     let auth_routes = Router::new()
         .route("/auth/register", post(register))
+        .route("/auth/register/politician", post(register_politician))
         .route("/auth/login", post(login))
         .route("/auth/logout", post(logout))
         .route("/auth/session", post(create_session))
@@ -132,6 +136,33 @@ async fn register(
 ) -> Response {
     let org = OrgId::from_uuid(req.org_id);
     match svc.register(org, &req.email, &req.password, &req.cpf).await {
+        Ok(session) => {
+            let cookie = session_cookie(&session);
+            (
+                StatusCode::CREATED,
+                [(header::SET_COOKIE, cookie)],
+                Json(ApiResponse::ok(SessionDto::from(session))),
+            )
+                .into_response()
+        }
+        Err(error) => error_response(&error),
+    }
+}
+
+/// `POST /auth/register/politician` — self-onboarding for sitting/candidate parliamentarians
+/// (F1.3/F1.4). Requires `body.email == mandate.public_email` (the only proof of mandate
+/// control available at registration time without an out-of-band channel). Same wire shape
+/// as `/auth/register` but returns a session already at `directory` verification level and
+/// an implicit `mandate_identity_binding`, plus forces `is_public=true` on the citizen row.
+async fn register_politician(
+    State(svc): State<Arc<ZitadelAuth>>,
+    Json(req): Json<RegisterPoliticianRequest>,
+) -> Response {
+    let org = OrgId::from_uuid(req.org_id);
+    match svc
+        .register_politician(org, &req.email, &req.password, &req.cpf, req.mandate_id)
+        .await
+    {
         Ok(session) => {
             let cookie = session_cookie(&session);
             (

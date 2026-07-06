@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE process_phase SET active = false WHERE process_id = $1 AND active = true",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9ad3106ca392424cf19e7ee58a2f06d5f729ae7974bdbcdfaca3a3e7d41cde0b"
+}

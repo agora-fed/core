@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE mandate\n        SET onboarded_at = $2\n        WHERE id = $1 AND onboarded_at IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bd9eb095df0fa77a2a80518df2366cdd1d40fc4a71d13eb6334b032096cc4477"
+}

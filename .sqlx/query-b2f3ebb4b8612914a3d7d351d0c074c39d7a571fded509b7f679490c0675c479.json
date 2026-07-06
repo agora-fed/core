@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO initiative_signature (id, initiative_id, citizen_id, created_at)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (initiative_id, citizen_id) DO NOTHING\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b2f3ebb4b8612914a3d7d351d0c074c39d7a571fded509b7f679490c0675c479"
+}

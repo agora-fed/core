@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO consensus_cluster_member (cluster_id, proposal_id, distance)\n           VALUES ($1, $2, $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Float4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e76a181643b8243cff261639dd24ecf3b0904cc20d068e52345e832f2371a32e"
+}

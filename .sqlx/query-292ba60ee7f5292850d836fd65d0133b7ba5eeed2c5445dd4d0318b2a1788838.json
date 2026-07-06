@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE auth_password_reset\n           SET used_at = $2\n         WHERE citizen_id = $1 AND used_at IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "292ba60ee7f5292850d836fd65d0133b7ba5eeed2c5445dd4d0318b2a1788838"
+}

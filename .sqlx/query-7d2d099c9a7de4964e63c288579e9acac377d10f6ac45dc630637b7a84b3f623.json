@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE proposal\n           SET cluster_id = $2, status = 'clustered'\n           WHERE id = $1 AND cluster_id IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7d2d099c9a7de4964e63c288579e9acac377d10f6ac45dc630637b7a84b3f623"
+}

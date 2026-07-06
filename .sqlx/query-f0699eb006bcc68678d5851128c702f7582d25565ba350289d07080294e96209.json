@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE mandate_invitation\n        SET accepted_at = $2\n        WHERE id = $1 AND accepted_at IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f0699eb006bcc68678d5851128c702f7582d25565ba350289d07080294e96209"
+}

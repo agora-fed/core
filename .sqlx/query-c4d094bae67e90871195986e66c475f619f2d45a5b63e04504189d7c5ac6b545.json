@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE initiative\n        SET signature_count = signature_count + 1,\n            reached_at = CASE\n                WHEN reached_at IS NULL AND signature_count + 1 >= threshold THEN $2\n                ELSE reached_at\n            END\n        WHERE id = $1\n        RETURNING signature_count, threshold, reached_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "signature_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "threshold",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "reached_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "c4d094bae67e90871195986e66c475f619f2d45a5b63e04504189d7c5ac6b545"
+}

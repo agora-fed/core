@@ -290,6 +290,69 @@ pub(crate) async fn insert_credential<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
+/// Read the `public_email` of a mandate within an org. Returns `None` if the mandate does
+/// not exist. Used by [`crate::service::ZitadelAuth::register_politician`] to gate the
+/// self-registration flow: a citizen may only self-onboard as a politician when they can
+/// prove control of the `public_email` on file with the Câmara/Senado/TSE.
+pub(crate) async fn find_mandate_public_email<'e, E: PgExecutor<'e>>(
+    ex: E,
+    org: Uuid,
+    mandate: Uuid,
+) -> Result<Option<String>, sqlx::Error> {
+    let row = sqlx::query_scalar!(
+        "SELECT public_email FROM mandate WHERE org_id = $1 AND id = $2",
+        org,
+        mandate,
+    )
+    .fetch_optional(ex)
+    .await?;
+    Ok(row)
+}
+
+/// Force `is_public=true` on a citizen row. Called by the politician self-registration flow
+/// — mandate operators are always public (accountability transparency; not opt-out).
+pub(crate) async fn force_citizen_public<'e, E: PgExecutor<'e>>(
+    ex: E,
+    citizen: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "UPDATE citizen SET is_public = true, profile_updated_at = now() WHERE id = $1",
+        citizen,
+    )
+    .execute(ex)
+    .await?;
+    Ok(())
+}
+
+/// Insert a mandate_identity_binding row. Written by the politician self-registration flow
+/// so the `Painel do mandato` (F1+F3) resolves the new citizen back to their SLAs on first
+/// login. `verification_level` is normally `directory` here (e-mail match to public_email).
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn insert_mandate_identity_binding<'e, E: PgExecutor<'e>>(
+    ex: E,
+    id: Uuid,
+    mandate: Uuid,
+    citizen: Uuid,
+    verification_level: &str,
+    evidence_ref: Option<&str>,
+    now: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "INSERT INTO mandate_identity_binding \
+         (id, mandate_id, citizen_id, verification_level, evidence_ref, verified_at, created_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $6)",
+        id,
+        mandate,
+        citizen,
+        verification_level,
+        evidence_ref,
+        now,
+    )
+    .execute(ex)
+    .await?;
+    Ok(())
+}
+
 /// Look up a credential by e-mail within an org (for login).
 pub(crate) async fn find_credential_by_email<'e, E: PgExecutor<'e>>(
     ex: E,

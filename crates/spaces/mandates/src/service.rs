@@ -82,6 +82,10 @@ pub struct MandateView {
     pub house: Option<String>,
     /// Object key in MinIO under bucket `dsoc-media`. Renders as `<MEDIA_BASE_URL>/<key>`.
     pub avatar_object_key: Option<String>,
+    /// Public office e-mail (the accountability contact channel).
+    pub public_email: String,
+    /// Federative sphere: `federal` | `estadual` | `municipal` (migration 0203).
+    pub sphere: String,
 }
 
 /// A term-bound office record.
@@ -468,6 +472,8 @@ impl MandateRegistry {
             uf: row.uf,
             house: row.house,
             avatar_object_key: row.avatar_object_key,
+            public_email: row.public_email.clone(),
+            sphere: row.sphere.clone(),
         })
     }
 
@@ -504,6 +510,8 @@ impl MandateRegistry {
                 uf: row.uf,
                 house: row.house,
                 avatar_object_key: row.avatar_object_key,
+                public_email: row.public_email.clone(),
+                sphere: row.sphere.clone(),
             },
             level,
         )))
@@ -519,12 +527,13 @@ impl MandateRegistry {
     pub async fn list_mandates(
         &self,
         org: OrgId,
+        sphere: Option<&str>,
         limit: Option<u32>,
         offset: Option<u32>,
     ) -> Result<Vec<MandateView>> {
         let limit = clamp_limit(limit);
         let offset = offset.unwrap_or(0) as i64;
-        let rows = queries::list_mandates(&self.db, org.as_uuid(), limit, offset)
+        let rows = queries::list_mandates(&self.db, org.as_uuid(), sphere, limit, offset)
             .await
             .map_err(map_sqlx)?;
         let mut views = Vec::with_capacity(rows.len());
@@ -547,6 +556,8 @@ impl MandateRegistry {
                 uf: row.uf,
                 house: row.house,
                 avatar_object_key: row.avatar_object_key,
+                public_email: row.public_email.clone(),
+                sphere: row.sphere.clone(),
             });
         }
         Ok(views)

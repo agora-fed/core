@@ -20,6 +20,9 @@
   let search = $state('');
   let activeParty = $state<string | 'TODOS'>('TODOS');
   let activeHouse = $state<'todos' | 'camara' | 'senado'>('todos');
+  // Federative sphere (migration 0203). Seed hoje só carrega federal — os outros dois
+  // chips ficam presentes (transparência sobre o roadmap) mas disabled até haver dados.
+  let activeSphere = $state<'todos' | 'federal' | 'estadual' | 'municipal'>('todos');
   // Ordenação: nome (alfabético), resposta (% maior), silêncio (% ignorada maior).
   let sortBy = $state<'nome' | 'resposta' | 'silencio'>('nome');
 
@@ -29,10 +32,18 @@
       new Set(mandates.map((m) => m.party).filter((p): p is string => !!p)),
     ).sort(),
   );
+  // Sphere counts drive both the label AND whether a chip is enabled (0 = disabled).
+  let sphereCounts = $derived({
+    federal: mandates.filter((m) => (m.sphere ?? 'federal') === 'federal').length,
+    estadual: mandates.filter((m) => m.sphere === 'estadual').length,
+    municipal: mandates.filter((m) => m.sphere === 'municipal').length,
+  });
+
   let filtered = $derived(
     mandates.filter((m) => {
       if (activeParty !== 'TODOS' && m.party !== activeParty) return false;
       if (activeHouse !== 'todos' && m.house !== activeHouse) return false;
+      if (activeSphere !== 'todos' && (m.sphere ?? 'federal') !== activeSphere) return false;
       if (search.trim()) {
         const q = search.toLowerCase();
         const hay = `${m.display_name} ${m.party ?? ''} ${m.uf ?? ''} ${m.office}`.toLowerCase();
@@ -134,6 +145,35 @@
         </button>
       {/each}
     </div>
+    <div class="chips" aria-label="Esfera de governo">
+      <span class="chip-label muted">Esfera:</span>
+      <button
+        type="button"
+        class={`chip small ${activeSphere === 'todos' ? 'active' : ''}`}
+        onclick={() => (activeSphere = 'todos')}
+      >Todas</button>
+      <button
+        type="button"
+        class={`chip small ${activeSphere === 'federal' ? 'active' : ''}`}
+        onclick={() => (activeSphere = 'federal')}
+        disabled={sphereCounts.federal === 0}
+        title={sphereCounts.federal === 0 ? 'Sem dados de esfera federal ainda' : ''}
+      >Federal <span class="chip-count">{sphereCounts.federal}</span></button>
+      <button
+        type="button"
+        class={`chip small ${activeSphere === 'estadual' ? 'active' : ''}`}
+        onclick={() => (activeSphere = 'estadual')}
+        disabled={sphereCounts.estadual === 0}
+        title={sphereCounts.estadual === 0 ? 'Estadual: em breve (Assembleias legislativas + governadorias)' : ''}
+      >Estadual <span class="chip-count">{sphereCounts.estadual}</span></button>
+      <button
+        type="button"
+        class={`chip small ${activeSphere === 'municipal' ? 'active' : ''}`}
+        onclick={() => (activeSphere = 'municipal')}
+        disabled={sphereCounts.municipal === 0}
+        title={sphereCounts.municipal === 0 ? 'Municipal: em breve (Câmaras municipais + prefeituras)' : ''}
+      >Municipal <span class="chip-count">{sphereCounts.municipal}</span></button>
+    </div>
     <div class="chips" aria-label="Casa">
       <button
         type="button"
@@ -208,6 +248,16 @@
         {/if}
       </div>
     </a>
+    {#if m.public_email}
+      <a
+        class="email-link muted"
+        href={`mailto:${m.public_email}`}
+        title="Escrever para o gabinete"
+        onclick={(e) => e.stopPropagation()}
+      >
+        ✉ {m.public_email}
+      </a>
+    {/if}
   </li>
 {/snippet}
 {/if}
@@ -248,6 +298,20 @@
   .chip.small {
     font-size: 0.85rem;
     padding: 0.35rem 0.7rem;
+  }
+  .chip:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .chip:disabled:hover {
+    background: var(--c-paper);
+  }
+  .chip-count {
+    display: inline-block;
+    margin-left: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--c-text-muted, #888);
+    font-variant-numeric: tabular-nums;
   }
   .count {
     margin: 0;
@@ -336,5 +400,17 @@
   .center {
     text-align: center;
     margin: 3rem 0;
+  }
+  .email-link {
+    display: block;
+    padding: 0 0.85rem 0.7rem calc(60px + 0.85rem + 0.8rem);
+    font-size: 0.82rem;
+    text-decoration: none;
+    color: var(--c-text-muted, #666);
+    word-break: break-all;
+  }
+  .email-link:hover {
+    color: var(--c-green-dark);
+    text-decoration: underline;
   }
 </style>

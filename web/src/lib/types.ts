@@ -89,6 +89,10 @@ export interface MandateDto {
   uf: string | null;
   house: 'camara' | 'senado' | null;
   avatar_url: string | null;
+  /** Public accountability e-mail (added in F1.1). */
+  public_email?: string | null;
+  /** Federative sphere (added in F1.2, migration 0203). Legacy = 'federal'. */
+  sphere?: 'federal' | 'estadual' | 'municipal';
 }
 
 /** State of a consequence SLA — the emotional core of the UI. */

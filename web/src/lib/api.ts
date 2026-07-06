@@ -355,6 +355,27 @@ export const register = (email: string, password: string, cpf: string, orgId = D
     cpf,
   });
 
+/**
+ * Register as a politician/candidate (F1.3/F1.4). Requires `email` to match the mandate's
+ * `public_email` (case-insensitive) on the server side — the only automatic proof of
+ * mandate control at registration time. On success the citizen is created at `directory`
+ * verification level with `is_public=true` and a mandate_identity_binding.
+ */
+export const registerPolitician = (
+  email: string,
+  password: string,
+  cpf: string,
+  mandateId: string,
+  orgId = DEFAULT_ORG_ID,
+) =>
+  apiPost<SessionData>('/api/v1/auth/register/politician', {
+    org_id: orgId,
+    email: email.trim(),
+    password,
+    cpf,
+    mandate_id: mandateId,
+  });
+
 /** Authenticate (e-mail + senha). Always includes org_id. */
 export const login = (email: string, password: string, orgId = DEFAULT_ORG_ID) =>
   apiPost<SessionData>('/api/v1/auth/login', {

@@ -1,0 +1,83 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, office, display_name, public_email, is_candidate, onboarded_at,\n               party, uf, house, avatar_object_key, sphere\n        FROM mandate\n        WHERE org_id = $1 AND id = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "office",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "public_email",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_candidate",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "onboarded_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "party",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "uf",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "house",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "avatar_object_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "sphere",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "5fd24b3980246edb3b838f23283b4dce1d6234da8f3325e2480cc2d56cc67f4b"
+}

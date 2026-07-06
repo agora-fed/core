@@ -56,6 +56,18 @@ pub struct MandateDto {
     /// Avatar URL (resolved via `MEDIA_BASE_URL` from the stored object key). `None` ⇒ UI
     /// shows initials.
     pub avatar_url: Option<String>,
+    /// Public office e-mail (the address citizens can write to). `None` when redacted or
+    /// unknown. Publicly exposed by design — accountability contact channel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub public_email: Option<String>,
+    /// Federative sphere: `federal` | `estadual` | `municipal` (migration 0203).
+    /// Legacy DTOs that predate the field will default to `federal` under Serde.
+    #[serde(default = "default_sphere")]
+    pub sphere: String,
+}
+
+fn default_sphere() -> String {
+    "federal".to_owned()
 }
 
 /// State of a consequence SLA, surfaced to clients (the emotional core of the UI).

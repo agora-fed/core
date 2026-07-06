@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT cursor_occurred_at, cursor_event_id\n           FROM events_subscription\n           WHERE subscriber = $1 AND topic = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "cursor_occurred_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 1,
+        "name": "cursor_event_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "5b217dd1767e4181d36a3b2b0fb936840709f8e4955fe7f01c0a9161013c9928"
+}

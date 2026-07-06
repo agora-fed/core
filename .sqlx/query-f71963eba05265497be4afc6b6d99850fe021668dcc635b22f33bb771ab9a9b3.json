@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO citizen_actor_key (citizen_id, private_pem, public_pem, created_at)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (citizen_id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f71963eba05265497be4afc6b6d99850fe021668dcc635b22f33bb771ab9a9b3"
+}

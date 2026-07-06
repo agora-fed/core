@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, old_level, new_level, changed_at\n        FROM auth_verification_level\n        WHERE citizen_id = $1\n          AND ($2::timestamptz IS NULL OR (changed_at, id) < ($2, $3))\n        ORDER BY changed_at DESC, id DESC\n        LIMIT $4\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "old_level",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "new_level",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "changed_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "380d3c42003c24bc2ee974e32dbdfd7bea494cfa19944270dd40664519cceba7"
+}

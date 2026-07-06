@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            COALESCE(count(*) FILTER (WHERE outcome = 'answered'), 0) AS \"answered!\",\n            COALESCE(count(*) FILTER (WHERE outcome = 'ignored'), 0)  AS \"ignored!\"\n        FROM scorecard_entry\n        WHERE scorecard_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "answered!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "ignored!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "80ddce76fd1b4910cc3cd0155529c05f59e341ad1ea030b3fb9bf0cbb02f0bf2"
+}

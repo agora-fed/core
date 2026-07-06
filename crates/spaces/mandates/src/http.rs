@@ -208,6 +208,7 @@ fn to_mandate_dto(view: MandateView) -> MandateDto {
     let avatar_url = view
         .avatar_object_key
         .map(|k| format!("{media_base}/{k}"));
+    let public_email = Some(view.public_email).filter(|s| !s.is_empty());
     MandateDto {
         id: view.id.as_uuid(),
         office: view.office,
@@ -218,6 +219,8 @@ fn to_mandate_dto(view: MandateView) -> MandateDto {
         uf: view.uf,
         house: view.house,
         avatar_url,
+        public_email,
+        sphere: view.sphere,
     }
 }
 
@@ -342,21 +345,30 @@ async fn get_mandate(
 #[derive(Debug, Clone, Deserialize)]
 struct MandateListQuery {
     org_id: Uuid,
+    /// Optional federative sphere filter: `federal` | `estadual` | `municipal` (migration 0203).
+    /// Any other value is silently ignored (returns unfiltered) so a stale client never 400s.
+    #[serde(default)]
+    sphere: Option<String>,
     #[serde(default)]
     limit: Option<u32>,
     #[serde(default)]
     offset: Option<u32>,
 }
 
-/// `GET /mandates?org_id=&limit=&offset=` — directory of mandates in an org, ordered by display
-/// name. Public; used by the front-end picker so people don't have to type a UUID by hand.
+/// `GET /mandates?org_id=&sphere=&limit=&offset=` — directory of mandates in an org, ordered
+/// by display name. Public; used by the front-end picker so people don't have to type a UUID
+/// by hand. `sphere` sub-filters the federative level (introduced in F1.2 alongside the
+/// /politicos UI chips).
 async fn list_mandates(
     State(state): State<AppState>,
     Query(query): Query<MandateListQuery>,
 ) -> Result<Json<ApiResponse<Vec<MandateDto>>>, ApiErr> {
     let svc = MandateRegistry::from_state(&state);
+    let sphere = query.sphere.as_deref().filter(|s| {
+        matches!(*s, "federal" | "estadual" | "municipal")
+    });
     let views = svc
-        .list_mandates(OrgId::from_uuid(query.org_id), query.limit, query.offset)
+        .list_mandates(OrgId::from_uuid(query.org_id), sphere, query.limit, query.offset)
         .await?;
     Ok(Json(ApiResponse::ok(
         views.into_iter().map(to_mandate_dto).collect(),

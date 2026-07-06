@@ -27,6 +27,7 @@ pub(crate) struct MandateRow {
     pub uf: Option<String>,
     pub house: Option<String>,
     pub avatar_object_key: Option<String>,
+    pub sphere: String,
 }
 
 /// The invitation + its mandate's onboarding marker, read under a row lock during acceptance.
@@ -80,7 +81,7 @@ pub(crate) async fn find_mandate_by_operator<'e, E: PgExecutor<'e>>(
     let row = sqlx::query!(
         r#"
         SELECT m.id, m.office, m.display_name, m.public_email, m.is_candidate, m.onboarded_at,
-               m.party, m.uf, m.house, m.avatar_object_key,
+               m.party, m.uf, m.house, m.avatar_object_key, m.sphere,
                b.verification_level
           FROM mandate_identity_binding b
           JOIN mandate m ON m.id = b.mandate_id
@@ -105,6 +106,7 @@ pub(crate) async fn find_mandate_by_operator<'e, E: PgExecutor<'e>>(
             uf: r.uf,
             house: r.house,
             avatar_object_key: r.avatar_object_key,
+            sphere: r.sphere,
         },
         r.verification_level,
     )))
@@ -120,7 +122,7 @@ pub(crate) async fn find_mandate<'e, E: PgExecutor<'e>>(
         MandateRow,
         r#"
         SELECT id, office, display_name, public_email, is_candidate, onboarded_at,
-               party, uf, house, avatar_object_key
+               party, uf, house, avatar_object_key, sphere
         FROM mandate
         WHERE org_id = $1 AND id = $2
         "#,
@@ -139,6 +141,7 @@ pub(crate) async fn find_mandate<'e, E: PgExecutor<'e>>(
 pub(crate) async fn list_mandates<'e, E: PgExecutor<'e>>(
     exec: E,
     org_id: Uuid,
+    sphere: Option<&str>,
     limit: i64,
     offset: i64,
 ) -> Result<Vec<MandateRow>, sqlx::Error> {
@@ -146,13 +149,15 @@ pub(crate) async fn list_mandates<'e, E: PgExecutor<'e>>(
         MandateRow,
         r#"
         SELECT id, office, display_name, public_email, is_candidate, onboarded_at,
-               party, uf, house, avatar_object_key
+               party, uf, house, avatar_object_key, sphere
         FROM mandate
         WHERE org_id = $1
+          AND ($2::text IS NULL OR sphere = $2)
         ORDER BY display_name ASC
-        LIMIT $2 OFFSET $3
+        LIMIT $3 OFFSET $4
         "#,
         org_id,
+        sphere,
         limit,
         offset,
     )

@@ -209,6 +209,101 @@ impl ZitadelAuth {
         Ok(session)
     }
 
+    /// **Politician self-registration** (F1.3/F1.4). Same fields as [`Self::register`] plus a
+    /// chosen `mandate_id`. Enforces `body.email == mandate.public_email` (case-insensitive) —
+    /// the *only* proof of mandate control we can automatically verify at registration time. The
+    /// same tx then (a) creates the citizen + credential, (b) sets `citizen.is_public=true`
+    /// (mandates são públicos por transparência), and (c) records a
+    /// `mandate_identity_binding` at level `directory`. On e-mail mismatch, returns
+    /// [`Error::Conflict`] with a Portuguese message; the caller sees "credentials don't match"
+    /// without any signal about whether the mandate exists (mitigates enumeration of officials).
+    ///
+    /// # Errors
+    /// [`Error::Validation`] for bad e-mail/senha/CPF;
+    /// [`Error::NotFound`] if the mandate does not exist in the org;
+    /// [`Error::Conflict`] if the e-mail is already taken OR does not match `mandate.public_email`.
+    pub async fn register_politician(
+        &self,
+        org: OrgId,
+        email: &str,
+        password: &str,
+        cpf_raw: &str,
+        mandate_id: Uuid,
+    ) -> Result<IssuedSession> {
+        let now = self.clock.now();
+        let email = normalize_email(email)?;
+        let cpf = crate::credential::Cpf::parse(cpf_raw)?;
+        let password_hash = crate::credential::hash_password(password)?;
+
+        // Look up the mandate FIRST — we need its public_email to gate the flow. Reading outside
+        // the write tx is fine: the check is defense against user error, not a race against
+        // concurrent mandate mutation (mandates change rarely and via admin flows).
+        let mandate = queries::find_mandate_public_email(&self.db, org.as_uuid(), mandate_id)
+            .await
+            .map_err(map_sqlx)?
+            .ok_or_else(|| {
+                Error::Conflict("Mandato não encontrado ou e-mail não confere.".to_owned())
+            })?;
+        if mandate.to_lowercase() != email {
+            // Same opaque error as "not found" so an attacker can't enumerate mandates whose
+            // public_email is known: both paths converge on the same message.
+            return Err(Error::Conflict(
+                "Mandato não encontrado ou e-mail não confere.".to_owned(),
+            ));
+        }
+
+        let cpf_status = self.cpf_verifier.verify(&cpf).await;
+        let mut tx = self.db.begin().await.map_err(map_register_sqlx)?;
+        let citizen = CitizenId::new();
+        // Politicians land at `directory` verification level right away — the e-mail match is
+        // the directory proof (the address is on the public registry maintained by the Câmara/
+        // Senado/TSE). Higher levels (strong) still require CPF verification.
+        queries::insert_credential_citizen(
+            &mut *tx,
+            citizen.as_uuid(),
+            org.as_uuid(),
+            domain::level_as_str(VerificationLevel::Directory),
+            now,
+        )
+        .await
+        .map_err(map_register_sqlx)?;
+        queries::insert_credential(
+            &mut *tx,
+            Uuid::now_v7(),
+            citizen.as_uuid(),
+            org.as_uuid(),
+            &email,
+            &password_hash,
+            cpf.as_str(),
+            cpf_status.as_str(),
+            now,
+        )
+        .await
+        .map_err(map_register_sqlx)?;
+        // Public by design — politicians on the platform ARE the accountability surface.
+        queries::force_citizen_public(&mut *tx, citizen.as_uuid())
+            .await
+            .map_err(map_sqlx)?;
+        // Record the binding at level `directory` inside the same tx so the register endpoint is
+        // atomic: either the whole politician onboarding lands or nothing does.
+        queries::insert_mandate_identity_binding(
+            &mut *tx,
+            Uuid::now_v7(),
+            mandate_id,
+            citizen.as_uuid(),
+            "directory",
+            None,
+            now,
+        )
+        .await
+        .map_err(map_sqlx)?;
+        let session = self
+            .persist_session(&mut tx, org, citizen, &email, now)
+            .await?;
+        tx.commit().await.map_err(map_sqlx)?;
+        Ok(session)
+    }
+
     /// Authenticate with **e-mail + senha** and issue a session.
     ///
     /// # Errors
