@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod federation;
+pub mod parlamentar_activity;
 pub mod worker;
 
 use axum::extract::{Request, State};
@@ -78,6 +79,9 @@ pub fn api_router(state: AppState) -> Router {
         .merge(dsoc_initiatives::routes(state.clone()))
         .merge(dsoc_consultations::routes(state.clone()))
         .merge(dsoc_mandates::routes(state.clone()))
+        // Gateway-owned proxy of each parliamentarian's real public activity from the official
+        // open-data APIs (Câmara/Senado). Path: `/api/v1/mandates/{id}/atividade`.
+        .merge(parlamentar_activity::routes(state.clone()))
         // components
         .merge(dsoc_proposals::routes(state.clone()))
         .merge(dsoc_votes::routes(state.clone()))
