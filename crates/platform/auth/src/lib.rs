@@ -26,6 +26,7 @@ pub mod domain;
 pub mod dto;
 pub mod events;
 pub mod http;
+pub mod mandate_invite;
 pub mod media;
 pub mod password_reset;
 pub mod profile;

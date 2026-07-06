@@ -27,6 +27,7 @@ use crate::dto::{
     CreateSessionRequest, LoginRequest, MeDto, RegisterPoliticianRequest, RegisterRequest,
     SessionDto,
 };
+use crate::mandate_invite::{AcceptRequest, MandateInviteService};
 use crate::password_reset::PasswordResetService;
 use crate::profile::{ProfileService, ProfileUpdate};
 use crate::service::{IssuedSession, ZitadelAuth};
@@ -56,6 +57,13 @@ pub fn routes(state: AppState) -> Router<()> {
         .route("/profiles/{handle}", get(get_public_profile))
         .route("/auth/password-reset/request", post(password_reset_request))
         .route("/auth/password-reset/confirm", post(password_reset_confirm))
+        // Admin-driven mandate-invite bypass of F1.4 auto-proof (crates/platform/auth/src/mandate_invite.rs).
+        // The path `/mandates/{id}/invites` is DELIBERATELY distinct from the pre-existing
+        // `/mandates/{id}/invitations` owned by dsoc-mandates (a different, mandate-lifecycle flow).
+        .route("/mandates/{mandate_id}/invites", post(send_mandate_invite))
+        .route("/mandate-invites/{token}", get(get_mandate_invite))
+        .route("/mandate-invites/{token}/accept", post(accept_mandate_invite))
+        .route("/mandate-invites/{token}/revoke", post(revoke_mandate_invite))
         // Multipart body cap: avatar/cover code re-validates at 5 MiB, but we cap the framework
         // intake at 6 MiB so a 5 GB upload is rejected before we touch RAM.
         .layer(axum::extract::DefaultBodyLimit::max(6 * 1024 * 1024))
@@ -674,6 +682,129 @@ async fn patch_me_profile(
     let update = ProfileUpdate::from(body);
     match svc.update(caller.citizen, caller.org, update).await {
         Ok(profile) => (StatusCode::OK, Json(ApiResponse::ok(profile))).into_response(),
+        Err(error) => error_response(&error),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Admin-driven mandate invite (see `crate::mandate_invite`).
+// ---------------------------------------------------------------------------
+
+/// Body for `POST /mandates/{mandate_id}/invites`.
+#[derive(Debug, Deserialize)]
+struct SendMandateInviteBody {
+    email: String,
+}
+
+/// Public shape returned to the inviter — deliberately excludes the plaintext token (that
+/// value only exists in the outgoing e-mail).
+#[derive(Debug, serde::Serialize)]
+struct SentInviteDto {
+    id: Uuid,
+    expires_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Public shape for the accept-page summary — no e-mail, no inviter identity.
+#[derive(Debug, serde::Serialize)]
+struct MandateInviteSummaryDto {
+    mandate_display_name: String,
+    party: Option<String>,
+    uf: Option<String>,
+    office: String,
+    expires_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Body for `POST /mandate-invites/{token}/accept`.
+#[derive(Debug, Deserialize)]
+struct AcceptMandateInviteBody {
+    password: String,
+    cpf: String,
+    display_name: String,
+}
+
+/// `POST /mandates/{mandate_id}/invites` — dispatch an invite. Any authenticated citizen may
+/// call today; TODO gate by "admin de partido/plataforma" role when that model lands.
+async fn send_mandate_invite(
+    State(state): State<AppState>,
+    caller: CallerId,
+    axum::extract::Path(mandate_id): axum::extract::Path<Uuid>,
+    Json(body): Json<SendMandateInviteBody>,
+) -> Response {
+    // TODO(auth): gate `send` to admin role. For now, any authenticated CallerId reaches here
+    // (the extractor already enforced a live session).
+    let svc = MandateInviteService::from_state(&state, build_service(&state));
+    match svc.send(caller.org, caller.citizen, mandate_id, &body.email).await {
+        Ok(sent) => (
+            StatusCode::CREATED,
+            Json(ApiResponse::ok(SentInviteDto {
+                id: sent.id,
+                expires_at: sent.expires_at,
+            })),
+        )
+            .into_response(),
+        Err(error) => error_response(&error),
+    }
+}
+
+/// `GET /mandate-invites/{token}` — public summary used by the accept page to render context.
+/// Any bad/expired/revoked/accepted token collapses to 404 (no signal on which case).
+async fn get_mandate_invite(
+    State(state): State<AppState>,
+    axum::extract::Path(token): axum::extract::Path<String>,
+) -> Response {
+    let svc = MandateInviteService::from_state(&state, build_service(&state));
+    match svc.summary(&token).await {
+        Ok(s) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(MandateInviteSummaryDto {
+                mandate_display_name: s.mandate_display_name,
+                party: s.party,
+                uf: s.uf,
+                office: s.office,
+                expires_at: s.expires_at,
+            })),
+        )
+            .into_response(),
+        Err(error) => error_response(&error),
+    }
+}
+
+/// `POST /mandate-invites/{token}/accept` — public accept endpoint. Creates the citizen +
+/// credential + directory identity binding + session, all atomically.
+async fn accept_mandate_invite(
+    State(state): State<AppState>,
+    axum::extract::Path(token): axum::extract::Path<String>,
+    Json(body): Json<AcceptMandateInviteBody>,
+) -> Response {
+    let svc = MandateInviteService::from_state(&state, build_service(&state));
+    let req = AcceptRequest {
+        password: body.password,
+        cpf: body.cpf,
+        display_name: body.display_name,
+    };
+    match svc.accept(&token, req).await {
+        Ok(session) => {
+            let cookie = session_cookie(&session);
+            (
+                StatusCode::CREATED,
+                [(header::SET_COOKIE, cookie)],
+                Json(ApiResponse::ok(SessionDto::from(session))),
+            )
+                .into_response()
+        }
+        Err(error) => error_response(&error),
+    }
+}
+
+/// `POST /mandate-invites/{token}/revoke` — the inviter (only) invalidates a pending invite.
+async fn revoke_mandate_invite(
+    State(state): State<AppState>,
+    caller: CallerId,
+    axum::extract::Path(token): axum::extract::Path<String>,
+) -> Response {
+    let svc = MandateInviteService::from_state(&state, build_service(&state));
+    match svc.revoke(caller.org, caller.citizen, &token).await {
+        Ok(()) => (StatusCode::NO_CONTENT, Json(ApiResponse::<()>::ok(()))).into_response(),
         Err(error) => error_response(&error),
     }
 }

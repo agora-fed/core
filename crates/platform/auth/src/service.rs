@@ -327,6 +327,24 @@ impl ZitadelAuth {
         Ok(session)
     }
 
+    /// Issue a session **within an already-open transaction**. Public sibling of
+    /// [`Self::persist_session`] so external flows (e.g. `mandate_invite::accept`) can build a
+    /// session as the terminal step of their own transactional writes without duplicating the
+    /// cookie/expiry math. The caller owns the commit.
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on persistence failure.
+    pub async fn issue_session_in_tx(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        org: OrgId,
+        citizen: CitizenId,
+        email: &str,
+        now: DateTime<Utc>,
+    ) -> Result<IssuedSession> {
+        self.persist_session(tx, org, citizen, email, now).await
+    }
+
     /// Persist a session row (within an open tx) and return the issued session.
     async fn persist_session(
         &self,
