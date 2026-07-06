@@ -149,10 +149,10 @@ impl MandateInviteService {
     ///
     /// # Errors
     /// [`Error::Validation`] on bad e-mail; [`Error::NotFound`] if the mandate does not exist
-    /// in this org; [`Error::Storage`] on persistence failure.
-    ///
-    /// TODO(auth): today ANY authenticated citizen may send an invite. Gate by an
-    /// "admin de partido / plataforma" role once that model exists (out of scope here).
+    /// in this org; [`Error::Forbidden`] if the inviter is neither a platform admin
+    /// (`admin_role_binding` owner/admin) nor an admin of the mandate's party
+    /// (`party_administrator` role `admin`, migration 0204); [`Error::Storage`] on
+    /// persistence failure.
     pub async fn send(
         &self,
         org: OrgId,
@@ -170,6 +170,24 @@ impl MandateInviteService {
             .await
             .map_err(map_sqlx)?
             .ok_or_else(|| Error::NotFound("mandato não encontrado".to_owned()))?;
+
+        // Authorization gate: platform (org) admin/owner, or admin of the mandate's party.
+        // `moderador` deliberately does NOT qualify — inviting binds a real person to a
+        // mandate, the highest-impact action in the party surface.
+        let authorized = invite_authorized(
+            &self.db,
+            org.as_uuid(),
+            inviter.as_uuid(),
+            summary.party.as_deref(),
+        )
+        .await
+        .map_err(map_sqlx)?;
+        if !authorized {
+            return Err(Error::Forbidden(
+                "apenas administradores da plataforma ou do partido podem enviar convites de mandato"
+                    .to_owned(),
+            ));
+        }
 
         let token = generate_token();
         let hash = sha256(&token);
@@ -484,6 +502,34 @@ async fn load_mandate_summary(
         uf,
         office,
     }))
+}
+
+/// May `citizen` send a mandate invite in `org`? True when the citizen is an org-level
+/// admin/owner (`admin_role_binding`, migration 0150) or an accepted `admin` of the
+/// mandate's party (`party_administrator`, migration 0204 — a seeded row with no
+/// `invited_by` counts as accepted). A mandate with no party only accepts org admins.
+async fn invite_authorized(
+    db: &sqlx::PgPool,
+    org: Uuid,
+    citizen: Uuid,
+    party_sigla: Option<&str>,
+) -> std::result::Result<bool, sqlx::Error> {
+    sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS( \
+            SELECT 1 FROM admin_role_binding \
+             WHERE org_id = $1 AND citizen_id = $2 AND role IN ('owner', 'admin') \
+         ) OR ($3::text IS NOT NULL AND EXISTS( \
+            SELECT 1 FROM party_administrator \
+             WHERE org_id = $1 AND citizen_id = $2 AND party_sigla = $3 \
+               AND role = 'admin' \
+               AND (accepted_at IS NOT NULL OR invited_by IS NULL) \
+         ))",
+    )
+    .bind(org)
+    .bind(citizen)
+    .bind(party_sigla)
+    .fetch_one(db)
+    .await
 }
 
 /// SMTP from env — same shape as `password_reset::smtp_from_env`.
