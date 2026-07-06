@@ -126,6 +126,10 @@ mod tests {
             mandate_id: Uuid::nil(),
             cluster_id: Some(Uuid::nil()),
             support_count: 4096,
+            threshold: 8192,
+            author_handle: None,
+            author_public_handle: None,
+            author_avatar_url: None,
             created_at: DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
         }
     }
@@ -218,6 +222,13 @@ mod tests {
             display_name: "Fulana".to_owned(),
             is_candidate: false,
             onboarded: true,
+            party: None,
+            uf: None,
+            house: None,
+            avatar_url: None,
+            public_email: None,
+            sphere: "federal".to_owned(),
+            has_verified_operator: false,
         };
         let actor = mandate_to_actor(&m, HOST);
         assert!(actor.id.contains("/actors/mandate-"));

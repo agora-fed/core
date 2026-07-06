@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod federation;
+pub mod federation_feed;
 pub mod parlamentar_activity;
 pub mod worker;
 

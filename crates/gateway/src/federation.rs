@@ -37,8 +37,11 @@ use dsoc_api_contract::ApiResponse;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use crate::federation_feed;
+
 const ACTIVITY_JSON: &str = "application/activity+json";
 const JRD_JSON: &str = "application/jrd+json";
+const AS_CONTEXT: &str = "https://www.w3.org/ns/activitystreams";
 
 /// Per ADR-0010 single-tenant default — the seeded `DemocraciaBR` org.
 const DEFAULT_ORG_UUID: uuid::Uuid = uuid::uuid!("11111111-1111-1111-1111-111111111111");
@@ -71,6 +74,9 @@ pub fn client_routes(state: AppState) -> Router<()> {
         .route("/federation/lookup", get(lookup_remote))
         .route("/me/follow", post(follow_remote))
         .route("/me/notes", post(post_my_note))
+        .route("/me/feed", get(get_my_feed))
+        .route("/me/like", post(toggle_like))
+        .route("/me/boost", post(toggle_boost))
         .with_state(state)
 }
 
@@ -360,10 +366,19 @@ async fn inbox_post(
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }
         }
+    } else if kind == "Create" {
+        // Create(Note) from an actor at least one local citizen follows → upsert into the
+        // federated timeline. Anything else (unfollowed stranger, non-Note object) is a
+        // logged no-op — we still 202 so the remote doesn't retry forever.
+        handle_inbox_create(&state, &signer_actor, &signer_actor_url, &activity).await;
+    } else if kind == "Like" || kind == "Announce" {
+        // Remote reaction over one of OUR objects → upsert (re-delivery is a no-op).
+        handle_inbox_reaction(&state, &signer_actor_url, kind, &activity_id, &activity).await;
     } else if kind == "Undo" {
         // Undo Follow → the remote unfollowed us. Verify the inner object is a Follow whose
         // actor is the same as the Undo's signer (don't let one user undo another's follow),
         // then delete the row. Idempotent at the DB level (DELETE returns 0 if already gone).
+        // Undo Like/Announce → remove the matching remote reaction (same signer scoping).
         let inner_kind = activity
             .get("object")
             .and_then(|o| o.get("type"))
@@ -380,8 +395,43 @@ async fn inbox_post(
             } else {
                 tracing::info!(remote = %signer_actor_url, "inbound follow undone");
             }
+        } else if (inner_kind == "Like" || inner_kind == "Announce")
+            && (inner_actor.is_empty() || inner_actor == signer_actor_url)
+        {
+            let db_kind = if inner_kind == "Like" { "like" } else { "boost" };
+            let inner_id = activity
+                .get("object")
+                .and_then(|o| o.get("id"))
+                .and_then(Value::as_str);
+            let inner_object_uri = activity
+                .get("object")
+                .and_then(|o| o.get("object"))
+                .and_then(object_uri_of);
+            if inner_id.is_none() && inner_object_uri.is_none() {
+                tracing::debug!("Undo({inner_kind}) without inner id/object — ignored");
+            } else {
+                match federation_feed::delete_remote_reaction(
+                    &state.db,
+                    &signer_actor_url,
+                    db_kind,
+                    inner_id,
+                    inner_object_uri.as_deref(),
+                )
+                .await
+                {
+                    Ok(n) => tracing::info!(
+                        remote = %signer_actor_url,
+                        db_kind,
+                        removed = n,
+                        "remote reaction undone"
+                    ),
+                    Err(err) => {
+                        tracing::error!(error = ?err, "failed to remove remote reaction on Undo");
+                    }
+                }
+            }
         } else {
-            tracing::debug!(inner_kind, inner_actor, "ignored Undo for non-Follow or actor mismatch");
+            tracing::debug!(inner_kind, inner_actor, "ignored Undo for unsupported type or actor mismatch");
         }
     } else {
         tracing::debug!(kind, "ignored unhandled activity type");
@@ -709,6 +759,424 @@ async fn post_my_note(
             server_error()
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Federated feed + reactions (ADR-0010 W2.6) — client surface + inbox plumbing.
+// ---------------------------------------------------------------------------
+
+/// Query for `GET /api/v1/me/feed`.
+#[derive(Debug, Deserialize)]
+struct FeedQuery {
+    limit: Option<i64>,
+    offset: Option<i64>,
+}
+
+/// `GET /api/v1/me/feed?limit&offset` — the citizen's merged federated timeline: their own local
+/// Notes, Notes of local citizens they follow, and remote Notes of fediverse actors they follow,
+/// newest first. `limit` caps at 50 (default 20).
+async fn get_my_feed(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Query(query): Query<FeedQuery>,
+) -> Response {
+    let limit = query.limit.unwrap_or(20).clamp(1, 50);
+    let offset = query.offset.unwrap_or(0).max(0);
+    let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+    match federation_feed::list_feed(
+        &state.db,
+        caller.citizen.as_uuid(),
+        &public_origin(),
+        &media_base,
+        limit,
+        offset,
+    )
+    .await
+    {
+        Ok(items) => (StatusCode::OK, Json(ApiResponse::ok(items))).into_response(),
+        Err(err) => {
+            tracing::error!(error = ?err, "feed query failed");
+            server_error()
+        }
+    }
+}
+
+/// Body for `POST /api/v1/me/like` and `POST /api/v1/me/boost`.
+#[derive(Debug, Deserialize)]
+struct ReactionRequest {
+    /// The Note object's URI (the `object_uri` from a feed item).
+    object_uri: String,
+}
+
+/// Which reaction a toggle endpoint drives. Maps 1:1 to the DB `kind` and the AP activity type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReactionKind {
+    Like,
+    Boost,
+}
+
+impl ReactionKind {
+    const fn db_kind(self) -> &'static str {
+        match self {
+            Self::Like => "like",
+            Self::Boost => "boost",
+        }
+    }
+
+    const fn ap_type(self) -> &'static str {
+        match self {
+            Self::Like => "Like",
+            Self::Boost => "Announce",
+        }
+    }
+}
+
+/// What the background delivery task should send to the remote author.
+#[derive(Debug)]
+enum ReactionDelivery {
+    /// Deliver a fresh `Like`/`Announce` with this activity id.
+    Set { activity_id: String },
+    /// Deliver an `Undo` wrapping the original activity id.
+    Undo { prev_activity_id: String },
+}
+
+/// `POST /api/v1/me/like` — toggle the caller's Like on an object. Response:
+/// `{ "liked": bool, "like_count": n }`.
+async fn toggle_like(
+    State(state): State<AppState>,
+    caller: CallerId,
+    AxumJson(body): AxumJson<ReactionRequest>,
+) -> Response {
+    toggle_reaction(state, caller, body, ReactionKind::Like).await
+}
+
+/// `POST /api/v1/me/boost` — toggle the caller's Boost (`Announce`) on an object. Response:
+/// `{ "boosted": bool, "boost_count": n }`.
+async fn toggle_boost(
+    State(state): State<AppState>,
+    caller: CallerId,
+    AxumJson(body): AxumJson<ReactionRequest>,
+) -> Response {
+    toggle_reaction(state, caller, body, ReactionKind::Boost).await
+}
+
+/// Shared toggle body: flip the local `federation_reaction` row, then best-effort deliver the
+/// signed `Like`/`Announce` (or `Undo`) to the remote author's inbox IN THE BACKGROUND — a slow
+/// or dead remote never fails the citizen's click.
+async fn toggle_reaction(
+    state: AppState,
+    caller: CallerId,
+    body: ReactionRequest,
+    kind: ReactionKind,
+) -> Response {
+    let object_uri = body.object_uri.trim().to_owned();
+    if object_uri.is_empty() || object_uri.len() > 2048 {
+        return client_error("informe um object_uri válido");
+    }
+    let db_kind = kind.db_kind();
+    let citizen = caller.citizen.as_uuid();
+    let existing =
+        match federation_feed::find_local_reaction(&state.db, citizen, &object_uri, db_kind).await
+        {
+            Ok(v) => v,
+            Err(err) => {
+                tracing::error!(error = ?err, "reaction lookup failed");
+                return server_error();
+            }
+        };
+    let active = if let Some(prev_activity_id) = existing {
+        // Toggle OFF.
+        if let Err(err) =
+            federation_feed::delete_local_reaction(&state.db, citizen, &object_uri, db_kind).await
+        {
+            tracing::error!(error = ?err, "reaction delete failed");
+            return server_error();
+        }
+        spawn_reaction_delivery(
+            state.clone(),
+            caller,
+            object_uri.clone(),
+            kind,
+            ReactionDelivery::Undo { prev_activity_id },
+        );
+        false
+    } else {
+        // Toggle ON. The activity id embeds OUR actor URL so the remote can dereference it.
+        let svc = ProfileService::from_state(&state);
+        let handle = handle_of(&svc, caller.citizen).await;
+        let me_url = format!("{}/actors/{handle}", public_origin());
+        let activity_id = format!("{me_url}/activities/{db_kind}-{}", uuid::Uuid::now_v7());
+        let now = state.clock.now();
+        if let Err(err) = federation_feed::insert_local_reaction(
+            &state.db,
+            citizen,
+            &object_uri,
+            db_kind,
+            &activity_id,
+            now,
+        )
+        .await
+        {
+            tracing::error!(error = ?err, "reaction insert failed");
+            return server_error();
+        }
+        spawn_reaction_delivery(
+            state.clone(),
+            caller,
+            object_uri.clone(),
+            kind,
+            ReactionDelivery::Set { activity_id },
+        );
+        true
+    };
+    let count = match federation_feed::count_reactions(&state.db, &object_uri, db_kind).await {
+        Ok(c) => c,
+        Err(err) => {
+            tracing::error!(error = ?err, "reaction count failed");
+            return server_error();
+        }
+    };
+    let payload = match kind {
+        ReactionKind::Like => json!({ "liked": active, "like_count": count }),
+        ReactionKind::Boost => json!({ "boosted": active, "boost_count": count }),
+    };
+    (StatusCode::OK, Json(ApiResponse::ok(payload))).into_response()
+}
+
+/// Fire-and-forget the federation delivery of a reaction toggle. Failures are logged only —
+/// the citizen's local state is already committed and the endpoint contract says best-effort.
+fn spawn_reaction_delivery(
+    state: AppState,
+    caller: CallerId,
+    object_uri: String,
+    kind: ReactionKind,
+    action: ReactionDelivery,
+) {
+    tokio::spawn(async move {
+        if let Err(err) = deliver_reaction(&state, caller, &object_uri, kind, &action).await {
+            tracing::warn!(
+                error = %err,
+                object_uri = %object_uri,
+                "entrega best-effort de reação federada falhou"
+            );
+        }
+    });
+}
+
+/// Deliver the signed `Like`/`Announce`/`Undo` to the remote author's inbox. A LOCAL object
+/// (not present in `federation_timeline_entry`) short-circuits to `Ok(())` — nothing to federate.
+async fn deliver_reaction(
+    state: &AppState,
+    caller: CallerId,
+    object_uri: &str,
+    kind: ReactionKind,
+    action: &ReactionDelivery,
+) -> Result<(), FederationError> {
+    let author_actor_url = federation_feed::find_timeline_actor(&state.db, object_uri)
+        .await
+        .map_err(|e| FederationError::Http(format!("db: {e}")))?;
+    let Some(author_actor_url) = author_actor_url else {
+        // Local (or unknown) object — the reaction stays local.
+        return Ok(());
+    };
+    let svc = ProfileService::from_state(state);
+    let handle = handle_of(&svc, caller.citizen).await;
+    let me_url = format!("{}/actors/{handle}", public_origin());
+    svc.ensure_actor_public_key(caller.citizen)
+        .await
+        .map_err(|e| FederationError::Http(format!("key: {e}")))?;
+    let private_pem = svc
+        .read_actor_private_key(caller.citizen)
+        .await
+        .map_err(|e| FederationError::Http(format!("key: {e}")))?;
+    let remote_actor = fetch_remote_actor(&author_actor_url).await?;
+    let Some(inbox) = remote_actor.get("inbox").and_then(Value::as_str) else {
+        return Err(FederationError::Http("remote author has no inbox".to_owned()));
+    };
+    let activity = match action {
+        ReactionDelivery::Set { activity_id } => json!({
+            "@context": AS_CONTEXT,
+            "id": activity_id,
+            "type": kind.ap_type(),
+            "actor": me_url,
+            "object": object_uri,
+        }),
+        ReactionDelivery::Undo { prev_activity_id } => json!({
+            "@context": AS_CONTEXT,
+            "id": format!("{me_url}/activities/undo-{}", uuid::Uuid::now_v7()),
+            "type": "Undo",
+            "actor": me_url,
+            "object": {
+                "id": prev_activity_id,
+                "type": kind.ap_type(),
+                "actor": me_url,
+                "object": object_uri,
+            },
+        }),
+    };
+    deliver_signed(&me_url, &private_pem, inbox, &activity).await
+}
+
+/// Inbox side of `Create(Note)`: store the remote Note in the shared timeline when the author is
+/// followed by at least one local citizen. Always returns (the caller 202s regardless) — every
+/// skip/failure is logged with its reason.
+async fn handle_inbox_create(
+    state: &AppState,
+    signer_actor: &Value,
+    signer_actor_url: &str,
+    activity: &Value,
+) {
+    let Some(object) = activity.get("object") else {
+        tracing::debug!("Create without object — ignored");
+        return;
+    };
+    let object_type = object.get("type").and_then(Value::as_str).unwrap_or("");
+    if object_type != "Note" {
+        tracing::debug!(object_type, "Create of non-Note object — ignored");
+        return;
+    }
+    let Some(object_uri) = object.get("id").and_then(Value::as_str) else {
+        tracing::debug!("Create(Note) without object id — ignored");
+        return;
+    };
+    // Anti-spoof: the Note must be attributed to the SIGNER (the actor whose key verified).
+    let attributed = object
+        .get("attributedTo")
+        .and_then(Value::as_str)
+        .or_else(|| activity.get("actor").and_then(Value::as_str))
+        .unwrap_or("");
+    if attributed != signer_actor_url {
+        tracing::warn!(attributed, signer = %signer_actor_url, "Create(Note) attribution mismatch — dropped");
+        return;
+    }
+    match federation_feed::anyone_follows(&state.db, signer_actor_url).await {
+        Ok(true) => {}
+        Ok(false) => {
+            tracing::debug!(actor = %signer_actor_url, "Create(Note) from unfollowed actor — ignored");
+            return;
+        }
+        Err(err) => {
+            tracing::error!(error = ?err, "follow check failed on inbound Create");
+            return;
+        }
+    }
+    // Content: cap at 64 KiB as delivered, then allowlist-sanitize; final char-cap keeps the
+    // DB CHECK (65536 chars) honest even when sanitization expands anchors.
+    let raw = object.get("content").and_then(Value::as_str).unwrap_or("");
+    let capped = federation_feed::truncate_bytes(raw, federation_feed::CONTENT_MAX_BYTES);
+    let mut content = federation_feed::sanitize_html(capped);
+    if content.chars().count() > 65_536 {
+        content = content.chars().take(65_536).collect();
+    }
+    let published = object
+        .get("published")
+        .and_then(Value::as_str)
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map_or_else(chrono::Utc::now, |d| d.with_timezone(&chrono::Utc));
+    let display_name = signer_actor.get("name").and_then(Value::as_str);
+    let avatar_url = signer_actor
+        .get("icon")
+        .and_then(|i| i.get("url"))
+        .and_then(Value::as_str);
+    let handle = remote_handle_of(signer_actor, signer_actor_url);
+    if let Err(err) = federation_feed::upsert_timeline_entry(
+        &state.db,
+        object_uri,
+        signer_actor_url,
+        &handle,
+        display_name,
+        avatar_url,
+        &content,
+        published,
+        chrono::Utc::now(),
+    )
+    .await
+    {
+        tracing::error!(error = ?err, object_uri, "failed to store remote Note");
+    } else {
+        tracing::info!(actor = %signer_actor_url, object_uri, "remote Note stored in timeline");
+    }
+}
+
+/// Inbox side of `Like` / `Announce`: record a remote reaction over one of OUR objects.
+async fn handle_inbox_reaction(
+    state: &AppState,
+    signer_actor_url: &str,
+    kind: &str,
+    activity_id: &str,
+    activity: &Value,
+) {
+    let Some(object_uri) = activity.get("object").and_then(object_uri_of) else {
+        tracing::debug!(kind, "reaction without object — ignored");
+        return;
+    };
+    let db_kind = if kind == "Like" { "like" } else { "boost" };
+    match federation_feed::is_our_object(&state.db, &object_uri).await {
+        Ok(true) => {}
+        Ok(false) => {
+            tracing::debug!(kind, object_uri = %object_uri, "reaction over non-local object — ignored");
+            return;
+        }
+        Err(err) => {
+            tracing::error!(error = ?err, "object ownership check failed on inbound reaction");
+            return;
+        }
+    }
+    if let Err(err) = federation_feed::upsert_remote_reaction(
+        &state.db,
+        signer_actor_url,
+        &object_uri,
+        db_kind,
+        activity_id,
+        chrono::Utc::now(),
+    )
+    .await
+    {
+        tracing::error!(error = ?err, "failed to store remote reaction");
+    } else {
+        tracing::info!(remote = %signer_actor_url, db_kind, object_uri = %object_uri, "remote reaction stored");
+    }
+}
+
+/// Pull an object URI out of an AP `object` field, which the wire gives either as a bare string
+/// or as an embedded object carrying an `id`.
+fn object_uri_of(v: &Value) -> Option<String> {
+    match v {
+        Value::String(s) => Some(s.clone()),
+        Value::Object(_) => v.get("id").and_then(Value::as_str).map(str::to_owned),
+        _ => None,
+    }
+}
+
+/// Render a remote actor's fediverse handle as `user@host` (the feed contract's remote shape).
+fn remote_handle_of(actor: &Value, actor_url: &str) -> String {
+    let user = actor
+        .get("preferredUsername")
+        .and_then(Value::as_str)
+        .map_or_else(
+            || {
+                actor_url
+                    .trim_end_matches('/')
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or("desconhecido")
+                    .to_owned()
+            },
+            str::to_owned,
+        );
+    let host = reqwest::Url::parse(actor_url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_owned))
+        .unwrap_or_else(|| "remoto".to_owned());
+    format!("{user}@{host}")
+}
+
+/// The public origin this instance federates under (env `PUBLIC_ORIGIN`), trailing-slash-free.
+fn public_origin() -> String {
+    std::env::var("PUBLIC_ORIGIN")
+        .unwrap_or_else(|_| "https://democracia.social.br".to_owned())
+        .trim_end_matches('/')
+        .to_owned()
 }
 
 /// Resolve the caller's handle from their profile row (needed because `follow_remote` builds a

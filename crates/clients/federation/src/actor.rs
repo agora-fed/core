@@ -219,6 +219,13 @@ mod tests {
             display_name: "Fulana de Tal".to_owned(),
             is_candidate,
             onboarded: false,
+            party: None,
+            uf: None,
+            house: None,
+            avatar_url: None,
+            public_email: None,
+            sphere: "federal".to_owned(),
+            has_verified_operator: false,
         }
     }
 
