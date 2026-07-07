@@ -334,6 +334,96 @@ export const updateMyProfile = (patch: ProfileUpdateDto) =>
 export const getMySessions = () =>
   apiGetCredentialed<SessionInfoDto[]>('/api/v1/me/sessions');
 
+/** OAuth application that currently holds a live bearer token for the caller. */
+export interface AuthorizedAppDto {
+  application_id: string;
+  name: string;
+  website: string | null;
+  scopes: string;
+  token_count: number;
+  first_authorized_at: string;
+  last_expires_at: string;
+}
+
+/** List apps the caller has authorized via OAuth (Ivory/Elk/Ice Cubes/etc). */
+export const getAuthorizedApps = () =>
+  apiGetCredentialed<AuthorizedAppDto[]>('/api/v1/me/authorized-apps');
+
+/** Revoke every live token this citizen has issued to `applicationId`. */
+export const revokeAuthorizedApp = (applicationId: string) =>
+  apiPost<{ revoked: number }>(
+    `/api/v1/me/authorized-apps/${encodeURIComponent(applicationId)}/revoke`,
+    {},
+  );
+
+/** Change the caller's password. Kills every OTHER session and every OAuth token. */
+export const changePassword = (currentPassword: string, newPassword: string) =>
+  apiPost<{ ok: true }>('/api/v1/me/change-password', {
+    current_password: currentPassword,
+    new_password: newPassword,
+  });
+
+/** Admin dashboard aggregate. */
+export interface AdminStatsDto {
+  citizens: number;
+  actors_local: number;
+  actors_remote: number;
+  notes_total: number;
+  notes_last_7d: number;
+  mandates: number;
+  proposals: number;
+  notifications_unread: number;
+}
+export const getAdminStats = () =>
+  apiGetCredentialed<AdminStatsDto>('/api/v1/admin/stats');
+
+/** Row in the admin user list. */
+export interface AdminUserRow {
+  citizen_id: string;
+  handle: string;
+  display_name: string;
+  email: string;
+  is_public: boolean;
+  verification_level: string;
+  created_at: string;
+  role: string | null;
+}
+export const getAdminUsers = (
+  q: string,
+  limit = 25,
+  offset = 0,
+): Promise<ApiResponse<AdminUserRow[]>> => {
+  const qs = new URLSearchParams();
+  if (q) qs.set('q', q);
+  qs.set('limit', String(limit));
+  qs.set('offset', String(offset));
+  return apiGetCredentialed<AdminUserRow[]>(`/api/v1/admin/users?${qs}`);
+};
+export const setAdminUserRole = (
+  citizenId: string,
+  role: 'owner' | 'admin' | 'auditor' | null,
+) =>
+  apiPost<{ role: string | null }>(
+    `/api/v1/admin/users/${encodeURIComponent(citizenId)}/role`,
+    { role },
+  );
+
+/** Federation peer summary. */
+export interface AdminPeerRow {
+  host: string;
+  actor_count: number;
+  last_seen: string;
+}
+export const getAdminPeers = (limit = 50) =>
+  apiGetCredentialed<AdminPeerRow[]>(`/api/v1/admin/federation/peers?limit=${limit}`);
+
+/** Soft-hide a local note by id (moderation). */
+export const hideAdminNote = (noteId: string) =>
+  apiPost<{ ok: true }>(
+    `/api/v1/admin/notes/${encodeURIComponent(noteId)}/hide`,
+    {},
+  );
+
 /** Revoke one of my sessions. Cannot revoke the current one (use logout). */
 export async function revokeSession(id: string): Promise<ApiResponse<null>> {
   try {

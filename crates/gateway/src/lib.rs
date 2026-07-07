@@ -6,8 +6,10 @@
 
 #![forbid(unsafe_code)]
 
+pub mod admin_ext;
 pub mod discovery;
 pub mod federation;
+pub mod me_settings;
 pub mod federation_feed;
 pub mod mastodon_api;
 pub mod mastodon_dto;
@@ -106,6 +108,7 @@ pub fn api_router(state: AppState) -> Router {
         .merge(dsoc_consensus::routes(state.clone()))
         .merge(dsoc_moderation::routes(state.clone()))
         .merge(dsoc_admin::routes(state.clone()))
+        .merge(admin_ext::routes(state.clone()))
         // spaces
         .merge(dsoc_processes::routes(state.clone()))
         .merge(dsoc_assemblies::routes(state.clone()))
@@ -134,6 +137,8 @@ pub fn api_router(state: AppState) -> Router {
         // Federation client surface: `/federation/lookup`, `/me/follow` — see ADR-0010 W2.4.
         // Goes UNDER the same `/api/v1` prefix so the cookie/identity middleware below covers it.
         .merge(federation::client_routes(state.clone()))
+        // Per-citizen settings: authorized OAuth apps + change password.
+        .merge(me_settings::routes(state.clone()))
         // Mastodon Client API compat (Ivory / Elk / Ice Cubes / Tusky /
         // custom scripts). Same prefix; the Mastodon paths don't collide
         // with ours. Auth is bearer OR cookie (see `inject_identity`).

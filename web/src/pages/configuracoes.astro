@@ -1,13 +1,10 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import ColorBar from '../components/illustrations/ColorBar.astro';
-import ProfileForm from '../components/islands/ProfileForm.svelte';
-import SessionsList from '../components/islands/SessionsList.svelte';
-import FediverseSearch from '../components/islands/FediverseSearch.svelte';
-import NoteComposer from '../components/islands/NoteComposer.svelte';
+import SettingsShell from '../components/islands/SettingsShell.svelte';
 
 const description =
-  'Edite seu nome, sua bio, seu @ e decida se seu perfil é privado ou federado no fediverso.';
+  'Ajuste seu perfil, o tema visual, sua senha, os aplicativos conectados e busque perfis no fediverso.';
 ---
 
 <BaseLayout title="Configurações" {description} noindex>
@@ -17,36 +14,30 @@ const description =
         <ColorBar class="head-bar" />
         <h1>Configurações</h1>
         <p class="muted lede">
-          O seu perfil nasce <strong>privado</strong>. Você pode escolher um
-          nome de usuário, escrever uma bio e, se quiser, tornar o perfil
-          público — aí ele é descoberto e seguido no fediverso.
+          Tudo o que é sua conta. As mudanças ficam salvas assim que você
+          confirma em cada aba.
         </p>
       </header>
 
-      <ProfileForm client:load />
-      <NoteComposer client:load />
-      <div id="fediverso">
-        <FediverseSearch client:load />
-      </div>
-      <SessionsList client:load />
+      <SettingsShell client:load />
     </div>
   </section>
 </BaseLayout>
 
 <style>
   .settings {
-    max-width: 38rem;
+    max-width: 48rem;
   }
   .head {
-    margin-bottom: 2rem;
+    margin-bottom: var(--sp-6);
   }
   .head-bar {
-    margin-bottom: 0.9rem;
+    margin-bottom: var(--sp-3);
   }
   h1 {
-    margin: 0 0 0.5rem;
+    margin: 0 0 var(--sp-2);
   }
   .lede {
-    font-size: 1.05rem;
+    font-size: var(--fs-lg);
   }
 </style>
