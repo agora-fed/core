@@ -88,7 +88,7 @@ async fn inject_identity(State(state): State<AppState>, mut req: Request, next: 
 }
 
 /// Extract a cookie value by name from a `Cookie` header.
-fn cookie_value<'a>(cookie_header: &'a str, name: &str) -> Option<&'a str> {
+pub(crate) fn cookie_value<'a>(cookie_header: &'a str, name: &str) -> Option<&'a str> {
     cookie_header.split(';').find_map(|kv| {
         let kv = kv.trim();
         kv.strip_prefix(name).and_then(|rest| rest.strip_prefix('='))

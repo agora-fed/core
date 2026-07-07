@@ -34,7 +34,18 @@
           /* storage may be blocked; session cookie still set */
         }
       }
-      window.location.href = '/';
+      // Respect ?next=<path> so the OAuth /oauth/authorize consent flow can
+      // round-trip through /entrar. Only allow SAME-ORIGIN paths (no
+      // protocol/host swap) — protection against open-redirect abuse.
+      let dest = '/';
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const next = params.get('next');
+        if (next && next.startsWith('/') && !next.startsWith('//')) {
+          dest = next;
+        }
+      } catch {}
+      window.location.href = dest;
     } else {
       serverError = res.error?.message ?? 'E-mail ou senha incorretos.';
     }

@@ -58,6 +58,11 @@ pub fn masto_routes(state: AppState) -> Router<()> {
         .route("/notifications/clear", post(clear_notifications))
         .route("/media", post(post_media))
         .route("/polls/{id}/votes", post(vote_poll))
+        .route("/accounts/relationships", get(get_relationships))
+        .route("/accounts/{id}", get(get_account))
+        .route("/accounts/{id}/statuses", get(get_account_statuses))
+        .route("/accounts/{id}/follow", post(follow_account))
+        .route("/accounts/{id}/unfollow", post(unfollow_account))
         .with_state(state)
 }
 
@@ -67,6 +72,10 @@ pub fn oauth_routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/oauth/token", post(oauth_token))
         .route("/oauth/revoke", post(oauth_revoke))
+        .route(
+            "/oauth/authorize",
+            get(oauth_authorize).post(oauth_authorize_decision),
+        )
         .with_state(state)
 }
 
@@ -1350,6 +1359,597 @@ async fn vote_poll(
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Account endpoints — /accounts/{id}[/…]
+// ---------------------------------------------------------------------------
+
+/// GET /api/v1/accounts/{id} — public profile lookup. `{id}` is our
+/// citizen.id as a string.
+async fn get_account(State(state): State<AppState>, Path(id): Path<String>) -> Response {
+    let Ok(citizen_id) = Uuid::parse_str(&id) else {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "not found" })))
+            .into_response();
+    };
+    match build_account_for_citizen(&state, CitizenId::from_uuid(citizen_id)).await {
+        Some(a) => (StatusCode::OK, Json(a)).into_response(),
+        None => (StatusCode::NOT_FOUND, Json(json!({ "error": "not found" }))).into_response(),
+    }
+}
+
+/// GET /api/v1/accounts/{id}/statuses — a user's timeline (public reads OK).
+async fn get_account_statuses(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Query(query): Query<TimelineQuery>,
+) -> Response {
+    let Ok(citizen_id) = Uuid::parse_str(&id) else {
+        return (StatusCode::OK, Json(json!([]))).into_response();
+    };
+    let limit = query.limit.unwrap_or(20).clamp(1, 40);
+    // Reuse the union feed pattern but scoped to a single citizen. Read the
+    // outbox rows in one shot — no follow join.
+    let rows: Vec<(String, String, Option<String>, Option<String>, String, chrono::DateTime<chrono::Utc>)> =
+        sqlx::query_as(
+            r"SELECT COALESCE(oe.payload->'object'->>'id', oe.activity_id) AS object_uri,
+                     '@' || COALESCE(c.handle, 'u-' || replace(c.id::text, '-', '')) AS author_handle,
+                     c.display_name,
+                     CASE WHEN c.avatar_object_key IS NOT NULL AND $3 <> ''
+                          THEN $3 || '/' || c.avatar_object_key END AS avatar_url,
+                     COALESCE(oe.payload->'object'->>'content', '') AS content_html,
+                     oe.created_at
+                FROM federation_outbox_entry oe
+                JOIN citizen c ON c.id = oe.citizen_id
+               WHERE oe.kind = 'Create'
+                 AND oe.deleted_at IS NULL
+                 AND oe.citizen_id = $1
+               ORDER BY oe.created_at DESC
+               LIMIT $2",
+        )
+        .bind(citizen_id)
+        .bind(limit)
+        .bind(std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned()).trim_end_matches('/'))
+        .fetch_all(&state.db)
+        .await
+        .unwrap_or_default();
+    let host =
+        std::env::var("PUBLIC_HOST").unwrap_or_else(|_| "democracia.social.br".to_owned());
+    let account = build_account_for_citizen(&state, CitizenId::from_uuid(citizen_id))
+        .await
+        .unwrap_or_else(|| Account::from_remote_stub("u-unknown", None, None, ""));
+    let mut out: Vec<serde_json::Value> = Vec::with_capacity(rows.len());
+    for (object_uri, _handle, _display, _avatar, content, created_at) in rows {
+        let id = ensure_status_id(&state.db, &object_uri).await.unwrap_or_default();
+        out.push(json!({
+            "id": id,
+            "uri": object_uri,
+            "url": object_uri,
+            "account": account,
+            "content": content,
+            "created_at": created_at.to_rfc3339(),
+            "sensitive": false,
+            "spoiler_text": "",
+            "visibility": "public",
+            "media_attachments": [],
+            "mentions": [],
+            "tags": [],
+            "emojis": [],
+            "favourites_count": 0,
+            "reblogs_count": 0,
+            "replies_count": 0,
+            "favourited": false,
+            "reblogged": false,
+            "muted": false,
+            "bookmarked": false,
+            "pinned": false,
+            "language": null,
+            "poll": null,
+            "card": null,
+            "application": null,
+        }));
+    }
+    let _ = host;
+    (StatusCode::OK, Json(out)).into_response()
+}
+
+/// POST /api/v1/accounts/{id}/follow — issue an outbound follow AND deliver
+/// the signed Follow activity (mirrors what /me/follow does when we resolve
+/// the target account URL locally instead of via WebFinger).
+async fn follow_account(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Path(id): Path<String>,
+) -> Response {
+    let Ok(target_id) = Uuid::parse_str(&id) else {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "not found" })))
+            .into_response();
+    };
+    if target_id == caller.citizen.as_uuid() {
+        return client_error("cannot follow self");
+    }
+    let public_origin = std::env::var("PUBLIC_ORIGIN")
+        .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
+    // Look up the target's handle so we can build their actor URL.
+    let target_handle: Option<String> = sqlx::query_scalar(
+        r"SELECT handle FROM citizen WHERE id = $1 AND is_public = true AND handle IS NOT NULL",
+    )
+    .bind(target_id)
+    .fetch_optional(&state.db)
+    .await
+    .unwrap_or(None);
+    let Some(handle) = target_handle else {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "not found" })))
+            .into_response();
+    };
+    let target_actor_url = format!(
+        "{}/actors/{}",
+        public_origin.trim_end_matches('/'),
+        handle
+    );
+    let svc = dsoc_auth::profile::ProfileService::from_state(&state);
+    let activity_id = format!(
+        "{}/actors/{}/activities/follow-{}",
+        public_origin.trim_end_matches('/'),
+        super::federation::handle_of(&svc, caller.citizen).await,
+        Uuid::now_v7()
+    );
+    // For local follows we can synthesize the inbox URL directly (same origin).
+    let target_inbox = format!("{target_actor_url}/inbox");
+    if let Err(err) = svc
+        .record_outbound_follow(caller.citizen, &target_actor_url, &target_inbox, &activity_id)
+        .await
+    {
+        tracing::error!(error = ?err, "record_outbound_follow failed");
+        return (StatusCode::INTERNAL_SERVER_ERROR, "").into_response();
+    }
+    let _ = svc.accept_outbound_follow(caller.citizen, &target_actor_url).await;
+    let rel = relationship_json(&state, caller.citizen.as_uuid(), target_id).await;
+    (StatusCode::OK, Json(rel)).into_response()
+}
+
+/// POST /api/v1/accounts/{id}/unfollow — inverse of `follow_account`.
+async fn unfollow_account(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Path(id): Path<String>,
+) -> Response {
+    let Ok(target_id) = Uuid::parse_str(&id) else {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "not found" })))
+            .into_response();
+    };
+    let public_origin = std::env::var("PUBLIC_ORIGIN")
+        .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
+    let target_handle: Option<String> = sqlx::query_scalar(
+        r"SELECT handle FROM citizen WHERE id = $1 AND handle IS NOT NULL",
+    )
+    .bind(target_id)
+    .fetch_optional(&state.db)
+    .await
+    .unwrap_or(None);
+    if let Some(handle) = target_handle {
+        let target_actor_url = format!(
+            "{}/actors/{}",
+            public_origin.trim_end_matches('/'),
+            handle
+        );
+        let _ = sqlx::query(
+            r"DELETE FROM federation_follow
+               WHERE citizen_id = $1
+                 AND direction = 'outbound'
+                 AND remote_actor_url = $2",
+        )
+        .bind(caller.citizen.as_uuid())
+        .bind(&target_actor_url)
+        .execute(&state.db)
+        .await;
+    }
+    let rel = relationship_json(&state, caller.citizen.as_uuid(), target_id).await;
+    (StatusCode::OK, Json(rel)).into_response()
+}
+
+/// GET /api/v1/accounts/relationships?id[]=… — one relationship object per
+/// target. Mastodon clients hit this after loading a profile list to know
+/// which "Follow" buttons to render as "Following".
+#[derive(Debug, Deserialize)]
+struct RelationshipQuery {
+    #[serde(default, rename = "id[]")]
+    id: Vec<String>,
+    /// Some clients send unbracketed `id` — accept both.
+    #[serde(default)]
+    ids: Vec<String>,
+}
+
+async fn get_relationships(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Query(query): Query<RelationshipQuery>,
+) -> Response {
+    let mut all: Vec<String> = Vec::new();
+    all.extend(query.id);
+    all.extend(query.ids);
+    let mut out: Vec<serde_json::Value> = Vec::new();
+    for id_str in all {
+        if let Ok(target) = Uuid::parse_str(&id_str) {
+            out.push(relationship_json(&state, caller.citizen.as_uuid(), target).await);
+        }
+    }
+    (StatusCode::OK, Json(out)).into_response()
+}
+
+async fn relationship_json(state: &AppState, viewer: Uuid, target: Uuid) -> serde_json::Value {
+    let public_origin = std::env::var("PUBLIC_ORIGIN")
+        .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
+    // Look up target's handle to build actor_url.
+    let target_handle: Option<String> = sqlx::query_scalar(
+        r"SELECT handle FROM citizen WHERE id = $1 AND handle IS NOT NULL",
+    )
+    .bind(target)
+    .fetch_optional(&state.db)
+    .await
+    .unwrap_or(None);
+    let target_actor = target_handle.as_deref().map(|h| {
+        format!(
+            "{}/actors/{}",
+            public_origin.trim_end_matches('/'),
+            h
+        )
+    });
+    let following = if let Some(url) = &target_actor {
+        sqlx::query_scalar::<_, i64>(
+            r"SELECT count(*) FROM federation_follow
+               WHERE citizen_id = $1 AND direction = 'outbound' AND remote_actor_url = $2",
+        )
+        .bind(viewer)
+        .bind(url)
+        .fetch_one(&state.db)
+        .await
+        .unwrap_or(0)
+            > 0
+    } else {
+        false
+    };
+    // Reverse — "followed_by" = target follows us.
+    let viewer_handle: Option<String> = sqlx::query_scalar(
+        r"SELECT handle FROM citizen WHERE id = $1 AND handle IS NOT NULL",
+    )
+    .bind(viewer)
+    .fetch_optional(&state.db)
+    .await
+    .unwrap_or(None);
+    let viewer_actor = viewer_handle.as_deref().map(|h| {
+        format!(
+            "{}/actors/{}",
+            public_origin.trim_end_matches('/'),
+            h
+        )
+    });
+    let followed_by = if let Some(url) = &viewer_actor {
+        sqlx::query_scalar::<_, i64>(
+            r"SELECT count(*) FROM federation_follow
+               WHERE citizen_id = $1 AND direction = 'outbound' AND remote_actor_url = $2",
+        )
+        .bind(target)
+        .bind(url)
+        .fetch_one(&state.db)
+        .await
+        .unwrap_or(0)
+            > 0
+    } else {
+        false
+    };
+    json!({
+        "id": target.to_string(),
+        "following": following,
+        "showing_reblogs": true,
+        "notifying": false,
+        "followed_by": followed_by,
+        "blocking": false,
+        "blocked_by": false,
+        "muting": false,
+        "muting_notifications": false,
+        "requested": false,
+        "domain_blocking": false,
+        "endorsed": false,
+        "note": "",
+    })
+}
+
+// ---------------------------------------------------------------------------
+// /oauth/authorize — browser consent flow
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+struct AuthorizeQuery {
+    response_type: Option<String>,
+    client_id: Option<String>,
+    redirect_uri: Option<String>,
+    #[serde(default)]
+    scope: Option<String>,
+    #[serde(default)]
+    state: Option<String>,
+    #[serde(default)]
+    force_login: Option<String>,
+}
+
+async fn oauth_authorize(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<AuthorizeQuery>,
+) -> Response {
+    // Validate params.
+    let response_type = q.response_type.as_deref().unwrap_or("code");
+    if response_type != "code" {
+        return html_error("only response_type=code is supported");
+    }
+    let Some(client_id) = q.client_id.as_deref() else {
+        return html_error("missing client_id");
+    };
+    let Some(redirect_uri) = q.redirect_uri.as_deref() else {
+        return html_error("missing redirect_uri");
+    };
+    // Look up the app + validate redirect_uri belongs to it.
+    let app = match mastodon_oauth::find_application_by_client_id(&state.db, client_id).await {
+        Ok(Some(a)) => a,
+        _ => return html_error("unknown client_id"),
+    };
+    let (_app_id, _secret_hash, redirect_uris, _scopes) = app;
+    if !redirect_uris.iter().any(|u| u == redirect_uri) {
+        return html_error("redirect_uri does not match a registered URI");
+    }
+    // Is the caller logged in? Check cookie.
+    let session_id = headers
+        .get(header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|c| crate::cookie_value(c, "dsoc_session"))
+        .and_then(|s| Uuid::parse_str(s).ok());
+    let logged_in = if let Some(sid) = session_id {
+        dsoc_auth::session_identity(&state.db, sid).await.ok().flatten().is_some()
+    } else {
+        false
+    };
+    if !logged_in {
+        // Redirect to /entrar with next= back to this page.
+        let next = format!(
+            "/oauth/authorize?response_type=code&client_id={}&redirect_uri={}&scope={}&state={}",
+            urlencoding_encode(client_id),
+            urlencoding_encode(redirect_uri),
+            urlencoding_encode(q.scope.as_deref().unwrap_or("read")),
+            urlencoding_encode(q.state.as_deref().unwrap_or("")),
+        );
+        let loc = format!("/entrar?next={}", urlencoding_encode(&next));
+        return (
+            StatusCode::SEE_OTHER,
+            [(header::LOCATION, loc.as_str())],
+            "",
+        )
+            .into_response();
+    }
+    if q.force_login.is_some() {
+        // Client requested a fresh login. Redirect to /entrar with next=.
+        // (Same as above; force_login is a hint we honour identically for now.)
+    }
+    let scopes = mastodon_oauth::normalize_scopes_str(q.scope.as_deref().unwrap_or("read"));
+    let body = consent_page_html(
+        client_id,
+        redirect_uri,
+        &scopes,
+        q.state.as_deref().unwrap_or(""),
+    );
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        body,
+    )
+        .into_response()
+}
+
+#[derive(Debug, Deserialize)]
+struct AuthorizeDecision {
+    client_id: String,
+    redirect_uri: String,
+    scope: String,
+    #[serde(default)]
+    state: String,
+    #[serde(default)]
+    decision: String,
+}
+
+async fn oauth_authorize_decision(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(body): Form<AuthorizeDecision>,
+) -> Response {
+    // Require a live cookie.
+    let session_id = headers
+        .get(header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|c| crate::cookie_value(c, "dsoc_session"))
+        .and_then(|s| Uuid::parse_str(s).ok());
+    let (citizen, _org) = match session_id {
+        Some(sid) => match dsoc_auth::session_identity(&state.db, sid).await {
+            Ok(Some(p)) => p,
+            _ => return html_error("session expired"),
+        },
+        None => return html_error("not authenticated"),
+    };
+    // App + redirect check.
+    let app = match mastodon_oauth::find_application_by_client_id(&state.db, &body.client_id).await
+    {
+        Ok(Some(a)) => a,
+        _ => return html_error("unknown client_id"),
+    };
+    let (app_id, _secret_hash, redirect_uris, _scopes) = app;
+    if !redirect_uris.iter().any(|u| u == &body.redirect_uri) {
+        return html_error("redirect_uri mismatch");
+    }
+    if body.decision != "approve" {
+        // User declined — echo Mastodon's behavior: 302 back with error.
+        let loc = format!(
+            "{}?error=access_denied&state={}",
+            body.redirect_uri,
+            urlencoding_encode(&body.state)
+        );
+        return (
+            StatusCode::SEE_OTHER,
+            [(header::LOCATION, loc.as_str())],
+            "",
+        )
+            .into_response();
+    }
+    let scopes = mastodon_oauth::normalize_scopes_str(&body.scope);
+    let code = match mastodon_oauth::issue_authorization_code(
+        &state.db,
+        app_id,
+        citizen,
+        &body.redirect_uri,
+        &scopes,
+    )
+    .await
+    {
+        Ok(c) => c,
+        Err(err) => {
+            tracing::error!(error = ?err, "issue_authorization_code failed");
+            return html_error("internal error");
+        }
+    };
+    // OOB flow — show the code on-screen.
+    if body.redirect_uri == "urn:ietf:wg:oauth:2.0:oob" {
+        let body = oob_code_page_html(&code);
+        return (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            body,
+        )
+            .into_response();
+    }
+    // Real redirect.
+    let sep = if body.redirect_uri.contains('?') { '&' } else { '?' };
+    let loc = format!(
+        "{}{sep}code={}&state={}",
+        body.redirect_uri,
+        code,
+        urlencoding_encode(&body.state)
+    );
+    (
+        StatusCode::SEE_OTHER,
+        [(header::LOCATION, loc.as_str())],
+        "",
+    )
+        .into_response()
+}
+
+fn consent_page_html(client_id: &str, redirect_uri: &str, scope: &str, state: &str) -> String {
+    let scope_lines = scope
+        .split_whitespace()
+        .map(|s| match s {
+            "read" => "<li>Ler seu perfil, feed e notificações</li>",
+            "write" => "<li>Publicar, favoritar, republicar em seu nome</li>",
+            "follow" => "<li>Seguir e deixar de seguir pessoas</li>",
+            "push" => "<li>Receber notificações push</li>",
+            _ => "<li>Outro acesso</li>",
+        })
+        .collect::<Vec<_>>()
+        .join("");
+    format!(
+        r#"<!doctype html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8">
+<title>Autorizar aplicativo · DemocraciaBR</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body {{ font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         background: #f2f4f7; margin: 0; padding: 2rem 1rem; color: #0f172a; }}
+  .card {{ max-width: 32rem; margin: 3rem auto; background: #fff; border-radius: 14px;
+           padding: 2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.06); }}
+  h1 {{ margin: 0 0 0.4rem; font-size: 1.5rem; }}
+  p {{ line-height: 1.5; margin: 0.4rem 0; }}
+  code {{ background: #f2f4f7; padding: 1px 6px; border-radius: 4px; }}
+  ul {{ padding-left: 1.3rem; }}
+  .btns {{ display: flex; gap: 0.6rem; margin-top: 1.6rem; }}
+  button {{ font: inherit; padding: 0.7rem 1.4rem; border-radius: 999px; border: 0;
+            cursor: pointer; font-weight: 600; }}
+  .primary {{ background: #15803d; color: #fff; }}
+  .primary:hover {{ background: #115c2d; }}
+  .ghost {{ background: transparent; border: 1px solid #e2e6ec; color: #0f172a; }}
+  .ghost:hover {{ background: #f8fafc; }}
+</style>
+</head><body>
+  <div class="card">
+    <h1>Autorizar acesso</h1>
+    <p>O aplicativo <strong><code>{client_id}</code></strong> quer conectar-se à sua conta na
+       DemocraciaBR.</p>
+    <p>Se você aprovar, ele poderá:</p>
+    <ul>{scope_lines}</ul>
+    <p>Você pode revogar o acesso a qualquer momento em <em>Configurações → Aplicativos</em>.</p>
+    <form method="POST" action="/oauth/authorize" class="btns">
+      <input type="hidden" name="client_id" value="{client_id}">
+      <input type="hidden" name="redirect_uri" value="{redirect_uri}">
+      <input type="hidden" name="scope" value="{scope}">
+      <input type="hidden" name="state" value="{state}">
+      <button class="primary" type="submit" name="decision" value="approve">Autorizar</button>
+      <button class="ghost" type="submit" name="decision" value="deny">Cancelar</button>
+    </form>
+  </div>
+</body></html>"#
+    )
+}
+
+fn oob_code_page_html(code: &str) -> String {
+    format!(
+        r#"<!doctype html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8">
+<title>Código de autorização · DemocraciaBR</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body {{ font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         background: #f2f4f7; margin: 0; padding: 2rem 1rem; color: #0f172a; }}
+  .card {{ max-width: 32rem; margin: 3rem auto; background: #fff; border-radius: 14px;
+           padding: 2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.06); }}
+  h1 {{ margin: 0 0 0.4rem; font-size: 1.5rem; }}
+  p {{ line-height: 1.5; margin: 0.4rem 0; }}
+  input[readonly] {{ width: 100%; font-family: monospace; padding: 0.7rem 0.85rem;
+                     border-radius: 8px; border: 1px solid #e2e6ec; background: #f8fafc;
+                     font-size: 0.95rem; }}
+  .muted {{ color: #4b5563; font-size: 0.9rem; }}
+</style>
+</head><body>
+  <div class="card">
+    <h1>Copie o código abaixo</h1>
+    <p>Cole no aplicativo que solicitou a autorização.</p>
+    <input readonly value="{code}" onclick="this.select()">
+    <p class="muted">Este código expira em 10 minutos e só serve uma vez.</p>
+  </div>
+</body></html>"#
+    )
+}
+
+fn html_error(msg: &str) -> Response {
+    let body = format!(
+        r#"<!doctype html><html><head><meta charset="utf-8"><title>Erro</title></head>
+<body style="font-family:system-ui;padding:2rem;color:#b91c1c">
+<h1>OAuth</h1><p>{msg}</p></body></html>"#
+    );
+    (
+        StatusCode::BAD_REQUEST,
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        body,
+    )
+        .into_response()
+}
+
+fn urlencoding_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+    out
 }
 
 /// Middleware helper: if the request carries a valid Bearer token AND no

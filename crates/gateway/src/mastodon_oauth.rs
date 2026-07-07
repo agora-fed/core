@@ -388,6 +388,13 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 }
 
 fn normalize_scopes(s: &str) -> String {
+    normalize_scopes_str(s)
+}
+
+/// Public helper — same behaviour, accessible from `mastodon_api.rs` (which
+/// needs it when the browser consent flow re-normalizes the query string).
+#[must_use]
+pub fn normalize_scopes_str(s: &str) -> String {
     let mut parts: Vec<&str> = s
         .split_whitespace()
         .filter(|s| matches!(*s, "read" | "write" | "follow" | "push"))
