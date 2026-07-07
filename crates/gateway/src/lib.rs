@@ -7,9 +7,12 @@
 #![forbid(unsafe_code)]
 
 pub mod admin_ext;
+pub mod amendments;
 pub mod discovery;
+pub mod elections;
 pub mod federation;
 pub mod me_settings;
+pub mod social_graph;
 pub mod federation_feed;
 pub mod mastodon_api;
 pub mod mastodon_dto;
@@ -139,6 +142,13 @@ pub fn api_router(state: AppState) -> Router {
         .merge(federation::client_routes(state.clone()))
         // Per-citizen settings: authorized OAuth apps + change password.
         .merge(me_settings::routes(state.clone()))
+        // Social-graph endpoints (bookmarks, mutes, blocks, filters, lists —
+        // migration 0500). Mastodon-parity fase 2A.
+        .merge(social_graph::routes(state.clone()))
+        // Decidim-parity amendments (migration 0501).
+        .merge(amendments::routes(state.clone()))
+        // 2026 elections read-only surface (migration 0502).
+        .merge(elections::routes(state.clone()))
         // Mastodon Client API compat (Ivory / Elk / Ice Cubes / Tusky /
         // custom scripts). Same prefix; the Mastodon paths don't collide
         // with ours. Auth is bearer OR cookie (see `inject_identity`).

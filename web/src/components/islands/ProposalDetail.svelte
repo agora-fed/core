@@ -15,6 +15,7 @@
   // (DEFAULT_ORG_ID still imported because getSlas() defaults are convenient — left for future.)
   import type { ProposalDto, MandateDto, SlaDto, SlaStatus, CommentDto } from '../../lib/types';
   import SlaClock from './SlaClock.svelte';
+  import AmendmentsPanel from './AmendmentsPanel.svelte';
 
   let { proposalId }: { proposalId: string } = $props();
 
@@ -400,6 +401,14 @@
     <section class="body">
       <h2>Sobre a demanda</h2>
       <p class="body-text">{proposal.body}</p>
+    </section>
+
+    <!-- Emendas (Decidim gap parity): variantes propostas por outros cidadãos -->
+    <section class="amendments">
+      <AmendmentsPanel
+        proposalId={proposalId}
+        proposalBody={proposal.body}
+      />
     </section>
 
     <!-- Debate: thread rasa de comentários (roots + 1 nível de resposta) -->

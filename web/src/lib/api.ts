@@ -424,6 +424,111 @@ export const hideAdminNote = (noteId: string) =>
     {},
   );
 
+// ---------------------------------------------------------------------------
+// Amendments (Decidim gap parity)
+// ---------------------------------------------------------------------------
+
+export interface AmendmentDto {
+  id: string;
+  proposal_id: string;
+  author_id: string;
+  author_handle: string | null;
+  author_display_name: string | null;
+  body: string;
+  rationale: string | null;
+  status: 'draft' | 'open' | 'accepted' | 'rejected' | 'withdrawn';
+  support_count: number;
+  created_at: string;
+  published_at: string | null;
+  resolved_at: string | null;
+}
+
+export const listAmendments = (proposalId: string) =>
+  apiGet<AmendmentDto[]>(
+    `/api/v1/proposals/${encodeURIComponent(proposalId)}/amendments`,
+  );
+
+export const createAmendment = (
+  proposalId: string,
+  body: string,
+  rationale?: string,
+) =>
+  apiPost<AmendmentDto>(
+    `/api/v1/proposals/${encodeURIComponent(proposalId)}/amendments`,
+    { body, rationale },
+  );
+
+export const publishAmendment = (amendmentId: string) =>
+  apiPost<AmendmentDto>(
+    `/api/v1/amendments/${encodeURIComponent(amendmentId)}/publish`,
+    {},
+  );
+
+export const acceptAmendment = (amendmentId: string) =>
+  apiPost<AmendmentDto>(
+    `/api/v1/amendments/${encodeURIComponent(amendmentId)}/accept`,
+    {},
+  );
+
+export const rejectAmendment = (amendmentId: string) =>
+  apiPost<AmendmentDto>(
+    `/api/v1/amendments/${encodeURIComponent(amendmentId)}/reject`,
+    {},
+  );
+
+// ---------------------------------------------------------------------------
+// Elections + candidacies (Fase 4 do roadmap — 2026)
+// ---------------------------------------------------------------------------
+
+export interface ElectionDto {
+  id: string;
+  year: number;
+  round: number;
+  sphere: 'federal' | 'estadual' | 'municipal';
+  election_day: string;
+  registration_deadline: string | null;
+  candidacy_count: number;
+}
+export interface CandidacyDto {
+  id: string;
+  election_id: string;
+  mandate_id: string | null;
+  candidate_name: string;
+  candidate_gender: 'mulher' | 'homem' | 'nao-binarie' | 'prefiro-nao-dizer' | null;
+  party_sigla: string;
+  office: string;
+  number: string;
+  sphere_uf: string | null;
+  sphere_municipio: string | null;
+  result_rank: number | null;
+  status: string | null;
+  created_at: string;
+}
+
+export const listElections = () => apiGet<ElectionDto[]>('/api/v1/elections');
+
+export const listCandidacies = (
+  electionId: string,
+  filters: Partial<{
+    uf: string;
+    office: string;
+    party: string;
+    gender: string;
+    q: string;
+    limit: number;
+    offset: number;
+  }> = {},
+) => {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(filters)) {
+    if (v !== undefined && v !== '') qs.set(k, String(v));
+  }
+  const qstr = qs.toString();
+  return apiGet<CandidacyDto[]>(
+    `/api/v1/elections/${encodeURIComponent(electionId)}/candidacies${qstr ? '?' + qstr : ''}`,
+  );
+};
+
 /** Revoke one of my sessions. Cannot revoke the current one (use logout). */
 export async function revokeSession(id: string): Promise<ApiResponse<null>> {
   try {

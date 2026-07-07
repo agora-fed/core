@@ -147,6 +147,16 @@ pub async fn enrich_with_polls(
 ///     follow lands, since `/me/follow` webfinger-resolves our own instance like any other), and
 /// (b) remote Notes (`federation_timeline_entry`) from actors they follow,
 /// ordered by `published_at DESC`. Counts merge local + remote reactions.
+///
+/// 0.20.0-beta fase 2A: rows are excluded when the caller
+/// * mutes the author (`actor_mute`),
+/// * blocks the author (`actor_block`), or
+/// * has a live `content_filter` with context 'home' whose phrase is a
+///   case-insensitive substring of the note content.
+///
+/// For LOCAL entries the author's actor_url is composed as
+/// `{public_origin}/actors/{handle}`; for REMOTE entries it is
+/// `federation_timeline_entry.actor_url` verbatim.
 pub async fn list_feed(
     db: &PgPool,
     citizen_id: Uuid,
@@ -195,7 +205,9 @@ pub async fn list_feed(
                        oe.in_reply_to_uri                                    AS in_reply_to_uri,
                        oe.sensitive                                          AS sensitive,
                        oe.spoiler_text                                       AS spoiler_text,
-                       oe.edited_at                                          AS edited_at
+                       oe.edited_at                                          AS edited_at,
+                       CASE WHEN c.handle IS NOT NULL
+                            THEN $3 || '/actors/' || c.handle END            AS author_actor_url
                   FROM federation_outbox_entry oe
                   JOIN citizen c ON c.id = oe.citizen_id
                  WHERE oe.kind = 'Create'
@@ -217,7 +229,8 @@ pub async fn list_feed(
                        t.in_reply_to_uri,
                        t.sensitive,
                        t.spoiler_text,
-                       t.edited_at
+                       t.edited_at,
+                       t.actor_url                                            AS author_actor_url
                   FROM federation_timeline_entry t
                  WHERE t.deleted_at IS NULL
                    AND EXISTS (SELECT 1 FROM federation_follow f
@@ -225,6 +238,20 @@ pub async fn list_feed(
                                   AND f.direction = 'outbound'
                                   AND f.remote_actor_url = t.actor_url)
                ) AS feed
+         WHERE (feed.author_actor_url IS NULL
+                OR feed.author_actor_url NOT IN (
+                       SELECT target_actor_url FROM actor_mute
+                        WHERE citizen_id = $1))
+           AND (feed.author_actor_url IS NULL
+                OR feed.author_actor_url NOT IN (
+                       SELECT target_actor_url FROM actor_block
+                        WHERE citizen_id = $1))
+           AND NOT EXISTS (
+                   SELECT 1 FROM content_filter cf
+                    WHERE cf.citizen_id = $1
+                      AND 'home' = ANY(cf.context)
+                      AND (cf.expires_at IS NULL OR cf.expires_at > now())
+                      AND position(lower(cf.phrase) in lower(feed.content_html)) > 0)
          ORDER BY feed.published_at DESC
          LIMIT $4 OFFSET $5
         ",

@@ -1,0 +1,43 @@
+---
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import ColorBar from '../../../components/illustrations/ColorBar.astro';
+import ElectionsBrowser from '../../../components/islands/ElectionsBrowser.svelte';
+
+const description =
+  'Compare candidatos das Eleições 2026 por UF, cargo, partido e gênero. Dados do TSE.';
+---
+
+<BaseLayout title="Eleições 2026" {description}>
+  <section class="section">
+    <div class="container">
+      <header class="head">
+        <ColorBar class="head-bar" />
+        <h1>Eleições 2026</h1>
+        <p class="muted lede">
+          Comparador de candidatos por esfera, cargo, partido e gênero. Clique
+          num card para adicionar à comparação lado-a-lado (até 3). Os filtros
+          persistem na URL — compartilhe o link do recorte que interessa.
+        </p>
+      </header>
+      <ElectionsBrowser client:load />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .container {
+    max-width: 72rem;
+  }
+  .head {
+    margin-bottom: var(--sp-6);
+  }
+  .head-bar {
+    margin-bottom: var(--sp-3);
+  }
+  h1 {
+    margin: 0 0 var(--sp-2);
+  }
+  .lede {
+    font-size: var(--fs-lg);
+  }
+</style>
