@@ -8,6 +8,7 @@
 
 pub mod federation;
 pub mod federation_feed;
+pub mod notifications;
 pub mod parlamentar_activity;
 pub mod worker;
 

@@ -1,0 +1,13 @@
+---
+// Hashtag timeline page. Query string carries the tag (?nome=<name>) —
+// same SSG pattern as /publicacao and /perfil.
+import AppShellLayout from '../layouts/AppShellLayout.astro';
+import HashtagTimeline from '../components/islands/HashtagTimeline.svelte';
+
+const description =
+  'Publicações agrupadas por hashtag, cruzando DemocraciaBR e o fediverso.';
+---
+
+<AppShellLayout title="Hashtag" {description} noindex>
+  <HashtagTimeline client:load />
+</AppShellLayout>

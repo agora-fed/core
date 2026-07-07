@@ -530,6 +530,36 @@ export const getThreadContext = (uri: string) =>
     `/api/v1/notes/context?uri=${encodeURIComponent(uri)}`,
   );
 
+/** One notification item as returned by `/api/v1/me/notifications`. */
+export interface NotificationDto {
+  id: string;
+  kind: 'mention' | 'reply' | 'favourite' | 'reblog' | 'follow';
+  source_actor_url: string | null;
+  source_handle: string;
+  source_display_name: string | null;
+  source_avatar_url: string | null;
+  object_uri: string | null;
+  object_preview: string | null;
+  created_at: string;
+  read: boolean;
+}
+
+/** In-app notifications feed for the authenticated citizen. */
+export const getMyNotifications = (limit = 30, offset = 0) =>
+  apiGetCredentialed<{ items: NotificationDto[]; unread_count: number }>(
+    `/api/v1/me/notifications?limit=${limit}&offset=${offset}`,
+  );
+
+/** Mark every unread notification as read. */
+export const clearMyNotifications = () =>
+  apiPost<{ cleared: number }>('/api/v1/me/notifications/clear', {});
+
+/** Public hashtag timeline. Returns the items indexed under `#name`. */
+export const getHashtagTimeline = (name: string, limit = 30, offset = 0) =>
+  apiGetCredentialed<{ tag: string; items: FeedItemDto[] }>(
+    `/api/v1/timelines/tag/${encodeURIComponent(name)}?limit=${limit}&offset=${offset}`,
+  );
+
 /** Federated feed of the authenticated citizen (own notes + followed actors). */
 export const getMyFeed = (limit = 30, offset = 0) =>
   apiGetCredentialed<FeedItemDto[]>(

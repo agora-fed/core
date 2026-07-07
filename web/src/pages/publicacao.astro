@@ -1,0 +1,14 @@
+---
+// Single-status thread view. SSG limits us to a fixed page — the target URI
+// arrives as ?uri=<encoded>. The ThreadView island reads it client-side and
+// calls /api/v1/notes/context. Same pattern as /perfil?u=… and /convite?token=…
+import AppShellLayout from '../layouts/AppShellLayout.astro';
+import ThreadView from '../components/islands/ThreadView.svelte';
+
+const description =
+  'Uma publicação no fediverso da DemocraciaBR, com todas as suas respostas.';
+---
+
+<AppShellLayout title="Publicação" {description} noindex>
+  <ThreadView client:load />
+</AppShellLayout>

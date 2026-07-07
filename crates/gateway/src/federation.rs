@@ -38,6 +38,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::federation_feed;
+use crate::notifications;
 
 const ACTIVITY_JSON: &str = "application/activity+json";
 const JRD_JSON: &str = "application/jrd+json";
@@ -77,7 +78,10 @@ pub fn client_routes(state: AppState) -> Router<()> {
         .route("/me/feed", get(get_my_feed))
         .route("/me/like", post(toggle_like))
         .route("/me/boost", post(toggle_boost))
+        .route("/me/notifications", get(get_my_notifications))
+        .route("/me/notifications/clear", post(clear_my_notifications))
         .route("/notes/context", get(get_thread_context))
+        .route("/timelines/tag/{name}", get(get_hashtag_timeline))
         .with_state(state)
 }
 
@@ -325,6 +329,29 @@ async fn inbox_post(
             tracing::error!(error = ?err, "failed to record inbound follow");
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
+        // 0.18.0-beta: user-facing follow notification for the receiver.
+        {
+            let source_handle = remote_handle_of(&signer_actor, &signer_actor_url);
+            let display_name = signer_actor.get("name").and_then(Value::as_str);
+            let avatar_url = signer_actor
+                .get("icon")
+                .and_then(|i| i.get("url"))
+                .and_then(Value::as_str);
+            let _ = notifications::insert(
+                &state.db,
+                notifications::NewNotification {
+                    citizen_id: citizen.as_uuid(),
+                    kind: "follow",
+                    source_actor_url: Some(&signer_actor_url),
+                    source_handle: &source_handle,
+                    source_display_name: display_name,
+                    source_avatar_url: avatar_url,
+                    object_uri: None,
+                    object_preview: None,
+                },
+            )
+            .await;
+        }
 
         // Build, sign, and post the Accept.
         let me_url = actor_id(&host, &handle);
@@ -374,7 +401,7 @@ async fn inbox_post(
         handle_inbox_create(&state, &signer_actor, &signer_actor_url, &activity).await;
     } else if kind == "Like" || kind == "Announce" {
         // Remote reaction over one of OUR objects → upsert (re-delivery is a no-op).
-        handle_inbox_reaction(&state, &signer_actor_url, kind, &activity_id, &activity).await;
+        handle_inbox_reaction(&state, &signer_actor, &signer_actor_url, kind, &activity_id, &activity).await;
     } else if kind == "Undo" {
         // Undo Follow → the remote unfollowed us. Verify the inner object is a Follow whose
         // actor is the same as the Undo's signer (don't let one user undo another's follow),
@@ -762,15 +789,76 @@ async fn post_my_note(
         )
         .await
     {
-        Ok((activity_id, fanout)) => (
-            StatusCode::ACCEPTED,
-            Json(ApiResponse::ok(json!({
-                "activity_id": activity_id,
-                "fanout_count": fanout,
-                "status": "queued",
-            }))),
-        )
-            .into_response(),
+        Ok((activity_id, fanout)) => {
+            // 0.18.0-beta: fire in-app notifications for local recipients.
+            // (a) reply-to-local: if the parent's owner is a local citizen, ping them.
+            // (b) mention-to-local: for each extracted mention whose actor URL points at
+            //     our origin, ping the matching citizen. Skip self-notifications.
+            let object_id = activity_id.replace("/activities/note-", "/objects/");
+            let preview = notifications::preview_from_html(&body.content);
+            let sender_handle = me.handle.clone().unwrap_or_else(|| me.public_handle.clone());
+            let sender_display = me.display_name.clone();
+            let sender_avatar = me.avatar_url.clone();
+            if let Some(reply_uri) = body.in_reply_to_uri.as_deref().filter(|s| !s.is_empty()) {
+                if let Ok(Some(owner_id)) =
+                    notifications::find_owner_of_object(&state.db, reply_uri).await
+                {
+                    if owner_id != caller.citizen.as_uuid() {
+                        let _ = notifications::insert(
+                            &state.db,
+                            notifications::NewNotification {
+                                citizen_id: owner_id,
+                                kind: "reply",
+                                source_actor_url: Some(&me_url),
+                                source_handle: &sender_handle,
+                                source_display_name: sender_display.as_deref(),
+                                source_avatar_url: sender_avatar.as_deref(),
+                                object_uri: Some(&object_id),
+                                object_preview: Some(&preview),
+                            },
+                        )
+                        .await;
+                    }
+                }
+            }
+            for m in dsoc_federation::extract_mentions(&body.content) {
+                let target_url = m.best_actor_url(&public_origin);
+                if let Ok(Some(mentioned_id)) =
+                    notifications::find_local_citizen_by_actor_url(
+                        &state.db,
+                        &target_url,
+                        &public_origin,
+                    )
+                    .await
+                {
+                    if mentioned_id != caller.citizen.as_uuid() {
+                        let _ = notifications::insert(
+                            &state.db,
+                            notifications::NewNotification {
+                                citizen_id: mentioned_id,
+                                kind: "mention",
+                                source_actor_url: Some(&me_url),
+                                source_handle: &sender_handle,
+                                source_display_name: sender_display.as_deref(),
+                                source_avatar_url: sender_avatar.as_deref(),
+                                object_uri: Some(&object_id),
+                                object_preview: Some(&preview),
+                            },
+                        )
+                        .await;
+                    }
+                }
+            }
+            (
+                StatusCode::ACCEPTED,
+                Json(ApiResponse::ok(json!({
+                    "activity_id": activity_id,
+                    "fanout_count": fanout,
+                    "status": "queued",
+                }))),
+            )
+                .into_response()
+        }
         Err(dsoc_core::Error::Validation(msg)) => client_error(&msg),
         Err(err) => {
             tracing::error!(error = ?err, "create_public_note failed");
@@ -788,6 +876,116 @@ async fn post_my_note(
 struct FeedQuery {
     limit: Option<i64>,
     offset: Option<i64>,
+}
+
+/// Query for `GET /api/v1/me/notifications?limit&offset`.
+#[derive(Debug, Deserialize)]
+struct NotifQuery {
+    limit: Option<i64>,
+    offset: Option<i64>,
+}
+
+/// `GET /api/v1/me/notifications` — the citizen's in-app notification feed
+/// (mention/reply/favourite/reblog/follow). Newest first, paginated.
+async fn get_my_notifications(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Query(query): Query<NotifQuery>,
+) -> Response {
+    let limit = query.limit.unwrap_or(30).clamp(1, 50);
+    let offset = query.offset.unwrap_or(0).max(0);
+    match notifications::list_for_citizen(
+        &state.db,
+        caller.citizen.as_uuid(),
+        limit,
+        offset,
+    )
+    .await
+    {
+        Ok(items) => {
+            let unread = notifications::unread_count(&state.db, caller.citizen.as_uuid())
+                .await
+                .unwrap_or(0);
+            (
+                StatusCode::OK,
+                Json(ApiResponse::ok(json!({
+                    "items": items,
+                    "unread_count": unread,
+                }))),
+            )
+                .into_response()
+        }
+        Err(err) => {
+            tracing::error!(error = ?err, "notifications query failed");
+            server_error()
+        }
+    }
+}
+
+/// `POST /api/v1/me/notifications/clear` — mark every unread notification as read.
+async fn clear_my_notifications(
+    State(state): State<AppState>,
+    caller: CallerId,
+) -> Response {
+    match notifications::mark_all_read(&state.db, caller.citizen.as_uuid()).await {
+        Ok(n) => (StatusCode::OK, Json(ApiResponse::ok(json!({ "cleared": n })))).into_response(),
+        Err(err) => {
+            tracing::error!(error = ?err, "notifications clear failed");
+            server_error()
+        }
+    }
+}
+
+/// Query for hashtag timeline (`GET /api/v1/timelines/tag/{name}?limit&offset`).
+#[derive(Debug, Deserialize)]
+struct HashtagQuery {
+    limit: Option<i64>,
+    offset: Option<i64>,
+}
+
+/// `GET /api/v1/timelines/tag/{name}` — public timeline of Notes indexed under
+/// `#name` (normalized). Open to unauthenticated callers so the tag page can
+/// be shared as a link.
+async fn get_hashtag_timeline(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+    Query(query): Query<HashtagQuery>,
+) -> Response {
+    let limit = query.limit.unwrap_or(30).clamp(1, 50);
+    let offset = query.offset.unwrap_or(0).max(0);
+    // Normalize the incoming tag the same way the extractor does — so `#Saúde`
+    // and `saude` collide (and match the stored `tag_normalized`).
+    let normalized = dsoc_federation::extract_hashtags(&format!("#{name}"))
+        .into_iter()
+        .next()
+        .map(|h| h.normalized)
+        .unwrap_or_else(|| name.to_lowercase());
+    if normalized.is_empty() {
+        return client_error("hashtag inválida");
+    }
+    let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+    match federation_feed::list_hashtag_timeline(
+        &state.db,
+        &normalized,
+        &media_base,
+        limit,
+        offset,
+    )
+    .await
+    {
+        Ok(items) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(json!({
+                "tag": normalized,
+                "items": items,
+            }))),
+        )
+            .into_response(),
+        Err(err) => {
+            tracing::error!(error = ?err, "hashtag timeline query failed");
+            server_error()
+        }
+    }
 }
 
 /// Query for `GET /api/v1/notes/context?uri=`.
@@ -1162,6 +1360,32 @@ async fn handle_inbox_create(
         return;
     }
     tracing::info!(actor = %signer_actor_url, object_uri, "remote Note stored in timeline");
+    // 0.18.0-beta: user-facing notifications for local recipients of this remote Note.
+    // (a) reply to one of OUR objects → notify the object's owner.
+    // (b) mention pointing at a local actor URL → notify that citizen.
+    let po = public_origin();
+    let preview = notifications::preview_from_html(&content);
+    let src_handle = remote_handle_of(signer_actor, signer_actor_url);
+    if let Some(reply_uri) = in_reply_to {
+        if let Ok(Some(owner_id)) =
+            notifications::find_owner_of_object(&state.db, reply_uri).await
+        {
+            let _ = notifications::insert(
+                &state.db,
+                notifications::NewNotification {
+                    citizen_id: owner_id,
+                    kind: "reply",
+                    source_actor_url: Some(signer_actor_url),
+                    source_handle: &src_handle,
+                    source_display_name: display_name,
+                    source_avatar_url: avatar_url,
+                    object_uri: Some(object_uri),
+                    object_preview: Some(&preview),
+                },
+            )
+            .await;
+        }
+    }
     // Index #hashtags and @mentions carried in the AP `tag[]` array. Falls back to text
     // extraction from `content` if the remote omitted the array (older Pleroma versions).
     let now = chrono::Utc::now();
@@ -1183,6 +1407,26 @@ async fn handle_inbox_create(
                             now,
                         )
                         .await;
+                        // If the mention resolves to a local citizen, notify them.
+                        if let Ok(Some(mentioned_id)) =
+                            notifications::find_local_citizen_by_actor_url(&state.db, href, &po)
+                                .await
+                        {
+                            let _ = notifications::insert(
+                                &state.db,
+                                notifications::NewNotification {
+                                    citizen_id: mentioned_id,
+                                    kind: "mention",
+                                    source_actor_url: Some(signer_actor_url),
+                                    source_handle: &src_handle,
+                                    source_display_name: display_name,
+                                    source_avatar_url: avatar_url,
+                                    object_uri: Some(object_uri),
+                                    object_preview: Some(&preview),
+                                },
+                            )
+                            .await;
+                        }
                     }
                 }
                 "Hashtag" => {
@@ -1241,6 +1485,7 @@ async fn handle_inbox_create(
 /// Inbox side of `Like` / `Announce`: record a remote reaction over one of OUR objects.
 async fn handle_inbox_reaction(
     state: &AppState,
+    signer_actor: &Value,
     signer_actor_url: &str,
     kind: &str,
     activity_id: &str,
@@ -1273,8 +1518,32 @@ async fn handle_inbox_reaction(
     .await
     {
         tracing::error!(error = ?err, "failed to store remote reaction");
-    } else {
-        tracing::info!(remote = %signer_actor_url, db_kind, object_uri = %object_uri, "remote reaction stored");
+        return;
+    }
+    tracing::info!(remote = %signer_actor_url, db_kind, object_uri = %object_uri, "remote reaction stored");
+    // 0.18.0-beta: user-facing notification for the object's owner.
+    let notif_kind = if kind == "Like" { "favourite" } else { "reblog" };
+    if let Ok(Some(owner_id)) = notifications::find_owner_of_object(&state.db, &object_uri).await {
+        let handle = remote_handle_of(signer_actor, signer_actor_url);
+        let display_name = signer_actor.get("name").and_then(Value::as_str);
+        let avatar_url = signer_actor
+            .get("icon")
+            .and_then(|i| i.get("url"))
+            .and_then(Value::as_str);
+        let _ = notifications::insert(
+            &state.db,
+            notifications::NewNotification {
+                citizen_id: owner_id,
+                kind: notif_kind,
+                source_actor_url: Some(signer_actor_url),
+                source_handle: &handle,
+                source_display_name: display_name,
+                source_avatar_url: avatar_url,
+                object_uri: Some(&object_uri),
+                object_preview: None,
+            },
+        )
+        .await;
     }
 }
 

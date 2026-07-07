@@ -1,0 +1,14 @@
+---
+// Notificações do usuário logado (mention/reply/favourite/reblog/follow).
+// AppShellLayout para consistência com /feed. CSR pura — a lista vem de
+// GET /api/v1/me/notifications (cookie HttpOnly).
+import AppShellLayout from '../layouts/AppShellLayout.astro';
+import NotificationsFeed from '../components/islands/NotificationsFeed.svelte';
+
+const description =
+  'Quem curtiu, repostou, respondeu, mencionou ou começou a seguir você — do fediverso inteiro.';
+---
+
+<AppShellLayout title="Notificações" {description} noindex active="notifs">
+  <NotificationsFeed client:load />
+</AppShellLayout>

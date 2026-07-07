@@ -243,6 +243,89 @@ pub async fn upsert_timeline_entry(
     Ok(())
 }
 
+/// Public timeline of Notes tagged with a hashtag. Returns local outbox
+/// entries + remote timeline entries whose `object_uri` is indexed under
+/// `tag_normalized`. Public (no citizen scoping): `liked_by_me`/`boosted_by_me`
+/// always come back false.
+pub async fn list_hashtag_timeline(
+    db: &PgPool,
+    tag_normalized: &str,
+    media_base_url: &str,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<FeedItemDto>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, FeedRow>(
+        r"
+        WITH tag_uris AS (
+            SELECT object_uri FROM note_hashtag WHERE tag_normalized = $1
+        )
+        SELECT feed.object_uri,
+               feed.author_handle,
+               feed.author_display_name,
+               feed.author_avatar_url,
+               feed.content_html,
+               feed.published_at,
+               feed.is_remote,
+               feed.in_reply_to_uri,
+               feed.sensitive,
+               feed.spoiler_text,
+               (SELECT count(*) FROM federation_reaction r
+                 WHERE r.object_uri = feed.object_uri AND r.kind = 'like')
+             + (SELECT count(*) FROM federation_remote_reaction rr
+                 WHERE rr.object_uri = feed.object_uri AND rr.kind = 'like')  AS like_count,
+               (SELECT count(*) FROM federation_reaction r
+                 WHERE r.object_uri = feed.object_uri AND r.kind = 'boost')
+             + (SELECT count(*) FROM federation_remote_reaction rr
+                 WHERE rr.object_uri = feed.object_uri AND rr.kind = 'boost') AS boost_count,
+               false AS liked_by_me,
+               false AS boosted_by_me
+          FROM (
+                SELECT COALESCE(oe.payload->'object'->>'id', oe.activity_id) AS object_uri,
+                       '@' || COALESCE(c.handle, 'u-' || replace(c.id::text, '-', ''))
+                                                                             AS author_handle,
+                       c.display_name                                        AS author_display_name,
+                       CASE WHEN c.avatar_object_key IS NOT NULL AND $2 <> ''
+                            THEN $2 || '/' || c.avatar_object_key END        AS author_avatar_url,
+                       COALESCE(oe.payload->'object'->>'content', '')        AS content_html,
+                       oe.created_at                                         AS published_at,
+                       false                                                 AS is_remote,
+                       oe.in_reply_to_uri                                    AS in_reply_to_uri,
+                       oe.sensitive                                          AS sensitive,
+                       oe.spoiler_text                                       AS spoiler_text
+                  FROM federation_outbox_entry oe
+                  JOIN citizen c ON c.id = oe.citizen_id
+                 WHERE oe.kind = 'Create'
+                   AND oe.deleted_at IS NULL
+                   AND COALESCE(oe.payload->'object'->>'id', oe.activity_id)
+                       IN (SELECT object_uri FROM tag_uris)
+                UNION ALL
+                SELECT t.object_uri,
+                       t.actor_handle,
+                       t.actor_display_name,
+                       t.actor_avatar_url,
+                       t.content_html,
+                       t.published_at,
+                       true,
+                       t.in_reply_to_uri,
+                       t.sensitive,
+                       t.spoiler_text
+                  FROM federation_timeline_entry t
+                 WHERE t.deleted_at IS NULL
+                   AND t.object_uri IN (SELECT object_uri FROM tag_uris)
+               ) AS feed
+         ORDER BY feed.published_at DESC
+         LIMIT $3 OFFSET $4
+        ",
+    )
+    .bind(tag_normalized)
+    .bind(media_base_url.trim_end_matches('/'))
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(db)
+    .await?;
+    Ok(rows.into_iter().map(FeedItemDto::from).collect())
+}
+
 /// Persist an extracted hashtag reference (idempotent). Mirrors
 /// `dsoc_auth::queries::insert_note_hashtag` but callable from the gateway inbox handler
 /// (which does not depend on the auth crate).
