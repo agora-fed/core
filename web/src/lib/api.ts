@@ -77,15 +77,34 @@ export async function apiGet<T>(
       headers: { accept: 'application/json', ...(init?.headers ?? {}) },
       signal: controller.signal,
     });
-    const body = (await res.json()) as ApiResponse<T>;
-    if (!res.ok || !body.success) {
-      return {
-        ok: false,
-        data: null,
-        error: body.error?.message ?? 'Não foi possível carregar os dados.',
-      };
+    // Parse defensively: framework-level 4xx/5xx (e.g. a 400 from the axum
+    // Query extractor) often comes back as text/plain, not the ApiResponse
+    // envelope. Try JSON first; on failure treat as a plain HTTP error so
+    // "response body wasn't JSON" doesn't masquerade as a network outage.
+    const text = await res.text();
+    let body: ApiResponse<T> | null = null;
+    try {
+      body = JSON.parse(text) as ApiResponse<T>;
+    } catch {
+      /* not JSON — fall through */
     }
-    return { ok: true, data: body.data, error: null };
+    if (body && 'success' in body) {
+      if (!res.ok || !body.success) {
+        return {
+          ok: false,
+          data: null,
+          error: body.error?.message ?? 'Não foi possível carregar os dados.',
+        };
+      }
+      return { ok: true, data: body.data, error: null };
+    }
+    return {
+      ok: false,
+      data: null,
+      error: res.ok
+        ? 'Resposta inesperada do servidor.'
+        : 'Não foi possível carregar. Tente novamente em instantes.',
+    };
   } catch {
     return {
       ok: false,
@@ -232,11 +251,15 @@ export const getProposal = (id: string) =>
 export const getScorecards = (orgId = DEFAULT_ORG_ID, limit = 50) =>
   apiGet<ScorecardDto[]>(`/api/v1/scorecards${orgQuery(orgId, `&limit=${limit}`)}`);
 
-export const getScorecard = (mandateId: string) =>
-  apiGet<ScorecardDto>(`/api/v1/scorecards/${encodeURIComponent(mandateId)}`);
+export const getScorecard = (mandateId: string, orgId = DEFAULT_ORG_ID) =>
+  apiGet<ScorecardDto>(
+    `/api/v1/scorecards/${encodeURIComponent(mandateId)}${orgQuery(orgId)}`,
+  );
 
-export const getMandate = (mandateId: string) =>
-  apiGet<MandateDto>(`/api/v1/mandates/${encodeURIComponent(mandateId)}`);
+export const getMandate = (mandateId: string, orgId = DEFAULT_ORG_ID) =>
+  apiGet<MandateDto>(
+    `/api/v1/mandates/${encodeURIComponent(mandateId)}${orgQuery(orgId)}`,
+  );
 
 /** Normalized public activity for a mandate (proxy Câmara/Senado). Always OK with empty
  *  sections when the mandate has no linked house profile or an upstream fails. */
