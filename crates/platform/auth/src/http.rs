@@ -110,6 +110,15 @@ fn build_zitadel(
     ZitadelAuth::new(db, clock, bus, validator_from_env(), session_ttl_secs)
 }
 
+/// Public convenience — build a `ZitadelAuth` service from an `AppState`.
+/// The gateway's Mastodon Client API layer uses this for the OAuth password
+/// grant (`POST /oauth/token`); the login path only needs db + clock, so the
+/// (possibly-unconfigured) OIDC validator is fine.
+#[must_use]
+pub fn zitadel_from_state(state: &AppState) -> ZitadelAuth {
+    build_zitadel(state.db.clone(), state.clock.clone(), state.bus.clone())
+}
+
 /// Construct the shared [`dsoc_core::Authorization`] port (for `AppState.authz`) from env config.
 /// The gateway injects this so every crate can call `authz.require(...)`; the verification-level
 /// checks only read the database, so they work regardless of OIDC reachability.

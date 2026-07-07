@@ -9,6 +9,9 @@
 pub mod discovery;
 pub mod federation;
 pub mod federation_feed;
+pub mod mastodon_api;
+pub mod mastodon_dto;
+pub mod mastodon_oauth;
 pub mod note_media;
 pub mod notifications;
 pub mod parlamentar_activity;
@@ -34,26 +37,50 @@ async fn openapi() -> Json<serde_json::Value> {
     Json(doc)
 }
 
-/// Auth middleware: resolve the `dsoc_session` cookie to the caller's identity and inject the
-/// standard headers downstream handlers expect (`x-dsoc-citizen-id`/`x-dsoc-org-id`, plus
-/// `x-citizen-id` for admin). Anonymous requests pass through with no headers added.
+/// Auth middleware: resolve the `dsoc_session` cookie OR the
+/// `Authorization: Bearer <token>` header (Mastodon Client API) to the
+/// caller's identity, then inject the standard downstream headers
+/// (`x-dsoc-citizen-id` / `x-dsoc-org-id`, plus `x-citizen-id` for admin).
+/// Anonymous requests pass through with no headers added.
 async fn inject_identity(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
-    let session_id = req
+    // First: cookie session (the site's own flow).
+    let mut resolved: Option<(Uuid, Uuid)> = req
         .headers()
         .get(header::COOKIE)
         .and_then(|v| v.to_str().ok())
         .and_then(|c| cookie_value(c, "dsoc_session"))
-        .and_then(|s| Uuid::parse_str(s).ok());
-    if let Some(sid) = session_id {
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .and_then(|sid| Some((sid, ())))
+        .map(|(sid, ())| sid)
+        .and_then(|_sid| None::<(Uuid, Uuid)>); // placeholder — resolved async below
+    if let Some(sid) = req
+        .headers()
+        .get(header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|c| cookie_value(c, "dsoc_session"))
+        .and_then(|s| Uuid::parse_str(s).ok())
+    {
         if let Ok(Some((citizen, org))) = dsoc_auth::session_identity(&state.db, sid).await {
-            let headers = req.headers_mut();
-            if let Ok(v) = HeaderValue::from_str(&citizen.to_string()) {
-                headers.insert("x-dsoc-citizen-id", v.clone());
-                headers.insert("x-citizen-id", v);
-            }
-            if let Ok(v) = HeaderValue::from_str(&org.to_string()) {
-                headers.insert("x-dsoc-org-id", v);
-            }
+            resolved = Some((citizen, org));
+        }
+    }
+    // Second: Mastodon-compatible Bearer token. Only checked when cookie
+    // didn't resolve (cookies win for the site's own web).
+    if resolved.is_none() {
+        if let Some((citizen, org)) =
+            crate::mastodon_api::resolve_bearer_to_headers(&state, req.headers()).await
+        {
+            resolved = Some((citizen, org));
+        }
+    }
+    if let Some((citizen, org)) = resolved {
+        let headers = req.headers_mut();
+        if let Ok(v) = HeaderValue::from_str(&citizen.to_string()) {
+            headers.insert("x-dsoc-citizen-id", v.clone());
+            headers.insert("x-citizen-id", v);
+        }
+        if let Ok(v) = HeaderValue::from_str(&org.to_string()) {
+            headers.insert("x-dsoc-org-id", v);
         }
     }
     next.run(req).await
@@ -104,6 +131,10 @@ pub fn api_router(state: AppState) -> Router {
         // Federation client surface: `/federation/lookup`, `/me/follow` — see ADR-0010 W2.4.
         // Goes UNDER the same `/api/v1` prefix so the cookie/identity middleware below covers it.
         .merge(federation::client_routes(state.clone()))
+        // Mastodon Client API compat (Ivory / Elk / Ice Cubes / Tusky /
+        // custom scripts). Same prefix; the Mastodon paths don't collide
+        // with ours. Auth is bearer OR cookie (see `inject_identity`).
+        .merge(mastodon_api::masto_routes(state.clone()))
         .layer(middleware::from_fn_with_state(state.clone(), inject_identity));
 
     // Serve the static DemocraciaBR front-end (Astro SSG, ADR-0009) at the same origin as the API
@@ -117,12 +148,14 @@ pub fn api_router(state: AppState) -> Router {
     // surface — what the front uses to look up + follow remote actors — is merged INTO `api`
     // above so the cookie/identity middleware covers it.)
     let federation_public = federation::public_routes(state.clone());
+    let oauth = mastodon_api::oauth_routes(state.clone());
 
     Router::new()
         .route("/health", get(health))
         .route("/openapi.json", get(openapi))
         .nest("/api/v1", api)
         .merge(federation_public)
+        .merge(oauth)
         .fallback_service(static_site)
 }
 
