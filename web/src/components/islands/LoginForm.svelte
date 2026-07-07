@@ -1,6 +1,10 @@
 <script lang="ts">
   // Login: e-mail + senha. On success the gateway sets a session cookie.
   import { login } from '../../lib/api';
+  import Input from '../ui/Input.svelte';
+  import Button from '../ui/Button.svelte';
+  import Alert from '../ui/Alert.svelte';
+  import Icon from '../ui/Icon.svelte';
 
   let email = $state('');
   let password = $state('');
@@ -38,41 +42,51 @@
 </script>
 
 <form class="auth-form" onsubmit={submit} novalidate>
-  <div class="field">
-    <label for="l-email">E-mail</label>
-    <input
-      id="l-email"
-      class="input"
-      type="email"
-      autocomplete="email"
-      bind:value={email}
-      aria-invalid={email.length > 0 && !emailValid}
-      required
-    />
-  </div>
+  <Input
+    id="l-email"
+    label="E-mail"
+    type="email"
+    autocomplete="email"
+    bind:value={email}
+    required
+    leading={emailIcon}
+    error={email.length > 0 && !emailValid
+      ? 'Endereço de e-mail inválido.'
+      : undefined}
+  />
 
-  <div class="field">
-    <label for="l-password">Senha</label>
-    <input
-      id="l-password"
-      class="input"
-      type="password"
-      autocomplete="current-password"
-      bind:value={password}
-      required
-    />
-  </div>
+  <Input
+    id="l-password"
+    label="Senha"
+    type="password"
+    autocomplete="current-password"
+    bind:value={password}
+    required
+    leading={lockIcon}
+  />
 
-  <button
-    class="btn btn-primary btn-lg block"
+  {#snippet emailIcon()}
+    <Icon name="at" size={16} />
+  {/snippet}
+  {#snippet lockIcon()}
+    <Icon name="lock" size={16} />
+  {/snippet}
+
+  <Button
     type="submit"
-    disabled={!valid || busy}
+    variant="primary"
+    size="lg"
+    fullWidth
+    loading={busy}
+    disabled={!valid}
   >
-    {busy ? 'Entrando…' : 'Entrar'}
-  </button>
+    Entrar
+  </Button>
 
   {#if serverError}
-    <p class="note error" role="alert">{serverError}</p>
+    <div class="err">
+      <Alert tone="danger">{serverError}</Alert>
+    </div>
   {/if}
 
   <p class="alt muted">
@@ -87,19 +101,20 @@
   .auth-form {
     display: block;
   }
-  .block {
-    width: 100%;
-  }
-  .note {
-    margin: 0.85rem 0 0;
-    font-size: 0.92rem;
-  }
-  .note.error {
-    color: var(--c-ignored);
+  .err {
+    margin-top: var(--sp-3);
   }
   .alt {
-    margin-top: 1rem;
+    margin-top: var(--sp-3);
     text-align: center;
-    font-size: 0.95rem;
+    font-size: var(--fs-sm);
+    color: var(--text-3);
+  }
+  .alt a {
+    color: var(--accent);
+    font-weight: var(--fw-medium);
+  }
+  .alt a:hover {
+    color: var(--accent-strong);
   }
 </style>

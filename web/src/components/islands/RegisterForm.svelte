@@ -1,10 +1,12 @@
 <script lang="ts">
-  // Registration: e-mail + senha + CPF, with client-side CPF check-digit validation.
-  // F1.3: toggle Cidadão | Político/Candidata. In politician mode the user picks their
-  // mandate from a searchable list; on submit we hit /auth/register/politician which
-  // enforces `email == mandate.public_email` server-side. F1.4 kicks in automatically:
-  // the server sets is_public=true + writes the identity binding.
-  import { onMount } from 'svelte';
+  // Registration: e-mail + senha + CPF, with client-side CPF check-digit
+  // validation. Toggle Cidadão | Político/Candidata. In politician mode the
+  // user picks their mandate from a searchable list; on submit we hit
+  // /auth/register/politician which enforces `email == mandate.public_email`
+  // server-side.
+  //
+  // 0.17.0: form fields now use ui/Input, ui/Button, ui/Alert, ui/Avatar,
+  // ui/Icon. Role picker and mandate picker keep custom layouts but use tokens.
   import {
     register,
     registerPolitician,
@@ -13,6 +15,11 @@
     type MandateDto,
   } from '../../lib/api';
   import { formatCpf, isValidCpf, onlyDigits } from '../../lib/cpf';
+  import Input from '../ui/Input.svelte';
+  import Button from '../ui/Button.svelte';
+  import Alert from '../ui/Alert.svelte';
+  import Avatar from '../ui/Avatar.svelte';
+  import Icon from '../ui/Icon.svelte';
 
   type Role = 'cidadao' | 'politico';
 
@@ -35,13 +42,12 @@
   let passwordValid = $derived(password.length >= 8);
   let cpfValid = $derived(isValidCpf(cpf));
   let valid = $derived(
-    emailValid
-      && passwordValid
-      && cpfValid
-      && (role === 'cidadao' || selectedMandate !== null),
+    emailValid &&
+      passwordValid &&
+      cpfValid &&
+      (role === 'cidadao' || selectedMandate !== null),
   );
 
-  // Filtered candidates for the mandate picker.
   let mandateResults = $derived.by(() => {
     const q = mandateSearch.trim().toLowerCase();
     if (q.length < 2) return [] as MandateDto[];
@@ -71,9 +77,6 @@
     selectedMandate = m;
     mandateSearch = m.display_name;
     mandateListOpen = false;
-    // Auto-fill the e-mail with the public_email so the check on the server passes.
-    // The user can still edit it if they know a different address is on file, but 99% of
-    // the time this saves a lookup.
     if (m.public_email && !email) email = m.public_email;
   }
 
@@ -89,9 +92,15 @@
     serverError = null;
     busy = true;
 
-    const res = role === 'politico' && selectedMandate
-      ? await registerPolitician(email, password, onlyDigits(cpf), selectedMandate.id)
-      : await register(email, password, onlyDigits(cpf));
+    const res =
+      role === 'politico' && selectedMandate
+        ? await registerPolitician(
+            email,
+            password,
+            onlyDigits(cpf),
+            selectedMandate.id,
+          )
+        : await register(email, password, onlyDigits(cpf));
     busy = false;
 
     if (res.success) {
@@ -105,8 +114,8 @@
           /* storage may be blocked; session cookie still set */
         }
       }
-      // Politicians land straight in their painel; citizens go through the welcome page.
-      window.location.href = role === 'politico' ? '/painel-mandato' : '/bem-vinda';
+      window.location.href =
+        role === 'politico' ? '/painel-mandato' : '/bem-vinda';
     } else {
       serverError =
         res.error?.message ??
@@ -117,23 +126,31 @@
 
 <form class="auth-form" onsubmit={submit} novalidate>
   <fieldset class="role-picker" aria-label="Tipo de conta">
-    <legend class="muted role-legend">Você está entrando como</legend>
+    <legend class="role-legend">Você está entrando como</legend>
     <div class="role-tabs">
       <button
         type="button"
-        class={`role-tab ${role === 'cidadao' ? 'active' : ''}`}
+        class="role-tab"
+        class:active={role === 'cidadao'}
         onclick={() => switchRole('cidadao')}
       >
-        <strong>Cidadã(o)</strong>
-        <span class="muted role-hint">Propor, votar, cobrar</span>
+        <span class="role-ic"><Icon name="users" size={20} /></span>
+        <span>
+          <strong>Cidadã(o)</strong>
+          <span class="role-hint">Propor, votar, cobrar</span>
+        </span>
       </button>
       <button
         type="button"
-        class={`role-tab ${role === 'politico' ? 'active' : ''}`}
+        class="role-tab"
+        class:active={role === 'politico'}
         onclick={() => switchRole('politico')}
       >
-        <strong>Político(a) / Candidata(o)</strong>
-        <span class="muted role-hint">Responder, prestar contas</span>
+        <span class="role-ic"><Icon name="mandate" size={20} /></span>
+        <span>
+          <strong>Político(a) / Candidata(o)</strong>
+          <span class="role-hint">Responder, prestar contas</span>
+        </span>
       </button>
     </div>
   </fieldset>
@@ -143,9 +160,11 @@
       <label for="r-mandate">Seu mandato</label>
       {#if selectedMandate}
         <div class="selected-mandate">
-          {#if selectedMandate.avatar_url}
-            <img class="mandate-avatar" src={selectedMandate.avatar_url} alt="" />
-          {/if}
+          <Avatar
+            src={selectedMandate.avatar_url}
+            name={selectedMandate.display_name}
+            size="sm"
+          />
           <div class="selected-meta">
             <strong>{selectedMandate.display_name}</strong>
             <span class="muted">
@@ -161,7 +180,9 @@
               mandateSearch = '';
               mandateListOpen = true;
             }}
-          >trocar</button>
+          >
+            trocar
+          </button>
         </div>
       {:else}
         <input
@@ -183,11 +204,7 @@
                   class="mandate-option"
                   onclick={() => pickMandate(m)}
                 >
-                  {#if m.avatar_url}
-                    <img class="mandate-avatar" src={m.avatar_url} alt="" loading="lazy" />
-                  {:else}
-                    <span class="mandate-avatar mandate-avatar-ph">👤</span>
-                  {/if}
+                  <Avatar src={m.avatar_url} name={m.display_name} size="sm" />
                   <span class="mandate-option-meta">
                     <strong>{m.display_name}</strong>
                     <span class="muted">
@@ -203,92 +220,80 @@
         {/if}
       {/if}
       <p class="hint muted">
-        Use o e-mail oficial do gabinete cadastrado na Câmara/Senado/TSE — é assim
-        que confirmamos que o mandato é seu.
+        Use o e-mail oficial do gabinete cadastrado na Câmara/Senado/TSE — é
+        assim que confirmamos que o mandato é seu.
       </p>
     </div>
   {/if}
 
-  <div class="field">
-    <label for="r-email">E-mail</label>
-    <input
-      id="r-email"
-      class="input"
-      type="email"
-      autocomplete="email"
-      bind:value={email}
-      aria-invalid={email.length > 0 && !emailValid}
-      required
-    />
-    {#if email.length > 0 && !emailValid}
-      <p class="hint hint-error">Informe um e-mail válido.</p>
-    {/if}
-  </div>
+  <Input
+    id="r-email"
+    label="E-mail"
+    type="email"
+    autocomplete="email"
+    bind:value={email}
+    required
+    leading={atIcon}
+    error={email.length > 0 && !emailValid
+      ? 'Informe um e-mail válido.'
+      : undefined}
+  />
 
-  <div class="field">
-    <label for="r-password">Senha</label>
-    <input
-      id="r-password"
-      class="input"
-      type="password"
-      autocomplete="new-password"
-      bind:value={password}
-      aria-invalid={password.length > 0 && !passwordValid}
-      aria-describedby="r-pass-hint"
-      required
-    />
-    <p
-      id="r-pass-hint"
-      class={`hint ${password.length > 0 && !passwordValid ? 'hint-error' : 'muted'}`}
-    >
-      Mínimo de 8 caracteres.
-    </p>
-  </div>
+  <Input
+    id="r-password"
+    label="Senha"
+    type="password"
+    autocomplete="new-password"
+    bind:value={password}
+    required
+    leading={lockIcon}
+    hint="Mínimo de 8 caracteres."
+    error={password.length > 0 && !passwordValid
+      ? 'A senha precisa ter pelo menos 8 caracteres.'
+      : undefined}
+  />
 
-  <div class="field">
-    <label for="r-cpf">CPF</label>
-    <input
-      id="r-cpf"
-      class="input"
-      type="text"
-      inputmode="numeric"
-      autocomplete="off"
-      value={cpf}
-      oninput={onCpfInput}
-      onblur={() => (cpfTouched = true)}
-      aria-invalid={cpfTouched && cpf.length > 0 && !cpfValid}
-      aria-describedby="r-cpf-hint"
-      placeholder="000.000.000-00"
-      maxlength="14"
-      required
-    />
-    {#if cpf.length > 0 && cpfValid}
-      <p id="r-cpf-hint" class="hint hint-ok">✓ CPF válido.</p>
-    {:else if (cpfTouched || onlyDigits(cpf).length === 11) && cpf.length > 0}
-      <p id="r-cpf-hint" class="hint hint-error">
-        CPF inválido. Verifique os dígitos.
-      </p>
-    {:else}
-      <p id="r-cpf-hint" class="hint muted">
-        Usado apenas para verificar a sua identidade cívica.
-      </p>
-    {/if}
-  </div>
+  <Input
+    id="r-cpf"
+    label="CPF"
+    placeholder="000.000.000-00"
+    autocomplete="off"
+    inputmode="numeric"
+    maxlength={14}
+    bind:value={cpf}
+    oninput={onCpfInput}
+    onblur={() => (cpfTouched = true)}
+    required
+    hint={cpf.length > 0 && cpfValid
+      ? '✓ CPF válido.'
+      : 'Usado apenas para verificar a sua identidade cívica.'}
+    error={(cpfTouched || onlyDigits(cpf).length === 11) &&
+    cpf.length > 0 &&
+    !cpfValid
+      ? 'CPF inválido. Verifique os dígitos.'
+      : undefined}
+  />
 
-  <button
-    class="btn btn-primary btn-lg block"
+  {#snippet atIcon()}<Icon name="at" size={16} />{/snippet}
+  {#snippet lockIcon()}<Icon name="lock" size={16} />{/snippet}
+
+  <Button
     type="submit"
-    disabled={!valid || busy}
+    variant="primary"
+    size="lg"
+    fullWidth
+    loading={busy}
+    disabled={!valid}
   >
-    {busy
-      ? 'Criando conta…'
-      : role === 'politico'
-        ? 'Criar conta e assumir o mandato'
-        : 'Criar minha conta'}
-  </button>
+    {role === 'politico'
+      ? 'Criar conta e assumir o mandato'
+      : 'Criar minha conta'}
+  </Button>
 
   {#if serverError}
-    <p class="note error" role="alert">{serverError}</p>
+    <div class="err">
+      <Alert tone="danger">{serverError}</Alert>
+    </div>
   {/if}
 
   <p class="alt muted">
@@ -300,148 +305,178 @@
   .auth-form {
     display: block;
   }
-  .block {
-    width: 100%;
-  }
-  .note {
-    margin: 0.85rem 0 0;
-    font-size: 0.92rem;
-  }
-  .note.error {
-    color: var(--c-ignored);
+  .err {
+    margin-top: var(--sp-3);
   }
   .alt {
-    margin-top: 1rem;
+    margin-top: var(--sp-3);
     text-align: center;
-    font-size: 0.95rem;
+    font-size: var(--fs-sm);
+    color: var(--text-3);
+  }
+  .alt a {
+    color: var(--accent);
+    font-weight: var(--fw-medium);
   }
   .role-picker {
     border: none;
     padding: 0;
-    margin: 0 0 1.2rem;
+    margin: 0 0 var(--sp-5);
   }
   .role-legend {
-    font-size: 0.85rem;
-    margin-bottom: 0.4rem;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-3);
+    margin-bottom: var(--sp-2);
     padding: 0;
   }
   .role-tabs {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 0.5rem;
+    gap: var(--sp-2);
   }
   .role-tab {
     display: flex;
-    flex-direction: column;
     align-items: flex-start;
-    padding: 0.7rem 0.85rem;
-    background: var(--c-paper);
-    border: 1px solid var(--c-border);
-    border-radius: 8px;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-4);
+    background: var(--surface-1);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-base);
     cursor: pointer;
     font-family: inherit;
     text-align: left;
-    gap: 0.15rem;
-    color: var(--c-text);
+    color: var(--text-1);
+    transition:
+      background var(--dur-fast) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out);
+  }
+  .role-tab > span:last-child {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
   .role-tab:hover {
-    background: var(--c-bg);
+    background: var(--surface-2);
   }
   .role-tab.active {
-    background: var(--c-green-soft);
-    border-color: var(--c-green-dark);
+    background: var(--accent-soft);
+    border-color: var(--accent);
+  }
+  .role-tab.active .role-ic {
+    color: var(--accent);
+  }
+  .role-ic {
+    color: var(--text-3);
+    display: inline-flex;
+    padding-top: 2px;
   }
   .role-tab strong {
-    font-size: 0.95rem;
+    font-size: var(--fs-sm);
   }
   .role-hint {
-    font-size: 0.8rem;
+    font-size: var(--fs-xs);
+    color: var(--text-3);
+  }
+  @media (max-width: 480px) {
+    .role-tabs {
+      grid-template-columns: 1fr;
+    }
+  }
+  .field {
+    display: block;
+    margin-bottom: var(--sp-4);
+  }
+  .field > label {
+    display: block;
+    font-weight: var(--fw-semibold);
+    font-size: var(--fs-sm);
+    margin-bottom: var(--sp-1);
+    color: var(--text-1);
   }
   .mandate-list {
     list-style: none;
     padding: 0;
-    margin: 0.3rem 0 0;
-    border: 1px solid var(--c-border);
-    border-radius: 8px;
+    margin: var(--sp-1) 0 0;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-sm);
     max-height: 260px;
     overflow-y: auto;
-    background: var(--c-paper);
+    background: var(--surface-1);
+    box-shadow: var(--shadow-sm);
   }
   .mandate-option {
     display: flex;
-    gap: 0.6rem;
+    gap: var(--sp-3);
     align-items: center;
     width: 100%;
-    padding: 0.55rem 0.7rem;
+    padding: var(--sp-2) var(--sp-3);
     background: transparent;
     border: none;
-    border-bottom: 1px solid var(--c-border);
+    border-bottom: 1px solid var(--border-subtle);
     cursor: pointer;
     text-align: left;
     font-family: inherit;
-    color: var(--c-text);
+    color: var(--text-1);
+    transition: background var(--dur-fast) var(--ease-out);
   }
   .mandate-option:last-child {
     border-bottom: none;
   }
   .mandate-option:hover,
   .mandate-option:focus {
-    background: var(--c-bg);
+    background: var(--surface-2);
   }
   .mandate-option-meta {
     display: grid;
-    gap: 0.1rem;
+    gap: 2px;
     min-width: 0;
   }
   .mandate-option-meta strong {
-    font-size: 0.95rem;
+    font-size: var(--fs-sm);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .mandate-option-meta span {
-    font-size: 0.82rem;
-  }
-  .mandate-avatar {
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    object-fit: cover;
-    flex-shrink: 0;
-    background: var(--c-bg);
-  }
-  .mandate-avatar-ph {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1rem;
+    font-size: var(--fs-xs);
   }
   .selected-mandate {
     display: flex;
-    gap: 0.6rem;
+    gap: var(--sp-3);
     align-items: center;
-    padding: 0.6rem 0.7rem;
-    background: var(--c-green-soft);
-    border: 1px solid var(--c-green-dark);
-    border-radius: 8px;
+    padding: var(--sp-3) var(--sp-4);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: var(--r-sm);
   }
   .selected-meta {
     display: grid;
-    gap: 0.1rem;
+    gap: 2px;
     min-width: 0;
     flex: 1;
   }
+  .selected-meta strong {
+    color: var(--text-1);
+    font-size: var(--fs-sm);
+  }
   .selected-meta span {
-    font-size: 0.82rem;
+    font-size: var(--fs-xs);
   }
   .btn-link {
     background: none;
     border: none;
-    color: var(--c-green-dark);
+    color: var(--accent-strong);
     text-decoration: underline;
     cursor: pointer;
     padding: 0;
     font-family: inherit;
-    font-size: 0.85rem;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
+  }
+  .muted {
+    color: var(--text-3);
   }
 </style>

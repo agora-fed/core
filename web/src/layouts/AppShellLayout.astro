@@ -1,0 +1,77 @@
+---
+// 3-column shell layout for social/dynamic pages (feed, notificações, buscar,
+// explorar, tag, publicação). Reuses BaseLayout for head/header/footer and
+// wraps the slot in a grid: left rail | main | right rail.
+// On narrow viewports the rails hide and BottomNav takes over.
+import BaseLayout from './BaseLayout.astro';
+import LeftRail from '../components/shell/LeftRail.svelte';
+import RightRail from '../components/shell/RightRail.svelte';
+import BottomNav from '../components/shell/BottomNav.svelte';
+
+export interface Props {
+  title: string;
+  description: string;
+  image?: string;
+  canonical?: string;
+  noindex?: boolean;
+  /** Which left-rail item to highlight. */
+  active?: string;
+}
+
+const { active, ...base } = Astro.props;
+---
+
+<BaseLayout {...base}>
+  <div class="shell">
+    <div class="col left">
+      <LeftRail client:load {active} />
+    </div>
+    <div class="col center">
+      <slot />
+    </div>
+    <div class="col right">
+      <RightRail client:visible />
+    </div>
+  </div>
+  <BottomNav client:load />
+</BaseLayout>
+
+<style>
+  .shell {
+    max-width: 90rem;
+    margin: 0 auto;
+    padding: 0 var(--sp-4);
+    display: grid;
+    grid-template-columns: 260px 1fr 320px;
+    gap: var(--sp-6);
+    align-items: start;
+  }
+  .col {
+    min-width: 0;
+  }
+  .center {
+    padding: var(--sp-4) 0 var(--sp-16);
+  }
+  @media (max-width: 1180px) {
+    .shell {
+      grid-template-columns: 220px 1fr;
+      max-width: 60rem;
+    }
+    .right {
+      display: none;
+    }
+  }
+  @media (max-width: 920px) {
+    .shell {
+      display: block;
+      max-width: 42rem;
+      padding: 0 var(--sp-4) 88px;
+    }
+    .left {
+      display: none;
+    }
+    .center {
+      padding: var(--sp-4) 0;
+    }
+  }
+</style>

@@ -1,8 +1,11 @@
 ---
-// Feed federado do cidadão (notas próprias + de quem segue, locais e do fediverso).
-// SSG + ilha CSR: a página estática carrega instantânea; a ilha detecta a sessão e
-// hidrata o feed via GET /api/v1/me/feed (cookie HttpOnly).
-import BaseLayout from '../layouts/BaseLayout.astro';
+// Feed federado do cidadão (notas próprias + de quem segue, locais e do
+// fediverso). SSG + ilha CSR: a página estática carrega instantânea; a ilha
+// detecta a sessão e hidrata o feed via GET /api/v1/me/feed.
+//
+// 0.17.0: passou a usar AppShellLayout (3-col desktop + bottom-nav mobile),
+// alinhado ao padrão Mastodon/Decidim junction.
+import AppShellLayout from '../layouts/AppShellLayout.astro';
 import ColorBar from '../components/illustrations/ColorBar.astro';
 import Feed from '../components/islands/Feed.svelte';
 
@@ -10,38 +13,31 @@ const description =
   'Seu feed na DemocraciaBR: notas suas e das pessoas que você segue — aqui e em qualquer instância do fediverso.';
 ---
 
-<BaseLayout title="Feed" {description} noindex>
-  <section class="section">
-    <div class="container feed-shell">
-      <header class="page-head">
-        <ColorBar class="head-bar" />
-        <h1>Seu feed</h1>
-        <p class="muted lede">
-          Publicações suas e de quem você segue — na DemocraciaBR e no
-          fediverso (Mastodon e outras instâncias).
-        </p>
-      </header>
-      <Feed client:load />
-    </div>
-  </section>
-</BaseLayout>
+<AppShellLayout title="Feed" {description} noindex active="feed">
+  <header class="page-head">
+    <ColorBar class="head-bar" />
+    <h1>Seu feed</h1>
+    <p class="muted lede">
+      Publicações suas e de quem você segue — na DemocraciaBR e no fediverso
+      (Mastodon e outras instâncias).
+    </p>
+  </header>
+  <Feed client:load />
+</AppShellLayout>
 
 <style>
-  .feed-shell {
-    max-width: 40rem;
-  }
   .page-head {
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--sp-5);
   }
   .head-bar {
-    margin-bottom: 0.9rem;
+    margin-bottom: var(--sp-3);
   }
   h1 {
-    margin-bottom: 0.35rem;
-    font-size: clamp(1.7rem, 4.5vw, 2.4rem);
+    margin-bottom: var(--sp-1);
+    font-size: clamp(1.7rem, 4.5vw, var(--fs-4xl));
   }
   .lede {
-    font-size: 1.02rem;
+    font-size: var(--fs-md);
     margin: 0;
   }
 </style>

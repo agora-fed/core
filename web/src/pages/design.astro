@@ -1,0 +1,12 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import DesignCatalog from '../components/islands/DesignCatalog.svelte';
+---
+
+<BaseLayout
+  title="Design System"
+  description="Catálogo interno de primitivos visuais do DemocraciaBR."
+  noindex
+>
+  <DesignCatalog client:load />
+</BaseLayout>

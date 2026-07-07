@@ -9,6 +9,7 @@
   // show as a label anymore.
   import { onMount } from 'svelte';
   import { getMyProfile } from '../../lib/api';
+  import ThemeToggle from './ThemeToggle.svelte';
 
   let name = $state<string | null>(null);
   let avatar = $state<string | null>(null);
@@ -122,11 +123,17 @@
           <a class="item" href="/configuracoes#fediverso">Fediverso — buscar e seguir</a>
           <hr class="sep" />
           <a class="item" href="/configuracoes">Configurações</a>
+          <div class="theme-row">
+            <span class="theme-label">Tema</span>
+            <ThemeToggle />
+          </div>
+          <hr class="sep" />
           <button class="item item-button" type="button" onclick={logout}>Sair</button>
         </nav>
       {/if}
     </div>
   {:else}
+    <ThemeToggle />
     <a href="/entrar" class="btn btn-ghost">Entrar</a>
     <a href="/cadastrar" class="btn btn-primary">Criar conta</a>
   {/if}
@@ -140,31 +147,32 @@
   .trigger {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--sp-2);
     max-width: 16rem;
-    padding: 0.3rem 0.55rem;
+    padding: var(--sp-1) var(--sp-2);
     border: none;
-    border-radius: 999px;
+    border-radius: var(--r-full);
     background: transparent;
     cursor: pointer;
     font: inherit;
-    color: var(--c-text-muted);
-    font-size: 0.9rem;
+    color: var(--text-3);
+    font-size: var(--fs-sm);
+    transition: background var(--dur-fast) var(--ease-out);
   }
   .trigger:hover,
   .trigger[aria-expanded='true'] {
-    background: var(--c-bg);
+    background: var(--surface-2);
   }
   .name {
-    color: var(--c-navy);
-    font-weight: 600;
+    color: var(--text-1);
+    font-weight: var(--fw-semibold);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .caret {
     font-size: 0.7rem;
-    color: var(--c-text-muted);
+    color: var(--text-3);
   }
   .avatar {
     width: 28px;
@@ -177,14 +185,14 @@
     width: 28px;
     height: 28px;
     border-radius: 50%;
-    background: var(--c-green-soft);
-    color: var(--c-green-dark);
+    background: var(--accent-soft);
+    color: var(--accent-strong);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    font-size: 0.85rem;
-    font-weight: 700;
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-bold);
   }
 
   .menu {
@@ -192,35 +200,36 @@
     top: calc(100% + 6px);
     right: 0;
     min-width: 15rem;
-    background: var(--c-paper);
-    border: 1px solid var(--c-border);
-    border-radius: 12px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-    padding: 0.4rem;
+    background: var(--surface-1);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-base);
+    box-shadow: var(--shadow-lg);
+    padding: var(--sp-1);
     display: flex;
     flex-direction: column;
     z-index: 60;
   }
   .menu-kicker {
-    margin: 0.2rem 0.6rem 0.15rem;
-    font-size: 0.72rem;
-    font-weight: 700;
+    margin: var(--sp-1) var(--sp-2) 2px;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-bold);
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--c-text-muted);
+    color: var(--text-3);
   }
   .item {
     display: block;
-    padding: 0.55rem 0.6rem;
-    border-radius: 8px;
+    padding: var(--sp-2) var(--sp-2);
+    border-radius: var(--r-sm);
     text-decoration: none;
-    color: var(--c-navy);
-    font-size: 0.95rem;
-    font-weight: 500;
+    color: var(--text-1);
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-medium);
     text-align: left;
+    transition: background var(--dur-fast) var(--ease-out);
   }
   .item:hover {
-    background: var(--c-bg);
+    background: var(--surface-2);
   }
   .item-button {
     border: none;
@@ -228,12 +237,24 @@
     cursor: pointer;
     font: inherit;
     width: 100%;
-    color: var(--c-red, #b3261e);
+    color: var(--danger);
   }
   .sep {
     border: none;
-    border-top: 1px solid var(--c-border);
-    margin: 0.3rem 0.2rem;
+    border-top: 1px solid var(--border-subtle);
+    margin: var(--sp-1) var(--sp-1);
+  }
+  .theme-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    padding: var(--sp-2) var(--sp-2);
+  }
+  .theme-label {
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-medium);
+    color: var(--text-2);
   }
   .btn {
     padding: 0.55rem 1rem;
@@ -255,9 +276,9 @@
       position: static;
       box-shadow: none;
       border: none;
-      border-top: 1px solid var(--c-border);
+      border-top: 1px solid var(--border-subtle);
       border-radius: 0;
-      padding: 0.3rem 0 0;
+      padding: var(--sp-1) 0 0;
       min-width: 0;
     }
   }

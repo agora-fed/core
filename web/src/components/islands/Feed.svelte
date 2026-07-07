@@ -1,15 +1,26 @@
 <script lang="ts">
-  // Feed federado do cidadão autenticado: notas próprias + de quem ele segue (locais e remotas).
-  // CSR puro (o site é SSG): sessão detectada pelo mesmo marcador que o AuthMenu usa
-  // (localStorage `dsoc_citizen`; o cookie HttpOnly é a credencial real e vai junto no fetch).
-  // Reações (Favoritar/Republicar) fazem toggle OTIMISTA: a UI muda na hora e reverte se a
-  // API falhar. `content_html` vem de instâncias remotas → sanitizado antes de {@html}.
+  // Feed federado do cidadão autenticado: notas próprias + de quem ele segue
+  // (locais e remotas). CSR puro. Reações (Favoritar/Republicar) fazem toggle
+  // OTIMISTA: a UI muda na hora e reverte se a API falhar. `content_html` vem
+  // de instâncias remotas → sanitizado antes de {@html}.
+  //
+  // 0.17.0: adotou a biblioteca ui/* (Card, Button, Avatar, Badge, Icon,
+  // Skeleton, EmptyState, ErrorState) e escreve erros via toast.
   import { onMount } from 'svelte';
   import { getMyFeed, toggleLike, toggleBoost } from '../../lib/api';
   import type { FeedItemDto } from '../../lib/types';
   import { sanitizeNoteHtml } from '../../lib/sanitize';
   import { formatRelative, formatDate } from '../../lib/format';
+  import { toast } from '../../lib/toasts';
   import NoteComposer from './NoteComposer.svelte';
+  import Card from '../ui/Card.svelte';
+  import Button from '../ui/Button.svelte';
+  import Avatar from '../ui/Avatar.svelte';
+  import Badge from '../ui/Badge.svelte';
+  import Icon from '../ui/Icon.svelte';
+  import Skeleton from '../ui/Skeleton.svelte';
+  import EmptyState from '../ui/EmptyState.svelte';
+  import ErrorState from '../ui/ErrorState.svelte';
 
   const PAGE = 20;
 
@@ -19,7 +30,6 @@
   let loadingMore = $state(false);
   let items = $state<FeedItemDto[]>([]);
   let loadError = $state<string | null>(null);
-  let actionError = $state<string | null>(null);
   let hasMore = $state(false);
   let offset = 0;
   // Reações em voo, chaveadas por `${kind}:${uri}` — trava o botão certo, não o card todo.
@@ -50,7 +60,6 @@
   async function loadMore() {
     if (loadingMore || !hasMore) return;
     loadingMore = true;
-    actionError = null;
     const res = await getMyFeed(PAGE, offset);
     loadingMore = false;
     if (res.success && res.data) {
@@ -60,7 +69,7 @@
       offset += res.data.length;
       hasMore = res.data.length === PAGE;
     } else {
-      actionError = res.error?.message ?? 'Não foi possível carregar mais notas.';
+      toast.error(res.error?.message ?? 'Não foi possível carregar mais notas.');
     }
   }
 
@@ -82,7 +91,6 @@
     const key = `like:${item.object_uri}`;
     if (inFlight.has(key)) return;
     inFlight = new Set(inFlight).add(key);
-    actionError = null;
     const before = { liked_by_me: item.liked_by_me, like_count: item.like_count };
     patch(item.object_uri, {
       liked_by_me: !item.liked_by_me,
@@ -96,7 +104,7 @@
       });
     } else {
       patch(item.object_uri, before);
-      actionError = res.error?.message ?? 'Não foi possível favoritar agora.';
+      toast.error(res.error?.message ?? 'Não foi possível favoritar agora.');
     }
     const next = new Set(inFlight);
     next.delete(key);
@@ -107,7 +115,6 @@
     const key = `boost:${item.object_uri}`;
     if (inFlight.has(key)) return;
     inFlight = new Set(inFlight).add(key);
-    actionError = null;
     const before = { boosted_by_me: item.boosted_by_me, boost_count: item.boost_count };
     patch(item.object_uri, {
       boosted_by_me: !item.boosted_by_me,
@@ -121,97 +128,96 @@
       });
     } else {
       patch(item.object_uri, before);
-      actionError = res.error?.message ?? 'Não foi possível republicar agora.';
+      toast.error(res.error?.message ?? 'Não foi possível republicar agora.');
     }
     const next = new Set(inFlight);
     next.delete(key);
     inFlight = next;
   }
-
-  function initials(item: FeedItemDto): string {
-    const src = item.author_display_name ?? item.author_handle;
-    return (src.replace(/^@/, '').charAt(0) || '?').toUpperCase();
-  }
 </script>
 
 {#if !ready}
-  <!-- SSG manda HTML estático: nada até ler o storage, evitando flash de "entre" pra logados. -->
   <p class="muted" aria-hidden="true">Carregando…</p>
 {:else if !loggedIn}
-  <div class="card gate">
-    <h2>Entre para ver seu feed</h2>
-    <p class="muted">
-      O feed reúne suas notas e as das pessoas que você segue — aqui e em
-      qualquer instância do fediverso.
-    </p>
-    <div class="gate-cta">
-      <a class="btn btn-primary" href="/entrar">Entrar</a>
-      <a class="btn btn-ghost" href="/cadastrar">Criar conta</a>
+  <Card padding="none">
+    <div class="gate">
+      <Icon name="feed" size={40} />
+      <h2>Entre para ver seu feed</h2>
+      <p>
+        O feed reúne suas notas e as das pessoas que você segue — aqui e em
+        qualquer instância do fediverso.
+      </p>
+      <div class="gate-cta">
+        <Button href="/entrar" variant="primary">Entrar</Button>
+        <Button href="/cadastrar" variant="ghost">Criar conta</Button>
+      </div>
     </div>
-  </div>
+  </Card>
 {:else}
-  <div class="card composer-card">
-    <NoteComposer variant="feed" onposted={loadFirstPage} />
+  <div class="composer">
+    <Card>
+      <NoteComposer variant="feed" onposted={loadFirstPage} />
+    </Card>
   </div>
-
-  {#if actionError}
-    <p class="hint hint-error" role="alert">{actionError}</p>
-  {/if}
 
   {#if loading}
-    <div class="skeletons" aria-label="Carregando o feed…">
+    <div class="skeletons">
       {#each [0, 1, 2] as i (i)}
-        <div class="card note sk">
+        <Card>
           <div class="sk-head">
-            <span class="sk-avatar"></span>
-            <span class="sk-line w40"></span>
+            <Skeleton variant="circle" width="44px" />
+            <div style="flex:1">
+              <Skeleton width="40%" />
+              <Skeleton width="25%" />
+            </div>
           </div>
-          <span class="sk-line w90"></span>
-          <span class="sk-line w70"></span>
-        </div>
+          <Skeleton lines={2} />
+        </Card>
       {/each}
     </div>
   {:else if loadError}
-    <div class="card state" role="alert">
-      <h2>Não deu para carregar o feed</h2>
-      <p class="muted">{loadError}</p>
-      <button class="btn btn-ghost" type="button" onclick={loadFirstPage}>
-        Tentar de novo
-      </button>
-    </div>
+    <ErrorState
+      title="Não deu para carregar o feed"
+      message={loadError}
+      retry={loadFirstPage}
+    />
   {:else if items.length === 0}
-    <div class="card state">
-      <h2>Seu feed está vazio</h2>
-      <p class="muted">
-        Publique sua primeira nota acima — ou siga alguém no fediverso para
-        ver as publicações aqui.
-      </p>
-      <a class="btn btn-primary" href="/configuracoes">Encontrar pessoas</a>
-    </div>
+    <Card padding="none">
+      <EmptyState
+        icon="feed"
+        title="Seu feed está vazio"
+        description="Publique sua primeira nota acima — ou siga alguém no fediverso para ver as publicações aqui."
+        action={emptyAction}
+      />
+    </Card>
+    {#snippet emptyAction()}
+      <Button href="/configuracoes" variant="primary">Encontrar pessoas</Button>
+    {/snippet}
   {:else}
     <ol class="notes" aria-label="Notas do seu feed">
       {#each items as item (item.object_uri)}
         <li>
-          <article class="card note">
+          <Card as="article">
             <header class="note-head">
-              {#if item.author_avatar_url}
-                <img class="avatar" src={item.author_avatar_url} alt="" loading="lazy" />
-              {:else}
-                <span class="avatar avatar-fallback" aria-hidden="true">{initials(item)}</span>
-              {/if}
+              <Avatar
+                src={item.author_avatar_url}
+                name={item.author_display_name ?? item.author_handle}
+                alt=""
+                size="base"
+              />
               <div class="who">
                 <span class="who-line">
                   <strong class="name">
                     {item.author_display_name ?? item.author_handle}
                   </strong>
                   {#if item.is_remote}
-                    <span class="badge-remote" title="Publicado em outra instância do fediverso">
-                      fediverso
-                    </span>
+                    <Badge tone="info" size="sm">fediverso</Badge>
                   {/if}
                 </span>
                 <span class="handle muted">
-                  {item.author_handle.startsWith('@') ? item.author_handle : `@${item.author_handle}`}
+                  {item.author_handle.startsWith('@')
+                    ? item.author_handle
+                    : `@${item.author_handle}`}
                 </span>
               </div>
               <time
@@ -231,7 +237,9 @@
             <footer class="reactions">
               <button
                 type="button"
-                class={`react ${item.liked_by_me ? 'on like-on' : ''}`}
+                class="react"
+                class:on={item.liked_by_me}
+                class:like-on={item.liked_by_me}
                 aria-pressed={item.liked_by_me}
                 aria-label={item.liked_by_me
                   ? `Remover favorito (${item.like_count})`
@@ -239,13 +247,18 @@
                 disabled={inFlight.has(`like:${item.object_uri}`)}
                 onclick={() => onLike(item)}
               >
-                <span class="ic" aria-hidden="true">{item.liked_by_me ? '★' : '☆'}</span>
+                <Icon
+                  name={item.liked_by_me ? 'heart-fill' : 'heart'}
+                  size={18}
+                />
                 <span class="lbl">Favoritar</span>
                 <span class="cnt">{item.like_count}</span>
               </button>
               <button
                 type="button"
-                class={`react ${item.boosted_by_me ? 'on boost-on' : ''}`}
+                class="react"
+                class:on={item.boosted_by_me}
+                class:boost-on={item.boosted_by_me}
                 aria-pressed={item.boosted_by_me}
                 aria-label={item.boosted_by_me
                   ? `Desfazer republicação (${item.boost_count})`
@@ -253,259 +266,208 @@
                 disabled={inFlight.has(`boost:${item.object_uri}`)}
                 onclick={() => onBoost(item)}
               >
-                <span class="ic" aria-hidden="true">⇄</span>
+                <Icon name="boost" size={18} />
                 <span class="lbl">Republicar</span>
                 <span class="cnt">{item.boost_count}</span>
               </button>
+              <button
+                type="button"
+                class="react"
+                aria-label="Responder"
+                disabled
+                title="Em breve"
+              >
+                <Icon name="reply" size={18} />
+                <span class="lbl">Responder</span>
+              </button>
             </footer>
-          </article>
+          </Card>
         </li>
       {/each}
     </ol>
 
     {#if hasMore}
       <div class="more">
-        <button
-          class="btn btn-ghost"
-          type="button"
+        <Button
+          variant="ghost"
           onclick={loadMore}
-          disabled={loadingMore}
+          loading={loadingMore}
         >
-          {loadingMore ? 'Carregando…' : 'Carregar mais'}
-        </button>
+          Carregar mais
+        </Button>
       </div>
     {/if}
   {/if}
 {/if}
 
 <style>
-  .gate,
-  .state {
+  .gate {
     text-align: center;
-    padding: 2.5rem 1.5rem;
+    padding: var(--sp-10) var(--sp-6);
+    color: var(--text-2);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-3);
   }
-  .gate h2,
-  .state h2 {
-    font-size: 1.25rem;
-    margin-bottom: 0.4rem;
+  .gate > :global(svg) {
+    color: var(--text-3);
+    background: var(--surface-2);
+    padding: var(--sp-3);
+    border-radius: 50%;
+    box-sizing: content-box;
+  }
+  .gate h2 {
+    font-size: var(--fs-xl);
+    margin: 0;
+    color: var(--text-1);
+  }
+  .gate p {
+    max-width: 32rem;
+    margin: 0;
+    color: var(--text-3);
   }
   .gate-cta {
     display: flex;
-    gap: 0.6rem;
+    gap: var(--sp-2);
     justify-content: center;
     flex-wrap: wrap;
-    margin-top: 1rem;
+    margin-top: var(--sp-2);
   }
-  .state .btn {
-    margin-top: 0.5rem;
+  .composer {
+    margin-bottom: var(--sp-4);
   }
-
-  .composer-card {
-    margin-bottom: 1.25rem;
-  }
-
   .notes {
     list-style: none;
     padding: 0;
     margin: 0;
     display: grid;
-    gap: 0.85rem;
+    gap: var(--sp-3);
   }
-  .note {
-    padding: 1rem 1.15rem;
-  }
-
   .note-head {
     display: flex;
     align-items: center;
-    gap: 0.7rem;
-    margin-bottom: 0.65rem;
-  }
-  .avatar {
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    object-fit: cover;
-    background: var(--c-bg);
-    flex-shrink: 0;
-  }
-  .avatar-fallback {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 700;
-    font-size: 1.05rem;
-    color: var(--c-green-dark);
-    background: var(--c-green-soft);
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-3);
   }
   .who {
     min-width: 0;
     flex: 1;
     display: grid;
-    gap: 0.05rem;
+    gap: 2px;
   }
   .who-line {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--sp-2);
     min-width: 0;
   }
   .name {
-    font-size: 0.98rem;
+    font-size: var(--fs-md);
+    color: var(--text-1);
     line-height: 1.25;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .badge-remote {
-    flex-shrink: 0;
-    font-size: 0.68rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--c-acted);
-    background: #eff4ff;
-    border: 1px solid #cdd9f7;
-    border-radius: 999px;
-    padding: 0.05rem 0.5rem;
-  }
   .handle {
-    font-size: 0.82rem;
+    font-size: var(--fs-sm);
+    color: var(--text-3);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .when {
     flex-shrink: 0;
-    font-size: 0.8rem;
+    font-size: var(--fs-xs);
+    color: var(--text-3);
     align-self: flex-start;
-    margin-top: 0.15rem;
+    margin-top: 2px;
   }
 
   .content {
-    line-height: 1.55;
+    line-height: var(--lh-base);
     overflow-wrap: anywhere;
+    color: var(--text-1);
   }
   .content :global(p) {
-    margin: 0 0 0.6rem;
+    margin: 0 0 var(--sp-2);
   }
   .content :global(p:last-child) {
     margin-bottom: 0;
   }
   .content :global(a) {
-    color: var(--c-green-dark);
+    color: var(--accent);
+  }
+  .content :global(a:hover) {
+    color: var(--accent-strong);
   }
 
   .reactions {
     display: flex;
-    gap: 0.5rem;
-    margin-top: 0.8rem;
-    padding-top: 0.7rem;
-    border-top: 1px solid var(--c-border);
+    gap: var(--sp-1);
+    margin-top: var(--sp-3);
+    padding-top: var(--sp-3);
+    border-top: 1px solid var(--border-subtle);
   }
   .react {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--sp-2);
     font: inherit;
-    font-size: 0.88rem;
-    font-weight: 500;
-    color: var(--c-text-muted);
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-medium);
+    color: var(--text-3);
     background: transparent;
     border: 1px solid transparent;
-    border-radius: 999px;
-    padding: 0.35rem 0.75rem;
+    border-radius: var(--r-full);
+    padding: var(--sp-1) var(--sp-3);
     cursor: pointer;
-    transition: background 120ms ease, color 120ms ease;
+    transition:
+      background var(--dur-fast) var(--ease-out),
+      color var(--dur-fast) var(--ease-out);
   }
-  .react:hover {
-    background: var(--c-bg);
-    color: var(--c-navy);
+  .react:hover:not(:disabled) {
+    background: var(--surface-2);
+    color: var(--text-1);
   }
   .react:disabled {
-    opacity: 0.55;
-    cursor: wait;
-  }
-  .react .ic {
-    font-size: 1.05rem;
-    line-height: 1;
+    opacity: 0.5;
+    cursor: not-allowed;
   }
   .react .cnt {
     font-variant-numeric: tabular-nums;
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
   }
   .react.like-on {
-    color: var(--c-pending);
-    background: #fff7ed;
-    border-color: #fde5c8;
+    color: var(--danger);
+    background: var(--danger-soft);
   }
   .react.boost-on {
-    color: var(--c-green-dark);
-    background: var(--c-green-soft);
-    border-color: #c8e5d3;
+    color: var(--accent);
+    background: var(--accent-soft);
   }
 
   .more {
     display: flex;
     justify-content: center;
-    margin-top: 1.25rem;
+    margin-top: var(--sp-5);
   }
 
-  /* Skeleton loading — leve, some com prefers-reduced-motion (transição global já zera). */
   .skeletons {
     display: grid;
-    gap: 0.85rem;
+    gap: var(--sp-3);
   }
   .sk-head {
     display: flex;
     align-items: center;
-    gap: 0.7rem;
-    margin-bottom: 0.8rem;
-  }
-  .sk-avatar {
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    background: var(--c-bg);
-    flex-shrink: 0;
-  }
-  .sk-line {
-    display: block;
-    height: 0.8rem;
-    border-radius: 6px;
-    background: var(--c-bg);
-    margin-bottom: 0.45rem;
-    animation: pulse 1.4s ease-in-out infinite;
-  }
-  .w40 {
-    width: 40%;
-    margin-bottom: 0;
-  }
-  .w90 {
-    width: 90%;
-  }
-  .w70 {
-    width: 70%;
-  }
-  @keyframes pulse {
-    0%,
-    100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.55;
-    }
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-3);
   }
 
   @media (max-width: 420px) {
-    .note {
-      padding: 0.85rem 0.9rem;
-    }
     .react .lbl {
-      display: none; /* só ícone + contador em telas mínimas; aria-label mantém o nome */
-    }
-    .react {
-      padding: 0.35rem 0.65rem;
+      display: none;
     }
   }
 </style>

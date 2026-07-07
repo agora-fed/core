@@ -1,15 +1,13 @@
 ---
-// Site header — collapses into a hamburger drawer on small screens so the four nav links plus the
-// auth menu (avatar + handle + sair) never stack/overflow on a phone. The drawer is a pure CSS
-// peer-checkbox pattern: no JS needed, no flash of unstyled state, accessible via the label.
+// Site header — collapses into a hamburger drawer on small screens. Consumes
+// semantic tokens (--surface-*/--text-*/--accent) so it Just Works in dark
+// mode. Political nav only; social/fediverse lives inside AuthMenu.
 import AuthMenu from './islands/AuthMenu.svelte';
 
 const path = Astro.url.pathname;
 const isActive = (href: string) =>
   href === '/' ? path === '/' : path.startsWith(href);
 
-// Main nav is strictly the POLITICAL surface. The social/fediverse surface (Feed,
-// meu perfil, buscar no fediverso) lives in the profile dropdown (AuthMenu).
 const links = [
   { href: '/politicos', label: 'Políticos' },
   { href: '/partidos', label: 'Partidos' },
@@ -32,7 +30,6 @@ const links = [
       />
     </a>
 
-    <!-- Hamburger checkbox (peer of `.drawer`); only visible <920px. Defaults closed. -->
     <input id="menu-toggle" class="menu-toggle" type="checkbox" aria-hidden="true" />
     <label for="menu-toggle" class="menu-button" aria-label="Abrir menu">
       <span class="bars" aria-hidden="true">
@@ -42,7 +39,6 @@ const links = [
       </span>
     </label>
 
-    <!-- Drawer holds nav + auth on small screens; inline row on big screens. -->
     <div class="drawer">
       <nav aria-label="Navegação principal" class="nav">
         {
@@ -70,16 +66,17 @@ const links = [
 
 <style>
   .site-header {
-    background: var(--c-paper);
-    border-bottom: 1px solid var(--c-border);
+    background: var(--surface-1);
+    border-bottom: 1px solid var(--border-subtle);
     position: sticky;
     top: 0;
     z-index: 50;
+    transition: background var(--dur-base) var(--ease-out);
   }
   .bar {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: var(--sp-4);
     min-height: 64px;
   }
   .brand {
@@ -92,7 +89,6 @@ const links = [
     width: auto;
   }
 
-  /* Hamburger is invisible on desktop, the drawer renders inline. */
   .menu-toggle,
   .menu-button {
     display: none;
@@ -101,57 +97,62 @@ const links = [
   .drawer {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: var(--sp-4);
     flex: 1;
     justify-content: space-between;
   }
   .nav {
     display: flex;
-    gap: 0.35rem;
+    gap: var(--sp-1);
     flex-wrap: wrap;
     margin-inline-start: auto;
   }
   .nav-link {
     text-decoration: none;
-    color: var(--c-navy);
-    font-weight: 500;
-    padding: 0.45rem 0.7rem;
-    border-radius: 8px;
-    font-size: 0.96rem;
+    color: var(--text-2);
+    font-weight: var(--fw-medium);
+    padding: var(--sp-2) var(--sp-3);
+    border-radius: var(--r-sm);
+    font-size: var(--fs-sm);
+    transition:
+      background var(--dur-fast) var(--ease-out),
+      color var(--dur-fast) var(--ease-out);
   }
   .nav-link:hover {
-    background: var(--c-bg);
+    background: var(--surface-2);
+    color: var(--text-1);
   }
   .nav-link.active {
-    color: var(--c-green-dark);
-    background: var(--c-green-soft);
+    color: var(--accent-strong);
+    background: var(--accent-soft);
   }
   .nav-link.cta {
-    background: var(--c-green-dark);
-    color: white;
+    background: var(--accent);
+    color: var(--accent-contrast);
   }
   .nav-link.cta:hover {
-    background: var(--c-green-dark);
-    filter: brightness(1.1);
+    background: var(--accent-strong);
+    color: var(--accent-contrast);
+    filter: brightness(1.05);
   }
   .nav-link.cta.active {
-    background: var(--c-green-dark);
-    color: white;
-    box-shadow: inset 0 0 0 2px white, 0 0 0 2px var(--c-green-dark);
+    background: var(--accent-strong);
+    color: var(--accent-contrast);
+    box-shadow:
+      inset 0 0 0 2px var(--surface-1),
+      0 0 0 2px var(--accent-strong);
   }
   .actions {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--sp-2);
   }
   .actions :global(.btn) {
-    padding: 0.55rem 1rem;
-    font-size: 0.92rem;
+    padding: var(--sp-2) var(--sp-4);
+    font-size: var(--fs-sm);
   }
 
-  /* --- Mobile: hamburger pattern --------------------------------------------
-     Breakpoint em 920px: com 7 links + avatar/handle/sair, abaixo disso a linha
-     única quebrava feio antes de caber. */
+  /* Mobile ------------------------------------------------------------- */
   @media (max-width: 920px) {
     .menu-button {
       display: inline-flex;
@@ -160,13 +161,14 @@ const links = [
       width: 44px;
       height: 44px;
       margin-inline-start: auto;
-      border: 1px solid var(--c-border);
-      border-radius: 10px;
-      background: var(--c-paper);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--r-sm);
+      background: var(--surface-1);
+      color: var(--text-1);
       cursor: pointer;
     }
     .menu-button:hover {
-      background: var(--c-bg);
+      background: var(--surface-2);
     }
     .bars {
       position: relative;
@@ -179,13 +181,22 @@ const links = [
       left: 0;
       right: 0;
       height: 2px;
-      background: var(--c-navy);
+      background: currentColor;
       border-radius: 2px;
-      transition: transform 160ms ease, opacity 160ms ease, top 160ms ease;
+      transition:
+        transform var(--dur-fast) var(--ease-out),
+        opacity var(--dur-fast) var(--ease-out),
+        top var(--dur-fast) var(--ease-out);
     }
-    .bars span:nth-child(1) { top: 0; }
-    .bars span:nth-child(2) { top: 6px; }
-    .bars span:nth-child(3) { top: 12px; }
+    .bars span:nth-child(1) {
+      top: 0;
+    }
+    .bars span:nth-child(2) {
+      top: 6px;
+    }
+    .bars span:nth-child(3) {
+      top: 12px;
+    }
     .menu-toggle:checked ~ .menu-button .bars span:nth-child(1) {
       top: 6px;
       transform: rotate(45deg);
@@ -205,11 +216,11 @@ const links = [
       right: 0;
       flex-direction: column;
       align-items: stretch;
-      gap: 0.4rem;
-      padding: 0.75rem 1rem 1rem;
-      background: var(--c-paper);
-      border-bottom: 1px solid var(--c-border);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+      gap: var(--sp-2);
+      padding: var(--sp-3) var(--sp-4) var(--sp-4);
+      background: var(--surface-1);
+      border-bottom: 1px solid var(--border-subtle);
+      box-shadow: var(--shadow-lg);
       display: none;
     }
     .menu-toggle:checked ~ .drawer {
@@ -218,18 +229,18 @@ const links = [
     .nav {
       display: flex;
       flex-direction: column;
-      gap: 0.15rem;
+      gap: 2px;
       margin: 0;
     }
     .nav-link {
-      padding: 0.7rem 0.7rem;
-      font-size: 1rem;
+      padding: var(--sp-3);
+      font-size: var(--fs-base);
     }
     .actions {
       flex-direction: row;
-      gap: 0.5rem;
-      padding-top: 0.5rem;
-      border-top: 1px solid var(--c-border);
+      gap: var(--sp-2);
+      padding-top: var(--sp-2);
+      border-top: 1px solid var(--border-subtle);
       flex-wrap: wrap;
     }
     .actions :global(.btn) {
