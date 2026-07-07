@@ -1,0 +1,14 @@
+---
+// Explorar — trending hashtags + sugestões de quem seguir + diretório
+// público. Aberto ao público; sugestões dependem de sessão para saber
+// quem o caller ainda não segue.
+import AppShellLayout from '../layouts/AppShellLayout.astro';
+import ExplorePage from '../components/islands/ExplorePage.svelte';
+
+const description =
+  'Hashtags em alta, pessoas para acompanhar e o diretório público da DemocraciaBR.';
+---
+
+<AppShellLayout title="Explorar" {description} active="explore">
+  <ExplorePage client:load />
+</AppShellLayout>

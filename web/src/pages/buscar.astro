@@ -1,0 +1,12 @@
+---
+// Busca unificada — contas, hashtags, publicações. Query pelo ?q= (SSG).
+import AppShellLayout from '../layouts/AppShellLayout.astro';
+import SearchPage from '../components/islands/SearchPage.svelte';
+
+const description =
+  'Busque contas, hashtags e publicações em toda a rede DemocraciaBR e no fediverso.';
+---
+
+<AppShellLayout title="Buscar" {description} noindex active="search">
+  <SearchPage client:load />
+</AppShellLayout>

@@ -12,6 +12,11 @@
     maxlength?: number;
     autoResize?: boolean;
     oninput?: (e: Event) => void;
+    onkeydown?: (e: KeyboardEvent) => void;
+    onselect?: (e: Event) => void;
+    /** Bindable ref to the underlying <textarea> — needed for caret-aware
+     *  features like autocomplete in NoteComposer. */
+    element?: HTMLTextAreaElement | null;
   }
 
   let {
@@ -27,9 +32,15 @@
     maxlength,
     autoResize = false,
     oninput,
+    onkeydown,
+    onselect,
+    element = $bindable(null),
   }: Props = $props();
 
   let ref = $state<HTMLTextAreaElement | null>(null);
+  $effect(() => {
+    element = ref;
+  });
   const hintId = `${id}-hint`;
   const errorId = `${id}-err`;
 
@@ -61,6 +72,8 @@
     aria-describedby={error ? errorId : hint ? hintId : undefined}
     bind:value
     {oninput}
+    {onkeydown}
+    {onselect}
   ></textarea>
   <div class="foot">
     {#if error}

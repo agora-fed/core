@@ -6,6 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod discovery;
 pub mod federation;
 pub mod federation_feed;
 pub mod note_media;

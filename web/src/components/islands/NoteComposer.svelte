@@ -14,7 +14,11 @@
     postNote,
     uploadNoteMedia,
     editNote,
+    searchHashtags,
+    searchMentions,
     type PostNoteOptions,
+    type HashtagHit,
+    type MentionHit,
   } from '../../lib/api';
   import { toast } from '../../lib/toasts';
   import Button from '../ui/Button.svelte';
@@ -95,6 +99,137 @@
     pollOpen &&
       pollOptions.filter((o) => o.trim().length > 0).length >= 2,
   );
+
+  // 0.18.0-rc2: autocomplete for @ and #.
+  type AcTrigger = '@' | '#';
+  type AcItem =
+    | { kind: 'mention'; value: MentionHit }
+    | { kind: 'hashtag'; value: HashtagHit };
+  let taRef = $state<HTMLTextAreaElement | null>(null);
+  let acOpen = $state(false);
+  let acItems = $state<AcItem[]>([]);
+  let acCursor = $state(0);
+  let acTrigger = $state<AcTrigger | null>(null);
+  let acStart = $state(0);
+  let acQuery = $state('');
+  let acDebounce: ReturnType<typeof setTimeout> | null = null;
+
+  function detectTrigger() {
+    if (!taRef) return;
+    const pos = taRef.selectionStart;
+    if (taRef.selectionEnd !== pos) {
+      closeAc();
+      return;
+    }
+    // Scan backward for the last @ or # that starts a word (preceded by
+    // whitespace or the start of input).
+    const before = content.slice(0, pos);
+    let i = pos - 1;
+    while (i >= 0) {
+      const ch = before[i];
+      if (ch === '@' || ch === '#') break;
+      if (/[\s]/.test(ch)) {
+        i = -1;
+        break;
+      }
+      i--;
+    }
+    if (i < 0) {
+      closeAc();
+      return;
+    }
+    if (i > 0 && !/[\s]/.test(before[i - 1])) {
+      closeAc();
+      return;
+    }
+    const trigger = before[i] as AcTrigger;
+    const q = before.slice(i + 1);
+    // Require at least one alphanumeric to fire — no infinite dropdowns.
+    if (q.length < 1) {
+      closeAc();
+      return;
+    }
+    if (!/^[A-Za-z0-9_\-.@]+$/.test(q)) {
+      closeAc();
+      return;
+    }
+    acTrigger = trigger;
+    acStart = i;
+    acQuery = q;
+    scheduleFetch();
+  }
+
+  function scheduleFetch() {
+    if (acDebounce) clearTimeout(acDebounce);
+    acDebounce = setTimeout(fetchSuggestions, 250);
+  }
+
+  async function fetchSuggestions() {
+    if (!acTrigger) return;
+    const q = acQuery;
+    if (acTrigger === '#') {
+      const res = await searchHashtags(q, 8);
+      if (res.success && res.data && acQuery === q && acTrigger === '#') {
+        acItems = res.data.items.map((h) => ({ kind: 'hashtag', value: h }));
+        acCursor = 0;
+        acOpen = acItems.length > 0;
+      }
+    } else {
+      const res = await searchMentions(q, 8);
+      if (res.success && res.data && acQuery === q && acTrigger === '@') {
+        acItems = res.data.items.map((m) => ({ kind: 'mention', value: m }));
+        acCursor = 0;
+        acOpen = acItems.length > 0;
+      }
+    }
+  }
+
+  function closeAc() {
+    acOpen = false;
+    acItems = [];
+    acTrigger = null;
+    acQuery = '';
+    if (acDebounce) {
+      clearTimeout(acDebounce);
+      acDebounce = null;
+    }
+  }
+
+  function pickSuggestion(i: number) {
+    const item = acItems[i];
+    if (!item || acTrigger == null || !taRef) return;
+    const before = content.slice(0, acStart);
+    const after = content.slice(taRef.selectionStart);
+    const insert =
+      item.kind === 'mention'
+        ? `@${item.value.handle} `
+        : `#${item.value.tag_original} `;
+    content = before + insert + after;
+    closeAc();
+    // Restore focus + caret after the inserted token.
+    const caret = (before + insert).length;
+    queueMicrotask(() => {
+      taRef?.focus();
+      taRef?.setSelectionRange(caret, caret);
+    });
+  }
+
+  function onTextareaKeydown(e: KeyboardEvent) {
+    if (!acOpen) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      acCursor = Math.min(acCursor + 1, acItems.length - 1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      acCursor = Math.max(acCursor - 1, 0);
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      pickSuggestion(acCursor);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeAc();
+    }
+  }
 
   const MAX = 5000;
   const MAX_CW = 500;
@@ -276,17 +411,54 @@
       </div>
     {/if}
 
-    <Textarea
-      rows={variant === 'settings' ? 4 : 3}
-      bind:value={content}
-      placeholder={replyTo
-        ? 'Sua resposta…'
-        : cwOpen
-          ? 'O que vem sob o aviso (todo mundo vê depois de clicar)…'
-          : 'O que você quer dizer hoje?'}
-      autoResize={variant !== 'settings'}
-      maxlength={MAX}
-    />
+    <div class="ta-wrap">
+      <Textarea
+        rows={variant === 'settings' ? 4 : 3}
+        bind:value={content}
+        placeholder={replyTo
+          ? 'Sua resposta…'
+          : cwOpen
+            ? 'O que vem sob o aviso (todo mundo vê depois de clicar)…'
+            : 'O que você quer dizer hoje?'}
+        autoResize={variant !== 'settings'}
+        maxlength={MAX}
+        bind:element={taRef}
+        oninput={() => detectTrigger()}
+        onselect={() => detectTrigger()}
+        onkeydown={onTextareaKeydown}
+      />
+      {#if acOpen}
+        <ul class="ac" role="listbox">
+          {#each acItems as item, i (item.kind + '::' + (item.kind === 'mention' ? item.value.handle : item.value.tag_normalized))}
+            <li
+              role="option"
+              aria-selected={i === acCursor}
+              class:active={i === acCursor}
+              onmouseenter={() => (acCursor = i)}
+              onclick={() => pickSuggestion(i)}
+            >
+              {#if item.kind === 'mention'}
+                {#if item.value.avatar_url}
+                  <img class="ac-avatar" src={item.value.avatar_url} alt="" />
+                {:else}
+                  <span class="ac-avatar ac-avatar-ph">{item.value.handle.charAt(0).toUpperCase()}</span>
+                {/if}
+                <span class="ac-body">
+                  <strong>{item.value.display_name || item.value.handle}</strong>
+                  <span class="muted">@{item.value.handle}</span>
+                </span>
+              {:else}
+                <span class="ac-hash">#</span>
+                <span class="ac-body">
+                  <strong>{item.value.tag_original}</strong>
+                  <span class="muted">{item.value.note_count} {item.value.note_count === 1 ? 'nota' : 'notas'}</span>
+                </span>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
 
     {#if pollOpen}
       <section class="poll-builder" aria-label="Configurar enquete">
@@ -721,6 +893,82 @@
     border-radius: var(--r-sm);
     color: var(--text-1);
     font: inherit;
+    font-size: var(--fs-xs);
+  }
+  .ta-wrap {
+    position: relative;
+  }
+  .ac {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + 2px);
+    background: var(--surface-1);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-sm);
+    box-shadow: var(--shadow-lg);
+    padding: var(--sp-1);
+    margin: 0;
+    list-style: none;
+    max-height: 260px;
+    overflow-y: auto;
+    z-index: 30;
+  }
+  .ac li {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+    border-radius: var(--r-sm);
+    cursor: pointer;
+    color: var(--text-2);
+    font-size: var(--fs-sm);
+  }
+  .ac li.active {
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+  }
+  .ac-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: var(--fw-bold);
+    font-size: var(--fs-xs);
+  }
+  .ac-avatar-ph {
+    text-transform: uppercase;
+  }
+  .ac-hash {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: var(--fw-bold);
+    flex-shrink: 0;
+  }
+  .ac-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+  .ac-body strong {
+    color: var(--text-1);
+    font-weight: var(--fw-semibold);
+  }
+  .ac-body .muted {
+    color: var(--text-3);
     font-size: var(--fs-xs);
   }
 </style>

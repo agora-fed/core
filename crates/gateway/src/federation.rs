@@ -37,6 +37,7 @@ use dsoc_api_contract::ApiResponse;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use crate::discovery;
 use crate::federation_feed;
 use crate::note_media;
 use crate::notifications;
@@ -87,6 +88,12 @@ pub fn client_routes(state: AppState) -> Router<()> {
         .route("/me/notes/vote", post(post_poll_vote))
         .route("/notes/context", get(get_thread_context))
         .route("/timelines/tag/{name}", get(get_hashtag_timeline))
+        .route("/search", get(search_all))
+        .route("/search/hashtags", get(search_hashtags))
+        .route("/search/mentions", get(search_mentions))
+        .route("/trends/hashtags", get(trending_hashtags))
+        .route("/directory", get(directory_endpoint))
+        .route("/suggestions/follow", get(follow_suggestions_endpoint))
         .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024))
         .with_state(state)
 }
@@ -1587,6 +1594,173 @@ async fn get_hashtag_timeline(
         }
         Err(err) => {
             tracing::error!(error = ?err, "hashtag timeline query failed");
+            server_error()
+        }
+    }
+}
+
+/// Query for `/search*` — the `q` is the free-text prefix. `limit` is
+/// clamped in the handlers.
+#[derive(Debug, Deserialize)]
+struct SearchQuery {
+    q: String,
+    limit: Option<i64>,
+}
+
+/// Search page params for `/directory` and `/suggestions/follow`.
+#[derive(Debug, Deserialize)]
+struct PageQuery {
+    limit: Option<i64>,
+    offset: Option<i64>,
+}
+
+/// `GET /api/v1/search/hashtags?q=` — prefix autocomplete over
+/// `note_hashtag.tag_normalized`. Public (no auth).
+async fn search_hashtags(
+    State(state): State<AppState>,
+    Query(query): Query<SearchQuery>,
+) -> Response {
+    let limit = query.limit.unwrap_or(8).clamp(1, 20);
+    match discovery::hashtags_matching(&state.db, &query.q, limit).await {
+        Ok(items) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(json!({ "items": items }))),
+        )
+            .into_response(),
+        Err(err) => {
+            tracing::error!(error = ?err, "search hashtags failed");
+            server_error()
+        }
+    }
+}
+
+/// `GET /api/v1/search/mentions?q=` — autocomplete local `@handle`. Public.
+async fn search_mentions(
+    State(state): State<AppState>,
+    Query(query): Query<SearchQuery>,
+) -> Response {
+    let limit = query.limit.unwrap_or(8).clamp(1, 20);
+    let media_base =
+        std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+    match discovery::mentions_matching(
+        &state.db,
+        &query.q,
+        &public_origin(),
+        &media_base,
+        limit,
+    )
+    .await
+    {
+        Ok(items) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(json!({ "items": items }))),
+        )
+            .into_response(),
+        Err(err) => {
+            tracing::error!(error = ?err, "search mentions failed");
+            server_error()
+        }
+    }
+}
+
+/// `GET /api/v1/search?q=` — unified search: accounts + hashtags + notes.
+async fn search_all(
+    State(state): State<AppState>,
+    Query(query): Query<SearchQuery>,
+) -> Response {
+    let per = query.limit.unwrap_or(10).clamp(1, 30);
+    let media_base =
+        std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+    let po = public_origin();
+    let hashtags = discovery::hashtags_matching(&state.db, &query.q, per)
+        .await
+        .unwrap_or_default();
+    let accounts =
+        discovery::mentions_matching(&state.db, &query.q, &po, &media_base, per)
+            .await
+            .unwrap_or_default();
+    let notes = discovery::notes_matching(&state.db, &query.q, &media_base, per)
+        .await
+        .unwrap_or_default();
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(json!({
+            "accounts": accounts,
+            "hashtags": hashtags,
+            "notes": notes,
+        }))),
+    )
+        .into_response()
+}
+
+/// `GET /api/v1/trends/hashtags?window_hours=24&limit=10` — trending tags.
+async fn trending_hashtags(
+    State(state): State<AppState>,
+    Query(query): Query<PageQuery>,
+) -> Response {
+    let limit = query.limit.unwrap_or(10).clamp(1, 30);
+    match discovery::trending_hashtags(&state.db, 24, limit).await {
+        Ok(items) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(json!({ "items": items }))),
+        )
+            .into_response(),
+        Err(err) => {
+            tracing::error!(error = ?err, "trending hashtags failed");
+            server_error()
+        }
+    }
+}
+
+/// `GET /api/v1/directory?limit=&offset=` — profile directory.
+async fn directory_endpoint(
+    State(state): State<AppState>,
+    Query(query): Query<PageQuery>,
+) -> Response {
+    let limit = query.limit.unwrap_or(24).clamp(1, 60);
+    let offset = query.offset.unwrap_or(0).max(0);
+    let media_base =
+        std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+    match discovery::directory(&state.db, &public_origin(), &media_base, limit, offset).await
+    {
+        Ok(items) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(json!({ "items": items }))),
+        )
+            .into_response(),
+        Err(err) => {
+            tracing::error!(error = ?err, "directory query failed");
+            server_error()
+        }
+    }
+}
+
+/// `GET /api/v1/suggestions/follow?limit=` — people the caller doesn't
+/// follow yet, ordered by recent outbox activity. Auth required.
+async fn follow_suggestions_endpoint(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Query(query): Query<PageQuery>,
+) -> Response {
+    let limit = query.limit.unwrap_or(12).clamp(1, 30);
+    let media_base =
+        std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+    match discovery::follow_suggestions(
+        &state.db,
+        caller.citizen.as_uuid(),
+        &public_origin(),
+        &media_base,
+        limit,
+    )
+    .await
+    {
+        Ok(items) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(json!({ "items": items }))),
+        )
+            .into_response(),
+        Err(err) => {
+            tracing::error!(error = ?err, "follow suggestions failed");
             server_error()
         }
     }

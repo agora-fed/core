@@ -684,6 +684,70 @@ export const votePoll = (uri: string, option_ids: string[]) =>
     { option_ids },
   );
 
+/** One hit from `/api/v1/search/hashtags`. */
+export interface HashtagHit {
+  tag_normalized: string;
+  tag_original: string;
+  note_count: number;
+}
+
+/** One hit from `/api/v1/search/mentions` and `/directory`. */
+export interface MentionHit {
+  handle: string;
+  display_name: string | null;
+  bio: string | null;
+  avatar_url: string | null;
+  actor_url: string;
+}
+
+export interface NoteHit {
+  object_uri: string;
+  author_handle: string;
+  author_display_name: string | null;
+  author_avatar_url: string | null;
+  content_html: string;
+  published_at: string;
+  is_remote: boolean;
+}
+
+/** Autocomplete hashtags by prefix. */
+export const searchHashtags = (q: string, limit = 8) =>
+  apiGetCredentialed<{ items: HashtagHit[] }>(
+    `/api/v1/search/hashtags?q=${encodeURIComponent(q)}&limit=${limit}`,
+  );
+
+/** Autocomplete local citizen handles. */
+export const searchMentions = (q: string, limit = 8) =>
+  apiGetCredentialed<{ items: MentionHit[] }>(
+    `/api/v1/search/mentions?q=${encodeURIComponent(q)}&limit=${limit}`,
+  );
+
+/** Unified search — accounts + hashtags + notes. */
+export const searchAll = (q: string, per = 10) =>
+  apiGetCredentialed<{
+    accounts: MentionHit[];
+    hashtags: HashtagHit[];
+    notes: NoteHit[];
+  }>(`/api/v1/search?q=${encodeURIComponent(q)}&limit=${per}`);
+
+/** Trending hashtags in the past 24h. */
+export const getTrendingHashtags = (limit = 10) =>
+  apiGetCredentialed<{ items: HashtagHit[] }>(
+    `/api/v1/trends/hashtags?limit=${limit}`,
+  );
+
+/** Public profile directory. */
+export const getDirectory = (limit = 24, offset = 0) =>
+  apiGetCredentialed<{ items: MentionHit[] }>(
+    `/api/v1/directory?limit=${limit}&offset=${offset}`,
+  );
+
+/** People the caller doesn't follow yet, ordered by recent activity. */
+export const getFollowSuggestions = (limit = 12) =>
+  apiGetCredentialed<{ items: MentionHit[] }>(
+    `/api/v1/suggestions/follow?limit=${limit}`,
+  );
+
 /** Federated feed of the authenticated citizen (own notes + followed actors). */
 export const getMyFeed = (limit = 30, offset = 0) =>
   apiGetCredentialed<FeedItemDto[]>(
