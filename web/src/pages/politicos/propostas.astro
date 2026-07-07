@@ -1,0 +1,24 @@
+---
+// Painel de propostas dirigidas a mandatos — agregado (por partido |
+// político | casa | esfera | UF | cargo) com filtros de status.
+// Sub-menu de Políticos.
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PropostasDashboard from '../../components/islands/PropostasDashboard.svelte';
+
+const description =
+  'Propostas dirigidas aos mandatos, agregadas por partido, político, cargo e esfera.';
+---
+
+<BaseLayout title="Propostas dos Mandatos" {description}>
+  <section class="section">
+    <div class="container narrow">
+      <PropostasDashboard client:load />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .narrow {
+    max-width: 60rem;
+  }
+</style>

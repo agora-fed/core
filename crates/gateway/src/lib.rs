@@ -16,6 +16,7 @@ pub mod note_media;
 pub mod notifications;
 pub mod parlamentar_activity;
 pub mod polls;
+pub mod reports;
 pub mod worker;
 
 use axum::extract::{Request, State};
@@ -117,6 +118,8 @@ pub fn api_router(state: AppState) -> Router {
         // Gateway-owned proxy of each parliamentarian's real public activity from the official
         // open-data APIs (Câmara/Senado). Path: `/api/v1/mandates/{id}/atividade`.
         .merge(parlamentar_activity::routes(state.clone()))
+        // Aggregated dashboards: gasto parlamentar + proposals summary.
+        .merge(reports::routes(state.clone()))
         // components
         .merge(dsoc_proposals::routes(state.clone()))
         .merge(dsoc_votes::routes(state.clone()))

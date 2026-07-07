@@ -771,6 +771,65 @@ export const getFollowSuggestions = (limit = 12) =>
     `/api/v1/suggestions/follow?limit=${limit}`,
   );
 
+// --- Aggregated political dashboards (0.19.0-dashboards) -----------------
+
+export interface ReportFilters {
+  group_by?: 'partido' | 'politico' | 'casa' | 'esfera' | 'uf' | 'office';
+  uf?: string;
+  house?: 'camara' | 'senado' | '';
+  party?: string;
+  sphere?: 'federal' | 'estadual' | 'municipal' | '';
+  status?: 'draft' | 'published' | 'clustered' | '';
+}
+
+export interface GastoGroup {
+  key: string;
+  label: string;
+  amount_cents: number;
+  mandate_count: number;
+}
+
+export interface GastoReport {
+  total_cents: number;
+  mandate_count: number;
+  groups: GastoGroup[];
+  pending: number;
+  cached_at: string;
+}
+
+export interface PropostasGroup {
+  key: string;
+  label: string;
+  count: number;
+  published: number;
+  clustered: number;
+  answered: number;
+  ignored: number;
+  pending: number;
+}
+
+export interface PropostasReport {
+  total: number;
+  groups: PropostasGroup[];
+}
+
+function filtersToQuery(f: ReportFilters): string {
+  const p = new URLSearchParams();
+  if (f.group_by) p.set('group_by', f.group_by);
+  if (f.uf) p.set('uf', f.uf);
+  if (f.house) p.set('house', f.house);
+  if (f.party) p.set('party', f.party);
+  if (f.sphere) p.set('sphere', f.sphere);
+  if (f.status) p.set('status', f.status);
+  return p.toString() ? `?${p.toString()}` : '';
+}
+
+export const getGastoParlamentar = (f: ReportFilters = {}) =>
+  apiGet<GastoReport>(`/api/v1/reports/gasto-parlamentar${filtersToQuery(f)}`);
+
+export const getPropostasSummary = (f: ReportFilters = {}) =>
+  apiGet<PropostasReport>(`/api/v1/reports/proposals-summary${filtersToQuery(f)}`);
+
 /** Federated feed of the authenticated citizen (own notes + followed actors). */
 export const getMyFeed = (limit = 30, offset = 0) =>
   apiGetCredentialed<FeedItemDto[]>(
