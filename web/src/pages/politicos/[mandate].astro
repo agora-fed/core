@@ -8,12 +8,19 @@ import MandateDetail from '../../components/islands/MandateDetail.svelte';
 import { getAllMandates, DEFAULT_ORG_ID } from '../../lib/api';
 
 export async function getStaticPaths() {
-  // Puxa TODOS os mandatos no build — não os com scorecard, como era antes (que dava 404 pra
-  // 95% dos políticos seedados sem demandas ainda). Pagina o offset porque o servidor limita
-  // uma página a 100 e já temos ~594 parlamentares.
-  const res = await getAllMandates(DEFAULT_ORG_ID);
-  if (!res.ok || !res.data) return [];
-  return res.data.map((m) => ({ params: { mandate: m.id } }));
+  // 0.23.0-municipais: pré-gera apenas mandatos federais + estaduais (~1.7k
+  // páginas). Gerar SSG para os ~68k municipais explodiria o build (9+ min) e
+  // o tamanho da imagem (~400 MB de HTMLs). Municipais são acessados pela rota
+  // fallback /politicos/?id=X — a mesma ilha MandateDetail hidrata o perfil.
+  const [fed, est] = await Promise.all([
+    getAllMandates(DEFAULT_ORG_ID, 5000, 'federal'),
+    getAllMandates(DEFAULT_ORG_ID, 5000, 'estadual'),
+  ]);
+  const merged = [
+    ...(fed.ok && fed.data ? fed.data : []),
+    ...(est.ok && est.data ? est.data : []),
+  ];
+  return merged.map((m) => ({ params: { mandate: m.id } }));
 }
 
 const { mandate } = Astro.params;

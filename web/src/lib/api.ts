@@ -270,22 +270,29 @@ export const getMandateActivity = (mandateId: string, orgId = DEFAULT_ORG_ID) =>
 
 /** Directory of mandates in an org — drives the "Propor" form's picker so the user does not have
  *  to type a UUID by hand. Public read. */
-export const getMandates = (orgId = DEFAULT_ORG_ID, limit = 50, offset = 0) =>
+export const getMandates = (
+  orgId = DEFAULT_ORG_ID,
+  limit = 50,
+  offset = 0,
+  sphere?: 'federal' | 'estadual' | 'municipal',
+) =>
   apiGet<MandateDto[]>(
-    `/api/v1/mandates${orgQuery(orgId, `&limit=${limit}&offset=${offset}`)}`,
+    `/api/v1/mandates${orgQuery(orgId, `&limit=${limit}&offset=${offset}${sphere ? `&sphere=${sphere}` : ''}`)}`,
   );
 
 /** Full mandate directory, walking the server's `offset`/`limit` window (server caps a single
- *  page at 100). We need every parlamentar for /politicos and /partidos, so page until a short
- *  page comes back. `hardCap` guards against an unbounded loop if the API ever misbehaves. */
+ *  page at 100). Optional `sphere` filter is critical now that we have 70k municipal rows —
+ *  callers who want federal+estadual (getStaticPaths, /partidos) must skip municipal.
+ *  `hardCap` guards against an unbounded loop if the API ever misbehaves. */
 export async function getAllMandates(
   orgId = DEFAULT_ORG_ID,
   hardCap = 5000,
+  sphere?: 'federal' | 'estadual' | 'municipal',
 ): Promise<Fetched<MandateDto[]>> {
   const page = 100;
   const all: MandateDto[] = [];
   for (let offset = 0; offset < hardCap; offset += page) {
-    const res = await getMandates(orgId, page, offset);
+    const res = await getMandates(orgId, page, offset, sphere);
     if (!res.ok || !res.data) {
       return all.length ? { ok: true, data: all, error: null } : res;
     }
@@ -528,6 +535,61 @@ export const listCandidacies = (
     `/api/v1/elections/${encodeURIComponent(electionId)}/candidacies${qstr ? '?' + qstr : ''}`,
   );
 };
+
+// ---------------------------------------------------------------------------
+// Politicos browser — server-side filters (0.23.0-municipais)
+// ---------------------------------------------------------------------------
+
+export interface PoliticoRow {
+  id: string;
+  display_name: string;
+  office: string;
+  party: string | null;
+  uf: string | null;
+  municipio: string | null;
+  house: string | null;
+  sphere: 'federal' | 'estadual' | 'municipal';
+  avatar_url: string | null;
+  is_candidate: boolean;
+  has_verified_operator: boolean;
+}
+export interface BrowseResponse {
+  total: number;
+  limit: number;
+  offset: number;
+  items: PoliticoRow[];
+}
+
+export function browsePoliticos(
+  filters: {
+    sphere: 'federal' | 'estadual' | 'municipal';
+    uf?: string;
+    municipio?: string;
+    party?: string;
+    house?: string;
+    q?: string;
+    limit?: number;
+    offset?: number;
+  },
+): Promise<ApiResponse<BrowseResponse>> {
+  const p = new URLSearchParams();
+  p.set('sphere', filters.sphere);
+  if (filters.uf) p.set('uf', filters.uf);
+  if (filters.municipio) p.set('municipio', filters.municipio);
+  if (filters.party) p.set('party', filters.party);
+  if (filters.house) p.set('house', filters.house);
+  if (filters.q) p.set('q', filters.q);
+  if (filters.limit !== undefined) p.set('limit', String(filters.limit));
+  if (filters.offset !== undefined) p.set('offset', String(filters.offset));
+  return apiGet<BrowseResponse>(`/api/v1/politicos/browse?${p}`);
+}
+
+export interface MunicipioRow {
+  nome: string;
+  count: number;
+}
+export const listMunicipios = (uf: string) =>
+  apiGet<MunicipioRow[]>(`/api/v1/politicos/municipios?uf=${encodeURIComponent(uf)}`);
 
 /** Revoke one of my sessions. Cannot revoke the current one (use logout). */
 export async function revokeSession(id: string): Promise<ApiResponse<null>> {

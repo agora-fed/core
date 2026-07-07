@@ -12,6 +12,7 @@ pub mod discovery;
 pub mod elections;
 pub mod federation;
 pub mod me_settings;
+pub mod politicos_ext;
 pub mod social_graph;
 pub mod federation_feed;
 pub mod mastodon_api;
@@ -126,6 +127,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(parlamentar_activity::routes(state.clone()))
         // Aggregated dashboards: gasto parlamentar + proposals summary.
         .merge(reports::routes(state.clone()))
+        // Filtered politicos browser (0.23.0-municipais).
+        .merge(politicos_ext::routes(state.clone()))
         // components
         .merge(dsoc_proposals::routes(state.clone()))
         .merge(dsoc_votes::routes(state.clone()))

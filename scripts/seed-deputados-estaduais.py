@@ -25,7 +25,9 @@ import concurrent.futures
 import csv
 import io
 import json
+import re
 import sys
+import unicodedata
 import uuid
 import xml.etree.ElementTree as ET
 import zipfile
@@ -41,6 +43,7 @@ PHOTOS_DIR = Path("/tmp/dsoc-fotos-estaduais")
 SQL_OUT = Path("/tmp/dsoc-mandates-estaduais.sql")
 TSE_ZIP = Path("/tmp/consulta_cand_2022.zip")
 TSE_EXTRACT_DIR = Path("/tmp/consulta_cand_2022")
+TSE_2024_ZIP = Path("/tmp/consulta_cand_2024.zip")
 USER_AGENT = "DemocraciaBR/0.5 seed (+https://democracia.social.br)"
 
 
@@ -52,11 +55,12 @@ class Person:
     party: str
     uf: str
     office: str
-    house: str  # always 'assembleia' here
-    sphere: str  # always 'estadual' here
+    house: str  # 'assembleia' | 'camara_municipal' | 'executivo_municipal'
+    sphere: str  # 'estadual' | 'municipal'
     photo_url: Optional[str] = None
     public_email: Optional[str] = None
     gender: Optional[str] = None  # 'homem' | 'mulher' | None
+    municipio: Optional[str] = None  # non-null for sphere='municipal' rows
 
     @property
     def key(self) -> str:
@@ -369,6 +373,163 @@ def fetch_tse_2022(skip_ufs: set[str]) -> list[Person]:
 
 
 # ---------------------------------------------------------------------------
+# Source 4: TSE 2024 CSV (municipal cargos — prefeitos, vice-prefeitos, vereadores)
+# ---------------------------------------------------------------------------
+
+TSE_2024_ZIP_URL = "https://cdn.tse.jus.br/estatistica/sead/odsele/consulta_cand/consulta_cand_2024.zip"
+_MUNI_CARGOS = {"PREFEITO", "VICE-PREFEITO", "VEREADOR"}
+
+
+def _slugify(value: str) -> str:
+    """URL-safe lowercase slug: NFD-decompose, strip combining marks, non-alnum → '-'."""
+    if not value:
+        return ""
+    nfd = unicodedata.normalize("NFD", value)
+    stripped = "".join(ch for ch in nfd if not unicodedata.combining(ch))
+    lowered = stripped.lower()
+    # Replace runs of non-alnum with a single '-'; trim leading/trailing '-'.
+    slug = re.sub(r"[^a-z0-9]+", "-", lowered).strip("-")
+    return slug
+
+
+def _ensure_tse_2024_zip() -> Optional[Path]:
+    if TSE_2024_ZIP.exists() and TSE_2024_ZIP.stat().st_size > 100_000:
+        print(f"  TSE 2024 zip cache hit → {TSE_2024_ZIP} ({TSE_2024_ZIP.stat().st_size//1024} KB)", flush=True)
+        return TSE_2024_ZIP
+    try:
+        print(f"  Baixando TSE 2024 zip → {TSE_2024_ZIP} …", flush=True)
+        data = _get(TSE_2024_ZIP_URL, timeout=600, accept="application/zip,*/*;q=0.5")
+        TSE_2024_ZIP.write_bytes(data)
+        print(f"  TSE 2024 zip salvo ({len(data)//1024} KB)", flush=True)
+        return TSE_2024_ZIP
+    except Exception as e:
+        print(f"  TSE 2024 zip download FALHOU ({e})", flush=True)
+        return None
+
+
+def fetch_tse_2024_municipais() -> list[Person]:
+    """Elected prefeitos, vice-prefeitos and vereadores from the TSE 2024 CSV.
+
+    Streams row-by-row (csv.DictReader over TextIOWrapper) — the raw CSVs
+    together are ~5M candidate rows, so we cannot materialise them all.
+    Only rows matching (cargo, situação eleito) are appended to the output.
+    """
+    out: list[Person] = []
+    zpath = _ensure_tse_2024_zip()
+    if zpath is None:
+        return out
+
+    try:
+        zf = zipfile.ZipFile(zpath)
+    except zipfile.BadZipFile as e:
+        print(f"  TSE 2024 zip corrupto ({e}) — removendo", flush=True)
+        try:
+            zpath.unlink()
+        except Exception:
+            pass
+        return out
+
+    with zf:
+        members = [
+            m for m in zf.namelist()
+            if m.lower().endswith(".csv") and "_2024_" in m.lower()
+        ]
+        members.sort()
+
+        for name in members:
+            base = Path(name).name
+            stem = base.rsplit(".", 1)[0]
+            uf_from_name = stem.split("_")[-1].upper()
+            # Skip national rollup files — they duplicate per-UF rows.
+            if uf_from_name in {"BR", "BRASIL"}:
+                continue
+
+            try:
+                with zf.open(name) as raw:
+                    text = io.TextIOWrapper(raw, encoding="latin-1", newline="")
+                    reader = csv.DictReader(text, delimiter=";")
+                    # Dedup within TSE 2024: (uf, municipio_slug, nr_candidato, cargo).
+                    seen: set[tuple[str, str, str, str]] = set()
+                    kept_this_uf = 0
+                    for row in reader:
+                        cargo = (row.get("DS_CARGO") or "").strip().upper()
+                        if cargo not in _MUNI_CARGOS:
+                            continue
+                        sit = (row.get("DS_SIT_TOT_TURNO") or "").strip().upper()
+                        if sit not in _ELECTED_STATUSES:
+                            continue
+
+                        sg_uf = (row.get("SG_UF") or uf_from_name).strip().upper()
+                        nr = (row.get("NR_CANDIDATO") or "").strip()
+                        if not nr:
+                            continue
+                        municipio = (row.get("NM_UE") or "").strip()
+                        if not municipio:
+                            continue
+                        muni_slug = _slugify(municipio)
+                        if not muni_slug:
+                            continue
+
+                        dedup_key = (sg_uf, muni_slug, nr, cargo)
+                        if dedup_key in seen:
+                            continue
+                        seen.add(dedup_key)
+
+                        nm_urna = (row.get("NM_URNA_CANDIDATO") or "").strip()
+                        if not nm_urna:
+                            continue
+                        sg_partido = (row.get("SG_PARTIDO") or "").strip()
+
+                        ds_genero = (row.get("DS_GENERO") or "").strip().upper()
+                        gender: Optional[str] = None
+                        if ds_genero == "MASCULINO":
+                            gender = "homem"
+                        elif ds_genero == "FEMININO":
+                            gender = "mulher"
+
+                        if cargo == "PREFEITO":
+                            office = f"Prefeito(a) — {municipio}/{sg_uf}"
+                            house = "executivo_municipal"
+                        elif cargo == "VICE-PREFEITO":
+                            office = f"Vice-Prefeito(a) — {municipio}/{sg_uf}"
+                            house = "executivo_municipal"
+                        else:  # VEREADOR
+                            office = f"Vereador(a) — {municipio}/{sg_uf}"
+                            house = "camara_municipal"
+
+                        # Include cargo prefix to disambiguate prefeito vs vice
+                        # vs vereador — they share NR_CANDIDATO on the same ticket
+                        # and would collide on UNIQUE(source, source_external_id).
+                        cargo_key = {
+                            "PREFEITO": "pref",
+                            "VICE-PREFEITO": "vice",
+                            "VEREADOR": "ver",
+                        }[cargo]
+                        external_id = f"{sg_uf}-{muni_slug}-{cargo_key}-{nr}"
+
+                        out.append(Person(
+                            source="tse",
+                            external_id=external_id,
+                            name=nm_urna,
+                            party=sg_partido,
+                            uf=sg_uf,
+                            office=office,
+                            house=house,
+                            sphere="municipal",
+                            photo_url=None,
+                            public_email=None,
+                            gender=gender,
+                            municipio=municipio,
+                        ))
+                        kept_this_uf += 1
+                    if kept_this_uf:
+                        print(f"  TSE 2024 {uf_from_name}: {kept_this_uf} eleito(a)s municipais", flush=True)
+            except Exception as e:
+                print(f"  TSE 2024 {name} FALHOU ({e})", flush=True)
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Photos
 # ---------------------------------------------------------------------------
 
@@ -436,13 +597,13 @@ def emit_sql(people: list[Person], photo_paths: dict[str, Optional[str]]) -> Non
             fh.write(
                 "INSERT INTO mandate ("
                 "id, org_id, office, display_name, public_email, is_candidate, "
-                "created_at, party, uf, house, avatar_object_key, source, source_external_id, "
+                "created_at, party, uf, municipio, house, avatar_object_key, source, source_external_id, "
                 "sphere, gender"
                 ") VALUES ("
                 f"'{new_id}', '{ORG_ID}', "
                 f"{sql_quote(p.office)}, {sql_quote(p.name)}, {sql_quote(email)}, "
                 f"false, now(), "
-                f"{sql_quote(p.party)}, {sql_quote(p.uf)}, {sql_quote(p.house)}, "
+                f"{sql_quote(p.party)}, {sql_quote(p.uf)}, {sql_quote(p.municipio)}, {sql_quote(p.house)}, "
                 f"{avatar_key}, {sql_quote(p.source)}, {sql_quote(p.external_id)}, "
                 f"{sql_quote(p.sphere)}, {sql_quote(p.gender)}"
                 ") "
@@ -451,6 +612,7 @@ def emit_sql(people: list[Person], photo_paths: dict[str, Optional[str]]) -> Non
                 "DO UPDATE SET "
                 "office = EXCLUDED.office, display_name = EXCLUDED.display_name, "
                 "party = EXCLUDED.party, uf = EXCLUDED.uf, "
+                "municipio = EXCLUDED.municipio, "
                 "gender = COALESCE(EXCLUDED.gender, mandate.gender), "
                 "avatar_object_key = COALESCE(EXCLUDED.avatar_object_key, mandate.avatar_object_key);"
                 "\n"
@@ -476,8 +638,12 @@ if __name__ == "__main__":
     tse = fetch_tse_2022(skip_ufs={"SP", "MG"})
     print(f"  TSE: {len(tse)} eleito(a)s em 25 UFs", flush=True)
 
-    all_people = sp + mg + tse
-    print(f"\nTotal: {len(all_people)} mandatos estaduais/distritais\n", flush=True)
+    print("\n=== TSE 2024 (municipais — prefeitos/vice/vereadores) ===", flush=True)
+    tse24 = fetch_tse_2024_municipais()
+    print(f"  TSE 2024: {len(tse24)} eleito(a)s municipais", flush=True)
+
+    all_people = sp + mg + tse + tse24
+    print(f"\nTotal: {len(all_people)} mandatos ({len(sp)+len(mg)+len(tse)} estaduais + {len(tse24)} municipais)\n", flush=True)
 
     by_uf: dict[str, int] = {}
     for p in all_people:
@@ -485,6 +651,19 @@ if __name__ == "__main__":
     print("Distribuição por UF (top 10):")
     for uf, n in sorted(by_uf.items(), key=lambda kv: -kv[1])[:10]:
         print(f"  {uf}: {n}")
+
+    # Extra breakdown for the municipal source.
+    by_cargo: dict[str, int] = {}
+    for p in tse24:
+        if p.house == "executivo_municipal":
+            key = "prefeito" if p.office.startswith("Prefeito") else "vice_prefeito"
+        else:
+            key = "vereador"
+        by_cargo[key] = by_cargo.get(key, 0) + 1
+    if by_cargo:
+        print("\nMunicipais por cargo:")
+        for k, n in sorted(by_cargo.items(), key=lambda kv: -kv[1]):
+            print(f"  {k}: {n}")
 
     print("\nBaixando fotos (SP + MG apenas)…", flush=True)
     paths = download_photos(all_people)
