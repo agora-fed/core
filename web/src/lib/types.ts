@@ -240,6 +240,12 @@ export interface FeedItemDto {
   boost_count: number;
   liked_by_me: boolean;
   boosted_by_me: boolean;
+  /** 0.18.0: parent Note URI for threaded replies. Absent = top-level. */
+  in_reply_to_uri?: string | null;
+  /** 0.18.0: Mastodon-style sensitive/nsfw flag. */
+  sensitive?: boolean;
+  /** 0.18.0: content-warning header (shown before the collapsed content). */
+  spoiler_text?: string | null;
 }
 
 /** Result of toggling a Like on a note. */

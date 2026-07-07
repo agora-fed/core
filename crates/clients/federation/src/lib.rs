@@ -35,6 +35,7 @@ pub mod mapping;
 pub mod nodeinfo;
 pub mod objects;
 pub mod signatures;
+pub mod text;
 pub mod vocab;
 pub mod webfinger;
 
@@ -53,6 +54,7 @@ pub use objects::{ConsensusCluster, Create, Note, Proposal, Scorecard, Sla, Supp
 pub use signatures::{
     build_signing_string, PublicKey, SignatureAlgorithm, SignatureHeader, SignatureVerifier,
 };
+pub use text::{extract_hashtags, extract_mentions, Hashtag, Mention};
 pub use vocab::{Context, ACCOUNTABILITY_NS, ACTIVITYSTREAMS_NS, SOFTWARE_NAME};
 pub use webfinger::{webfinger_jrd, WebFingerError};
 

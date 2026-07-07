@@ -642,6 +642,9 @@ pub(crate) struct DeliveryClaim {
 
 /// Insert a new outbox entry (the wire-ready Activity). Returns the entry id so the caller
 /// can chain it into the per-follower delivery fanout.
+///
+/// 0.18.0: runtime unchecked so we can widen the column set (in_reply_to_uri, sensitive,
+/// spoiler_text) without regenerating the `.sqlx/` offline cache.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn insert_outbox_entry<'e, E: PgExecutor<'e>>(
     ex: E,
@@ -652,21 +655,81 @@ pub(crate) async fn insert_outbox_entry<'e, E: PgExecutor<'e>>(
     visibility: &str,
     payload: &serde_json::Value,
     now: DateTime<Utc>,
+    in_reply_to_uri: Option<&str>,
+    sensitive: bool,
+    spoiler_text: Option<&str>,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query!(
-        r#"
+    sqlx::query(
+        r"
         INSERT INTO federation_outbox_entry
-            (id, citizen_id, activity_id, kind, visibility, payload, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        "#,
-        id,
-        citizen_id,
-        activity_id,
-        kind,
-        visibility,
-        payload,
-        now,
+            (id, citizen_id, activity_id, kind, visibility, payload, created_at,
+             in_reply_to_uri, sensitive, spoiler_text)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        ",
     )
+    .bind(id)
+    .bind(citizen_id)
+    .bind(activity_id)
+    .bind(kind)
+    .bind(visibility)
+    .bind(payload)
+    .bind(now)
+    .bind(in_reply_to_uri)
+    .bind(sensitive)
+    .bind(spoiler_text)
+    .execute(ex)
+    .await?;
+    Ok(())
+}
+
+/// Persist an extracted hashtag reference (idempotent on `(object_uri, tag_normalized)`).
+/// 0.18.0 — populated by both outbound publish and inbound receipt.
+pub(crate) async fn insert_note_hashtag<'e, E: PgExecutor<'e>>(
+    ex: E,
+    object_uri: &str,
+    tag_normalized: &str,
+    tag_original: &str,
+    now: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r"
+        INSERT INTO note_hashtag
+            (id, object_uri, tag_normalized, tag_original, created_at)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (object_uri, tag_normalized) DO NOTHING
+        ",
+    )
+    .bind(Uuid::now_v7())
+    .bind(object_uri)
+    .bind(tag_normalized)
+    .bind(tag_original)
+    .bind(now)
+    .execute(ex)
+    .await?;
+    Ok(())
+}
+
+/// Persist an extracted mention reference (idempotent on `(object_uri, mentioned_actor_url)`).
+pub(crate) async fn insert_note_mention<'e, E: PgExecutor<'e>>(
+    ex: E,
+    object_uri: &str,
+    mentioned_actor_url: &str,
+    mentioned_handle: &str,
+    now: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r"
+        INSERT INTO note_mention
+            (id, object_uri, mentioned_actor_url, mentioned_handle, created_at)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (object_uri, mentioned_actor_url) DO NOTHING
+        ",
+    )
+    .bind(Uuid::now_v7())
+    .bind(object_uri)
+    .bind(mentioned_actor_url)
+    .bind(mentioned_handle)
+    .bind(now)
     .execute(ex)
     .await?;
     Ok(())

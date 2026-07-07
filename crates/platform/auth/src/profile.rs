@@ -297,20 +297,27 @@ impl ProfileService {
 
     /// Post a public Note authored by the citizen. Wraps the content in a `Create(Note)`
     /// activity addressed to `as:Public` + the citizen's followers collection (the Mastodon
-    /// "post-to-the-world" envelope), persists into the outbox, and fans out one delivery row
-    /// per ACK'd inbound follower. The delivery worker drains the queue asynchronously, so this
-    /// call returns fast.
+    /// Publish a public Note. Wraps `content` in a `Create(Note)` (with mentions/hashtags in the
+    /// AP `tag[]` array), persists into the outbox, indexes extracted #hashtags and @mentions,
+    /// and fans out one delivery row per ACK'd inbound follower. The delivery worker drains the
+    /// queue asynchronously, so this call returns fast.
     ///
-    /// Returns `(activity_id_url, fanout_count)` — the id the caller surfaces in the UI and
-    /// the number of followers we just queued for.
+    /// 0.18.0 additions: `in_reply_to_uri`, `sensitive`, `spoiler_text` (CW). All optional.
+    /// `public_origin` is needed to build local mention/hashtag hrefs. Returns
+    /// `(activity_id_url, fanout_count)`.
     ///
     /// # Errors
-    /// [`Error::Validation`] for an empty/oversized content; [`Error::Storage`] on persistence.
+    /// [`Error::Validation`] for empty/oversized content; [`Error::Storage`] on persistence.
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_public_note(
         &self,
         citizen: CitizenId,
         actor_url: &str,
+        public_origin: &str,
         content: &str,
+        in_reply_to_uri: Option<&str>,
+        sensitive: bool,
+        spoiler_text: Option<&str>,
     ) -> Result<(String, u64)> {
         let trimmed = content.trim().to_owned();
         if trimmed.is_empty() {
@@ -319,13 +326,59 @@ impl ProfileService {
         if trimmed.chars().count() > 5_000 {
             return Err(Error::Validation("o texto está muito longo (máx 5000 caracteres)".to_owned()));
         }
+        // Trim + cap CW at 500 chars (matches migration 0404 CHECK on the local side).
+        let spoiler = spoiler_text
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.chars().take(500).collect::<String>());
+        // Extract mentions and hashtags from the raw content BEFORE we wrap it — the AP tag[]
+        // array carries them for federated instances that render tag links, and note_hashtag /
+        // note_mention index them locally for the future tag timeline and mention notifications.
+        let mentions = dsoc_federation::extract_mentions(&trimmed);
+        let hashtags = dsoc_federation::extract_hashtags(&trimmed);
+        let mut tag_json: Vec<serde_json::Value> = Vec::new();
+        for m in &mentions {
+            tag_json.push(serde_json::json!({
+                "type": "Mention",
+                "href": m.best_actor_url(public_origin),
+                "name": format!("@{}", m.handle),
+            }));
+        }
+        for h in &hashtags {
+            tag_json.push(serde_json::json!({
+                "type": "Hashtag",
+                "href": format!("{}/tag/{}", public_origin.trim_end_matches('/'), h.normalized),
+                "name": format!("#{}", h.original),
+            }));
+        }
+
         let now = self.clock.now();
         let entry_id = uuid::Uuid::now_v7();
         let activity_id = format!("{actor_url}/activities/note-{entry_id}");
         let object_id = format!("{actor_url}/objects/{entry_id}");
-        // The wire-ready Create(Note). The Outbox endpoint serves this verbatim; the delivery
-        // worker POSTs it verbatim to each follower's inbox. Addressed to `as:Public` + the
-        // followers collection — the Mastodon default for a public post.
+        // Build the Note object. Optional AP fields (`inReplyTo`, `sensitive`, `summary`,
+        // `tag`) are only added when they carry content — Mastodon skips them likewise.
+        let mut note_object = serde_json::json!({
+            "id": object_id,
+            "type": "Note",
+            "attributedTo": actor_url,
+            "published": now.to_rfc3339(),
+            "content": trimmed,
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "cc": [format!("{actor_url}/followers")],
+        });
+        if let Some(reply) = in_reply_to_uri.filter(|s| !s.is_empty()) {
+            note_object["inReplyTo"] = serde_json::Value::String(reply.to_owned());
+        }
+        if sensitive {
+            note_object["sensitive"] = serde_json::Value::Bool(true);
+        }
+        if let Some(cw) = spoiler.as_deref() {
+            note_object["summary"] = serde_json::Value::String(cw.to_owned());
+        }
+        if !tag_json.is_empty() {
+            note_object["tag"] = serde_json::Value::Array(tag_json);
+        }
         let payload = serde_json::json!({
             "@context": "https://www.w3.org/ns/activitystreams",
             "id": activity_id,
@@ -334,15 +387,7 @@ impl ProfileService {
             "published": now.to_rfc3339(),
             "to": ["https://www.w3.org/ns/activitystreams#Public"],
             "cc": [format!("{actor_url}/followers")],
-            "object": {
-                "id": object_id,
-                "type": "Note",
-                "attributedTo": actor_url,
-                "published": now.to_rfc3339(),
-                "content": trimmed,
-                "to": ["https://www.w3.org/ns/activitystreams#Public"],
-                "cc": [format!("{actor_url}/followers")],
-            }
+            "object": note_object,
         });
         // INSERT outbox + fanout — two statements; if the fanout fails we leave the outbox
         // entry behind (visible via the Outbox endpoint, just not delivered) so a manual
@@ -356,9 +401,34 @@ impl ProfileService {
             "public",
             &payload,
             now,
+            in_reply_to_uri.filter(|s| !s.is_empty()),
+            sensitive,
+            spoiler.as_deref(),
         )
         .await
         .map_err(map_sqlx)?;
+        // Index #hashtags and @mentions. Best-effort; a failure here should not block delivery
+        // (the Note is already visible in the outbox and en route to followers).
+        for m in &mentions {
+            let _ = queries::insert_note_mention(
+                &self.db,
+                &object_id,
+                &m.best_actor_url(public_origin),
+                &m.handle,
+                now,
+            )
+            .await;
+        }
+        for h in &hashtags {
+            let _ = queries::insert_note_hashtag(
+                &self.db,
+                &object_id,
+                &h.normalized,
+                &h.original,
+                now,
+            )
+            .await;
+        }
         let fanout = queries::fanout_delivery_to_followers(
             &self.db,
             entry_id,

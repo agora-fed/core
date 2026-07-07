@@ -38,6 +38,15 @@ pub struct FeedItemDto {
     pub boost_count: i64,
     pub liked_by_me: bool,
     pub boosted_by_me: bool,
+    /// 0.18.0: parent Note object URI (for threaded replies). NULL = top-level.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub in_reply_to_uri: Option<String>,
+    /// 0.18.0: Mastodon-style sensitive flag.
+    #[serde(default)]
+    pub sensitive: bool,
+    /// 0.18.0: content-warning header.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spoiler_text: Option<String>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -53,6 +62,9 @@ struct FeedRow {
     boost_count: i64,
     liked_by_me: bool,
     boosted_by_me: bool,
+    in_reply_to_uri: Option<String>,
+    sensitive: bool,
+    spoiler_text: Option<String>,
 }
 
 impl From<FeedRow> for FeedItemDto {
@@ -69,6 +81,9 @@ impl From<FeedRow> for FeedItemDto {
             boost_count: r.boost_count,
             liked_by_me: r.liked_by_me,
             boosted_by_me: r.boosted_by_me,
+            in_reply_to_uri: r.in_reply_to_uri,
+            sensitive: r.sensitive,
+            spoiler_text: r.spoiler_text,
         }
     }
 }
@@ -96,6 +111,9 @@ pub async fn list_feed(
                feed.content_html,
                feed.published_at,
                feed.is_remote,
+               feed.in_reply_to_uri,
+               feed.sensitive,
+               feed.spoiler_text,
                (SELECT count(*) FROM federation_reaction r
                  WHERE r.object_uri = feed.object_uri AND r.kind = 'like')
              + (SELECT count(*) FROM federation_remote_reaction rr
@@ -119,10 +137,14 @@ pub async fn list_feed(
                             THEN $2 || '/' || c.avatar_object_key END        AS author_avatar_url,
                        COALESCE(oe.payload->'object'->>'content', '')        AS content_html,
                        oe.created_at                                         AS published_at,
-                       false                                                 AS is_remote
+                       false                                                 AS is_remote,
+                       oe.in_reply_to_uri                                    AS in_reply_to_uri,
+                       oe.sensitive                                          AS sensitive,
+                       oe.spoiler_text                                       AS spoiler_text
                   FROM federation_outbox_entry oe
                   JOIN citizen c ON c.id = oe.citizen_id
                  WHERE oe.kind = 'Create'
+                   AND oe.deleted_at IS NULL
                    AND (oe.citizen_id = $1
                         OR (c.handle IS NOT NULL AND EXISTS (
                               SELECT 1 FROM federation_follow f
@@ -136,9 +158,13 @@ pub async fn list_feed(
                        t.actor_avatar_url,
                        t.content_html,
                        t.published_at,
-                       true
+                       true,
+                       t.in_reply_to_uri,
+                       t.sensitive,
+                       t.spoiler_text
                   FROM federation_timeline_entry t
-                 WHERE EXISTS (SELECT 1 FROM federation_follow f
+                 WHERE t.deleted_at IS NULL
+                   AND EXISTS (SELECT 1 FROM federation_follow f
                                 WHERE f.citizen_id = $1
                                   AND f.direction = 'outbound'
                                   AND f.remote_actor_url = t.actor_url)
@@ -172,7 +198,9 @@ pub async fn anyone_follows(db: &PgPool, remote_actor_url: &str) -> Result<bool,
 }
 
 /// Store a remote Note ONCE per `object_uri` (re-deliveries and fan-in from multiple followers
-/// are no-ops). Content must already be sanitized + size-capped by the caller.
+/// are no-ops). Content must already be sanitized + size-capped by the caller. 0.18.0: also
+/// stores `in_reply_to_uri`, `sensitive` and `spoiler_text` (CW) — all NULL/false for legacy
+/// callers that pass defaults.
 #[allow(clippy::too_many_arguments)]
 pub async fn upsert_timeline_entry(
     db: &PgPool,
@@ -184,13 +212,17 @@ pub async fn upsert_timeline_entry(
     content_html: &str,
     published_at: DateTime<Utc>,
     received_at: DateTime<Utc>,
+    in_reply_to_uri: Option<&str>,
+    sensitive: bool,
+    spoiler_text: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r"
         INSERT INTO federation_timeline_entry
             (id, object_uri, actor_url, actor_handle, actor_display_name, actor_avatar_url,
-             content_html, published_at, received_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             content_html, published_at, received_at,
+             in_reply_to_uri, sensitive, spoiler_text)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         ON CONFLICT (object_uri) DO NOTHING
         ",
     )
@@ -203,9 +235,164 @@ pub async fn upsert_timeline_entry(
     .bind(content_html)
     .bind(published_at)
     .bind(received_at)
+    .bind(in_reply_to_uri)
+    .bind(sensitive)
+    .bind(spoiler_text)
     .execute(db)
     .await?;
     Ok(())
+}
+
+/// Persist an extracted hashtag reference (idempotent). Mirrors
+/// `dsoc_auth::queries::insert_note_hashtag` but callable from the gateway inbox handler
+/// (which does not depend on the auth crate).
+pub async fn upsert_hashtag(
+    db: &PgPool,
+    object_uri: &str,
+    tag_normalized: &str,
+    tag_original: &str,
+    now: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r"
+        INSERT INTO note_hashtag (id, object_uri, tag_normalized, tag_original, created_at)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (object_uri, tag_normalized) DO NOTHING
+        ",
+    )
+    .bind(Uuid::now_v7())
+    .bind(object_uri)
+    .bind(tag_normalized)
+    .bind(tag_original)
+    .bind(now)
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+/// Persist an extracted mention reference (idempotent).
+pub async fn upsert_mention(
+    db: &PgPool,
+    object_uri: &str,
+    mentioned_actor_url: &str,
+    mentioned_handle: &str,
+    now: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r"
+        INSERT INTO note_mention (id, object_uri, mentioned_actor_url, mentioned_handle, created_at)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (object_uri, mentioned_actor_url) DO NOTHING
+        ",
+    )
+    .bind(Uuid::now_v7())
+    .bind(object_uri)
+    .bind(mentioned_actor_url)
+    .bind(mentioned_handle)
+    .bind(now)
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+/// Descendants of a Note by URI (children, grandchildren, …) — recursive on `in_reply_to_uri`,
+/// depth capped at 40 so a pathological thread cannot blow the query. The root note itself is
+/// included as the first row. Ancestors (walking `in_reply_to_uri` upward) are a follow-up in
+/// 0.19.0; today the front-end can look up the parent one hop at a time when needed.
+/// Returns the same `FeedItemDto` shape as `list_feed`, so the front reuses its renderer.
+pub async fn list_thread_context(
+    db: &PgPool,
+    root_uri: &str,
+    citizen_id: Uuid,
+    media_base_url: &str,
+) -> Result<Vec<FeedItemDto>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, FeedRow>(
+        r"
+        WITH RECURSIVE thread(object_uri, depth) AS (
+            SELECT $1::text, 0
+            UNION ALL
+            SELECT child_uri, thread.depth + 1
+              FROM thread
+              JOIN LATERAL (
+                    SELECT COALESCE(oe.payload->'object'->>'id', oe.activity_id) AS child_uri
+                      FROM federation_outbox_entry oe
+                     WHERE oe.in_reply_to_uri = thread.object_uri
+                       AND oe.deleted_at IS NULL
+                    UNION ALL
+                    SELECT t.object_uri
+                      FROM federation_timeline_entry t
+                     WHERE t.in_reply_to_uri = thread.object_uri
+                       AND t.deleted_at IS NULL
+              ) c ON true
+             WHERE thread.depth < 40
+        )
+        SELECT feed.object_uri,
+               feed.author_handle,
+               feed.author_display_name,
+               feed.author_avatar_url,
+               feed.content_html,
+               feed.published_at,
+               feed.is_remote,
+               feed.in_reply_to_uri,
+               feed.sensitive,
+               feed.spoiler_text,
+               (SELECT count(*) FROM federation_reaction r
+                 WHERE r.object_uri = feed.object_uri AND r.kind = 'like')
+             + (SELECT count(*) FROM federation_remote_reaction rr
+                 WHERE rr.object_uri = feed.object_uri AND rr.kind = 'like')  AS like_count,
+               (SELECT count(*) FROM federation_reaction r
+                 WHERE r.object_uri = feed.object_uri AND r.kind = 'boost')
+             + (SELECT count(*) FROM federation_remote_reaction rr
+                 WHERE rr.object_uri = feed.object_uri AND rr.kind = 'boost') AS boost_count,
+               EXISTS (SELECT 1 FROM federation_reaction r
+                        WHERE r.citizen_id = $2 AND r.object_uri = feed.object_uri
+                          AND r.kind = 'like')  AS liked_by_me,
+               EXISTS (SELECT 1 FROM federation_reaction r
+                        WHERE r.citizen_id = $2 AND r.object_uri = feed.object_uri
+                          AND r.kind = 'boost') AS boosted_by_me
+          FROM (
+                SELECT COALESCE(oe.payload->'object'->>'id', oe.activity_id) AS object_uri,
+                       '@' || COALESCE(c.handle, 'u-' || replace(c.id::text, '-', ''))
+                                                                             AS author_handle,
+                       c.display_name                                        AS author_display_name,
+                       CASE WHEN c.avatar_object_key IS NOT NULL AND $3 <> ''
+                            THEN $3 || '/' || c.avatar_object_key END        AS author_avatar_url,
+                       COALESCE(oe.payload->'object'->>'content', '')        AS content_html,
+                       oe.created_at                                         AS published_at,
+                       false                                                 AS is_remote,
+                       oe.in_reply_to_uri                                    AS in_reply_to_uri,
+                       oe.sensitive                                          AS sensitive,
+                       oe.spoiler_text                                       AS spoiler_text
+                  FROM federation_outbox_entry oe
+                  JOIN citizen c ON c.id = oe.citizen_id
+                 WHERE oe.kind = 'Create'
+                   AND oe.deleted_at IS NULL
+                   AND COALESCE(oe.payload->'object'->>'id', oe.activity_id)
+                       IN (SELECT object_uri FROM thread)
+                UNION ALL
+                SELECT t.object_uri,
+                       t.actor_handle,
+                       t.actor_display_name,
+                       t.actor_avatar_url,
+                       t.content_html,
+                       t.published_at,
+                       true,
+                       t.in_reply_to_uri,
+                       t.sensitive,
+                       t.spoiler_text
+                  FROM federation_timeline_entry t
+                 WHERE t.deleted_at IS NULL
+                   AND t.object_uri IN (SELECT object_uri FROM thread)
+               ) AS feed
+         ORDER BY feed.published_at ASC
+        ",
+    )
+    .bind(root_uri)
+    .bind(citizen_id)
+    .bind(media_base_url.trim_end_matches('/'))
+    .fetch_all(db)
+    .await?;
+    Ok(rows.into_iter().map(FeedItemDto::from).collect())
 }
 
 /// Is `object_uri` one of OUR objects (a Note id or activity id from `federation_outbox_entry`)?

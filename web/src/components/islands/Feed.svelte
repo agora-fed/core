@@ -34,6 +34,15 @@
   let offset = 0;
   // Reações em voo, chaveadas por `${kind}:${uri}` — trava o botão certo, não o card todo.
   let inFlight = $state<Set<string>>(new Set());
+  // 0.18.0: CW collapse — set of object_uri revelados; e composer de reply inline.
+  let revealed = $state<Set<string>>(new Set());
+  let replyingTo = $state<string | null>(null);
+
+  function toggleReveal(uri: string) {
+    revealed = new Set(revealed);
+    if (revealed.has(uri)) revealed.delete(uri);
+    else revealed.add(uri);
+  }
 
   function isLogged(): boolean {
     try {
@@ -229,10 +238,45 @@
               </time>
             </header>
 
-            <div class="content">
-              <!-- eslint-disable-next-line svelte/no-at-html-tags — sanitizado em sanitizeNoteHtml -->
-              {@html sanitizeNoteHtml(item.content_html)}
-            </div>
+            {#if item.in_reply_to_uri}
+              <p class="reply-line muted">
+                <Icon name="reply" size={12} />
+                em resposta a
+                <a href={item.in_reply_to_uri}>{item.in_reply_to_uri.replace(/^https?:\/\//, '').split('/').slice(0, 2).join('/')}…</a>
+              </p>
+            {/if}
+
+            {#if item.spoiler_text}
+              <div class="cw">
+                <div class="cw-head">
+                  <Icon name="cw" size={14} />
+                  <span class="cw-text">{item.spoiler_text}</span>
+                </div>
+                <button
+                  type="button"
+                  class="cw-toggle"
+                  aria-expanded={revealed.has(item.object_uri)}
+                  onclick={() => toggleReveal(item.object_uri)}
+                >
+                  <Icon
+                    name={revealed.has(item.object_uri) ? 'eye-off' : 'eye'}
+                    size={14}
+                  />
+                  {revealed.has(item.object_uri) ? 'Ocultar' : 'Mostrar conteúdo'}
+                </button>
+              </div>
+              {#if revealed.has(item.object_uri)}
+                <div class="content">
+                  <!-- eslint-disable-next-line svelte/no-at-html-tags — sanitizado em sanitizeNoteHtml -->
+                  {@html sanitizeNoteHtml(item.content_html)}
+                </div>
+              {/if}
+            {:else}
+              <div class="content">
+                <!-- eslint-disable-next-line svelte/no-at-html-tags — sanitizado em sanitizeNoteHtml -->
+                {@html sanitizeNoteHtml(item.content_html)}
+              </div>
+            {/if}
 
             <footer class="reactions">
               <button
@@ -274,13 +318,32 @@
                 type="button"
                 class="react"
                 aria-label="Responder"
-                disabled
-                title="Em breve"
+                onclick={() =>
+                  (replyingTo =
+                    replyingTo === item.object_uri ? null : item.object_uri)}
               >
                 <Icon name="reply" size={18} />
                 <span class="lbl">Responder</span>
               </button>
             </footer>
+
+            {#if replyingTo === item.object_uri}
+              <div class="reply-composer">
+                <NoteComposer
+                  variant="reply"
+                  replyTo={{
+                    uri: item.object_uri,
+                    handle: item.author_handle.replace(/^@/, ''),
+                  }}
+                  autofocus
+                  oncancel={() => (replyingTo = null)}
+                  onposted={() => {
+                    replyingTo = null;
+                    loadFirstPage();
+                  }}
+                />
+              </div>
+            {/if}
           </Card>
         </li>
       {/each}
@@ -403,6 +466,74 @@
     color: var(--accent-strong);
   }
 
+  .reply-line {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1);
+    font-size: var(--fs-xs);
+    color: var(--text-3);
+    margin: 0 0 var(--sp-2);
+  }
+  .reply-line a {
+    color: var(--text-3);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--border-strong);
+  }
+  .reply-line a:hover {
+    color: var(--text-1);
+  }
+  .cw {
+    background: var(--warning-soft);
+    border: 1px solid color-mix(in srgb, var(--warning) 20%, transparent);
+    border-radius: var(--r-sm);
+    padding: var(--sp-2) var(--sp-3);
+    margin-bottom: var(--sp-2);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    flex-wrap: wrap;
+  }
+  .cw-head {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    color: var(--warning);
+    font-weight: var(--fw-semibold);
+    font-size: var(--fs-sm);
+    min-width: 0;
+  }
+  .cw-text {
+    color: var(--text-1);
+    font-weight: var(--fw-medium);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cw-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1);
+    background: var(--surface-1);
+    color: var(--text-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-full);
+    padding: var(--sp-1) var(--sp-3);
+    font: inherit;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .cw-toggle:hover {
+    background: var(--surface-2);
+    color: var(--text-1);
+  }
+  .reply-composer {
+    margin-top: var(--sp-3);
+    padding-top: var(--sp-3);
+    border-top: 1px solid var(--border-subtle);
+  }
   .reactions {
     display: flex;
     gap: var(--sp-1);

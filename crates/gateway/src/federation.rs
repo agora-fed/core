@@ -77,6 +77,7 @@ pub fn client_routes(state: AppState) -> Router<()> {
         .route("/me/feed", get(get_my_feed))
         .route("/me/like", post(toggle_like))
         .route("/me/boost", post(toggle_boost))
+        .route("/notes/context", get(get_thread_context))
         .with_state(state)
 }
 
@@ -705,6 +706,15 @@ async fn follow_remote(
 struct PostNoteRequest {
     /// The note's text content. Server-side validation: non-empty, max 5000 chars.
     content: String,
+    /// 0.18.0: parent Note object URI (for threaded replies). Optional.
+    #[serde(default)]
+    in_reply_to_uri: Option<String>,
+    /// 0.18.0: Mastodon-style sensitive flag (opt-in).
+    #[serde(default)]
+    sensitive: bool,
+    /// 0.18.0: content-warning header (max 500 chars, trimmed server-side).
+    #[serde(default)]
+    spoiler_text: Option<String>,
 }
 
 /// `POST /api/v1/me/notes` — publish a public Note. Wraps the content in a `Create(Note)`,
@@ -741,7 +751,15 @@ async fn post_my_note(
         me.handle.as_deref().unwrap_or(&me.public_handle)
     );
     match svc
-        .create_public_note(caller.citizen, &me_url, &body.content)
+        .create_public_note(
+            caller.citizen,
+            &me_url,
+            &public_origin,
+            &body.content,
+            body.in_reply_to_uri.as_deref(),
+            body.sensitive,
+            body.spoiler_text.as_deref(),
+        )
         .await
     {
         Ok((activity_id, fanout)) => (
@@ -770,6 +788,37 @@ async fn post_my_note(
 struct FeedQuery {
     limit: Option<i64>,
     offset: Option<i64>,
+}
+
+/// Query for `GET /api/v1/notes/context?uri=`.
+#[derive(Debug, Deserialize)]
+struct ThreadContextQuery {
+    uri: String,
+}
+
+/// `GET /api/v1/notes/context?uri=<object_uri>` — descendants of a Note (the root plus every
+/// reply subtree), depth-capped. Used by the single-status thread view. 0.18.0 does not walk
+/// ancestors — call this on the topmost URI you know and the front expands from there.
+async fn get_thread_context(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Query(query): Query<ThreadContextQuery>,
+) -> Response {
+    let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+    match federation_feed::list_thread_context(
+        &state.db,
+        &query.uri,
+        caller.citizen.as_uuid(),
+        &media_base,
+    )
+    .await
+    {
+        Ok(items) => (StatusCode::OK, Json(ApiResponse::ok(items))).into_response(),
+        Err(err) => {
+            tracing::error!(error = ?err, "thread context query failed");
+            server_error()
+        }
+    }
 }
 
 /// `GET /api/v1/me/feed?limit&offset` — the citizen's merged federated timeline: their own local
@@ -1079,6 +1128,20 @@ async fn handle_inbox_create(
         .and_then(|i| i.get("url"))
         .and_then(Value::as_str);
     let handle = remote_handle_of(signer_actor, signer_actor_url);
+    // 0.18.0: extract Mastodon-parity fields from the Note object. All optional.
+    let in_reply_to = object.get("inReplyTo").and_then(Value::as_str);
+    let sensitive = object
+        .get("sensitive")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    // `summary` is Mastodon's CW header. Truncate to 1024 chars (permissive cap; local publish
+    // uses 500). Empty string = treated as absent.
+    let spoiler_owned: Option<String> = object
+        .get("summary")
+        .and_then(Value::as_str)
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.chars().take(1024).collect());
     if let Err(err) = federation_feed::upsert_timeline_entry(
         &state.db,
         object_uri,
@@ -1089,12 +1152,89 @@ async fn handle_inbox_create(
         &content,
         published,
         chrono::Utc::now(),
+        in_reply_to,
+        sensitive,
+        spoiler_owned.as_deref(),
     )
     .await
     {
         tracing::error!(error = ?err, object_uri, "failed to store remote Note");
-    } else {
-        tracing::info!(actor = %signer_actor_url, object_uri, "remote Note stored in timeline");
+        return;
+    }
+    tracing::info!(actor = %signer_actor_url, object_uri, "remote Note stored in timeline");
+    // Index #hashtags and @mentions carried in the AP `tag[]` array. Falls back to text
+    // extraction from `content` if the remote omitted the array (older Pleroma versions).
+    let now = chrono::Utc::now();
+    let mut saw_tag_array = false;
+    if let Some(tags) = object.get("tag").and_then(Value::as_array) {
+        saw_tag_array = !tags.is_empty();
+        for tag in tags {
+            let ttype = tag.get("type").and_then(Value::as_str).unwrap_or("");
+            match ttype {
+                "Mention" => {
+                    let href = tag.get("href").and_then(Value::as_str).unwrap_or("");
+                    let name = tag.get("name").and_then(Value::as_str).unwrap_or("");
+                    if !href.is_empty() && !name.is_empty() {
+                        let _ = federation_feed::upsert_mention(
+                            &state.db,
+                            object_uri,
+                            href,
+                            name.trim_start_matches('@'),
+                            now,
+                        )
+                        .await;
+                    }
+                }
+                "Hashtag" => {
+                    let name = tag
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .trim_start_matches('#')
+                        .trim();
+                    if !name.is_empty() {
+                        // Reuse local extractor normalization so #Saúde and #saude collide.
+                        let normalized = dsoc_federation::extract_hashtags(&format!("#{name}"))
+                            .into_iter()
+                            .next()
+                            .map(|h| h.normalized)
+                            .unwrap_or_else(|| name.to_lowercase());
+                        let _ = federation_feed::upsert_hashtag(
+                            &state.db,
+                            object_uri,
+                            &normalized,
+                            name,
+                            now,
+                        )
+                        .await;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    if !saw_tag_array {
+        // Fallback for remotes that don't populate tag[] — extract from content.
+        for m in dsoc_federation::extract_mentions(&content) {
+            let _ = federation_feed::upsert_mention(
+                &state.db,
+                object_uri,
+                &m.best_actor_url(""),
+                &m.handle,
+                now,
+            )
+            .await;
+        }
+        for h in dsoc_federation::extract_hashtags(&content) {
+            let _ = federation_feed::upsert_hashtag(
+                &state.db,
+                object_uri,
+                &h.normalized,
+                &h.original,
+                now,
+            )
+            .await;
+        }
     }
 }
 

@@ -510,11 +510,24 @@ export const lookupRemoteActor = (acct: string) =>
 export const followRemoteActor = (remote_actor_url: string) =>
   apiPost<{ status: string }>('/api/v1/me/follow', { remote_actor_url });
 
+/** Options passed to `postNote` for 0.18.0's Mastodon-parity fields. */
+export interface PostNoteOptions {
+  in_reply_to_uri?: string;
+  sensitive?: boolean;
+  spoiler_text?: string;
+}
+
 /** Publish a public Note. Fan-out happens in the background; the response is fast. */
-export const postNote = (content: string) =>
+export const postNote = (content: string, options: PostNoteOptions = {}) =>
   apiPost<{ activity_id: string; fanout_count: number; status: string }>(
     '/api/v1/me/notes',
-    { content },
+    { content, ...options },
+  );
+
+/** Descendants of a Note by its ActivityPub object URI. */
+export const getThreadContext = (uri: string) =>
+  apiGetCredentialed<FeedItemDto[]>(
+    `/api/v1/notes/context?uri=${encodeURIComponent(uri)}`,
   );
 
 /** Federated feed of the authenticated citizen (own notes + followed actors). */
