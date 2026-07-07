@@ -4,11 +4,13 @@
 //!
 //! * `GET /api/v1/reports/gasto-parlamentar` — total cota parlamentar spend
 //!   grouped by (político | partido | cargo | esfera), filterable by
-//!   uf/house/party/sphere. The raw per-mandate totals come from the Câmara
-//!   open-data API (`/deputados/{id}/despesas`) and are cached in-memory
-//!   with a 6-hour TTL. On a cold cache we fetch concurrently (30 in-flight)
-//!   so a fresh render finishes in ~10 s. Senado (senadores) has no cota
-//!   endpoint — those mandates report zero.
+//!   uf/house/party/sphere. Raw per-mandate totals come from two sources:
+//!   Câmara `/deputados/{id}/despesas` (JSON, paginated by `?ano=&pagina=`)
+//!   for deputados, and Senado's CEAPS CSV
+//!   (`https://www.senado.leg.br/transparencia/LAI/verba/despesa_ceaps_{YYYY}.csv`,
+//!   Latin-1, `;`-separated) for senadores — matched by display_name
+//!   uppercase. Both cached together in-memory with a 6-hour TTL. Cold
+//!   render ~10 s.
 //! * `GET /api/v1/reports/proposals-summary` — DB-only aggregation over
 //!   `proposal` joined with `mandate`. Instant.
 //!
@@ -20,6 +22,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
+use chrono::Datelike;
 use dsoc_app::AppState;
 use dsoc_api_contract::ApiResponse;
 use serde::{Deserialize, Serialize};
@@ -79,6 +82,24 @@ pub struct GastoResponse {
     pub pending: u32,
     /// When the raw cache was last refreshed.
     pub cached_at: String,
+    /// Fiscal year the aggregate reports on (typically N-1). Frontend
+    /// renders "Ano de referência: 2025".
+    pub year: i32,
+    /// Per-mandate detail rows — only present when a filter narrows the
+    /// result enough (< 100 mandates). Used for drill-down in the UI.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub detail: Vec<MandateDetailRow>,
+}
+
+/// One per-mandate detail row used by the drill-down modal.
+#[derive(Debug, Clone, Serialize)]
+pub struct MandateDetailRow {
+    pub mandate_id: String,
+    pub display_name: String,
+    pub party: Option<String>,
+    pub uf: Option<String>,
+    pub house: Option<String>,
+    pub amount_cents: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -304,6 +325,9 @@ struct Cache {
     /// Fixed mandate slim rows we ran the last fetch against, so a re-render
     /// under a filter doesn't need to re-query the DB.
     mandates: Vec<MandateSlim>,
+    /// The fiscal year the cached aggregate is reporting on. Exposed in the
+    /// response so the front can render "Ano de referência: 2025".
+    year: i32,
 }
 
 static CACHE_LOCK: std::sync::LazyLock<Arc<RwLock<Cache>>> = std::sync::LazyLock::new(|| {
@@ -312,22 +336,40 @@ static CACHE_LOCK: std::sync::LazyLock<Arc<RwLock<Cache>>> = std::sync::LazyLock
         map: HashMap::new(),
         pending: 0,
         mandates: Vec::new(),
+        year: 0,
     }))
 });
 
+/// Body param `?refresh=1` bypasses the cache and forces a fresh fetch.
+#[derive(Debug, Default, Deserialize)]
+pub struct GastoQuery {
+    #[serde(flatten)]
+    pub filters: DashboardFilters,
+    #[serde(default)]
+    pub refresh: Option<String>,
+}
+
 async fn gasto_parlamentar(
     State(state): State<AppState>,
-    Query(f): Query<DashboardFilters>,
+    Query(q): Query<GastoQuery>,
 ) -> Response {
-    // Check cache; refresh if stale or first hit.
-    {
+    let force_refresh = q.refresh.as_deref().is_some_and(|s| s == "1" || s == "true");
+    // Check cache; refresh if stale, first hit, or forced.
+    if !force_refresh {
         let cache = CACHE_LOCK.read().await;
         if cache
             .fetched_at
             .is_some_and(|t| t.elapsed() < CACHE_TTL)
             && cache.pending == 0
         {
-            let out = build_response(&cache.map, &cache.mandates, &f, 0, cache.fetched_at);
+            let out = build_response(
+                &cache.map,
+                &cache.mandates,
+                &q.filters,
+                0,
+                cache.fetched_at,
+                cache.year,
+            );
             return (StatusCode::OK, Json(ApiResponse::ok(out))).into_response();
         }
     }
@@ -339,19 +381,17 @@ async fn gasto_parlamentar(
             return server_error();
         }
     };
-    let map = fetch_all_expenses(&mandates).await;
+    let (map, year) = fetch_all_expenses(&mandates).await;
     let now = Instant::now();
     {
         let mut cache = CACHE_LOCK.write().await;
         cache.fetched_at = Some(now);
         cache.map = map.clone();
         cache.mandates = mandates.clone();
-        // Pending = how many mandates have zero recorded (either genuinely
-        // zero-spend or failed to fetch). The refresh replaces the whole
-        // map, so pending resets to 0 after this pass.
         cache.pending = 0;
+        cache.year = year;
     }
-    let out = build_response(&map, &mandates, &f, 0, Some(now));
+    let out = build_response(&map, &mandates, &q.filters, 0, Some(now), year);
     (StatusCode::OK, Json(ApiResponse::ok(out))).into_response()
 }
 
@@ -393,19 +433,35 @@ async fn load_mandate_slims(state: &AppState) -> Result<Vec<MandateSlim>, sqlx::
         .collect())
 }
 
-/// For each mandate, fetch the most recent year's cota parlamentar from the
-/// Câmara open-data API. Senado mandates are recorded as zero (they have no
-/// equivalent public endpoint we can hit here). Concurrency is bounded by
-/// `CONCURRENCY` semaphore permits.
-async fn fetch_all_expenses(mandates: &[MandateSlim]) -> RawMap {
+/// Which fiscal year the aggregate is reporting on. We prefer the LAST
+/// FULLY-CLOSED year (typically N-1) because the current year's stream is
+/// partial and would understate every mandate. `now` is passed in so tests
+/// can pin the choice.
+fn reporting_year_for(now: chrono::DateTime<chrono::Utc>) -> i32 {
+    // Câmara publishes expenses with a lag — use N-1 uniformly. If the
+    // current month is late in the year and N-1 is stable, this is safe.
+    // (A future refinement: switch to current year once we're past March.)
+    let year = now.date_naive().and_hms_opt(0, 0, 0).unwrap().year();
+    year - 1
+}
+
+/// For each mandate, fetch the last-closed-year cota parlamentar from the
+/// Câmara open-data API. Senado mandates are recorded as zero (no
+/// equivalent public endpoint here). Concurrency bounded by `CONCURRENCY`.
+///
+/// The Câmara despesas endpoint pages at 100 items. Deputies file 200-400
+/// items/year → we paginate `?ano=<year>&itens=100&pagina=<n>` until the
+/// server returns an empty `dados` array.
+async fn fetch_all_expenses(mandates: &[MandateSlim]) -> (RawMap, i32) {
+    let year = reporting_year_for(chrono::Utc::now());
     let sem = Arc::new(Semaphore::new(CONCURRENCY));
     let cli = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(20))
         .user_agent("democracia.social.br/reports")
         .build()
     {
         Ok(c) => c,
-        Err(_) => return HashMap::new(),
+        Err(_) => return (HashMap::new(), year),
     };
     let mut handles = Vec::with_capacity(mandates.len());
     for m in mandates {
@@ -420,37 +476,40 @@ async fn fetch_all_expenses(mandates: &[MandateSlim]) -> RawMap {
         let cli = cli.clone();
         handles.push(tokio::spawn(async move {
             let _guard = permit.acquire().await.ok()?;
-            let url = format!(
-                "{CAMARA_BASE}/deputados/{ext}/despesas?ordem=DESC&ordenarPor=ano&itens=100"
-            );
-            let resp = cli.get(&url).send().await.ok()?;
-            if !resp.status().is_success() {
-                return Some((id, 0i64));
-            }
-            let json: serde_json::Value = resp.json().await.ok()?;
-            let items = json.get("dados")?.as_array()?;
-            if items.is_empty() {
-                return Some((id, 0i64));
-            }
-            let mut top_year: Option<i64> = None;
-            for it in items {
-                if let Some(y) = it.get("ano").and_then(|v| v.as_i64()) {
-                    top_year = Some(top_year.map_or(y, |cur| cur.max(y)));
-                }
-            }
-            let year = top_year?;
             let mut sum_cents: i64 = 0;
-            for it in items {
-                if it.get("ano").and_then(|v| v.as_i64()) != Some(year) {
-                    continue;
+            // Walk pagina=1..=N until dados is empty. A safety cap of 20
+            // pages caps a single deputy at 2000 items.
+            for page in 1..=20u32 {
+                let url = format!(
+                    "{CAMARA_BASE}/deputados/{ext}/despesas?ano={year}&itens=100&pagina={page}"
+                );
+                let Ok(resp) = cli.get(&url).send().await else {
+                    break;
+                };
+                if !resp.status().is_success() {
+                    break;
                 }
-                let v = it
-                    .get("valorLiquido")
-                    .and_then(|v| v.as_f64())
-                    .or_else(|| it.get("valorDocumento").and_then(|v| v.as_f64()))
-                    .unwrap_or(0.0);
-                // Round to cents to keep the wire an int.
-                sum_cents += (v * 100.0).round() as i64;
+                let Ok(json) = resp.json::<serde_json::Value>().await else {
+                    break;
+                };
+                let Some(items) = json.get("dados").and_then(|v| v.as_array()) else {
+                    break;
+                };
+                if items.is_empty() {
+                    break;
+                }
+                for it in items {
+                    let v = it
+                        .get("valorLiquido")
+                        .and_then(|v| v.as_f64())
+                        .or_else(|| it.get("valorDocumento").and_then(|v| v.as_f64()))
+                        .unwrap_or(0.0);
+                    sum_cents += (v * 100.0).round() as i64;
+                }
+                if items.len() < 100 {
+                    // Last page — no need to poke the next one.
+                    break;
+                }
             }
             Some((id, sum_cents))
         }));
@@ -466,7 +525,100 @@ async fn fetch_all_expenses(mandates: &[MandateSlim]) -> RawMap {
             map.insert(id, cents);
         }
     }
-    map
+    // 0.19.0-polish: also fold in Senado CEAPS from the published CSV. The
+    // Senado exposes despesa_ceaps_{YYYY}.csv (Latin-1, `;`-separated).
+    // Match by display_name uppercase — senator rows carry no external id
+    // shared with our mandate table today.
+    if let Ok(senado_by_name) = fetch_senado_ceaps(&cli, year).await {
+        for m in mandates {
+            if !matches!(m.house.as_deref(), Some("senado")) {
+                continue;
+            }
+            let name_up = normalize_senator_name(&m.display_name);
+            if let Some(cents) = senado_by_name.get(&name_up) {
+                map.insert(m.id, *cents);
+            }
+        }
+    } else {
+        tracing::warn!(year, "senado CEAPS fetch failed — senadores keep zero");
+    }
+    (map, year)
+}
+
+/// Download + parse the Senado CEAPS CSV for `year`. Returns a
+/// `NAME_UPPERCASE → cents` map (integer cents to match the Câmara path).
+async fn fetch_senado_ceaps(
+    cli: &reqwest::Client,
+    year: i32,
+) -> Result<HashMap<String, i64>, ()> {
+    let url = format!(
+        "https://www.senado.leg.br/transparencia/LAI/verba/despesa_ceaps_{year}.csv"
+    );
+    let resp = cli.get(&url).send().await.map_err(|_| ())?;
+    if !resp.status().is_success() {
+        return Err(());
+    }
+    let bytes = resp.bytes().await.map_err(|_| ())?;
+    // Decode Latin-1 → UTF-8: every byte is its Unicode codepoint.
+    let text: String = bytes.iter().map(|&b| b as char).collect();
+    let mut out: HashMap<String, i64> = HashMap::new();
+    // First line is a metadata / disclaimer row; second is the header. Skip
+    // both. From line 3 on the columns are:
+    //  ANO ; MES ; SENADOR ; TIPO_DESPESA ; CNPJ_CPF ; FORNECEDOR ;
+    //  DOCUMENTO ; DATA ; DETALHAMENTO ; VALOR_REEMBOLSADO ; COD_DOCUMENTO
+    for (i, line) in text.lines().enumerate() {
+        if i < 2 || line.trim().is_empty() {
+            continue;
+        }
+        let cols = split_semi_csv(line);
+        if cols.len() < 10 {
+            continue;
+        }
+        let name = cols[2].trim().to_uppercase();
+        if name.is_empty() {
+            continue;
+        }
+        let value_str = cols[9].trim().replace(',', ".");
+        let value: f64 = value_str.parse().unwrap_or(0.0);
+        let cents = (value * 100.0).round() as i64;
+        *out.entry(name).or_insert(0) += cents;
+    }
+    Ok(out)
+}
+
+/// Split a `;`-separated CSV row honouring `"…"`-quoted cells. Simple enough
+/// for the well-behaved Senado files; no need for the `csv` crate.
+fn split_semi_csv(line: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut in_quotes = false;
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' if in_quotes && chars.peek() == Some(&'"') => {
+                cur.push('"');
+                chars.next();
+            }
+            '"' => in_quotes = !in_quotes,
+            ';' if !in_quotes => {
+                out.push(std::mem::take(&mut cur));
+            }
+            other => cur.push(other),
+        }
+    }
+    out.push(cur);
+    out
+}
+
+/// Normalize a senator display name for matching against the CEAPS row. We
+/// uppercase, strip accents on the vowels most common in PT-BR names, and
+/// collapse whitespace. Doesn't try to handle every diacritic — the CEAPS
+/// file itself keeps accents.
+fn normalize_senator_name(name: &str) -> String {
+    name.to_uppercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn build_response(
@@ -475,6 +627,7 @@ fn build_response(
     f: &DashboardFilters,
     pending: u32,
     fetched_at: Option<Instant>,
+    year: i32,
 ) -> GastoResponse {
     // Filter mandates by (uf/house/party/sphere).
     let filtered: Vec<&MandateSlim> = mandates
@@ -561,11 +714,30 @@ fn build_response(
     let cached_at = fetched_at
         .map(|_| chrono::Utc::now().to_rfc3339())
         .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+    // Detail rows for drill-down. Only emit when the filtered set is small
+    // enough to be usable (large sets would blow the response size).
+    let mut detail: Vec<MandateDetailRow> = Vec::new();
+    if filtered.len() <= 200 {
+        for m in &filtered {
+            let cents = map.get(&m.id).copied().unwrap_or(0);
+            detail.push(MandateDetailRow {
+                mandate_id: m.id.to_string(),
+                display_name: m.display_name.clone(),
+                party: m.party.clone(),
+                uf: m.uf.clone(),
+                house: m.house.clone(),
+                amount_cents: cents,
+            });
+        }
+        detail.sort_by(|a, b| b.amount_cents.cmp(&a.amount_cents));
+    }
     GastoResponse {
         total_cents,
         mandate_count,
         groups,
         pending,
         cached_at,
+        year,
+        detail,
     }
 }
