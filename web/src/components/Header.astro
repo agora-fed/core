@@ -8,8 +8,9 @@ const path = Astro.url.pathname;
 const isActive = (href: string) =>
   href === '/' ? path === '/' : path.startsWith(href);
 
+// Main nav is strictly the POLITICAL surface. The social/fediverse surface (Feed,
+// meu perfil, buscar no fediverso) lives in the profile dropdown (AuthMenu).
 const links = [
-  { href: '/feed', label: 'Feed' },
   { href: '/politicos', label: 'Políticos' },
   { href: '/partidos', label: 'Partidos' },
   { href: '/propostas', label: 'Propostas' },
