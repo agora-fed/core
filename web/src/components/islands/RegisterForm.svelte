@@ -61,10 +61,16 @@
 
   async function ensureMandates() {
     if (mandatesLoaded) return;
-    const r = await getAllMandates(DEFAULT_ORG_ID);
-    if (r.ok && r.data) {
-      mandates = r.data;
-    }
+    // Register-as-politician só é usado hoje por federais/estaduais. Municipais
+    // (~68k) tornam o picker inviável e são cobertos por um flow dedicado.
+    const [fed, est] = await Promise.all([
+      getAllMandates(DEFAULT_ORG_ID, 5000, 'federal'),
+      getAllMandates(DEFAULT_ORG_ID, 5000, 'estadual'),
+    ]);
+    mandates = [
+      ...(fed.ok && fed.data ? fed.data : []),
+      ...(est.ok && est.data ? est.data : []),
+    ];
     mandatesLoaded = true;
   }
 

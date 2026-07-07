@@ -8,10 +8,18 @@ import { getAllMandates, DEFAULT_ORG_ID } from '../../lib/api';
 import { partySlug } from '../../lib/parties';
 
 export async function getStaticPaths() {
-  const res = await getAllMandates(DEFAULT_ORG_ID);
-  if (!res.ok || !res.data) return [];
+  // Federal + estadual — nationally-recognized party siglas. Enumerating
+  // 68k municipal rows to extract siglas would explode the build.
+  const [fed, est] = await Promise.all([
+    getAllMandates(DEFAULT_ORG_ID, 5000, 'federal'),
+    getAllMandates(DEFAULT_ORG_ID, 5000, 'estadual'),
+  ]);
+  const merged = [
+    ...(fed.ok && fed.data ? fed.data : []),
+    ...(est.ok && est.data ? est.data : []),
+  ];
   const siglas = Array.from(
-    new Set(res.data.map((m) => m.party).filter((p): p is string => !!p)),
+    new Set(merged.map((m) => m.party).filter((p): p is string => !!p)),
   );
   return siglas.map((sigla) => ({
     params: { sigla: partySlug(sigla) },

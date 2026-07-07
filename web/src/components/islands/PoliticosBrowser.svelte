@@ -36,7 +36,10 @@
 
   type Sphere = 'federal' | 'estadual' | 'municipal';
 
-  let sphere = $state<Sphere | ''>('');
+  // Default sphere = 'federal' — the smallest bucket (594 rows) so the page
+  // always shows *something* on first paint. The user can switch to estadual /
+  // municipal from the dropdown.
+  let sphere = $state<Sphere | ''>('federal');
   let uf = $state('');
   let municipio = $state('');
   let q = $state('');

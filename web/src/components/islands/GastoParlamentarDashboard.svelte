@@ -234,7 +234,9 @@
   onMount(async () => {
     loadFromUrl();
     ready = true;
-    const mr = await getAllMandates(DEFAULT_ORG_ID);
+    // Restrict to federal — CEAP (Câmara) + CEAPS (Senado) só existem para
+    // o Congresso Federal.
+    const mr = await getAllMandates(DEFAULT_ORG_ID, 5000, 'federal');
     if (mr.ok && mr.data) mandates = mr.data;
     await load();
   });

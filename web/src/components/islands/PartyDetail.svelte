@@ -31,12 +31,21 @@
   let accent = $derived(partyColor(sigla));
 
   onMount(async () => {
-    const res = await getAllMandates(DEFAULT_ORG_ID);
+    // Federal + estadual only. Municipal party affiliations mirror the same
+    // national siglas (~68k rows), so listing them here would drown the UI.
+    const [fed, est] = await Promise.all([
+      getAllMandates(DEFAULT_ORG_ID, 5000, 'federal'),
+      getAllMandates(DEFAULT_ORG_ID, 5000, 'estadual'),
+    ]);
     loading = false;
-    if (res.ok && res.data) {
-      members = res.data.filter((m) => m.party === sigla);
+    if ((fed.ok && fed.data) || (est.ok && est.data)) {
+      const merged = [
+        ...(fed.ok && fed.data ? fed.data : []),
+        ...(est.ok && est.data ? est.data : []),
+      ];
+      members = merged.filter((m) => m.party === sigla);
     } else {
-      loadError = res.error ?? 'Não foi possível carregar o partido.';
+      loadError = fed.error ?? est.error ?? 'Não foi possível carregar o partido.';
     }
   });
 

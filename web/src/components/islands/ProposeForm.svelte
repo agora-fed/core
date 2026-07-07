@@ -32,9 +32,21 @@
   }
 
   onMount(async () => {
-    const res = await getAllMandates(DEFAULT_ORG_ID);
+    // Federal + estadual — proposals can target Congress and Assemblies. A
+    // dropdown of 68k municipais overflows the picker; municipal is added in
+    // a follow-up (search-first picker with UF/município cascade).
+    const [fed, est] = await Promise.all([
+      getAllMandates(DEFAULT_ORG_ID, 5000, 'federal'),
+      getAllMandates(DEFAULT_ORG_ID, 5000, 'estadual'),
+    ]);
     mandatesLoading = false;
-    if (res.ok && res.data) {
+    if ((fed.ok && fed.data) || (est.ok && est.data)) {
+      const merged = [
+        ...(fed.ok && fed.data ? fed.data : []),
+        ...(est.ok && est.data ? est.data : []),
+      ];
+      // Reuse the same res shape below.
+      const res = { ok: true as const, data: merged, error: null };
       mandates = res.data;
       // Pre-select when the URL carries `?mandate=<id>` (linked from /politicos/<id>).
       try {
