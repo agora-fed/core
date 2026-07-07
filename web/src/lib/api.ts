@@ -57,6 +57,25 @@ export interface Fetched<T> {
   error: string | null;
 }
 
+/** Adapt the `Fetched<T>` shape from `apiGet` into the `ApiResponse<T>`
+ *  envelope used by newer islands. Some islands prefer `.success/.error.code`
+ *  because they need to distinguish 401 (`http_401`) from a generic network
+ *  failure. This bridges both worlds without doubling the number of clients. */
+export function fetchedToApiResponse<T>(f: Fetched<T>): ApiResponse<T> {
+  if (f.ok) {
+    return { success: true, data: f.data, error: null, meta: null };
+  }
+  return {
+    success: false,
+    data: null,
+    error: {
+      code: 'fetched_error',
+      message: f.error ?? 'Não foi possível carregar os dados.',
+    },
+    meta: null,
+  };
+}
+
 const DEFAULT_TIMEOUT_MS = 6000;
 
 /** Network-tolerant GET that always resolves (never throws) so SSR pages render
@@ -450,9 +469,13 @@ export interface AmendmentDto {
   resolved_at: string | null;
 }
 
-export const listAmendments = (proposalId: string) =>
-  apiGet<AmendmentDto[]>(
-    `/api/v1/proposals/${encodeURIComponent(proposalId)}/amendments`,
+export const listAmendments = async (
+  proposalId: string,
+): Promise<ApiResponse<AmendmentDto[]>> =>
+  fetchedToApiResponse(
+    await apiGet<AmendmentDto[]>(
+      `/api/v1/proposals/${encodeURIComponent(proposalId)}/amendments`,
+    ),
   );
 
 export const createAmendment = (
@@ -512,9 +535,10 @@ export interface CandidacyDto {
   created_at: string;
 }
 
-export const listElections = () => apiGet<ElectionDto[]>('/api/v1/elections');
+export const listElections = async (): Promise<ApiResponse<ElectionDto[]>> =>
+  fetchedToApiResponse(await apiGet<ElectionDto[]>('/api/v1/elections'));
 
-export const listCandidacies = (
+export const listCandidacies = async (
   electionId: string,
   filters: Partial<{
     uf: string;
@@ -525,14 +549,16 @@ export const listCandidacies = (
     limit: number;
     offset: number;
   }> = {},
-) => {
+): Promise<ApiResponse<CandidacyDto[]>> => {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(filters)) {
     if (v !== undefined && v !== '') qs.set(k, String(v));
   }
   const qstr = qs.toString();
-  return apiGet<CandidacyDto[]>(
-    `/api/v1/elections/${encodeURIComponent(electionId)}/candidacies${qstr ? '?' + qstr : ''}`,
+  return fetchedToApiResponse(
+    await apiGet<CandidacyDto[]>(
+      `/api/v1/elections/${encodeURIComponent(electionId)}/candidacies${qstr ? '?' + qstr : ''}`,
+    ),
   );
 };
 
@@ -560,7 +586,7 @@ export interface BrowseResponse {
   items: PoliticoRow[];
 }
 
-export function browsePoliticos(
+export async function browsePoliticos(
   filters: {
     sphere: 'federal' | 'estadual' | 'municipal';
     uf?: string;
@@ -581,15 +607,23 @@ export function browsePoliticos(
   if (filters.q) p.set('q', filters.q);
   if (filters.limit !== undefined) p.set('limit', String(filters.limit));
   if (filters.offset !== undefined) p.set('offset', String(filters.offset));
-  return apiGet<BrowseResponse>(`/api/v1/politicos/browse?${p}`);
+  return fetchedToApiResponse(
+    await apiGet<BrowseResponse>(`/api/v1/politicos/browse?${p}`),
+  );
 }
 
 export interface MunicipioRow {
   nome: string;
   count: number;
 }
-export const listMunicipios = (uf: string) =>
-  apiGet<MunicipioRow[]>(`/api/v1/politicos/municipios?uf=${encodeURIComponent(uf)}`);
+export const listMunicipios = async (
+  uf: string,
+): Promise<ApiResponse<MunicipioRow[]>> =>
+  fetchedToApiResponse(
+    await apiGet<MunicipioRow[]>(
+      `/api/v1/politicos/municipios?uf=${encodeURIComponent(uf)}`,
+    ),
+  );
 
 /** Revoke one of my sessions. Cannot revoke the current one (use logout). */
 export async function revokeSession(id: string): Promise<ApiResponse<null>> {
@@ -1081,11 +1115,22 @@ function filtersToQuery(f: ReportFilters): string {
   return p.toString() ? `?${p.toString()}` : '';
 }
 
+// The gasto report aggregates CEAP (Câmara) + CEAPS (Senado) for 594
+// parliamentarians in a single call. Cold cache the call is ~60s; served
+// warm it's <100ms. Give the client 90s so a first-in-window user does not
+// bounce with a bogus "serviço indisponível".
+const REPORTS_TIMEOUT_MS = 90_000;
 export const getGastoParlamentar = (f: ReportFilters = {}) =>
-  apiGet<GastoReport>(`/api/v1/reports/gasto-parlamentar${filtersToQuery(f)}`);
+  apiGet<GastoReport>(
+    `/api/v1/reports/gasto-parlamentar${filtersToQuery(f)}`,
+    { timeoutMs: REPORTS_TIMEOUT_MS },
+  );
 
 export const getPropostasSummary = (f: ReportFilters = {}) =>
-  apiGet<PropostasReport>(`/api/v1/reports/proposals-summary${filtersToQuery(f)}`);
+  apiGet<PropostasReport>(
+    `/api/v1/reports/proposals-summary${filtersToQuery(f)}`,
+    { timeoutMs: REPORTS_TIMEOUT_MS },
+  );
 
 /** Federated feed of the authenticated citizen (own notes + followed actors). */
 export const getMyFeed = (limit = 30, offset = 0) =>

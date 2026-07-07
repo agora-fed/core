@@ -18,3 +18,10 @@ deploy/helm/**/*.tgz
 /coverage
 lcov.info
 *.profraw
+
+# --- playwright ---
+web/test-results/
+web/playwright-report/
+web/.playwright/
+
+test-results/

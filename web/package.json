@@ -10,7 +10,10 @@
     "build": "PUBLIC_API_BASE=${PUBLIC_API_BASE:-https://democracia.social.br} astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:ui": "playwright test",
+    "test:ui:prod": "playwright test",
+    "test:ui:local": "BASE_URL=http://localhost:4321 playwright test"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.3",
@@ -20,6 +23,7 @@
     "svelte": "^5.56.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "vitest": "^2.1.9"
   }
 }
