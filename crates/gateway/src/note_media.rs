@@ -157,6 +157,72 @@ pub async fn upload_image(
     })
 }
 
+/// Build the AP `attachment[]` array for a Note. Each attachment becomes a
+/// Mastodon-compatible `Document` object carrying `mediaType`, absolute `url`,
+/// alt text (as `name`) and optional dimensions (via `focalPoint`? no — plain
+/// `width`/`height` extension). Called from `update_outbox_payload_with_attachments`
+/// and from the emitter when relaying to the fediverse.
+pub async fn attachment_json_for(
+    db: &PgPool,
+    object_uri: &str,
+    media_base_url: &str,
+) -> Result<Vec<serde_json::Value>, sqlx::Error> {
+    let items = list_for_note(db, object_uri, media_base_url).await?;
+    let ap_type = |kind: &str| match kind {
+        "image" => "Image",
+        "video" => "Video",
+        "audio" => "Audio",
+        _ => "Document",
+    };
+    Ok(items
+        .into_iter()
+        .map(|m| {
+            let mut obj = serde_json::json!({
+                "type": ap_type(&m.kind),
+                "mediaType": m.content_type,
+                "url": m.url,
+            });
+            if let Some(alt) = m.alt_text {
+                obj["name"] = serde_json::Value::String(alt);
+            }
+            if let Some(w) = m.width {
+                obj["width"] = serde_json::Value::Number(w.into());
+            }
+            if let Some(h) = m.height {
+                obj["height"] = serde_json::Value::Number(h.into());
+            }
+            obj
+        })
+        .collect())
+}
+
+/// After `attach_to_note` + alt updates settle, patch the LOCAL outbox
+/// entry's payload jsonb so the delivery worker ships the same envelope
+/// that inbound remote instances (and our own outbox endpoint) will read.
+/// Idempotent — running twice sets the same `attachment[]`.
+pub async fn update_outbox_payload_with_attachments(
+    db: &PgPool,
+    activity_id: &str,
+    object_uri: &str,
+    media_base_url: &str,
+) -> Result<(), sqlx::Error> {
+    let attachments = attachment_json_for(db, object_uri, media_base_url).await?;
+    if attachments.is_empty() {
+        return Ok(());
+    }
+    let arr = serde_json::Value::Array(attachments);
+    sqlx::query(
+        r"UPDATE federation_outbox_entry
+             SET payload = jsonb_set(payload, '{object,attachment}', $2::jsonb)
+           WHERE activity_id = $1",
+    )
+    .bind(activity_id)
+    .bind(&arr)
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
 /// Update the alt_text on a media row. Best-effort — trims + caps at 1500
 /// chars; a missing id is not an error. Runs from the note publish path.
 pub async fn update_alt_text(

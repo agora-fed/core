@@ -50,6 +50,12 @@ pub struct FeedItemDto {
     /// 0.18.0-gamma: media attachments (empty when the note carries no media).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachments: Vec<crate::note_media::MediaDto>,
+    /// 0.18.0-rc1: when the author edited the Note. NULL for never-edited.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edited_at: Option<DateTime<Utc>>,
+    /// 0.18.0-rc1: poll DTO when the Note carries a Question, None otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub poll: Option<crate::polls::PollDto>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -68,6 +74,7 @@ struct FeedRow {
     in_reply_to_uri: Option<String>,
     sensitive: bool,
     spoiler_text: Option<String>,
+    edited_at: Option<DateTime<Utc>>,
 }
 
 impl From<FeedRow> for FeedItemDto {
@@ -87,7 +94,9 @@ impl From<FeedRow> for FeedItemDto {
             in_reply_to_uri: r.in_reply_to_uri,
             sensitive: r.sensitive,
             spoiler_text: r.spoiler_text,
+            edited_at: r.edited_at,
             attachments: Vec::new(),
+            poll: None,
         }
     }
 }
@@ -107,6 +116,26 @@ pub async fn enrich_with_media(
         for it in items.iter_mut() {
             if let Some(v) = map.get(&it.object_uri) {
                 it.attachments = v.clone();
+            }
+        }
+    }
+}
+
+/// Batch-attach poll DTOs. `viewer_actor_url` scopes `voted_option_ids` per
+/// caller so the client renders "you already voted" markers.
+pub async fn enrich_with_polls(
+    db: &PgPool,
+    items: &mut [FeedItemDto],
+    viewer_actor_url: Option<&str>,
+) {
+    if items.is_empty() {
+        return;
+    }
+    let uris: Vec<String> = items.iter().map(|i| i.object_uri.clone()).collect();
+    if let Ok(map) = crate::polls::list_for_notes(db, &uris, viewer_actor_url).await {
+        for it in items.iter_mut() {
+            if let Some(p) = map.get(&it.object_uri) {
+                it.poll = Some(p.clone());
             }
         }
     }
@@ -138,6 +167,7 @@ pub async fn list_feed(
                feed.in_reply_to_uri,
                feed.sensitive,
                feed.spoiler_text,
+               feed.edited_at,
                (SELECT count(*) FROM federation_reaction r
                  WHERE r.object_uri = feed.object_uri AND r.kind = 'like')
              + (SELECT count(*) FROM federation_remote_reaction rr
@@ -164,7 +194,8 @@ pub async fn list_feed(
                        false                                                 AS is_remote,
                        oe.in_reply_to_uri                                    AS in_reply_to_uri,
                        oe.sensitive                                          AS sensitive,
-                       oe.spoiler_text                                       AS spoiler_text
+                       oe.spoiler_text                                       AS spoiler_text,
+                       oe.edited_at                                          AS edited_at
                   FROM federation_outbox_entry oe
                   JOIN citizen c ON c.id = oe.citizen_id
                  WHERE oe.kind = 'Create'
@@ -185,7 +216,8 @@ pub async fn list_feed(
                        true,
                        t.in_reply_to_uri,
                        t.sensitive,
-                       t.spoiler_text
+                       t.spoiler_text,
+                       t.edited_at
                   FROM federation_timeline_entry t
                  WHERE t.deleted_at IS NULL
                    AND EXISTS (SELECT 1 FROM federation_follow f
@@ -293,6 +325,7 @@ pub async fn list_hashtag_timeline(
                feed.in_reply_to_uri,
                feed.sensitive,
                feed.spoiler_text,
+               feed.edited_at,
                (SELECT count(*) FROM federation_reaction r
                  WHERE r.object_uri = feed.object_uri AND r.kind = 'like')
              + (SELECT count(*) FROM federation_remote_reaction rr
@@ -315,7 +348,8 @@ pub async fn list_hashtag_timeline(
                        false                                                 AS is_remote,
                        oe.in_reply_to_uri                                    AS in_reply_to_uri,
                        oe.sensitive                                          AS sensitive,
-                       oe.spoiler_text                                       AS spoiler_text
+                       oe.spoiler_text                                       AS spoiler_text,
+                       oe.edited_at                                          AS edited_at
                   FROM federation_outbox_entry oe
                   JOIN citizen c ON c.id = oe.citizen_id
                  WHERE oe.kind = 'Create'
@@ -332,7 +366,8 @@ pub async fn list_hashtag_timeline(
                        true,
                        t.in_reply_to_uri,
                        t.sensitive,
-                       t.spoiler_text
+                       t.spoiler_text,
+                       t.edited_at
                   FROM federation_timeline_entry t
                  WHERE t.deleted_at IS NULL
                    AND t.object_uri IN (SELECT object_uri FROM tag_uris)
@@ -443,6 +478,7 @@ pub async fn list_thread_context(
                feed.in_reply_to_uri,
                feed.sensitive,
                feed.spoiler_text,
+               feed.edited_at,
                (SELECT count(*) FROM federation_reaction r
                  WHERE r.object_uri = feed.object_uri AND r.kind = 'like')
              + (SELECT count(*) FROM federation_remote_reaction rr
@@ -469,7 +505,8 @@ pub async fn list_thread_context(
                        false                                                 AS is_remote,
                        oe.in_reply_to_uri                                    AS in_reply_to_uri,
                        oe.sensitive                                          AS sensitive,
-                       oe.spoiler_text                                       AS spoiler_text
+                       oe.spoiler_text                                       AS spoiler_text,
+                       oe.edited_at                                          AS edited_at
                   FROM federation_outbox_entry oe
                   JOIN citizen c ON c.id = oe.citizen_id
                  WHERE oe.kind = 'Create'
@@ -486,7 +523,8 @@ pub async fn list_thread_context(
                        true,
                        t.in_reply_to_uri,
                        t.sensitive,
-                       t.spoiler_text
+                       t.spoiler_text,
+                       t.edited_at
                   FROM federation_timeline_entry t
                  WHERE t.deleted_at IS NULL
                    AND t.object_uri IN (SELECT object_uri FROM thread)

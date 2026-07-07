@@ -248,6 +248,10 @@ export interface FeedItemDto {
   spoiler_text?: string | null;
   /** 0.18.0-gamma: media attachments (empty when the note has none). */
   attachments?: MediaAttachmentDto[];
+  /** 0.18.0-rc1: when the author edited the note. Absent = never edited. */
+  edited_at?: string | null;
+  /** 0.18.0-rc1: poll — undefined for regular Notes. */
+  poll?: PollDto | null;
 }
 
 /** One media attachment on a Note (image today; video/audio reserved). */
@@ -259,6 +263,25 @@ export interface MediaAttachmentDto {
   alt_text?: string | null;
   width?: number | null;
   height?: number | null;
+}
+
+/** One poll option (bar in PollView). */
+export interface PollOptionDto {
+  id: string;
+  sort_order: number;
+  text: string;
+  vote_count: number;
+}
+
+/** Poll bundled with a note in FeedItemDto. */
+export interface PollDto {
+  id: string;
+  multiple: boolean;
+  expires_at: string;
+  closed_at?: string | null;
+  options: PollOptionDto[];
+  total_votes: number;
+  voted_option_ids: string[];
 }
 
 /** Result of toggling a Like on a note. */

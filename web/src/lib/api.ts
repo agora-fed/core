@@ -540,6 +540,12 @@ export interface PostNoteOptions {
   media_ids?: string[];
   /** Per-media alt_text, parallel to media_ids. Empty strings are ignored. */
   media_alts?: string[];
+  /** 0.18.0-rc1: poll input — flips AP object to Question. */
+  poll?: {
+    options: string[];
+    multiple?: boolean;
+    expires_in_minutes: number;
+  };
 }
 
 /** Publish a public Note. Fan-out happens in the background; the response is fast. */
@@ -626,6 +632,56 @@ export const refreshMyActor = () =>
   apiPost<{ delivered_to: number; targets: number }>(
     '/api/v1/me/actor/refresh',
     {},
+  );
+
+/** Soft-delete a Note the caller owns + emit Delete(Note) to followers. */
+export async function deleteNote(
+  uri: string,
+): Promise<ApiResponse<{ deleted: boolean; delivered_to: number }>> {
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/v1/me/notes?uri=${encodeURIComponent(uri)}`,
+      { method: 'DELETE', credentials: 'include' },
+    );
+    const text = await res.text();
+    try {
+      const body = JSON.parse(text);
+      if (body && typeof body === 'object' && 'success' in body) return body;
+    } catch {}
+    return {
+      success: false,
+      data: null,
+      error: { code: `http_${res.status}`, message: 'Falha ao excluir.' },
+      meta: null,
+    };
+  } catch {
+    return {
+      success: false,
+      data: null,
+      error: { code: 'network_error', message: 'Falha de conexão.' },
+      meta: null,
+    };
+  }
+}
+
+/** Edit a Note the caller owns + emit Update(Note) to followers. */
+export const editNote = (
+  uri: string,
+  content: string,
+  options: { sensitive?: boolean; spoiler_text?: string } = {},
+) =>
+  apiPatch<{ updated: boolean; delivered_to: number }>(
+    `/api/v1/me/notes?uri=${encodeURIComponent(uri)}`,
+    { content, ...options },
+  );
+
+import type { PollDto } from './types';
+
+/** Cast a ballot on a Note's poll. Returns the refreshed poll DTO. */
+export const votePoll = (uri: string, option_ids: string[]) =>
+  apiPost<PollDto>(
+    `/api/v1/me/notes/vote?uri=${encodeURIComponent(uri)}`,
+    { option_ids },
   );
 
 /** Federated feed of the authenticated citizen (own notes + followed actors). */

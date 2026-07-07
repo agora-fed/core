@@ -40,6 +40,7 @@ use serde_json::{json, Value};
 use crate::federation_feed;
 use crate::note_media;
 use crate::notifications;
+use crate::polls;
 
 const ACTIVITY_JSON: &str = "application/activity+json";
 const JRD_JSON: &str = "application/jrd+json";
@@ -75,7 +76,7 @@ pub fn client_routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/federation/lookup", get(lookup_remote))
         .route("/me/follow", post(follow_remote))
-        .route("/me/notes", post(post_my_note))
+        .route("/me/notes", post(post_my_note).delete(delete_my_note).patch(patch_my_note))
         .route("/me/feed", get(get_my_feed))
         .route("/me/like", post(toggle_like))
         .route("/me/boost", post(toggle_boost))
@@ -83,6 +84,7 @@ pub fn client_routes(state: AppState) -> Router<()> {
         .route("/me/notifications/clear", post(clear_my_notifications))
         .route("/me/media", post(post_my_media))
         .route("/me/actor/refresh", post(refresh_my_actor))
+        .route("/me/notes/vote", post(post_poll_vote))
         .route("/notes/context", get(get_thread_context))
         .route("/timelines/tag/{name}", get(get_hashtag_timeline))
         .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024))
@@ -420,6 +422,63 @@ async fn inbox_post(
     } else if kind == "Like" || kind == "Announce" {
         // Remote reaction over one of OUR objects → upsert (re-delivery is a no-op).
         handle_inbox_reaction(&state, &signer_actor, &signer_actor_url, kind, &activity_id, &activity).await;
+    } else if kind == "Delete" {
+        // Remote author (or their instance) deleted a Note. Soft-delete the row on our side
+        // so the feed drops it and the thread view shows a tombstone. Signer-scoped: only
+        // the object's author can delete it — we match on both actor_url and object URI.
+        if let Some(target_uri) = activity.get("object").and_then(object_uri_of) {
+            let now = chrono::Utc::now();
+            let _ = sqlx::query(
+                r"UPDATE federation_timeline_entry
+                     SET deleted_at = $2
+                   WHERE object_uri = $1 AND actor_url = $3",
+            )
+            .bind(&target_uri)
+            .bind(now)
+            .bind(&signer_actor_url)
+            .execute(&state.db)
+            .await;
+            tracing::info!(remote = %signer_actor_url, target_uri, "remote Note tombstoned");
+        }
+    } else if kind == "Update" {
+        // Remote author edited a Note. Rewrite the cached content_html + stamp edited_at.
+        // Only Notes today; anything else is a logged no-op.
+        if let Some(inner) = activity.get("object") {
+            let inner_type = inner.get("type").and_then(Value::as_str).unwrap_or("");
+            let inner_short = inner_type.rsplit(':').next().unwrap_or(inner_type);
+            if inner_short == "Note" {
+                if let Some(uri) = inner.get("id").and_then(Value::as_str) {
+                    let raw = inner.get("content").and_then(Value::as_str).unwrap_or("");
+                    let capped = federation_feed::truncate_bytes(raw, federation_feed::CONTENT_MAX_BYTES);
+                    let content = federation_feed::sanitize_html(capped);
+                    let sensitive = inner.get("sensitive").and_then(Value::as_bool).unwrap_or(false);
+                    let spoiler = inner
+                        .get("summary")
+                        .and_then(Value::as_str)
+                        .map(|s| s.trim().to_owned())
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.chars().take(1024).collect::<String>());
+                    let now = chrono::Utc::now();
+                    let _ = sqlx::query(
+                        r"UPDATE federation_timeline_entry
+                             SET content_html = $2,
+                                 sensitive    = $3,
+                                 spoiler_text = $4,
+                                 edited_at    = $5
+                           WHERE object_uri = $1 AND actor_url = $6",
+                    )
+                    .bind(uri)
+                    .bind(&content)
+                    .bind(sensitive)
+                    .bind(spoiler.as_deref())
+                    .bind(now)
+                    .bind(&signer_actor_url)
+                    .execute(&state.db)
+                    .await;
+                    tracing::info!(remote = %signer_actor_url, uri, "remote Note edit applied");
+                }
+            }
+        }
     } else if kind == "Undo" {
         // Undo Follow → the remote unfollowed us. Verify the inner object is a Follow whose
         // actor is the same as the Undo's signer (don't let one user undo another's follow),
@@ -746,6 +805,25 @@ async fn follow_remote(
         .into_response()
 }
 
+/// Query for `DELETE /api/v1/me/notes?uri=<object_uri>` and PATCH.
+#[derive(Debug, Deserialize)]
+struct NoteRefQuery {
+    uri: String,
+}
+
+/// Body for `PATCH /api/v1/me/notes?uri=…`. Only mutable text-level fields for
+/// now — media edits require a separate flow (upload + reattach) and are
+/// deferred to a later cut.
+#[derive(Debug, Deserialize)]
+struct PatchNoteRequest {
+    /// New text content. Same 1–5000 char validation as post_my_note.
+    content: String,
+    #[serde(default)]
+    sensitive: bool,
+    #[serde(default)]
+    spoiler_text: Option<String>,
+}
+
 /// Body for `POST /api/v1/me/notes`.
 #[derive(Debug, Deserialize)]
 struct PostNoteRequest {
@@ -768,6 +846,9 @@ struct PostNoteRequest {
     /// row untouched.
     #[serde(default)]
     media_alts: Vec<String>,
+    /// 0.18.0-rc1: optional poll — flips the AP object to Question.
+    #[serde(default)]
+    poll: Option<polls::PollInput>,
 }
 
 /// `POST /api/v1/me/notes` — publish a public Note. Wraps the content in a `Create(Note)`,
@@ -833,6 +914,42 @@ async fn post_my_note(
                 .await
                 {
                     tracing::warn!(error = ?err, "failed to attach media to note");
+                }
+                // 0.18.0-rc1: rewrite the outbox payload so the delivery worker
+                // ships `attachment[]` on the wire — federation instances render
+                // the images we just uploaded.
+                let media_base = std::env::var("MEDIA_BASE_URL")
+                    .unwrap_or_else(|_| "/media".to_owned());
+                if let Err(err) = note_media::update_outbox_payload_with_attachments(
+                    &state.db,
+                    &activity_id,
+                    &object_id,
+                    &media_base,
+                )
+                .await
+                {
+                    tracing::warn!(error = ?err, "failed to patch outbox with attachment[]");
+                }
+            }
+            // 0.18.0-rc1: poll — persist + flip AP object to Question.
+            if let Some(poll_input) = &body.poll {
+                match polls::create_from_input(&state.db, &object_id, poll_input).await {
+                    Ok(_) => {
+                        if let Err(err) = polls::update_outbox_payload_with_question(
+                            &state.db,
+                            &activity_id,
+                            &object_id,
+                        )
+                        .await
+                        {
+                            tracing::warn!(error = ?err, "failed to patch outbox with Question");
+                        }
+                    }
+                    Err(err) => {
+                        // Note is already stored — log the poll failure but return
+                        // the note so the client at least sees "note saved without poll".
+                        tracing::warn!(error = ?err, "poll creation failed for note");
+                    }
                 }
             }
             // 0.18.0-beta: fire in-app notifications for local recipients.
@@ -920,6 +1037,256 @@ async fn post_my_note(
 struct FeedQuery {
     limit: Option<i64>,
     offset: Option<i64>,
+}
+
+/// Body for `POST /api/v1/me/notes/vote?uri=…`.
+#[derive(Debug, Deserialize)]
+struct PollVoteRequest {
+    option_ids: Vec<uuid::Uuid>,
+}
+
+/// `POST /api/v1/me/notes/vote?uri=<object_uri>` — cast a ballot on a Note's
+/// poll. Body carries the chosen option ids (1 for single-choice, 1..=N for
+/// multi-select). Returns the refreshed poll DTO.
+async fn post_poll_vote(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Query(query): Query<NoteRefQuery>,
+    AxumJson(body): AxumJson<PollVoteRequest>,
+) -> Response {
+    let uri = query.uri.trim();
+    if uri.is_empty() {
+        return client_error("uri obrigatória");
+    }
+    let svc = ProfileService::from_state(&state);
+    let handle_now = handle_of(&svc, caller.citizen).await;
+    let po = public_origin();
+    let voter_url = format!("{}/actors/{}", po.trim_end_matches('/'), handle_now);
+    let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+    match polls::cast_vote(&state.db, uri, &voter_url, &body.option_ids, &media_base).await {
+        Ok(dto) => (StatusCode::OK, Json(ApiResponse::ok(dto))).into_response(),
+        Err(err) => match err {
+            polls::PollError::Db(_) => {
+                tracing::error!(error = ?err, "vote persistence failed");
+                server_error()
+            }
+            other => client_error(&other.user_message()),
+        },
+    }
+}
+
+/// `DELETE /api/v1/me/notes?uri=<object_uri>` — soft-delete a Note the caller
+/// owns (sets `deleted_at`) and fan out a signed `Delete(Note)` activity to
+/// every ACK'd inbound follower so remote timelines drop it too.
+async fn delete_my_note(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Query(query): Query<NoteRefQuery>,
+) -> Response {
+    let uri = query.uri.trim();
+    if uri.is_empty() {
+        return client_error("uri obrigatória");
+    }
+    // Ownership + not-already-deleted check + fetch the raw activity id.
+    let row = match sqlx::query_as::<_, (String,)>(
+        r"SELECT activity_id FROM federation_outbox_entry
+           WHERE citizen_id = $1
+             AND (activity_id = $2 OR payload->'object'->>'id' = $2)
+             AND deleted_at IS NULL
+           LIMIT 1",
+    )
+    .bind(caller.citizen.as_uuid())
+    .bind(uri)
+    .fetch_optional(&state.db)
+    .await
+    {
+        Ok(Some(r)) => r,
+        Ok(None) => return client_error("publicação não encontrada ou já apagada"),
+        Err(err) => {
+            tracing::error!(error = ?err, "delete-note lookup failed");
+            return server_error();
+        }
+    };
+    let activity_id = row.0;
+    let now = chrono::Utc::now();
+    if let Err(err) = sqlx::query(
+        r"UPDATE federation_outbox_entry SET deleted_at = $2 WHERE activity_id = $1",
+    )
+    .bind(&activity_id)
+    .bind(now)
+    .execute(&state.db)
+    .await
+    {
+        tracing::error!(error = ?err, "delete-note soft-delete failed");
+        return server_error();
+    }
+    // Best-effort federate. If the delivery loop is unreachable the local
+    // delete still stands and the front pretends success — that's Mastodon's
+    // behaviour too.
+    let svc = ProfileService::from_state(&state);
+    let handle_now = handle_of(&svc, caller.citizen).await;
+    let po = public_origin();
+    let actor_url = format!("{}/actors/{}", po.trim_end_matches('/'), handle_now);
+    let delete_activity = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{actor_url}/activities/delete-{}", uuid::Uuid::now_v7()),
+        "type": "Delete",
+        "actor": actor_url,
+        "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        "object": {
+            "id": uri,
+            "type": "Tombstone",
+        },
+    });
+    let inboxes: Vec<String> = sqlx::query_scalar::<_, String>(
+        r"SELECT remote_inbox_url FROM federation_follow
+           WHERE citizen_id = $1
+             AND direction = 'inbound'
+             AND accepted_at IS NOT NULL
+             AND remote_inbox_url IS NOT NULL",
+    )
+    .bind(caller.citizen.as_uuid())
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+    if !inboxes.is_empty() {
+        if let Ok(pem) = svc.read_actor_private_key(caller.citizen).await {
+            for inbox in &inboxes {
+                let _ = deliver_signed(&actor_url, &pem, inbox, &delete_activity).await;
+            }
+        }
+    }
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(json!({
+            "deleted": true,
+            "delivered_to": inboxes.len(),
+        }))),
+    )
+        .into_response()
+}
+
+/// `PATCH /api/v1/me/notes?uri=<object_uri>` — edit the text/CW of a Note the
+/// caller owns. Stamps `edited_at`, rewrites the outbox payload with the new
+/// `content` / `sensitive` / `summary`, then emits an `Update(Note)`. Mastodon
+/// clients read the freshly patched Note object and re-render.
+async fn patch_my_note(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Query(query): Query<NoteRefQuery>,
+    AxumJson(body): AxumJson<PatchNoteRequest>,
+) -> Response {
+    let uri = query.uri.trim();
+    if uri.is_empty() {
+        return client_error("uri obrigatória");
+    }
+    let content = body.content.trim().to_owned();
+    if content.is_empty() {
+        return client_error("digite alguma coisa antes de salvar");
+    }
+    if content.chars().count() > 5_000 {
+        return client_error("o texto está muito longo (máx 5000 caracteres)");
+    }
+    let spoiler = body
+        .spoiler_text
+        .as_deref()
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.chars().take(500).collect::<String>());
+    // Fetch owned + not-deleted outbox row.
+    let row = match sqlx::query_as::<_, (String, serde_json::Value)>(
+        r"SELECT activity_id, payload FROM federation_outbox_entry
+           WHERE citizen_id = $1
+             AND (activity_id = $2 OR payload->'object'->>'id' = $2)
+             AND deleted_at IS NULL
+           LIMIT 1",
+    )
+    .bind(caller.citizen.as_uuid())
+    .bind(uri)
+    .fetch_optional(&state.db)
+    .await
+    {
+        Ok(Some(r)) => r,
+        Ok(None) => return client_error("publicação não encontrada"),
+        Err(err) => {
+            tracing::error!(error = ?err, "patch-note lookup failed");
+            return server_error();
+        }
+    };
+    let (activity_id, mut payload) = row;
+    let now = chrono::Utc::now();
+    // Rewrite the inner Note object in-place.
+    if let Some(object) = payload.get_mut("object").and_then(|o| o.as_object_mut()) {
+        object.insert("content".into(), serde_json::Value::String(content.clone()));
+        object.insert("updated".into(), serde_json::Value::String(now.to_rfc3339()));
+        if body.sensitive {
+            object.insert("sensitive".into(), serde_json::Value::Bool(true));
+        } else {
+            object.remove("sensitive");
+        }
+        if let Some(cw) = spoiler.as_deref() {
+            object.insert("summary".into(), serde_json::Value::String(cw.to_owned()));
+        } else {
+            object.remove("summary");
+        }
+    }
+    if let Err(err) = sqlx::query(
+        r"UPDATE federation_outbox_entry
+             SET payload = $2, edited_at = $3, sensitive = $4, spoiler_text = $5
+           WHERE activity_id = $1",
+    )
+    .bind(&activity_id)
+    .bind(&payload)
+    .bind(now)
+    .bind(body.sensitive)
+    .bind(spoiler.as_deref())
+    .execute(&state.db)
+    .await
+    {
+        tracing::error!(error = ?err, "patch-note update failed");
+        return server_error();
+    }
+    // Fan out Update(Note).
+    let svc = ProfileService::from_state(&state);
+    let handle_now = handle_of(&svc, caller.citizen).await;
+    let po = public_origin();
+    let actor_url = format!("{}/actors/{}", po.trim_end_matches('/'), handle_now);
+    let inner_object = payload.get("object").cloned().unwrap_or(serde_json::Value::Null);
+    let update = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{actor_url}/activities/update-{}", uuid::Uuid::now_v7()),
+        "type": "Update",
+        "actor": actor_url,
+        "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        "cc": [format!("{actor_url}/followers")],
+        "object": inner_object,
+    });
+    let inboxes: Vec<String> = sqlx::query_scalar::<_, String>(
+        r"SELECT remote_inbox_url FROM federation_follow
+           WHERE citizen_id = $1
+             AND direction = 'inbound'
+             AND accepted_at IS NOT NULL
+             AND remote_inbox_url IS NOT NULL",
+    )
+    .bind(caller.citizen.as_uuid())
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+    if !inboxes.is_empty() {
+        if let Ok(pem) = svc.read_actor_private_key(caller.citizen).await {
+            for inbox in &inboxes {
+                let _ = deliver_signed(&actor_url, &pem, inbox, &update).await;
+            }
+        }
+    }
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(json!({
+            "updated": true,
+            "delivered_to": inboxes.len(),
+        }))),
+    )
+        .into_response()
 }
 
 /// `POST /api/v1/me/actor/refresh` — emit an `Update(Person)` activity to every
@@ -1208,6 +1575,7 @@ async fn get_hashtag_timeline(
     {
         Ok(mut items) => {
             federation_feed::enrich_with_media(&state.db, &mut items, &media_base).await;
+            federation_feed::enrich_with_polls(&state.db, &mut items, None).await;
             (
                 StatusCode::OK,
                 Json(ApiResponse::ok(json!({
@@ -1222,6 +1590,20 @@ async fn get_hashtag_timeline(
             server_error()
         }
     }
+}
+
+/// Best-effort resolve the caller's canonical Actor URL. Used to scope
+/// `voted_option_ids` on the feed's poll enrichment. Returns `None` when the
+/// citizen has no public handle yet (they can't vote in that state anyway,
+/// so an unscoped poll is fine).
+async fn viewer_actor_url_of(state: &AppState, caller: &CallerId) -> Option<String> {
+    let svc = ProfileService::from_state(state);
+    let handle_now = handle_of(&svc, caller.citizen).await;
+    if handle_now.starts_with("u-") || handle_now.is_empty() {
+        return None;
+    }
+    let po = public_origin();
+    Some(format!("{}/actors/{}", po.trim_end_matches('/'), handle_now))
 }
 
 /// Query for `GET /api/v1/notes/context?uri=`.
@@ -1249,6 +1631,8 @@ async fn get_thread_context(
     {
         Ok(mut items) => {
             federation_feed::enrich_with_media(&state.db, &mut items, &media_base).await;
+            let viewer = viewer_actor_url_of(&state, &caller).await;
+            federation_feed::enrich_with_polls(&state.db, &mut items, viewer.as_deref()).await;
             (StatusCode::OK, Json(ApiResponse::ok(items))).into_response()
         }
         Err(err) => {
@@ -1281,6 +1665,8 @@ async fn get_my_feed(
     {
         Ok(mut items) => {
             federation_feed::enrich_with_media(&state.db, &mut items, &media_base).await;
+            let viewer = viewer_actor_url_of(&state, &caller).await;
+            federation_feed::enrich_with_polls(&state.db, &mut items, viewer.as_deref()).await;
             (StatusCode::OK, Json(ApiResponse::ok(items))).into_response()
         }
         Err(err) => {
@@ -1738,6 +2124,66 @@ async fn handle_inbox_create(
                     }
                 }
                 _ => {}
+            }
+        }
+    }
+    // 0.18.0-rc1: inbound `attachment[]` (Mastodon/Pleroma/others send Document/Image
+    // objects here). Persist each as a remote-only `media_attachment` row and bind
+    // it to this Note via `note_media`. Types not recognized are skipped without error.
+    if let Some(atts) = object.get("attachment").and_then(Value::as_array) {
+        let mut order = 0i32;
+        for att in atts {
+            let att_type = att.get("type").and_then(Value::as_str).unwrap_or("");
+            let att_short = att_type.rsplit(':').next().unwrap_or(att_type);
+            if !matches!(att_short, "Image" | "Video" | "Audio" | "Document") {
+                continue;
+            }
+            let Some(url) = att.get("url").and_then(Value::as_str).or_else(|| {
+                // Some servers wrap the url inside a Link object; try `.url[0].href`.
+                att.get("url")
+                    .and_then(Value::as_array)
+                    .and_then(|arr| arr.first())
+                    .and_then(|first| first.get("href").and_then(Value::as_str))
+            }) else {
+                continue;
+            };
+            let media_type = att
+                .get("mediaType")
+                .and_then(Value::as_str)
+                .unwrap_or("application/octet-stream");
+            let alt = att.get("name").and_then(Value::as_str);
+            let width = att.get("width").and_then(Value::as_i64).map(|v| v as i32);
+            let height = att.get("height").and_then(Value::as_i64).map(|v| v as i32);
+            match note_media::upsert_remote_media(
+                &state.db,
+                signer_actor_url,
+                url,
+                media_type,
+                alt,
+                width,
+                height,
+            )
+            .await
+            {
+                Ok(media_id) => {
+                    let _ = sqlx::query(
+                        r"INSERT INTO note_media
+                             (id, object_uri, media_id, sort_order, created_at)
+                          VALUES ($1, $2, $3, $4, $5)
+                          ON CONFLICT (object_uri, media_id) DO NOTHING",
+                    )
+                    .bind(uuid::Uuid::now_v7())
+                    .bind(object_uri)
+                    .bind(media_id)
+                    .bind(order)
+                    .bind(now)
+                    .execute(&state.db)
+                    .await;
+                    order += 1;
+                }
+                Err(err) => {
+                    tracing::debug!(error = ?err, "skipped remote attachment we couldn't classify");
+                }
             }
         }
     }

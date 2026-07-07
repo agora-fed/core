@@ -11,6 +11,7 @@
     getMyFeed,
     toggleLike,
     toggleBoost,
+    deleteNote,
     isAuthError,
     clearLocalSession,
   } from '../../lib/api';
@@ -27,7 +28,10 @@
   import Skeleton from '../ui/Skeleton.svelte';
   import EmptyState from '../ui/EmptyState.svelte';
   import ErrorState from '../ui/ErrorState.svelte';
+  import Menu from '../ui/Menu.svelte';
+  import Modal from '../ui/Modal.svelte';
   import MediaGrid from '../social/MediaGrid.svelte';
+  import PollView from '../social/PollView.svelte';
 
   const PAGE = 20;
 
@@ -44,11 +48,47 @@
   // 0.18.0: CW collapse — set of object_uri revelados; e composer de reply inline.
   let revealed = $state<Set<string>>(new Set());
   let replyingTo = $state<string | null>(null);
+  let editingTo = $state<string | null>(null);
+  let deletingTo = $state<FeedItemDto | null>(null);
+  let deleteOpen = $state(false);
+  let deleteBusy = $state(false);
+
+  function askDelete(item: FeedItemDto) {
+    deletingTo = item;
+    deleteOpen = true;
+  }
+  function cancelDelete() {
+    deleteOpen = false;
+    deletingTo = null;
+  }
+  let myHandle = $state<string | null>(null);
 
   function toggleReveal(uri: string) {
     revealed = new Set(revealed);
     if (revealed.has(uri)) revealed.delete(uri);
     else revealed.add(uri);
+  }
+
+  function isMine(item: FeedItemDto): boolean {
+    if (!myHandle) return false;
+    const h = item.author_handle.replace(/^@/, '');
+    // Local authors are `@handle` (no domain); remote include `@host.tld`.
+    return h === myHandle && !item.is_remote;
+  }
+
+  async function confirmDelete() {
+    if (!deletingTo || deleteBusy) return;
+    deleteBusy = true;
+    const res = await deleteNote(deletingTo.object_uri);
+    deleteBusy = false;
+    if (res.success) {
+      toast.success('Publicação apagada.');
+      deleteOpen = false;
+      deletingTo = null;
+      loadFirstPage();
+    } else {
+      toast.error(res.error?.message ?? 'Não foi possível apagar.');
+    }
   }
 
   function isLogged(): boolean {
@@ -95,6 +135,10 @@
 
   onMount(() => {
     loggedIn = isLogged();
+    try {
+      const h = localStorage.getItem('dsoc_handle');
+      myHandle = h && !h.startsWith('u-') ? h : null;
+    } catch {}
     ready = true;
     if (loggedIn) {
       void loadFirstPage();
@@ -246,7 +290,41 @@
                 title={formatDate(item.published_at)}
               >
                 {formatRelative(item.published_at)}
+                {#if item.edited_at}
+                  <span class="edited" title={`Editado em ${formatDate(item.edited_at)}`}>
+                    · editada
+                  </span>
+                {/if}
               </time>
+              {#if isMine(item)}
+                <Menu align="right" label="Ações da publicação">
+                  {#snippet trigger({ toggle })}
+                    <button
+                      type="button"
+                      class="more"
+                      onclick={toggle}
+                      aria-label="Mais ações"
+                    >
+                      <Icon name="more" size={16} />
+                    </button>
+                  {/snippet}
+                  {#snippet items()}
+                    <button
+                      type="button"
+                      onclick={() => {
+                        editingTo = item.object_uri;
+                      }}
+                    >
+                      <Icon name="edit" size={14} />
+                      Editar
+                    </button>
+                    <button type="button" onclick={() => askDelete(item)}>
+                      <Icon name="trash" size={14} />
+                      Apagar
+                    </button>
+                  {/snippet}
+                </Menu>
+              {/if}
             </header>
 
             {#if item.in_reply_to_uri}
@@ -257,7 +335,25 @@
               </p>
             {/if}
 
-            {#if item.spoiler_text}
+            {#if editingTo === item.object_uri}
+              <div class="edit-composer">
+                <NoteComposer
+                  variant="edit"
+                  edit={{
+                    uri: item.object_uri,
+                    content: item.content_html.replace(/<[^>]+>/g, '').trim(),
+                    spoiler_text: item.spoiler_text,
+                    sensitive: item.sensitive,
+                  }}
+                  autofocus
+                  oncancel={() => (editingTo = null)}
+                  onposted={() => {
+                    editingTo = null;
+                    loadFirstPage();
+                  }}
+                />
+              </div>
+            {:else if item.spoiler_text}
               <div class="cw">
                 <div class="cw-head">
                   <Icon name="cw" size={14} />
@@ -289,8 +385,17 @@
               </div>
             {/if}
 
-            {#if item.attachments && item.attachments.length > 0}
+            {#if editingTo !== item.object_uri && item.attachments && item.attachments.length > 0}
               <MediaGrid media={item.attachments} />
+            {/if}
+
+            {#if editingTo !== item.object_uri && item.poll}
+              <PollView
+                noteUri={item.object_uri}
+                poll={item.poll}
+                {loggedIn}
+                onvoted={(v) => (item.poll = v)}
+              />
             {/if}
 
             <footer class="reactions">
@@ -365,7 +470,7 @@
     </ol>
 
     {#if hasMore}
-      <div class="more">
+      <div class="more-wrap">
         <Button
           variant="ghost"
           onclick={loadMore}
@@ -376,6 +481,23 @@
       </div>
     {/if}
   {/if}
+
+  <Modal
+    bind:open={deleteOpen}
+    title="Apagar publicação?"
+    onclose={cancelDelete}
+  >
+    <p>
+      Isso apaga a publicação da DemocraciaBR e envia um pedido para as
+      instâncias que a receberam também a removerem. Ação irreversível.
+    </p>
+    {#snippet footer()}
+      <Button variant="ghost" onclick={cancelDelete}>Cancelar</Button>
+      <Button variant="danger" onclick={confirmDelete} loading={deleteBusy}>
+        Apagar
+      </Button>
+    {/snippet}
+  </Modal>
 {/if}
 
 <style>
@@ -481,6 +603,31 @@
     color: var(--accent-strong);
   }
 
+  .edit-composer {
+    margin-bottom: var(--sp-3);
+  }
+  .edited {
+    color: var(--text-3);
+    font-size: 0.85em;
+    margin-left: 3px;
+  }
+  .more {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 0;
+    color: var(--text-3);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: var(--r-sm);
+    margin-left: var(--sp-1);
+    align-self: flex-start;
+  }
+  .more:hover {
+    background: var(--surface-2);
+    color: var(--text-1);
+  }
   .reply-line {
     display: flex;
     align-items: center;

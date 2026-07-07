@@ -11,6 +11,7 @@ pub mod federation_feed;
 pub mod note_media;
 pub mod notifications;
 pub mod parlamentar_activity;
+pub mod polls;
 pub mod worker;
 
 use axum::extract::{Request, State};

@@ -28,6 +28,7 @@
   import ErrorState from '../ui/ErrorState.svelte';
   import NoteComposer from './NoteComposer.svelte';
   import MediaGrid from '../social/MediaGrid.svelte';
+  import PollView from '../social/PollView.svelte';
 
   let ready = $state(false);
   let uri = $state<string | null>(null);
@@ -234,6 +235,15 @@
 
           {#if item.attachments && item.attachments.length > 0}
             <MediaGrid media={item.attachments} />
+          {/if}
+
+          {#if item.poll}
+            <PollView
+              noteUri={item.object_uri}
+              poll={item.poll}
+              {loggedIn}
+              onvoted={(v) => (item.poll = v)}
+            />
           {/if}
 
           <footer class="reactions">
