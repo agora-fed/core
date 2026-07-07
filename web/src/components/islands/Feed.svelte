@@ -6,7 +6,7 @@
   //
   // 0.17.0: adotou a biblioteca ui/* (Card, Button, Avatar, Badge, Icon,
   // Skeleton, EmptyState, ErrorState) e escreve erros via toast.
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import {
     getMyFeed,
     toggleLike,
@@ -14,6 +14,9 @@
     deleteNote,
     isAuthError,
     clearLocalSession,
+    getFollowSuggestions,
+    followRemoteActor,
+    type MentionHit,
   } from '../../lib/api';
   import type { FeedItemDto } from '../../lib/types';
   import { sanitizeNoteHtml } from '../../lib/sanitize';
@@ -52,6 +55,14 @@
   let deletingTo = $state<FeedItemDto | null>(null);
   let deleteOpen = $state(false);
   let deleteBusy = $state(false);
+  // 0.19.0-polish2: real-time indicator + follow suggestions for empty state.
+  let newNotesCount = $state(0);
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let suggestions = $state<MentionHit[]>([]);
+  let sentinelEl = $state<HTMLElement | null>(null);
+  let observer: IntersectionObserver | null = null;
+  let followBusy = $state<Set<string>>(new Set());
+  let followed = $state<Set<string>>(new Set());
 
   function askDelete(item: FeedItemDto) {
     deletingTo = item;
@@ -67,6 +78,53 @@
     revealed = new Set(revealed);
     if (revealed.has(uri)) revealed.delete(uri);
     else revealed.add(uri);
+  }
+
+  /** Poll for new notes — cheap `/me/feed?limit=1` compared against the
+   *  current head item. On a change, bump `newNotesCount` so the "N novas"
+   *  ribbon renders; click prepends the fresh page. */
+  async function pollForNew() {
+    if (!loggedIn || items.length === 0) return;
+    const res = await getMyFeed(5, 0);
+    if (!res.success || !res.data || res.data.length === 0) return;
+    const currentTop = items[0]?.object_uri;
+    const uris = new Set(items.map((i) => i.object_uri));
+    const fresh = res.data.filter((n) => !uris.has(n.object_uri));
+    if (fresh.length > 0 && fresh[0].object_uri !== currentTop) {
+      newNotesCount = fresh.length;
+    }
+  }
+
+  async function loadNewNotes() {
+    newNotesCount = 0;
+    const res = await getMyFeed(PAGE, 0);
+    if (res.success && res.data) {
+      const seen = new Set(items.map((i) => i.object_uri));
+      const fresh = res.data.filter((n) => !seen.has(n.object_uri));
+      if (fresh.length > 0) items = [...fresh, ...items];
+    }
+  }
+
+  async function fetchSuggestions() {
+    if (!loggedIn) return;
+    const res = await getFollowSuggestions(6);
+    if (res.success && res.data) suggestions = res.data.items;
+  }
+
+  async function follow(m: MentionHit) {
+    if (followBusy.has(m.actor_url)) return;
+    followBusy = new Set(followBusy).add(m.actor_url);
+    const res = await followRemoteActor(m.actor_url);
+    const next = new Set(followBusy);
+    next.delete(m.actor_url);
+    followBusy = next;
+    if (res.success) {
+      followed = new Set(followed).add(m.actor_url);
+      toast.success(`Seguindo @${m.handle}.`);
+      void loadFirstPage();
+    } else {
+      toast.error(res.error?.message ?? 'Não foi possível seguir.');
+    }
   }
 
   function isMine(item: FeedItemDto): boolean {
@@ -142,9 +200,35 @@
     ready = true;
     if (loggedIn) {
       void loadFirstPage();
+      void fetchSuggestions();
+      // Poll for new notes every 45 s. Cheap query (limit=5).
+      pollTimer = setInterval(pollForNew, 45_000);
+      // IntersectionObserver on the bottom sentinel drives infinite scroll.
+      observer = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            if (e.isIntersecting && !loadingMore && hasMore) {
+              void loadMore();
+            }
+          }
+        },
+        { rootMargin: '400px' },
+      );
     } else {
       loading = false;
     }
+  });
+
+  onDestroy(() => {
+    if (pollTimer) clearInterval(pollTimer);
+    if (observer) observer.disconnect();
+  });
+
+  $effect(() => {
+    // Attach the observer to the sentinel whenever it enters the DOM.
+    if (!observer || !sentinelEl) return;
+    observer.observe(sentinelEl);
+    return () => observer?.unobserve(sentinelEl!);
   });
 
   function patch(uri: string, p: Partial<FeedItemDto>) {
@@ -224,6 +308,13 @@
     </Card>
   </div>
 
+  {#if newNotesCount > 0}
+    <button type="button" class="new-notes-ribbon" onclick={loadNewNotes}>
+      <Icon name="arrow-right" size={16} />
+      {newNotesCount} {newNotesCount === 1 ? 'nova publicação' : 'novas publicações'} — ver
+    </button>
+  {/if}
+
   {#if loading}
     <div class="skeletons">
       {#each [0, 1, 2] as i (i)}
@@ -250,13 +341,48 @@
       <EmptyState
         icon="feed"
         title="Seu feed está vazio"
-        description="Publique sua primeira nota acima — ou siga alguém no fediverso para ver as publicações aqui."
+        description="Publique sua primeira nota acima — ou siga alguém para ver as publicações aqui."
         action={emptyAction}
       />
     </Card>
     {#snippet emptyAction()}
-      <Button href="/configuracoes" variant="primary">Encontrar pessoas</Button>
+      <Button href="/explorar" variant="primary">Explorar</Button>
     {/snippet}
+    {#if suggestions.length > 0}
+      <section class="suggestions">
+        <h3>Comece seguindo alguém</h3>
+        <ul class="sug-list">
+          {#each suggestions as m (m.handle)}
+            <li>
+              <Card>
+                <div class="sug-row">
+                  <a href={`/perfil/?u=${encodeURIComponent(m.handle)}`} class="sug-who">
+                    <Avatar
+                      src={m.avatar_url}
+                      name={m.display_name ?? m.handle}
+                      size="base"
+                    />
+                    <div class="sug-body">
+                      <strong>{m.display_name ?? m.handle}</strong>
+                      <span class="muted">@{m.handle}</span>
+                    </div>
+                  </a>
+                  <Button
+                    variant={followed.has(m.actor_url) ? 'ghost' : 'primary'}
+                    size="sm"
+                    disabled={followed.has(m.actor_url) || followBusy.has(m.actor_url)}
+                    loading={followBusy.has(m.actor_url)}
+                    onclick={() => follow(m)}
+                  >
+                    {followed.has(m.actor_url) ? 'Seguindo' : 'Seguir'}
+                  </Button>
+                </div>
+              </Card>
+            </li>
+          {/each}
+        </ul>
+      </section>
+    {/if}
   {:else}
     <ol class="notes" aria-label="Notas do seu feed">
       {#each items as item (item.object_uri)}
@@ -470,13 +596,15 @@
     </ol>
 
     {#if hasMore}
+      <!-- Sentinel drives the IntersectionObserver-based infinite scroll. -->
+      <div bind:this={sentinelEl} class="sentinel" aria-hidden="true"></div>
       <div class="more-wrap">
         <Button
           variant="ghost"
           onclick={loadMore}
           loading={loadingMore}
         >
-          Carregar mais
+          {loadingMore ? 'Carregando…' : 'Carregar mais'}
         </Button>
       </div>
     {/if}
@@ -605,6 +733,66 @@
 
   .edit-composer {
     margin-bottom: var(--sp-3);
+  }
+  .new-notes-ribbon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-2);
+    width: 100%;
+    background: var(--accent);
+    color: var(--accent-contrast);
+    border: 0;
+    border-radius: var(--r-base);
+    padding: var(--sp-3);
+    margin-bottom: var(--sp-3);
+    font: inherit;
+    font-weight: var(--fw-semibold);
+    cursor: pointer;
+    transition: background var(--dur-fast) var(--ease-out);
+  }
+  .new-notes-ribbon:hover {
+    background: var(--accent-strong);
+  }
+  .sentinel {
+    height: 1px;
+    width: 100%;
+  }
+  .suggestions {
+    margin-top: var(--sp-4);
+  }
+  .suggestions h3 {
+    font-size: var(--fs-lg);
+    margin: 0 0 var(--sp-3);
+    color: var(--text-1);
+  }
+  .sug-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: var(--sp-2);
+  }
+  .sug-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3);
+  }
+  .sug-who {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    text-decoration: none;
+    color: var(--text-1);
+    flex: 1;
+    min-width: 0;
+  }
+  .sug-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
   }
   .edited {
     color: var(--text-3);

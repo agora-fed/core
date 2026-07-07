@@ -115,10 +115,28 @@ pub struct PropostaGroupRow {
     pub pending: i64,
 }
 
+/// Per-mandate detail row for the propostas drill-down. Emitted only when
+/// the filtered set is small enough (< 200 mandates) so the payload stays
+/// bounded.
+#[derive(Debug, Clone, Serialize)]
+pub struct PropostaMandateRow {
+    pub mandate_id: String,
+    pub display_name: String,
+    pub party: Option<String>,
+    pub uf: Option<String>,
+    pub house: Option<String>,
+    pub count: i64,
+    pub published: i64,
+    pub clustered: i64,
+    pub answered: i64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct PropostasResponse {
     pub total: i64,
     pub groups: Vec<PropostaGroupRow>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub detail: Vec<PropostaMandateRow>,
 }
 
 // ---------------------------------------------------------------------------
@@ -277,7 +295,58 @@ async fn proposals_summary(
         })
         .collect();
     groups.sort_by(|a, b| b.count.cmp(&a.count));
-    let out = PropostasResponse { total, groups };
+    // Per-mandate detail rollup — one row per mandate present in the rows.
+    let mut detail: Vec<PropostaMandateRow> = Vec::new();
+    #[derive(Default)]
+    struct MB {
+        display_name: String,
+        party: Option<String>,
+        uf: Option<String>,
+        house: Option<String>,
+        count: i64,
+        published: i64,
+        clustered: i64,
+        answered: i64,
+    }
+    let mut by_mandate: HashMap<Uuid, MB> = HashMap::new();
+    for r in &rows {
+        let m = by_mandate.entry(r.mandate_id).or_default();
+        m.display_name = r.display_name.clone();
+        m.party = r.party.clone();
+        m.uf = r.uf.clone();
+        m.house = r.house.clone();
+        m.count += 1;
+        if r.status == "published" {
+            m.published += 1;
+        }
+        if r.status == "clustered" {
+            m.clustered += 1;
+        }
+        if r.threshold_crossed_at.is_some() {
+            m.answered += 1;
+        }
+    }
+    if by_mandate.len() <= 200 {
+        for (mid, mb) in by_mandate {
+            detail.push(PropostaMandateRow {
+                mandate_id: mid.to_string(),
+                display_name: mb.display_name,
+                party: mb.party,
+                uf: mb.uf,
+                house: mb.house,
+                count: mb.count,
+                published: mb.published,
+                clustered: mb.clustered,
+                answered: mb.answered,
+            });
+        }
+        detail.sort_by(|a, b| b.count.cmp(&a.count));
+    }
+    let out = PropostasResponse {
+        total,
+        groups,
+        detail,
+    };
     (StatusCode::OK, Json(ApiResponse::ok(out))).into_response()
 }
 
