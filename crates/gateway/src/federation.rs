@@ -38,6 +38,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::federation_feed;
+use crate::note_media;
 use crate::notifications;
 
 const ACTIVITY_JSON: &str = "application/activity+json";
@@ -80,8 +81,10 @@ pub fn client_routes(state: AppState) -> Router<()> {
         .route("/me/boost", post(toggle_boost))
         .route("/me/notifications", get(get_my_notifications))
         .route("/me/notifications/clear", post(clear_my_notifications))
+        .route("/me/media", post(post_my_media))
         .route("/notes/context", get(get_thread_context))
         .route("/timelines/tag/{name}", get(get_hashtag_timeline))
+        .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024))
         .with_state(state)
 }
 
@@ -742,6 +745,14 @@ struct PostNoteRequest {
     /// 0.18.0: content-warning header (max 500 chars, trimmed server-side).
     #[serde(default)]
     spoiler_text: Option<String>,
+    /// 0.18.0-gamma: media_attachment ids (max 4) to bind to this Note.
+    #[serde(default)]
+    media_ids: Vec<uuid::Uuid>,
+    /// 0.18.0-gamma: per-id alt_text updates applied server-side before binding.
+    /// Length must match `media_ids` order; empty entries leave the existing
+    /// row untouched.
+    #[serde(default)]
+    media_alts: Vec<String>,
 }
 
 /// `POST /api/v1/me/notes` — publish a public Note. Wraps the content in a `Create(Note)`,
@@ -790,11 +801,29 @@ async fn post_my_note(
         .await
     {
         Ok((activity_id, fanout)) => {
+            let object_id = activity_id.replace("/activities/note-", "/objects/");
+            // 0.18.0-gamma: update alt_text (best-effort, per-id, only when the
+            // caller sent a non-empty value) then bind media to the note.
+            for (i, mid) in body.media_ids.iter().enumerate() {
+                if let Some(alt) = body.media_alts.get(i).map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                    let _ = note_media::update_alt_text(&state.db, *mid, alt).await;
+                }
+            }
+            if !body.media_ids.is_empty() {
+                if let Err(err) = note_media::attach_to_note(
+                    &state.db,
+                    &object_id,
+                    &body.media_ids,
+                )
+                .await
+                {
+                    tracing::warn!(error = ?err, "failed to attach media to note");
+                }
+            }
             // 0.18.0-beta: fire in-app notifications for local recipients.
             // (a) reply-to-local: if the parent's owner is a local citizen, ping them.
             // (b) mention-to-local: for each extracted mention whose actor URL points at
             //     our origin, ping the matching citizen. Skip self-notifications.
-            let object_id = activity_id.replace("/activities/note-", "/objects/");
             let preview = notifications::preview_from_html(&body.content);
             let sender_handle = me.handle.clone().unwrap_or_else(|| me.public_handle.clone());
             let sender_display = me.display_name.clone();
@@ -876,6 +905,100 @@ async fn post_my_note(
 struct FeedQuery {
     limit: Option<i64>,
     offset: Option<i64>,
+}
+
+/// `POST /api/v1/me/media` — multipart upload of a single image attachment.
+/// Accepts `file` (bytes) and optional `alt_text`. Returns the persisted
+/// media row + public URL so the composer can preview it and later reference
+/// its `id` inside `POST /me/notes`. The body cap (10 MiB) is set on the
+/// client-routes layer above.
+async fn post_my_media(
+    State(state): State<AppState>,
+    caller: CallerId,
+    mut multipart: axum::extract::Multipart,
+) -> Response {
+    // Read the two fields we care about: `file` (bytes) and `alt_text` (text).
+    // Ignore anything else — front-end clients might send junk headers.
+    let mut file: Option<Vec<u8>> = None;
+    let mut alt: Option<String> = None;
+    loop {
+        let next = match multipart.next_field().await {
+            Ok(Some(f)) => f,
+            Ok(None) => break,
+            Err(err) => {
+                tracing::warn!(error = %err, "multipart parse failed");
+                return client_error("upload inválido");
+            }
+        };
+        match next.name() {
+            Some("file") => match next.bytes().await {
+                Ok(b) => file = Some(b.to_vec()),
+                Err(_) => return client_error("falha ao ler o arquivo"),
+            },
+            Some("alt_text") => alt = next.text().await.ok(),
+            _ => {
+                let _ = next.bytes().await;
+            }
+        }
+    }
+    let Some(bytes) = file else {
+        return client_error("envie o arquivo no campo `file`");
+    };
+    let svc = ProfileService::from_state(&state);
+    let me = match svc
+        .find_public_by_handle(caller.org, &handle_of(&svc, caller.citizen).await)
+        .await
+    {
+        Ok(p) => p,
+        Err(_) => {
+            return client_error(
+                "torne seu perfil público antes de enviar mídia (em Configurações)",
+            );
+        }
+    };
+    let po = public_origin();
+    let me_url = format!(
+        "{}/actors/{}",
+        po.trim_end_matches('/'),
+        me.handle.as_deref().unwrap_or(&me.public_handle)
+    );
+    let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+    match note_media::upload_image(
+        &state.db,
+        state.storage.as_ref(),
+        &me_url,
+        bytes,
+        alt,
+        &media_base,
+    )
+    .await
+    {
+        Ok(m) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(json!({
+                "id": m.id,
+                "url": m.url,
+                "kind": m.kind,
+                "content_type": m.content_type,
+                "alt_text": m.alt_text,
+                "width": m.width,
+                "height": m.height,
+            }))),
+        )
+            .into_response(),
+        Err(err) => {
+            let msg = err.user_message();
+            match err {
+                note_media::UploadError::TooLarge
+                | note_media::UploadError::NotAnImage
+                | note_media::UploadError::StorageUnwired => client_error(&msg),
+                _ => {
+                    tracing::error!(error = ?err, "media upload failed");
+                    server_error()
+                }
+            }
+        }
+    }
 }
 
 /// Query for `GET /api/v1/me/notifications?limit&offset`.
@@ -973,14 +1096,17 @@ async fn get_hashtag_timeline(
     )
     .await
     {
-        Ok(items) => (
-            StatusCode::OK,
-            Json(ApiResponse::ok(json!({
-                "tag": normalized,
-                "items": items,
-            }))),
-        )
-            .into_response(),
+        Ok(mut items) => {
+            federation_feed::enrich_with_media(&state.db, &mut items, &media_base).await;
+            (
+                StatusCode::OK,
+                Json(ApiResponse::ok(json!({
+                    "tag": normalized,
+                    "items": items,
+                }))),
+            )
+                .into_response()
+        }
         Err(err) => {
             tracing::error!(error = ?err, "hashtag timeline query failed");
             server_error()
@@ -1011,7 +1137,10 @@ async fn get_thread_context(
     )
     .await
     {
-        Ok(items) => (StatusCode::OK, Json(ApiResponse::ok(items))).into_response(),
+        Ok(mut items) => {
+            federation_feed::enrich_with_media(&state.db, &mut items, &media_base).await;
+            (StatusCode::OK, Json(ApiResponse::ok(items))).into_response()
+        }
         Err(err) => {
             tracing::error!(error = ?err, "thread context query failed");
             server_error()
@@ -1040,7 +1169,10 @@ async fn get_my_feed(
     )
     .await
     {
-        Ok(items) => (StatusCode::OK, Json(ApiResponse::ok(items))).into_response(),
+        Ok(mut items) => {
+            federation_feed::enrich_with_media(&state.db, &mut items, &media_base).await;
+            (StatusCode::OK, Json(ApiResponse::ok(items))).into_response()
+        }
         Err(err) => {
             tracing::error!(error = ?err, "feed query failed");
             server_error()
@@ -1296,11 +1428,49 @@ async fn handle_inbox_create(
         tracing::warn!(attributed, signer = %signer_actor_url, "Create(Note) attribution mismatch — dropped");
         return;
     }
+    // Accept the Note if EITHER (a) at least one local citizen follows the sender, OR
+    // (b) the Note mentions a local user, OR (c) the Note replies to one of our objects.
+    // Mastodon-compatible: mentions and replies from strangers must always reach the
+    // recipient's inbox — a stricter gate would silently drop first-contact mentions.
+    let po_for_gate = public_origin();
+    let mentions_us = object
+        .get("tag")
+        .and_then(Value::as_array)
+        .map(|tags| {
+            tags.iter().any(|t| {
+                let ttype = t.get("type").and_then(Value::as_str).unwrap_or("");
+                let is_mention = ttype == "Mention" || ttype.ends_with(":Mention");
+                if !is_mention {
+                    return false;
+                }
+                let href = t.get("href").and_then(Value::as_str).unwrap_or("");
+                let prefix = format!("{}/actors/", po_for_gate.trim_end_matches('/'));
+                href.starts_with(&prefix)
+            })
+        })
+        .unwrap_or(false);
+    let replies_to_us = if let Some(reply_uri) =
+        object.get("inReplyTo").and_then(Value::as_str)
+    {
+        federation_feed::is_our_object(&state.db, reply_uri)
+            .await
+            .unwrap_or(false)
+    } else {
+        false
+    };
     match federation_feed::anyone_follows(&state.db, signer_actor_url).await {
         Ok(true) => {}
         Ok(false) => {
-            tracing::debug!(actor = %signer_actor_url, "Create(Note) from unfollowed actor — ignored");
-            return;
+            if !mentions_us && !replies_to_us {
+                tracing::debug!(actor = %signer_actor_url, "Create(Note) from unfollowed actor, no local mention/reply — ignored");
+                return;
+            }
+            tracing::info!(
+                actor = %signer_actor_url,
+                mentions_us,
+                replies_to_us,
+                "Create(Note) from unfollowed actor accepted — first-contact mention/reply"
+            );
         }
         Err(err) => {
             tracing::error!(error = ?err, "follow check failed on inbound Create");
@@ -1394,7 +1564,11 @@ async fn handle_inbox_create(
         saw_tag_array = !tags.is_empty();
         for tag in tags {
             let ttype = tag.get("type").and_then(Value::as_str).unwrap_or("");
-            match ttype {
+            // JSON-LD serializers may use `Mention` (compact) or `as:Mention`
+            // (namespace-prefixed) interchangeably. Normalize by stripping any
+            // prefix so we accept both.
+            let ttype_short = ttype.rsplit(':').next().unwrap_or(ttype);
+            match ttype_short {
                 "Mention" => {
                     let href = tag.get("href").and_then(Value::as_str).unwrap_or("");
                     let name = tag.get("name").and_then(Value::as_str).unwrap_or("");
@@ -1459,15 +1633,37 @@ async fn handle_inbox_create(
     }
     if !saw_tag_array {
         // Fallback for remotes that don't populate tag[] — extract from content.
+        // Uses our own `public_origin` so local mentions resolve correctly.
         for m in dsoc_federation::extract_mentions(&content) {
+            let actor_url_guess = m.best_actor_url(&po);
             let _ = federation_feed::upsert_mention(
                 &state.db,
                 object_uri,
-                &m.best_actor_url(""),
+                &actor_url_guess,
                 &m.handle,
                 now,
             )
             .await;
+            // Also fire a notification if this fallback-mention hits a local user.
+            if let Ok(Some(mentioned_id)) =
+                notifications::find_local_citizen_by_actor_url(&state.db, &actor_url_guess, &po)
+                    .await
+            {
+                let _ = notifications::insert(
+                    &state.db,
+                    notifications::NewNotification {
+                        citizen_id: mentioned_id,
+                        kind: "mention",
+                        source_actor_url: Some(signer_actor_url),
+                        source_handle: &src_handle,
+                        source_display_name: display_name,
+                        source_avatar_url: avatar_url,
+                        object_uri: Some(object_uri),
+                        object_preview: Some(&preview),
+                    },
+                )
+                .await;
+            }
         }
         for h in dsoc_federation::extract_hashtags(&content) {
             let _ = federation_feed::upsert_hashtag(

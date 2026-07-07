@@ -246,6 +246,19 @@ export interface FeedItemDto {
   sensitive?: boolean;
   /** 0.18.0: content-warning header (shown before the collapsed content). */
   spoiler_text?: string | null;
+  /** 0.18.0-gamma: media attachments (empty when the note has none). */
+  attachments?: MediaAttachmentDto[];
+}
+
+/** One media attachment on a Note (image today; video/audio reserved). */
+export interface MediaAttachmentDto {
+  id: string;
+  url: string;
+  kind: 'image' | 'video' | 'audio';
+  content_type: string;
+  alt_text?: string | null;
+  width?: number | null;
+  height?: number | null;
 }
 
 /** Result of toggling a Like on a note. */

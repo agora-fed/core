@@ -5,7 +5,8 @@
   // screens the rail collapses (BottomNav takes over).
   import Icon from '../ui/Icon.svelte';
   import Button from '../ui/Button.svelte';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
+  import { getMyNotifications } from '../../lib/api';
 
   interface Props {
     active?: string;
@@ -28,6 +29,14 @@
 
   let handle = $state<string | null>(null);
   let loggedIn = $state(false);
+  let unread = $state(0);
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function refreshUnread() {
+    if (!loggedIn) return;
+    const res = await getMyNotifications(1, 0);
+    if (res.success && res.data) unread = res.data.unread_count;
+  }
 
   onMount(() => {
     try {
@@ -35,6 +44,15 @@
       const h = localStorage.getItem('dsoc_handle');
       handle = h && !h.startsWith('u-') ? h : null;
     } catch {}
+    if (loggedIn) {
+      void refreshUnread();
+      // Poll every 60s. Cheap query (partial-indexed COUNT).
+      pollTimer = setInterval(refreshUnread, 60_000);
+    }
+  });
+
+  onDestroy(() => {
+    if (pollTimer) clearInterval(pollTimer);
   });
 </script>
 
@@ -46,6 +64,11 @@
         <a href={it.href} class:active={active === it.id}>
           <Icon name={it.icon} size={20} />
           <span>{it.label}</span>
+          {#if it.id === 'notifs' && loggedIn && unread > 0}
+            <span class="badge" aria-label={`${unread} não lidas`}>
+              {unread > 99 ? '99+' : unread}
+            </span>
+          {/if}
         </a>
       </li>
     {/each}
@@ -132,6 +155,17 @@
     background: var(--accent-soft);
     color: var(--accent-strong);
     font-weight: var(--fw-semibold);
+  }
+  .badge {
+    margin-left: auto;
+    background: var(--accent);
+    color: var(--accent-contrast);
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-bold);
+    padding: 1px 8px;
+    border-radius: var(--r-full);
+    line-height: 1.4;
+    font-variant-numeric: tabular-nums;
   }
   .cta {
     padding: var(--sp-3) var(--sp-2) 0;

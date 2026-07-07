@@ -10,11 +10,18 @@
   //     envia in_reply_to_uri; o autor pode opcionalmente preservar/limpar
   //     um "@handle " pré-pendurado no texto;
   //   - contador visual usa Chip token quando perto do limite.
-  import { postNote, type PostNoteOptions } from '../../lib/api';
+  import { postNote, uploadNoteMedia, type PostNoteOptions } from '../../lib/api';
   import { toast } from '../../lib/toasts';
   import Button from '../ui/Button.svelte';
   import Textarea from '../ui/Textarea.svelte';
   import Icon from '../ui/Icon.svelte';
+
+  interface Attached {
+    id: string;
+    url: string;
+    alt_text: string;
+    uploading: boolean;
+  }
 
   interface Props {
     variant?: 'settings' | 'feed' | 'reply';
@@ -42,6 +49,10 @@
   let cwOpen = $state(false);
   let spoilerText = $state('');
   let busy = $state(false);
+  let attached = $state<Attached[]>([]);
+  let dragActive = $state(false);
+  const MAX_ATT = 4;
+  let fileInput = $state<HTMLInputElement | null>(null);
 
   const MAX = 5000;
   const MAX_CW = 500;
@@ -55,13 +66,18 @@
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();
-    if (!valid || busy) return;
+    if (!valid || busy || attached.some((a) => a.uploading)) return;
     busy = true;
     const options: PostNoteOptions = {};
     if (replyTo?.uri) options.in_reply_to_uri = replyTo.uri;
     if (cwOpen && spoilerText.trim().length > 0) {
       options.spoiler_text = spoilerText.trim();
       options.sensitive = true;
+    }
+    const ids = attached.map((a) => a.id);
+    if (ids.length > 0) {
+      options.media_ids = ids;
+      options.media_alts = attached.map((a) => a.alt_text);
     }
     const res = await postNote(content, options);
     busy = false;
@@ -75,9 +91,68 @@
       content = replyTo ? `@${replyTo.handle} ` : '';
       spoilerText = '';
       cwOpen = false;
+      attached = [];
       onposted?.();
     } else {
       toast.error(res.error?.message ?? 'Não foi possível publicar.');
+    }
+  }
+
+  async function addFiles(list: FileList | File[]) {
+    const room = MAX_ATT - attached.length;
+    if (room <= 0) {
+      toast.warning(`Máximo de ${MAX_ATT} imagens por publicação.`);
+      return;
+    }
+    const files = Array.from(list).slice(0, room);
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) {
+        toast.warning(`${file.name}: envie apenas imagens.`);
+        continue;
+      }
+      const localUrl = URL.createObjectURL(file);
+      const tempId = `t-${Date.now()}-${Math.random()}`;
+      attached = [
+        ...attached,
+        { id: tempId, url: localUrl, alt_text: '', uploading: true },
+      ];
+      const res = await uploadNoteMedia(file);
+      if (res.success && res.data) {
+        attached = attached.map((a) =>
+          a.id === tempId
+            ? { id: res.data!.id, url: res.data!.url, alt_text: '', uploading: false }
+            : a,
+        );
+      } else {
+        attached = attached.filter((a) => a.id !== tempId);
+        toast.error(res.error?.message ?? 'Falha ao enviar a imagem.');
+      }
+    }
+  }
+
+  function removeAttached(id: string) {
+    attached = attached.filter((a) => a.id !== id);
+  }
+
+  function onDragOver(e: DragEvent) {
+    e.preventDefault();
+    dragActive = true;
+  }
+  function onDragLeave(_: DragEvent) {
+    dragActive = false;
+  }
+  async function onDrop(e: DragEvent) {
+    e.preventDefault();
+    dragActive = false;
+    if (e.dataTransfer?.files?.length) {
+      await addFiles(e.dataTransfer.files);
+    }
+  }
+  async function onFilePick(e: Event) {
+    const input = e.target as HTMLInputElement;
+    if (input.files?.length) {
+      await addFiles(input.files);
+      input.value = '';
     }
   }
 </script>
@@ -98,7 +173,14 @@
     </div>
   {/if}
 
-  <form onsubmit={submit} novalidate>
+  <form
+    onsubmit={submit}
+    novalidate
+    ondragover={onDragOver}
+    ondragleave={onDragLeave}
+    ondrop={onDrop}
+    class:drag={dragActive}
+  >
     {#if cwOpen}
       <div class="cw-row">
         <Icon name="cw" size={14} />
@@ -136,6 +218,44 @@
       maxlength={MAX}
     />
 
+    {#if attached.length > 0}
+      <ul class={`atts n-${attached.length}`}>
+        {#each attached as a (a.id)}
+          <li>
+            <img src={a.url} alt="" />
+            {#if a.uploading}
+              <span class="uploading" role="status">enviando…</span>
+            {:else}
+              <input
+                type="text"
+                class="alt-in"
+                placeholder="Descrição da imagem (alt text) — recomendado"
+                bind:value={a.alt_text}
+                maxlength={1500}
+              />
+              <button
+                type="button"
+                class="rm"
+                aria-label="Remover"
+                onclick={() => removeAttached(a.id)}
+              >
+                <Icon name="x" size={14} />
+              </button>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
+
+    <input
+      bind:this={fileInput}
+      type="file"
+      accept="image/*"
+      multiple
+      hidden
+      onchange={onFilePick}
+    />
+
     <div class="row">
       <div class="tools">
         <button
@@ -149,6 +269,17 @@
           <Icon name="cw" size={16} />
           <span>CW</span>
         </button>
+        <button
+          type="button"
+          class="tool"
+          onclick={() => fileInput?.click()}
+          disabled={attached.length >= MAX_ATT}
+          title="Anexar imagem"
+          aria-label="Anexar imagem"
+        >
+          <Icon name="camera" size={16} />
+          <span>Imagem</span>
+        </button>
         <span class="counter" class:warn={charCount > MAX * 0.9}>
           {charCount}/{MAX}
         </span>
@@ -161,7 +292,7 @@
           type="submit"
           variant="primary"
           loading={busy}
-          disabled={!valid}
+          disabled={!valid || attached.some((a) => a.uploading)}
         >
           {replyTo ? 'Responder' : 'Publicar'}
         </Button>
@@ -284,5 +415,79 @@
   .submit-group {
     display: inline-flex;
     gap: var(--sp-2);
+  }
+  form.drag {
+    outline: 2px dashed var(--accent);
+    outline-offset: 4px;
+    border-radius: var(--r-base);
+  }
+  .atts {
+    display: grid;
+    gap: var(--sp-2);
+    padding: 0;
+    margin: var(--sp-2) 0 var(--sp-3);
+    list-style: none;
+  }
+  .atts.n-2,
+  .atts.n-3,
+  .atts.n-4 {
+    grid-template-columns: 1fr 1fr;
+  }
+  .atts li {
+    position: relative;
+    background: var(--surface-2);
+    border-radius: var(--r-sm);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .atts img {
+    width: 100%;
+    max-height: 180px;
+    object-fit: cover;
+    display: block;
+  }
+  .alt-in {
+    width: 100%;
+    font: inherit;
+    font-size: var(--fs-xs);
+    color: var(--text-1);
+    background: var(--surface-1);
+    border: 0;
+    border-top: 1px solid var(--border-subtle);
+    padding: var(--sp-2) var(--sp-3);
+    outline: none;
+  }
+  .alt-in::placeholder {
+    color: var(--text-3);
+  }
+  .rm {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55);
+    color: #f1f5f9;
+    border: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .rm:hover {
+    background: rgba(0, 0, 0, 0.75);
+  }
+  .uploading {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    color: #f1f5f9;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
   }
 </style>

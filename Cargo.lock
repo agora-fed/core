@@ -1248,6 +1248,7 @@ dependencies = [
  "dsoc-storage",
  "dsoc-surveys",
  "dsoc-votes",
+ "image",
  "reqwest",
  "serde",
  "serde_json",

@@ -47,6 +47,9 @@ pub struct FeedItemDto {
     /// 0.18.0: content-warning header.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub spoiler_text: Option<String>,
+    /// 0.18.0-gamma: media attachments (empty when the note carries no media).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<crate::note_media::MediaDto>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -84,6 +87,27 @@ impl From<FeedRow> for FeedItemDto {
             in_reply_to_uri: r.in_reply_to_uri,
             sensitive: r.sensitive,
             spoiler_text: r.spoiler_text,
+            attachments: Vec::new(),
+        }
+    }
+}
+
+/// Batch-attach media to a set of DTOs. Handler calls this AFTER `list_feed`
+/// so the SQL stays simple and media joins happen in one round-trip.
+pub async fn enrich_with_media(
+    db: &PgPool,
+    items: &mut [FeedItemDto],
+    media_base_url: &str,
+) {
+    if items.is_empty() {
+        return;
+    }
+    let uris: Vec<String> = items.iter().map(|i| i.object_uri.clone()).collect();
+    if let Ok(map) = crate::note_media::list_for_notes(db, &uris, media_base_url).await {
+        for it in items.iter_mut() {
+            if let Some(v) = map.get(&it.object_uri) {
+                it.attachments = v.clone();
+            }
         }
     }
 }

@@ -21,6 +21,7 @@
   import Skeleton from '../ui/Skeleton.svelte';
   import EmptyState from '../ui/EmptyState.svelte';
   import ErrorState from '../ui/ErrorState.svelte';
+  import MediaGrid from '../social/MediaGrid.svelte';
 
   const PAGE = 20;
 
@@ -276,6 +277,10 @@
                 <!-- eslint-disable-next-line svelte/no-at-html-tags — sanitizado em sanitizeNoteHtml -->
                 {@html sanitizeNoteHtml(item.content_html)}
               </div>
+            {/if}
+
+            {#if item.attachments && item.attachments.length > 0}
+              <MediaGrid media={item.attachments} />
             {/if}
 
             <footer class="reactions">

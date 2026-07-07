@@ -515,6 +515,9 @@ export interface PostNoteOptions {
   in_reply_to_uri?: string;
   sensitive?: boolean;
   spoiler_text?: string;
+  media_ids?: string[];
+  /** Per-media alt_text, parallel to media_ids. Empty strings are ignored. */
+  media_alts?: string[];
 }
 
 /** Publish a public Note. Fan-out happens in the background; the response is fast. */
@@ -523,6 +526,40 @@ export const postNote = (content: string, options: PostNoteOptions = {}) =>
     '/api/v1/me/notes',
     { content, ...options },
   );
+
+/** Upload a single image attachment. Returns the row id the composer plumbs
+ *  into `media_ids` on `postNote`. */
+export async function uploadNoteMedia(
+  file: File,
+  altText?: string,
+): Promise<{
+  success: boolean;
+  data?: {
+    id: string;
+    url: string;
+    kind: string;
+    content_type: string;
+    alt_text: string | null;
+    width: number | null;
+    height: number | null;
+  };
+  error?: { message?: string };
+}> {
+  const form = new FormData();
+  form.append('file', file);
+  if (altText) form.append('alt_text', altText);
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/me/media`, {
+      method: 'POST',
+      credentials: 'include',
+      body: form,
+    });
+    const body = await res.json();
+    return body;
+  } catch {
+    return { success: false, error: { message: 'Falha ao enviar o arquivo.' } };
+  }
+}
 
 /** Descendants of a Note by its ActivityPub object URI. */
 export const getThreadContext = (uri: string) =>

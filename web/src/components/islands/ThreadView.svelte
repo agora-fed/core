@@ -27,6 +27,7 @@
   import EmptyState from '../ui/EmptyState.svelte';
   import ErrorState from '../ui/ErrorState.svelte';
   import NoteComposer from './NoteComposer.svelte';
+  import MediaGrid from '../social/MediaGrid.svelte';
 
   let ready = $state(false);
   let uri = $state<string | null>(null);
@@ -229,6 +230,10 @@
               <!-- eslint-disable-next-line svelte/no-at-html-tags -->
               {@html sanitizeNoteHtml(item.content_html)}
             </div>
+          {/if}
+
+          {#if item.attachments && item.attachments.length > 0}
+            <MediaGrid media={item.attachments} />
           {/if}
 
           <footer class="reactions">
