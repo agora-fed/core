@@ -196,6 +196,28 @@ function networkFailure<T>(): ApiResponse<T> {
   };
 }
 
+/** True when the error envelope indicates an expired / missing session.
+ *  Recognizes both the framework 401 code and the plain-text body the gateway
+ *  returns when the session cookie is stale ("missing authenticated caller"). */
+export function isAuthError<T>(res: ApiResponse<T>): boolean {
+  if (!res || res.success) return false;
+  const code = res.error?.code;
+  return code === 'http_401' || code === 'http_403';
+}
+
+/** On a stale-session response: nuke the localStorage cache so the header,
+ *  LeftRail and every other island stop believing the user is logged in.
+ *  Callers show a "please log in" card in place of an error. */
+export function clearLocalSession(): void {
+  try {
+    for (const k of ['dsoc_citizen', 'dsoc_handle', 'dsoc_name', 'dsoc_avatar']) {
+      localStorage.removeItem(k);
+    }
+  } catch {
+    /* storage may be blocked; not fatal */
+  }
+}
+
 // --- Typed convenience readers used by the SSR pages -------------------------
 
 const orgQuery = (orgId: string, extra = '') =>

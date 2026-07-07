@@ -6,6 +6,8 @@
   import {
     getMyNotifications,
     clearMyNotifications,
+    isAuthError,
+    clearLocalSession,
     type NotificationDto,
   } from '../../lib/api';
   import { formatRelative, formatDate } from '../../lib/format';
@@ -72,6 +74,9 @@
     if (res.success && res.data) {
       items = res.data.items;
       unread = res.data.unread_count;
+    } else if (isAuthError(res)) {
+      clearLocalSession();
+      loggedIn = false;
     } else {
       loadError = res.error?.message ?? 'Não foi possível carregar as notificações.';
     }

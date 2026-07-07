@@ -7,7 +7,13 @@
   // 0.17.0: adotou a biblioteca ui/* (Card, Button, Avatar, Badge, Icon,
   // Skeleton, EmptyState, ErrorState) e escreve erros via toast.
   import { onMount } from 'svelte';
-  import { getMyFeed, toggleLike, toggleBoost } from '../../lib/api';
+  import {
+    getMyFeed,
+    toggleLike,
+    toggleBoost,
+    isAuthError,
+    clearLocalSession,
+  } from '../../lib/api';
   import type { FeedItemDto } from '../../lib/types';
   import { sanitizeNoteHtml } from '../../lib/sanitize';
   import { formatRelative, formatDate } from '../../lib/format';
@@ -62,6 +68,10 @@
       items = res.data;
       offset = res.data.length;
       hasMore = res.data.length === PAGE;
+    } else if (isAuthError(res)) {
+      // Session expired — drop the stale localStorage and flip to the gate.
+      clearLocalSession();
+      loggedIn = false;
     } else {
       loadError = res.error?.message ?? 'Não foi possível carregar o seu feed.';
     }

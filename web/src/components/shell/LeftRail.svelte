@@ -6,7 +6,7 @@
   import Icon from '../ui/Icon.svelte';
   import Button from '../ui/Button.svelte';
   import { onMount, onDestroy } from 'svelte';
-  import { getMyNotifications } from '../../lib/api';
+  import { getMyNotifications, isAuthError, clearLocalSession } from '../../lib/api';
 
   interface Props {
     active?: string;
@@ -35,7 +35,19 @@
   async function refreshUnread() {
     if (!loggedIn) return;
     const res = await getMyNotifications(1, 0);
-    if (res.success && res.data) unread = res.data.unread_count;
+    if (res.success && res.data) {
+      unread = res.data.unread_count;
+    } else if (isAuthError(res)) {
+      // Session gone: clear cache + stop polling so the header switches back
+      // to the anonymous state on the next render.
+      clearLocalSession();
+      loggedIn = false;
+      unread = 0;
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    }
   }
 
   onMount(() => {
