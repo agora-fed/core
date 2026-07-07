@@ -8,7 +8,8 @@
   // the login response only carries the opaque `u-<hex>` public handle, which we never
   // show as a label anymore.
   import { onMount } from 'svelte';
-  import { getMyProfile } from '../../lib/api';
+  import { getMyProfile, refreshMyActor } from '../../lib/api';
+  import { toast } from '../../lib/toasts';
   import ThemeToggle from './ThemeToggle.svelte';
 
   let name = $state<string | null>(null);
@@ -72,6 +73,30 @@
     if (event.key === 'Escape') open = false;
   }
 
+  let refreshing = $state(false);
+  async function pokeFediverse() {
+    if (refreshing) return;
+    refreshing = true;
+    const res = await refreshMyActor();
+    refreshing = false;
+    if (res.success && res.data) {
+      const { delivered_to, targets } = res.data;
+      if (targets === 0) {
+        toast.info('Você ainda não tem seguidores remotos para notificar.');
+      } else if (delivered_to === 0) {
+        toast.warning(
+          `Nenhum dos ${targets} seguidores respondeu — tente novamente em instantes.`,
+        );
+      } else {
+        toast.success(
+          `Perfil propagado para ${delivered_to}/${targets} seguidores remotos.`,
+        );
+      }
+    } else {
+      toast.error(res.error?.message ?? 'Não foi possível propagar o perfil.');
+    }
+  }
+
   async function logout(event: MouseEvent) {
     event.preventDefault();
     try {
@@ -121,6 +146,9 @@
             <a class="item" href={`/perfil/?u=${encodeURIComponent(userHandle)}`}>Meu perfil</a>
           {/if}
           <a class="item" href="/configuracoes#fediverso">Fediverso — buscar e seguir</a>
+          <button class="item item-button" type="button" onclick={pokeFediverse} disabled={refreshing}>
+            {refreshing ? 'Propagando…' : 'Atualizar perfil no fediverso'}
+          </button>
           <hr class="sep" />
           <a class="item" href="/configuracoes">Configurações</a>
           <div class="theme-row">
@@ -237,6 +265,14 @@
     cursor: pointer;
     font: inherit;
     width: 100%;
+    color: var(--text-1);
+  }
+  .item-button[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  /* Logout item — same layout, danger color. Marked by being the LAST item-button. */
+  .item-button:last-of-type {
     color: var(--danger);
   }
   .sep {

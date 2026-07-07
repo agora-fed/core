@@ -99,10 +99,30 @@ pub struct Actor {
     /// Optional human display name (may change; not part of the stable identity).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Optional profile bio, rendered as HTML by Mastodon (paragraphs, links).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    /// Optional HTML profile URL (Mastodon "back to profile" link). If unset the id is used.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// Optional account-creation timestamp (RFC-3339). Shown as "joined X".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub published: Option<String>,
+    /// Optional Mastodon-style privacy flags.
+    #[serde(rename = "manuallyApprovesFollowers", skip_serializing_if = "Option::is_none")]
+    pub manually_approves_followers: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub discoverable: Option<bool>,
     /// Inbox endpoint (`{id}/inbox`).
     pub inbox: String,
     /// Outbox endpoint (`{id}/outbox`).
     pub outbox: String,
+    /// Followers collection endpoint.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub followers: Option<String>,
+    /// Following collection endpoint.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub following: Option<String>,
     /// The accountability role this identity currently holds (extension term `dsoc:role`).
     #[serde(rename = "dsoc:role", skip_serializing_if = "Option::is_none")]
     pub role: Option<ActorRole>,
@@ -147,10 +167,17 @@ impl Actor {
             context: Context::actor(),
             inbox: format!("{id}/inbox"),
             outbox: format!("{id}/outbox"),
+            followers: Some(format!("{id}/followers")),
+            following: Some(format!("{id}/following")),
             id,
             kind: ActorType::Person,
             preferred_username: handle.to_owned(),
             name,
+            summary: None,
+            url: None,
+            published: None,
+            manually_approves_followers: Some(false),
+            discoverable: Some(true),
             role,
             icon: None,
             image: None,
@@ -173,6 +200,52 @@ impl Actor {
         self.image = image_url.map(MediaImage::new);
         self
     }
+
+    /// Attach a bio (Mastodon's `summary` — HTML). `plain_bio_to_html` is a
+    /// convenient helper for the common case of newline-separated plain text.
+    #[must_use]
+    pub fn with_summary(mut self, summary_html: Option<String>) -> Self {
+        self.summary = summary_html.filter(|s| !s.trim().is_empty());
+        self
+    }
+
+    /// Attach the HTML profile URL (not the JSON-LD id) so Mastodon can link back.
+    #[must_use]
+    pub fn with_url(mut self, url: Option<String>) -> Self {
+        self.url = url;
+        self
+    }
+
+    /// Attach the account-creation timestamp (RFC-3339).
+    #[must_use]
+    pub fn with_published(mut self, ts: Option<String>) -> Self {
+        self.published = ts;
+        self
+    }
+}
+
+/// Convert a plain-text bio (paragraphs separated by blank lines, line breaks
+/// preserved inside) into a small HTML snippet suitable for Mastodon's
+/// `summary` field. Escapes `< > &` first — no user-authored markup leaks
+/// through. Not a full markdown renderer; deliberate.
+#[must_use]
+pub fn plain_bio_to_html(bio: &str) -> String {
+    let escape = |s: &str| {
+        s.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+    };
+    let mut out = String::with_capacity(bio.len() + 16);
+    for paragraph in bio.split("\n\n") {
+        let trimmed = paragraph.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        out.push_str("<p>");
+        out.push_str(&escape(trimmed).replace('\n', "<br>"));
+        out.push_str("</p>");
+    }
+    out
 }
 
 /// Derive the AP Actor for a mandate at its **currently expressed** role.

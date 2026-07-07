@@ -42,7 +42,7 @@ pub mod webfinger;
 // Re-export the most-used surface so consumers can `use dsoc_federation::{Actor, ActorRole, ...}`.
 pub use actor::{
     actor_id, citizen_handle, derive_actor, derive_actor_with_role, derive_citizen_actor,
-    mandate_handle, Actor, ActorRole, ActorType,
+    mandate_handle, plain_bio_to_html, Actor, ActorRole, ActorType,
 };
 pub use http::routes;
 pub use crypto::{sign_with_pem, signature_header_value, RsaSha256Verifier};

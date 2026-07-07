@@ -82,6 +82,7 @@ pub fn client_routes(state: AppState) -> Router<()> {
         .route("/me/notifications", get(get_my_notifications))
         .route("/me/notifications/clear", post(clear_my_notifications))
         .route("/me/media", post(post_my_media))
+        .route("/me/actor/refresh", post(refresh_my_actor))
         .route("/notes/context", get(get_thread_context))
         .route("/timelines/tag/{name}", get(get_hashtag_timeline))
         .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024))
@@ -170,12 +171,26 @@ async fn actor_handler(
     // blank. `absolutize` leaves already-absolute URLs untouched.
     let icon_url = profile.avatar_url.as_deref().map(|u| absolutize(&host, u));
     let image_url = profile.cover_url.as_deref().map(|u| absolutize(&host, u));
+    // Bio → Mastodon `summary` (HTML). The plain-text bio in the DB uses
+    // blank-line paragraphs and hard line breaks; `plain_bio_to_html` turns
+    // that into safe `<p>` blocks with `<br>` for intra-paragraph breaks.
+    let summary_html = profile
+        .bio
+        .as_deref()
+        .map(dsoc_federation::plain_bio_to_html)
+        .filter(|s| !s.is_empty());
+    // Human-readable profile URL (Mastodon's "view profile" link) — points at
+    // the SPA route, distinct from the JSON-LD id.
+    let profile_url = format!("https://{host}/perfil/?u={handle}");
     let actor: Actor = Actor::person(
         &host,
         &handle,
         Some(ActorRole::Voter),
         profile.display_name,
     )
+    .with_summary(summary_html)
+    .with_url(Some(profile_url))
+    .with_published(Some(profile.created_at.to_rfc3339()))
     .with_images(icon_url, image_url)
     .with_public_key(PublicKey::main_key(&actor_url, public_pem));
     match serde_json::to_string(&actor) {
@@ -905,6 +920,101 @@ async fn post_my_note(
 struct FeedQuery {
     limit: Option<i64>,
     offset: Option<i64>,
+}
+
+/// `POST /api/v1/me/actor/refresh` — emit an `Update(Person)` activity to every
+/// inbound follower so remote instances (Mastodon et al.) re-fetch the Actor
+/// document and pick up avatar/cover/summary/name changes. Otherwise their
+/// cache stays stale until it expires (~24h in Mastodon). Returns
+/// `{ delivered_to: N }`.
+async fn refresh_my_actor(
+    State(state): State<AppState>,
+    caller: CallerId,
+) -> Response {
+    let svc = ProfileService::from_state(&state);
+    let handle_now = handle_of(&svc, caller.citizen).await;
+    let profile = match svc.find_public_by_handle(caller.org, &handle_now).await {
+        Ok(p) => p,
+        Err(_) => {
+            return client_error("torne seu perfil público antes de propagar");
+        }
+    };
+    let host = std::env::var("PUBLIC_HOST")
+        .unwrap_or_else(|_| "democracia.social.br".to_owned());
+    let actor_url = actor_id(&host, &handle_now);
+    // Build the fresh Actor doc identical to what /actors/{handle} returns.
+    let public_pem = match svc.ensure_actor_public_key(caller.citizen).await {
+        Ok(pem) => pem,
+        Err(_) => return server_error(),
+    };
+    let icon_url = profile.avatar_url.as_deref().map(|u| absolutize(&host, u));
+    let image_url = profile.cover_url.as_deref().map(|u| absolutize(&host, u));
+    let summary_html = profile
+        .bio
+        .as_deref()
+        .map(dsoc_federation::plain_bio_to_html)
+        .filter(|s| !s.is_empty());
+    let profile_url = format!("https://{host}/perfil/?u={handle_now}");
+    let actor: Actor = Actor::person(
+        &host,
+        &handle_now,
+        Some(ActorRole::Voter),
+        profile.display_name,
+    )
+    .with_summary(summary_html)
+    .with_url(Some(profile_url))
+    .with_published(Some(profile.created_at.to_rfc3339()))
+    .with_images(icon_url, image_url)
+    .with_public_key(PublicKey::main_key(&actor_url, public_pem));
+    // The Update activity wraps the whole Actor as its object.
+    let activity = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{actor_url}/activities/update-{}", uuid::Uuid::now_v7()),
+        "type": "Update",
+        "actor": actor_url,
+        "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        "cc": [format!("{actor_url}/followers")],
+        "object": actor,
+    });
+    // Deliver directly (best-effort) to every ACK'd inbound follower.
+    let inboxes: Vec<String> = match sqlx::query_scalar::<_, String>(
+        r"SELECT remote_inbox_url FROM federation_follow
+           WHERE citizen_id = $1
+             AND direction = 'inbound'
+             AND accepted_at IS NOT NULL
+             AND remote_inbox_url IS NOT NULL",
+    )
+    .bind(caller.citizen.as_uuid())
+    .fetch_all(&state.db)
+    .await
+    {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::error!(error = ?err, "failed to list follower inboxes");
+            return server_error();
+        }
+    };
+    let private_pem = match svc.read_actor_private_key(caller.citizen).await {
+        Ok(pem) => pem,
+        Err(_) => return server_error(),
+    };
+    let mut delivered = 0u64;
+    for inbox in &inboxes {
+        if deliver_signed(&actor_url, &private_pem, inbox, &activity)
+            .await
+            .is_ok()
+        {
+            delivered += 1;
+        }
+    }
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(json!({
+            "delivered_to": delivered,
+            "targets": inboxes.len(),
+        }))),
+    )
+        .into_response()
 }
 
 /// `POST /api/v1/me/media` — multipart upload of a single image attachment.

@@ -619,6 +619,15 @@ export const getHashtagTimeline = (name: string, limit = 30, offset = 0) =>
     `/api/v1/timelines/tag/${encodeURIComponent(name)}?limit=${limit}&offset=${offset}`,
   );
 
+/** Emit Update(Person) to every ACK'd inbound follower so remote instances
+ *  (Mastodon et al.) drop their cached Actor doc and pick up avatar / cover /
+ *  bio / name changes. Returns `{ delivered_to, targets }`. */
+export const refreshMyActor = () =>
+  apiPost<{ delivered_to: number; targets: number }>(
+    '/api/v1/me/actor/refresh',
+    {},
+  );
+
 /** Federated feed of the authenticated citizen (own notes + followed actors). */
 export const getMyFeed = (limit = 30, offset = 0) =>
   apiGetCredentialed<FeedItemDto[]>(
