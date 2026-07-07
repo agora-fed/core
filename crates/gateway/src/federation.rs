@@ -2516,7 +2516,7 @@ fn public_origin() -> String {
 
 /// Resolve the caller's handle from their profile row (needed because `follow_remote` builds a
 /// URL with it). Caller is taken from middleware, not from any user input.
-async fn handle_of(svc: &ProfileService, citizen: CitizenId) -> String {
+pub(crate) async fn handle_of(svc: &ProfileService, citizen: CitizenId) -> String {
     // `find_public_by_handle` reads by handle; we need to go the other way. Use the existing
     // public profile read which always works for the authenticated caller.
     if let Ok(p) = svc.get(citizen, OrgId::from_uuid(DEFAULT_ORG_UUID)).await {

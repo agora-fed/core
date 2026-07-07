@@ -301,16 +301,22 @@ pub struct Status {
 }
 
 impl Status {
-    /// Build a Status from a FeedItemDto. The `account` is passed in because
-    /// the caller may have looked it up more richly than the row itself.
+    /// Build a Status from a FeedItemDto. `id` and `in_reply_to_id` must be
+    /// looked up (or created) via `mastodon_api::ensure_status_id` so the
+    /// value round-trips future calls.
     #[must_use]
-    pub fn from_feed_item(item: &FeedItemDto, account: Account) -> Self {
+    pub fn from_feed_item(
+        item: &FeedItemDto,
+        id: String,
+        in_reply_to_id: Option<String>,
+        account: Account,
+    ) -> Self {
         Self {
-            id: short_hash(&item.object_uri),
+            id,
             uri: item.object_uri.clone(),
             url: Some(item.object_uri.clone()),
             account,
-            in_reply_to_id: item.in_reply_to_uri.as_ref().map(|u| short_hash(u)),
+            in_reply_to_id,
             in_reply_to_account_id: None,
             reblog: None,
             content: item.content_html.clone(),

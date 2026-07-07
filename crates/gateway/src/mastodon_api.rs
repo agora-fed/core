@@ -13,7 +13,7 @@
 //! Response shape: **flat** Mastodon JSON (no `ApiResponse` envelope). The
 //! `masto_json` helper below serializes any DTO directly.
 
-use axum::extract::{Form, Query, State};
+use axum::extract::{Form, Path, Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -24,12 +24,17 @@ use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::federation_feed;
-use crate::mastodon_dto::{Account, AccountBuild, Instance, Status};
+use crate::federation_feed::{self, FeedItemDto};
+use crate::mastodon_dto::{
+    self, Account, AccountBuild, Instance, MastodonNotification, MastodonPoll, Status,
+};
 use crate::mastodon_oauth::{
     self, exchange_authorization_code, exchange_password, issue_access_token,
     register_application, resolve_bearer, revoke_bearer, OAuthError, TokenPayload,
 };
+use crate::note_media;
+use crate::notifications;
+use crate::polls;
 
 /// `/api/v1/apps` + `/api/v1/instance` + `/api/v1/accounts/*` +
 /// `/api/v1/timelines/*` + `/api/v1/notifications` etc. Mounted UNDER the
@@ -42,6 +47,17 @@ pub fn masto_routes(state: AppState) -> Router<()> {
         .route("/accounts/verify_credentials", get(verify_credentials))
         .route("/timelines/home", get(get_timeline_home))
         .route("/timelines/public", get(get_timeline_public))
+        .route("/statuses", post(post_status))
+        .route("/statuses/{id}", get(get_status).delete(delete_status))
+        .route("/statuses/{id}/context", get(get_status_context))
+        .route("/statuses/{id}/favourite", post(favourite_status))
+        .route("/statuses/{id}/unfavourite", post(unfavourite_status))
+        .route("/statuses/{id}/reblog", post(reblog_status))
+        .route("/statuses/{id}/unreblog", post(unreblog_status))
+        .route("/notifications", get(get_notifications))
+        .route("/notifications/clear", post(clear_notifications))
+        .route("/media", post(post_media))
+        .route("/polls/{id}/votes", post(vote_poll))
         .with_state(state)
 }
 
@@ -405,19 +421,9 @@ async fn get_timeline_home(
         .await
         .map(|a| a.uri);
     federation_feed::enrich_with_polls(&state.db, &mut items, viewer.as_deref()).await;
-    // Convert FeedItemDto -> Status.
-    let out: Vec<Status> = items
-        .into_iter()
-        .map(|it| {
-            let account = Account::from_remote_stub(
-                &it.author_handle.trim_start_matches('@').to_owned(),
-                it.author_display_name.as_deref(),
-                it.author_avatar_url.as_deref(),
-                &it.object_uri,
-            );
-            Status::from_feed_item(&it, account)
-        })
-        .collect();
+    let host =
+        std::env::var("PUBLIC_HOST").unwrap_or_else(|_| "democracia.social.br".to_owned());
+    let out = feed_items_to_statuses(&state, &items, &host).await;
     (StatusCode::OK, Json(out)).into_response()
 }
 
@@ -556,6 +562,794 @@ fn oauth_error(status: StatusCode, err: OAuthError) -> Response {
         })),
     )
         .into_response()
+}
+
+// ---------------------------------------------------------------------------
+// Status id ↔ URI persistence (migration 0410)
+// ---------------------------------------------------------------------------
+
+/// Look up the Mastodon id we assigned to `object_uri`, inserting one if
+/// it's the first time we see this Note. Deterministic on the URI so the
+/// same Note always comes back with the same id across pods.
+pub async fn ensure_status_id(db: &sqlx::PgPool, object_uri: &str) -> Result<String, sqlx::Error> {
+    let id = mastodon_dto::short_hash(object_uri);
+    sqlx::query(
+        r"INSERT INTO mastodon_status_id (id, object_uri, created_at)
+          VALUES ($1, $2, now())
+          ON CONFLICT (object_uri) DO NOTHING",
+    )
+    .bind(&id)
+    .bind(object_uri)
+    .execute(db)
+    .await?;
+    Ok(id)
+}
+
+/// Reverse the lookup — given a Mastodon id (from the URL path), return the
+/// AP object URI it stands for. `None` when the id has never been served.
+pub async fn resolve_status_id(
+    db: &sqlx::PgPool,
+    id: &str,
+) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar::<_, String>(r"SELECT object_uri FROM mastodon_status_id WHERE id = $1")
+        .bind(id)
+        .fetch_optional(db)
+        .await
+}
+
+// ---------------------------------------------------------------------------
+// Status assembly helpers
+// ---------------------------------------------------------------------------
+
+async fn build_status_from_feed_item(
+    state: &AppState,
+    item: &FeedItemDto,
+    host: &str,
+) -> Status {
+    let id = ensure_status_id(&state.db, &item.object_uri)
+        .await
+        .unwrap_or_else(|_| mastodon_dto::short_hash(&item.object_uri));
+    let in_reply_to_id = match &item.in_reply_to_uri {
+        Some(uri) => Some(
+            ensure_status_id(&state.db, uri)
+                .await
+                .unwrap_or_else(|_| mastodon_dto::short_hash(uri)),
+        ),
+        None => None,
+    };
+    let handle_no_at = item.author_handle.trim_start_matches('@');
+    let account = if item.is_remote {
+        Account::from_remote_stub(
+            handle_no_at,
+            item.author_display_name.as_deref(),
+            item.author_avatar_url.as_deref(),
+            handle_actor_url(host, handle_no_at).as_str(),
+        )
+    } else {
+        // Local: cheap lookup by handle to promote the sparse row into a
+        // proper Account with counts. Falls back to a stub on any failure.
+        match build_account_for_local_handle(state, handle_no_at, host).await {
+            Some(a) => a,
+            None => Account::from_remote_stub(
+                handle_no_at,
+                item.author_display_name.as_deref(),
+                item.author_avatar_url.as_deref(),
+                handle_actor_url(host, handle_no_at).as_str(),
+            ),
+        }
+    };
+    Status::from_feed_item(item, id, in_reply_to_id, account)
+}
+
+fn handle_actor_url(host: &str, handle: &str) -> String {
+    if handle.contains('@') {
+        // Remote: use the actor's own URL if we can guess it. Best-effort;
+        // Mastodon uses this only for the "view profile" link.
+        if let Some((user, remote_host)) = handle.split_once('@') {
+            return format!("https://{remote_host}/@{user}");
+        }
+    }
+    format!("https://{}/actors/{}", host.trim_end_matches('/'), handle)
+}
+
+async fn build_account_for_local_handle(
+    state: &AppState,
+    handle: &str,
+    host: &str,
+) -> Option<Account> {
+    let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+    let row: Option<(
+        Uuid,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        chrono::DateTime<chrono::Utc>,
+    )> = sqlx::query_as(
+        r"SELECT id, display_name, bio,
+                 CASE WHEN avatar_object_key IS NOT NULL AND $2 <> ''
+                      THEN $2 || '/' || avatar_object_key END,
+                 CASE WHEN cover_object_key IS NOT NULL AND $2 <> ''
+                      THEN $2 || '/' || cover_object_key END,
+                 created_at
+            FROM citizen
+           WHERE handle = $1 AND is_public = true",
+    )
+    .bind(handle)
+    .bind(media_base.trim_end_matches('/'))
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten();
+    let (citizen_id, display_name, bio, avatar, cover, created_at) = row?;
+    let bio_html = bio
+        .as_deref()
+        .map(dsoc_federation::plain_bio_to_html)
+        .filter(|s| !s.is_empty());
+    // Skip expensive counts for feed-list stubs — Mastodon renders fine.
+    Some(Account::from_local(AccountBuild {
+        citizen_id_str: citizen_id.to_string(),
+        handle,
+        display_name: display_name.as_deref(),
+        bio_html,
+        avatar_url: avatar.as_deref(),
+        cover_url: cover.as_deref(),
+        created_at,
+        host,
+        followers_count: 0,
+        following_count: 0,
+        statuses_count: 0,
+        last_status_at: None,
+    }))
+}
+
+/// Turn one FeedItemDto into a Mastodon Status. Used by all the endpoints
+/// that return statuses (timelines, single status, context).
+async fn feed_items_to_statuses(
+    state: &AppState,
+    items: &[FeedItemDto],
+    host: &str,
+) -> Vec<Status> {
+    let mut out = Vec::with_capacity(items.len());
+    for it in items {
+        out.push(build_status_from_feed_item(state, it, host).await);
+    }
+    out
+}
+
+/// Look up a status by Mastodon id and return the (URI, FeedItemDto). None
+/// when the id is unknown OR the underlying Note was deleted.
+async fn load_status(
+    state: &AppState,
+    id: &str,
+    viewer: Uuid,
+) -> Option<(String, FeedItemDto)> {
+    let uri = resolve_status_id(&state.db, id).await.ok().flatten()?;
+    // Reuse list_thread_context — it returns a Vec starting with the root.
+    let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+    let mut items = federation_feed::list_thread_context(&state.db, &uri, viewer, &media_base)
+        .await
+        .ok()?;
+    federation_feed::enrich_with_media(&state.db, &mut items, &media_base).await;
+    let host =
+        std::env::var("PUBLIC_HOST").unwrap_or_else(|_| "democracia.social.br".to_owned());
+    let viewer_url = build_account_for_citizen(state, CitizenId::from_uuid(viewer))
+        .await
+        .map(|a| a.uri);
+    federation_feed::enrich_with_polls(&state.db, &mut items, viewer_url.as_deref()).await;
+    let _ = host;
+    let root = items.into_iter().find(|it| it.object_uri == uri)?;
+    Some((uri, root))
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/statuses — create a Status via Mastodon API
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+struct PostStatusRequest {
+    status: String,
+    #[serde(default)]
+    in_reply_to_id: Option<String>,
+    #[serde(default)]
+    sensitive: bool,
+    #[serde(default)]
+    spoiler_text: Option<String>,
+    #[serde(default)]
+    visibility: Option<String>,
+    #[serde(default)]
+    media_ids: Vec<String>,
+    #[serde(default)]
+    language: Option<String>,
+    #[serde(default)]
+    poll: Option<PostStatusPoll>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PostStatusPoll {
+    options: Vec<String>,
+    /// Mastodon uses seconds; our internal poll wants minutes.
+    expires_in: i64,
+    #[serde(default)]
+    multiple: bool,
+    #[serde(default)]
+    hide_totals: bool,
+}
+
+/// Accept BOTH JSON and form-urlencoded bodies. Mastodon clients tend to
+/// switch based on library. The wrapper extractor tries JSON first, then
+/// form on failure.
+#[derive(Debug)]
+struct AnyBody<T>(T);
+
+impl<S, T> axum::extract::FromRequest<S> for AnyBody<T>
+where
+    S: Send + Sync,
+    T: for<'de> serde::Deserialize<'de> + Send + 'static,
+{
+    type Rejection = Response;
+    async fn from_request(
+        req: axum::extract::Request,
+        _state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        let (parts, body) = req.into_parts();
+        let bytes = match axum::body::to_bytes(body, 5 * 1024 * 1024).await {
+            Ok(b) => b,
+            Err(_) => {
+                return Err((StatusCode::BAD_REQUEST, "body too large").into_response())
+            }
+        };
+        // Try JSON.
+        if let Ok(v) = serde_json::from_slice::<T>(&bytes) {
+            return Ok(Self(v));
+        }
+        // Try form-urlencoded.
+        if let Ok(v) = serde_urlencoded::from_bytes::<T>(&bytes) {
+            return Ok(Self(v));
+        }
+        let _ = parts;
+        Err((StatusCode::BAD_REQUEST, "invalid body").into_response())
+    }
+}
+
+async fn post_status(
+    State(state): State<AppState>,
+    caller: CallerId,
+    AnyBody(body): AnyBody<PostStatusRequest>,
+) -> Response {
+    let svc = dsoc_auth::profile::ProfileService::from_state(&state);
+    let handle_now = super::federation::handle_of(&svc, caller.citizen).await;
+    let public_origin =
+        std::env::var("PUBLIC_ORIGIN").unwrap_or_else(|_| "https://democracia.social.br".to_owned());
+    let me = match svc
+        .find_public_by_handle(caller.org, &handle_now)
+        .await
+    {
+        Ok(p) => p,
+        Err(_) => {
+            return client_error("torne seu perfil público antes de publicar");
+        }
+    };
+    let _ = me;
+    if let Err(err) = svc.ensure_actor_public_key(caller.citizen).await {
+        tracing::error!(error = ?err, "actor key ensure failed");
+        return client_error("erro interno");
+    }
+    let me_url = format!(
+        "{}/actors/{}",
+        public_origin.trim_end_matches('/'),
+        handle_now
+    );
+    let visibility = body.visibility.as_deref().unwrap_or("public");
+    if !matches!(visibility, "public" | "unlisted" | "private" | "direct") {
+        return client_error("visibilidade inválida");
+    }
+    let in_reply_to_uri = match body.in_reply_to_id.as_deref() {
+        Some(id) if !id.is_empty() => resolve_status_id(&state.db, id).await.ok().flatten(),
+        _ => None,
+    };
+    match svc
+        .create_public_note(
+            caller.citizen,
+            &me_url,
+            &public_origin,
+            &body.status,
+            in_reply_to_uri.as_deref(),
+            body.sensitive,
+            body.spoiler_text.as_deref(),
+        )
+        .await
+    {
+        Ok((activity_id, _fanout)) => {
+            let object_id = activity_id.replace("/activities/note-", "/objects/");
+            // Media attach + payload patch.
+            if !body.media_ids.is_empty() {
+                let mut media_uuids: Vec<Uuid> = Vec::with_capacity(body.media_ids.len());
+                for id in &body.media_ids {
+                    if let Ok(u) = Uuid::parse_str(id) {
+                        media_uuids.push(u);
+                    }
+                }
+                if !media_uuids.is_empty() {
+                    let _ = note_media::attach_to_note(&state.db, &object_id, &media_uuids).await;
+                    let media_base =
+                        std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+                    let _ = note_media::update_outbox_payload_with_attachments(
+                        &state.db,
+                        &activity_id,
+                        &object_id,
+                        &media_base,
+                    )
+                    .await;
+                }
+            }
+            // Poll.
+            if let Some(pi) = body.poll {
+                let input = polls::PollInput {
+                    options: pi.options,
+                    multiple: pi.multiple,
+                    expires_in_minutes: (pi.expires_in / 60).max(polls::MIN_EXPIRES_MINUTES),
+                };
+                let _ = pi.hide_totals;
+                if polls::create_from_input(&state.db, &object_id, &input)
+                    .await
+                    .is_ok()
+                {
+                    let _ = polls::update_outbox_payload_with_question(
+                        &state.db,
+                        &activity_id,
+                        &object_id,
+                    )
+                    .await;
+                }
+            }
+            // Language handling: not persisted today; ignore quietly.
+            let _ = body.language;
+            // Return the freshly-built Status.
+            let host = std::env::var("PUBLIC_HOST")
+                .unwrap_or_else(|_| "democracia.social.br".to_owned());
+            if let Some((_uri, item)) = load_status(&state, &mastodon_dto::short_hash(&object_id), caller.citizen.as_uuid()).await {
+                let status = build_status_from_feed_item(&state, &item, &host).await;
+                return (StatusCode::OK, Json(status)).into_response();
+            }
+            (StatusCode::OK, Json(json!({ "id": mastodon_dto::short_hash(&object_id) }))).into_response()
+        }
+        Err(dsoc_core::Error::Validation(msg)) => client_error(&msg),
+        Err(err) => {
+            tracing::error!(error = ?err, "post_status create_public_note failed");
+            (StatusCode::INTERNAL_SERVER_ERROR, "").into_response()
+        }
+    }
+}
+
+fn client_error(msg: &str) -> Response {
+    (StatusCode::BAD_REQUEST, Json(json!({ "error": msg }))).into_response()
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/statuses/{id}
+// ---------------------------------------------------------------------------
+
+async fn get_status(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Path(id): Path<String>,
+) -> Response {
+    let host =
+        std::env::var("PUBLIC_HOST").unwrap_or_else(|_| "democracia.social.br".to_owned());
+    match load_status(&state, &id, caller.citizen.as_uuid()).await {
+        Some((_uri, item)) => {
+            let status = build_status_from_feed_item(&state, &item, &host).await;
+            (StatusCode::OK, Json(status)).into_response()
+        }
+        None => (StatusCode::NOT_FOUND, Json(json!({ "error": "record not found" }))).into_response(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /api/v1/statuses/{id}
+// ---------------------------------------------------------------------------
+
+async fn delete_status(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Path(id): Path<String>,
+) -> Response {
+    let uri = match resolve_status_id(&state.db, &id).await.ok().flatten() {
+        Some(u) => u,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "record not found" })),
+            )
+                .into_response()
+        }
+    };
+    // Ownership check + soft-delete + fanout (reuses the plumbing federation.rs
+    // already has, but simplified here — we don't need to build the full Delete
+    // activity from scratch; delegating would require exposing the internal fn).
+    let now = chrono::Utc::now();
+    let updated: u64 = sqlx::query(
+        r"UPDATE federation_outbox_entry
+             SET deleted_at = $2
+           WHERE citizen_id = $1
+             AND (activity_id = $3 OR payload->'object'->>'id' = $3)
+             AND deleted_at IS NULL",
+    )
+    .bind(caller.citizen.as_uuid())
+    .bind(now)
+    .bind(&uri)
+    .execute(&state.db)
+    .await
+    .map(|r| r.rows_affected())
+    .unwrap_or(0);
+    if updated == 0 {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "record not found or already deleted" })),
+        )
+            .into_response();
+    }
+    (StatusCode::OK, Json(json!({}))).into_response()
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/statuses/{id}/context
+// ---------------------------------------------------------------------------
+
+async fn get_status_context(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Path(id): Path<String>,
+) -> Response {
+    let uri = match resolve_status_id(&state.db, &id).await.ok().flatten() {
+        Some(u) => u,
+        None => {
+            return (StatusCode::NOT_FOUND, Json(json!({ "error": "record not found" })))
+                .into_response()
+        }
+    };
+    let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+    let mut items = match federation_feed::list_thread_context(
+        &state.db,
+        &uri,
+        caller.citizen.as_uuid(),
+        &media_base,
+    )
+    .await
+    {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::error!(error = ?err, "thread context failed");
+            return (StatusCode::INTERNAL_SERVER_ERROR, "").into_response();
+        }
+    };
+    federation_feed::enrich_with_media(&state.db, &mut items, &media_base).await;
+    let viewer = build_account_for_citizen(&state, caller.citizen)
+        .await
+        .map(|a| a.uri);
+    federation_feed::enrich_with_polls(&state.db, &mut items, viewer.as_deref()).await;
+    // Split ancestors (in_reply_to points at the previous in the chain up
+    // to the root) vs descendants (children). For our list_thread_context
+    // returns only DESCENDANTS today — ancestors is a follow-up. Return
+    // ancestors=[] + descendants=<items after root>.
+    let host =
+        std::env::var("PUBLIC_HOST").unwrap_or_else(|_| "democracia.social.br".to_owned());
+    let mut descendants: Vec<Status> = Vec::new();
+    for it in items {
+        if it.object_uri == uri {
+            continue;
+        }
+        descendants.push(build_status_from_feed_item(&state, &it, &host).await);
+    }
+    (
+        StatusCode::OK,
+        Json(json!({
+            "ancestors": [],
+            "descendants": descendants,
+        })),
+    )
+        .into_response()
+}
+
+// ---------------------------------------------------------------------------
+// Reaction toggles — favourite/unfavourite/reblog/unreblog
+// ---------------------------------------------------------------------------
+
+async fn favourite_status(state: State<AppState>, caller: CallerId, path: Path<String>) -> Response {
+    toggle_reaction(state, caller, path, "like", true).await
+}
+async fn unfavourite_status(state: State<AppState>, caller: CallerId, path: Path<String>) -> Response {
+    toggle_reaction(state, caller, path, "like", false).await
+}
+async fn reblog_status(state: State<AppState>, caller: CallerId, path: Path<String>) -> Response {
+    toggle_reaction(state, caller, path, "boost", true).await
+}
+async fn unreblog_status(state: State<AppState>, caller: CallerId, path: Path<String>) -> Response {
+    toggle_reaction(state, caller, path, "boost", false).await
+}
+
+/// The Mastodon reaction endpoints are two flavours of the same operation:
+/// set/unset a like or boost, then return the fresh Status. Uses the same
+/// underlying `federation_feed` helpers our own /me/like uses.
+async fn toggle_reaction(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Path(id): Path<String>,
+    kind: &str,
+    set: bool,
+) -> Response {
+    let uri = match resolve_status_id(&state.db, &id).await.ok().flatten() {
+        Some(u) => u,
+        None => {
+            return (StatusCode::NOT_FOUND, Json(json!({ "error": "record not found" })))
+                .into_response()
+        }
+    };
+    let citizen = caller.citizen.as_uuid();
+    let now = chrono::Utc::now();
+    let existing =
+        federation_feed::find_local_reaction(&state.db, citizen, &uri, kind).await;
+    match existing {
+        Ok(Some(prev_activity)) => {
+            let _ = prev_activity;
+            if !set {
+                let _ = federation_feed::delete_local_reaction(&state.db, citizen, &uri, kind)
+                    .await;
+            }
+            // set=true and already set → no-op (Mastodon behaviour)
+        }
+        Ok(None) => {
+            if set {
+                // Build an activity id local to the caller. Reusing the same
+                // shape as /me/like — the delivery worker (or our federate
+                // step) can pick it up later.
+                let public_origin = std::env::var("PUBLIC_ORIGIN")
+                    .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
+                let host = std::env::var("PUBLIC_HOST")
+                    .unwrap_or_else(|_| "democracia.social.br".to_owned());
+                let svc = dsoc_auth::profile::ProfileService::from_state(&state);
+                let handle = super::federation::handle_of(&svc, caller.citizen).await;
+                let actor_url = format!("{}/actors/{}", public_origin.trim_end_matches('/'), handle);
+                let activity_kind = if kind == "like" { "likes" } else { "announces" };
+                let activity_id = format!(
+                    "{actor_url}/activities/{activity_kind}-{}",
+                    Uuid::now_v7()
+                );
+                let _ = host;
+                let _ = federation_feed::insert_local_reaction(
+                    &state.db,
+                    citizen,
+                    &uri,
+                    kind,
+                    &activity_id,
+                    now,
+                )
+                .await;
+            }
+            // set=false and not set → no-op
+        }
+        Err(err) => {
+            tracing::error!(error = ?err, "reaction lookup failed");
+            return (StatusCode::INTERNAL_SERVER_ERROR, "").into_response();
+        }
+    }
+    // Return the fresh Status.
+    let host =
+        std::env::var("PUBLIC_HOST").unwrap_or_else(|_| "democracia.social.br".to_owned());
+    match load_status(&state, &id, citizen).await {
+        Some((_, item)) => {
+            let status = build_status_from_feed_item(&state, &item, &host).await;
+            (StatusCode::OK, Json(status)).into_response()
+        }
+        None => (StatusCode::NOT_FOUND, Json(json!({ "error": "record not found" })))
+            .into_response(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/notifications
+// ---------------------------------------------------------------------------
+
+async fn get_notifications(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Query(query): Query<TimelineQuery>,
+) -> Response {
+    let limit = query.limit.unwrap_or(30).clamp(1, 50);
+    let host =
+        std::env::var("PUBLIC_HOST").unwrap_or_else(|_| "democracia.social.br".to_owned());
+    let items = notifications::list_for_citizen(&state.db, caller.citizen.as_uuid(), limit, 0)
+        .await
+        .unwrap_or_default();
+    let mut out: Vec<MastodonNotification> = Vec::with_capacity(items.len());
+    for n in items {
+        // Source account: from the actor URL if we can resolve it locally,
+        // else a stub. Skip the DB round-trip for stubs.
+        let source_handle = n.source_handle.clone();
+        let account = if source_handle.contains('@') {
+            Account::from_remote_stub(
+                source_handle.split('@').next().unwrap_or("?"),
+                n.source_display_name.as_deref(),
+                n.source_avatar_url.as_deref(),
+                n.source_actor_url.as_deref().unwrap_or(""),
+            )
+        } else {
+            build_account_for_local_handle(&state, &source_handle, &host)
+                .await
+                .unwrap_or_else(|| {
+                    Account::from_remote_stub(
+                        &source_handle,
+                        n.source_display_name.as_deref(),
+                        n.source_avatar_url.as_deref(),
+                        &format!("https://{host}/actors/{source_handle}"),
+                    )
+                })
+        };
+        // Status: only for non-follow kinds.
+        let status = if let Some(uri) = &n.object_uri {
+            if let Some((_uri, item)) =
+                load_status(&state, &mastodon_dto::short_hash(uri), caller.citizen.as_uuid()).await
+            {
+                Some(build_status_from_feed_item(&state, &item, &host).await)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        out.push(MastodonNotification::from_dto(&n, account, status));
+    }
+    (StatusCode::OK, Json(out)).into_response()
+}
+
+async fn clear_notifications(
+    State(state): State<AppState>,
+    caller: CallerId,
+) -> Response {
+    let _ = notifications::mark_all_read(&state.db, caller.citizen.as_uuid()).await;
+    (StatusCode::OK, Json(json!({}))).into_response()
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/media
+// ---------------------------------------------------------------------------
+
+async fn post_media(
+    State(state): State<AppState>,
+    caller: CallerId,
+    mut multipart: axum::extract::Multipart,
+) -> Response {
+    // Same shape as our /me/media, but response is Mastodon MediaAttachment.
+    let mut file: Option<Vec<u8>> = None;
+    let mut alt: Option<String> = None;
+    loop {
+        let next = match multipart.next_field().await {
+            Ok(Some(f)) => f,
+            Ok(None) => break,
+            Err(_) => return client_error("multipart parse failed"),
+        };
+        match next.name() {
+            Some("file") => file = next.bytes().await.ok().map(|b| b.to_vec()),
+            Some("description") => alt = next.text().await.ok(),
+            _ => {
+                let _ = next.bytes().await;
+            }
+        }
+    }
+    let Some(bytes) = file else {
+        return client_error("file field required");
+    };
+    let svc = dsoc_auth::profile::ProfileService::from_state(&state);
+    let handle_now = super::federation::handle_of(&svc, caller.citizen).await;
+    let host = std::env::var("PUBLIC_HOST").unwrap_or_else(|_| "democracia.social.br".to_owned());
+    let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+    let me_url = format!("https://{host}/actors/{handle_now}");
+    match note_media::upload_image(
+        &state.db,
+        state.storage.as_ref(),
+        &me_url,
+        bytes,
+        alt,
+        &media_base,
+    )
+    .await
+    {
+        Ok(m) => (
+            StatusCode::OK,
+            Json(json!({
+                "id": m.id.to_string(),
+                "type": "image",
+                "url": m.url,
+                "preview_url": m.url,
+                "remote_url": null,
+                "description": m.alt_text,
+                "blurhash": null,
+                "meta": {
+                    "original": {
+                        "width": m.width,
+                        "height": m.height,
+                        "size": format!("{}x{}", m.width, m.height),
+                        "aspect": if m.height > 0 { m.width as f64 / m.height as f64 } else { 1.0 },
+                    }
+                }
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            let msg = err.user_message();
+            client_error(&msg)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/polls/{id}/votes
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+struct MastodonVoteRequest {
+    /// Array of option INDEXES to vote for (Mastodon convention).
+    choices: Vec<i64>,
+}
+
+async fn vote_poll(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Path(id): Path<String>,
+    AnyBody(body): AnyBody<MastodonVoteRequest>,
+) -> Response {
+    // The Mastodon `id` here is the Poll id, not a status id. Look it up in
+    // note_poll directly, then map choices (indices) to our option UUIDs.
+    let poll: Option<(Uuid, String)> = sqlx::query_as::<_, (Uuid, String)>(
+        r"SELECT id, object_uri FROM note_poll WHERE id::text = $1",
+    )
+    .bind(&id)
+    .fetch_optional(&state.db)
+    .await
+    .unwrap_or(None);
+    let Some((poll_id, object_uri)) = poll else {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "poll not found" })))
+            .into_response();
+    };
+    // Fetch options in order to map indices → uuids.
+    let options: Vec<(Uuid, i32)> = sqlx::query_as::<_, (Uuid, i32)>(
+        r"SELECT id, sort_order FROM note_poll_option WHERE poll_id = $1 ORDER BY sort_order",
+    )
+    .bind(poll_id)
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+    let mut option_ids: Vec<Uuid> = Vec::with_capacity(body.choices.len());
+    for c in body.choices {
+        let idx = c as usize;
+        if idx >= options.len() {
+            return client_error("choice index out of range");
+        }
+        option_ids.push(options[idx].0);
+    }
+    let public_origin = std::env::var("PUBLIC_ORIGIN")
+        .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
+    let svc = dsoc_auth::profile::ProfileService::from_state(&state);
+    let handle = super::federation::handle_of(&svc, caller.citizen).await;
+    let voter_url = format!("{}/actors/{}", public_origin.trim_end_matches('/'), handle);
+    let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+    match polls::cast_vote(&state.db, &object_uri, &voter_url, &option_ids, &media_base).await {
+        Ok(dto) => {
+            let m = MastodonPoll::from(&dto);
+            (StatusCode::OK, Json(m)).into_response()
+        }
+        Err(err) => {
+            let msg = err.user_message();
+            match err {
+                polls::PollError::Db(_) => {
+                    tracing::error!(error = ?err, "vote persistence failed");
+                    (StatusCode::INTERNAL_SERVER_ERROR, "").into_response()
+                }
+                _ => client_error(&msg),
+            }
+        }
+    }
 }
 
 /// Middleware helper: if the request carries a valid Bearer token AND no
