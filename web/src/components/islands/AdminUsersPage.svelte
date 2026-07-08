@@ -75,12 +75,13 @@
       offset,
     });
     loading = false;
-    if (res.ok && res.data) {
+    if (res.success && res.data) {
       rows = append ? [...rows, ...res.data] : res.data;
       hasMore = res.data.length === PAGE;
+      loadErr = null;
     } else {
       loadErr =
-        res.error ??
+        res.error?.message ??
         'Não foi possível listar. Você tem papel admin/owner nesta instância?';
     }
   }
