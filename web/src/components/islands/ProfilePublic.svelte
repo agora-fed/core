@@ -3,10 +3,20 @@
   // pré-gerar um HTML por handle arbitrário no build, esta ilha lê o handle do query-param `?u=`
   // (client-side) e hidrata o perfil via GET /api/v1/profiles/{handle}. É o alvo do 302 que o
   // gateway emite quando um navegador acessa /actors/{handle}.
+  //
+  // Handles remotos do fediverso (`@user@host`) resolvem via WebFinger + Actor fetch
+  // proxy no backend (`/api/v1/federation/lookup?acct=…`) e renderizam DENTRO do site
+  // com um card equivalente — sem redirecionar pro Mastodon original.
   import { onMount } from 'svelte';
-  import { getPublicProfile, DEFAULT_ORG_ID } from '../../lib/api';
+  import {
+    getPublicProfile,
+    lookupRemoteActor,
+    followRemoteActor,
+    DEFAULT_ORG_ID,
+  } from '../../lib/api';
   import type { ProfileDto } from '../../lib/types';
   import { formatDate } from '../../lib/format';
+  import { toast } from '../../lib/toasts';
 
   let { handle: handleProp = '' }: { handle?: string } = $props();
 
@@ -17,6 +27,30 @@
   // Endereço federado (@handle@host) — só faz sentido pra perfis públicos com @ escolhido.
   let fediAddress = $state<string | null>(null);
   let copied = $state(false);
+  // Remote fediverse view (populado quando handle é @user@host).
+  let remote = $state<{
+    name: string | null;
+    handle: string;
+    avatar_url: string | null;
+    summary: string | null;
+    actor_url: string;
+  } | null>(null);
+  let following = $state(false);
+  let followState = $state<'idle' | 'sent' | 'failed'>('idle');
+  let loggedIn = $state(false);
+
+  function stripHtml(html: string): string {
+    return html
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function isRemoteHandle(h: string): boolean {
+    // `@user@host.tld` ou `user@host.tld` — precisa ter DUAS partes separadas por @.
+    const trimmed = h.replace(/^@/, '');
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
+  }
 
   let verifBadge = $derived.by(() => {
     const lvl = profile?.verification_level ?? 'none';
@@ -58,6 +92,37 @@
       loadError = 'Perfil não informado.';
       return;
     }
+    try {
+      loggedIn = Boolean(localStorage.getItem('dsoc_citizen'));
+    } catch {
+      /* storage bloqueado */
+    }
+    if (isRemoteHandle(handle)) {
+      if (!loggedIn) {
+        loading = false;
+        loadError =
+          'Perfis do fediverso são carregados só pra quem está logado — entre pra ver este perfil dentro do DemocraciaBR.';
+        return;
+      }
+      const res = await lookupRemoteActor(handle);
+      loading = false;
+      if (!res.success || !res.data) {
+        loadError =
+          res.error?.message ??
+          'Não consegui carregar esse perfil do fediverso agora.';
+        return;
+      }
+      remote = {
+        name: res.data.name ?? res.data.preferred_username,
+        handle: res.data.handle.startsWith('@')
+          ? res.data.handle
+          : `@${res.data.handle}`,
+        avatar_url: res.data.avatar_url,
+        summary: res.data.summary ? stripHtml(res.data.summary) : null,
+        actor_url: res.data.remote_actor_url,
+      };
+      return;
+    }
     const res = await getPublicProfile(handle, DEFAULT_ORG_ID);
     loading = false;
     if (!res.ok || !res.data) {
@@ -71,6 +136,20 @@
       fediAddress = `@${profile.handle}@${window.location.host}`;
     }
   });
+
+  async function followRemote() {
+    if (!remote || following) return;
+    following = true;
+    const res = await followRemoteActor(remote.actor_url);
+    following = false;
+    if (res.success) {
+      followState = 'sent';
+      toast.success('Solicitação de seguir enviada.');
+    } else {
+      followState = 'failed';
+      toast.error(res.error?.message ?? 'Não foi possível seguir agora.');
+    }
+  }
 
   async function copyFedi() {
     if (!fediAddress) return;
@@ -98,12 +177,65 @@
 {:else if loadError}
   <div class="card state" role="alert">
     <h2>{loadError}</h2>
-    <p class="muted">
-      O perfil pode ser privado — na DemocraciaBR todo perfil nasce privado e
-      só aparece aqui se a pessoa o tornar público.
-    </p>
-    <a class="btn btn-ghost" href="/">Voltar para o início</a>
+    {#if !loggedIn && isRemoteHandle(handle)}
+      <p class="muted">Perfis do fediverso são renderizados dentro do DemocraciaBR, mas precisam de login.</p>
+      <a class="btn btn-primary" href={`/entrar?next=${encodeURIComponent(`/perfil/?u=${handle}`)}`}>Entrar</a>
+    {:else}
+      <p class="muted">
+        O perfil pode ser privado — na DemocraciaBR todo perfil nasce privado e
+        só aparece aqui se a pessoa o tornar público.
+      </p>
+      <a class="btn btn-ghost" href="/">Voltar para o início</a>
+    {/if}
   </div>
+{:else if remote}
+  <article class="profile">
+    <div class="cover"></div>
+    <header class="head">
+      {#if remote.avatar_url}
+        <img class="avatar-lg" src={remote.avatar_url} alt="" referrerpolicy="no-referrer" />
+      {:else}
+        <span class="avatar-lg avatar-fallback" aria-hidden="true">
+          {(remote.name ?? remote.handle).charAt(0).toUpperCase()}
+        </span>
+      {/if}
+      <div class="head-meta">
+        <h1>{remote.name ?? remote.handle}</h1>
+        <p class="handle">{remote.handle}</p>
+        <div class="chips">
+          <span class="chip chip-fedi" title="Perfil hospedado noutro servidor do fediverso, exibido aqui via proxy.">
+            🌐 Fediverso
+          </span>
+        </div>
+      </div>
+    </header>
+
+    {#if remote.summary}
+      <section class="bio">
+        <h2 class="visually-hidden">Bio</h2>
+        <p>{remote.summary}</p>
+      </section>
+    {/if}
+
+    <footer class="fedi remote-actions">
+      {#if followState === 'sent'}
+        <span class="hint hint-ok">Solicitação de seguir enviada ✓</span>
+      {:else}
+        <button
+          type="button"
+          class="btn btn-primary"
+          onclick={followRemote}
+          disabled={following}
+        >
+          {following ? 'Enviando…' : 'Seguir'}
+        </button>
+      {/if}
+      <span class="muted note-remote">
+        As publicações desse perfil aparecem no seu feed depois que você segue. Timeline
+        completa dentro do site vem em breve.
+      </span>
+    </footer>
+  </article>
 {:else if profile}
   <article class="profile">
     <div
@@ -248,6 +380,26 @@
     background: var(--c-blue-soft, #e6efff);
     color: var(--c-blue-dark, #143c78);
     border: 1px solid #b7d0ff;
+  }
+  .chip-fedi {
+    background: var(--c-blue-soft, #e6efff);
+    color: var(--c-blue-dark, #143c78);
+    border: 1px solid #b7d0ff;
+  }
+  .remote-actions {
+    gap: 0.75rem;
+  }
+  .remote-actions .btn {
+    padding: 0.45rem 1rem;
+  }
+  .note-remote {
+    font-size: 0.85rem;
+    line-height: 1.4;
+    flex-basis: 100%;
+  }
+  .hint-ok {
+    color: var(--c-green-dark, #115c2d);
+    font-weight: 600;
   }
   .bio {
     padding: 0 1.5rem 1.5rem;

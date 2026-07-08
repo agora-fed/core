@@ -389,27 +389,33 @@
         <li>
           <Card as="article">
             <header class="note-head">
-              <Avatar
-                src={item.author_avatar_url}
-                name={item.author_display_name ?? item.author_handle}
-                alt=""
-                size="base"
-              />
-              <div class="who">
-                <span class="who-line">
-                  <strong class="name">
-                    {item.author_display_name ?? item.author_handle}
-                  </strong>
-                  {#if item.is_remote}
-                    <Badge tone="info" size="sm">fediverso</Badge>
-                  {/if}
-                </span>
-                <span class="handle muted">
-                  {item.author_handle.startsWith('@')
-                    ? item.author_handle
-                    : `@${item.author_handle}`}
-                </span>
-              </div>
+              <a
+                class="author-link"
+                href={`/perfil/?u=${encodeURIComponent(item.author_handle)}`}
+                aria-label={`Ver perfil de ${item.author_display_name ?? item.author_handle}`}
+              >
+                <Avatar
+                  src={item.author_avatar_url}
+                  name={item.author_display_name ?? item.author_handle}
+                  alt=""
+                  size="base"
+                />
+                <div class="who">
+                  <span class="who-line">
+                    <strong class="name">
+                      {item.author_display_name ?? item.author_handle}
+                    </strong>
+                    {#if item.is_remote}
+                      <Badge tone="info" size="sm">fediverso</Badge>
+                    {/if}
+                  </span>
+                  <span class="handle muted">
+                    {item.author_handle.startsWith('@')
+                      ? item.author_handle
+                      : `@${item.author_handle}`}
+                  </span>
+                </div>
+              </a>
               <time
                 class="when muted"
                 datetime={item.published_at}
@@ -677,6 +683,20 @@
     align-items: center;
     gap: var(--sp-3);
     margin-bottom: var(--sp-3);
+  }
+  .author-link {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    text-decoration: none;
+    color: inherit;
+    min-width: 0;
+    flex: 1;
+    border-radius: var(--r-sm);
+  }
+  .author-link:hover .name {
+    color: var(--accent-strong);
+    text-decoration: underline;
   }
   .who {
     min-width: 0;

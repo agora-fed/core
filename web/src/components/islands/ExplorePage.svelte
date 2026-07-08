@@ -8,8 +8,10 @@
     getFollowSuggestions,
     getDirectory,
     followRemoteActor,
+    lookupRemoteActor,
     type HashtagHit,
     type MentionHit,
+    type RemoteActorDto,
   } from '../../lib/api';
   import { toast } from '../../lib/toasts';
   import Card from '../ui/Card.svelte';
@@ -27,6 +29,58 @@
   let loading = $state(true);
   let followingBusy = $state<Set<string>>(new Set());
   let followed = $state<Set<string>>(new Set());
+
+  // Busca no fediverso — logo abaixo do header. Aceita @user@host, faz WebFinger
+  // + Actor fetch via /api/v1/federation/lookup e mostra card com Seguir + link
+  // pro perfil dentro do próprio DemocraciaBR.
+  let fediQuery = $state('');
+  let fediLooking = $state(false);
+  let fediResult = $state<RemoteActorDto | null>(null);
+  let fediError = $state<string | null>(null);
+  let fediFollowing = $state(false);
+  let fediFollowSent = $state(false);
+
+  let fediValid = $derived(
+    /^@?[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fediQuery.trim()),
+  );
+
+  function stripHtml(html: string): string {
+    return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  async function lookupFedi(event: SubmitEvent) {
+    event.preventDefault();
+    if (!fediValid || fediLooking) return;
+    if (!loggedIn) {
+      fediError =
+        'Entre pra buscar contas do fediverso — é uma limitação anti-crawler.';
+      return;
+    }
+    fediLooking = true;
+    fediError = null;
+    fediResult = null;
+    fediFollowSent = false;
+    const res = await lookupRemoteActor(fediQuery.trim());
+    fediLooking = false;
+    if (res.success && res.data) {
+      fediResult = res.data;
+    } else {
+      fediError = res.error?.message ?? 'Não consegui encontrar essa conta.';
+    }
+  }
+
+  async function followFedi() {
+    if (!fediResult || fediFollowing) return;
+    fediFollowing = true;
+    const res = await followRemoteActor(fediResult.remote_actor_url);
+    fediFollowing = false;
+    if (res.success) {
+      fediFollowSent = true;
+      toast.success('Solicitação de seguir enviada.');
+    } else {
+      toast.error(res.error?.message ?? 'Não foi possível seguir.');
+    }
+  }
 
   async function load() {
     loading = true;
@@ -77,6 +131,86 @@
       </p>
     </div>
   </header>
+
+  <section class="fedi-lookup">
+    <form onsubmit={lookupFedi} class="fedi-form" novalidate>
+      <label for="fedi-q" class="fedi-label">
+        Procurar alguém no fediverso
+      </label>
+      <div class="fedi-row">
+        <input
+          id="fedi-q"
+          type="text"
+          class="fedi-input"
+          bind:value={fediQuery}
+          placeholder="@usuario@instancia (ex.: @zedirceu@masto.social)"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={!fediValid || fediLooking}
+          loading={fediLooking}
+        >
+          Buscar
+        </Button>
+      </div>
+      <p class="fedi-hint muted">
+        Digite o endereço completo no formato <code>@usuario@instancia</code>.
+        O perfil abre dentro do DemocraciaBR e você pode seguir sem sair.
+      </p>
+    </form>
+
+    {#if fediError}
+      <p class="fedi-err" role="alert">{fediError}</p>
+    {/if}
+
+    {#if fediResult}
+      <Card>
+        <div class="fedi-card">
+          <a
+            class="fedi-who"
+            href={`/perfil/?u=${encodeURIComponent(fediResult.handle)}`}
+          >
+            <Avatar
+              src={fediResult.avatar_url}
+              name={fediResult.name ?? fediResult.handle}
+              size="base"
+            />
+            <div class="fedi-meta">
+              <strong>{fediResult.name ?? fediResult.preferred_username ?? fediResult.handle}</strong>
+              <span class="muted">{fediResult.handle}</span>
+              {#if fediResult.summary}
+                <p class="fedi-summary muted">{stripHtml(fediResult.summary)}</p>
+              {/if}
+            </div>
+          </a>
+          <div class="fedi-actions">
+            {#if fediFollowSent}
+              <span class="fedi-ok">Solicitação enviada ✓</span>
+            {:else}
+              <Button
+                variant="primary"
+                size="sm"
+                onclick={followFedi}
+                disabled={fediFollowing}
+                loading={fediFollowing}
+              >
+                Seguir
+              </Button>
+            {/if}
+            <a
+              class="fedi-open"
+              href={`/perfil/?u=${encodeURIComponent(fediResult.handle)}`}
+            >
+              Abrir perfil
+            </a>
+          </div>
+        </div>
+      </Card>
+    {/if}
+  </section>
 
   {#if loading}
     <div class="loading">
@@ -234,6 +368,101 @@
     color: var(--accent);
     border-radius: var(--r-base);
     flex-shrink: 0;
+  }
+  .fedi-lookup {
+    margin-bottom: var(--sp-6);
+    padding: var(--sp-4);
+    background: var(--surface-2);
+    border-radius: var(--r-base);
+  }
+  .fedi-label {
+    display: block;
+    font-weight: var(--fw-semibold);
+    font-size: var(--fs-sm);
+    color: var(--text-1);
+    margin-bottom: var(--sp-2);
+  }
+  .fedi-row {
+    display: flex;
+    gap: var(--sp-2);
+    flex-wrap: wrap;
+  }
+  .fedi-input {
+    flex: 1;
+    min-width: 220px;
+    padding: var(--sp-3);
+    height: 44px;
+    background: var(--surface-1);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-sm);
+    color: var(--text-1);
+    font: inherit;
+    font-size: var(--fs-sm);
+  }
+  .fedi-input:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .fedi-hint {
+    margin: var(--sp-2) 0 0;
+    font-size: var(--fs-xs);
+  }
+  .fedi-hint code {
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    background: var(--surface-1);
+    border: 1px solid var(--border-subtle);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+  .fedi-err {
+    margin: var(--sp-3) 0 0;
+    color: var(--danger);
+    font-size: var(--fs-sm);
+  }
+  .fedi-card {
+    display: flex;
+    gap: var(--sp-3);
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .fedi-who {
+    display: flex;
+    gap: var(--sp-3);
+    align-items: flex-start;
+    text-decoration: none;
+    color: inherit;
+    flex: 1;
+    min-width: 200px;
+  }
+  .fedi-meta {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+  }
+  .fedi-summary {
+    margin: var(--sp-1) 0 0;
+    font-size: var(--fs-sm);
+    line-height: 1.4;
+  }
+  .fedi-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    flex-shrink: 0;
+  }
+  .fedi-open {
+    font-size: var(--fs-sm);
+    color: var(--accent-strong);
+    text-decoration: none;
+    font-weight: var(--fw-semibold);
+  }
+  .fedi-open:hover {
+    text-decoration: underline;
+  }
+  .fedi-ok {
+    color: var(--accent-strong);
+    font-weight: var(--fw-semibold);
+    font-size: var(--fs-sm);
   }
   .grid {
     display: grid;
