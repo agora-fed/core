@@ -98,7 +98,45 @@ pub fn routes(state: AppState) -> Router<()> {
         .route("/admin/email-templates", get(list))
         .route("/admin/email-templates/{key}", patch(update))
         .route("/admin/email-templates/{key}/preview", axum::routing::post(preview))
+        // GET /me/admin-status — usado pelo AuthMenu no front pra saber se
+        // mostra o link "Administração" no dropdown do perfil. Anônimo → 200
+        // com `{is_admin: false}` (não vaza sinal). Não é aqui só porque o
+        // path começa com /me em vez de /admin — casa com require_admin abaixo.
+        .route("/me/admin-status", get(me_admin_status))
         .with_state(state)
+}
+
+/// `GET /me/admin-status` — leve, o AuthMenu chama uma vez no login e cacheia
+/// no `dsoc_is_admin` do localStorage. Retorna `{is_admin: bool}`. Não é 401
+/// pra anônimo — devolve `false`, evita blip de erro no console pra usuário
+/// não-admin.
+async fn me_admin_status(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    let Some(citizen_id): Option<Uuid> = headers
+        .get("x-dsoc-citizen-id")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse().ok())
+    else {
+        return (
+            StatusCode::OK,
+            Json(ApiResponse::ok(serde_json::json!({ "is_admin": false }))),
+        )
+            .into_response();
+    };
+    let is_admin = sqlx::query_scalar::<_, bool>(
+        r"SELECT EXISTS (
+             SELECT 1 FROM admin_role_binding
+              WHERE citizen_id = $1 AND role IN ('owner','admin')
+           )",
+    )
+    .bind(citizen_id)
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(false);
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(serde_json::json!({ "is_admin": is_admin }))),
+    )
+        .into_response()
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]

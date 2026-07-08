@@ -830,6 +830,10 @@ export const subscribeWebPush = (subscription: PushSubscriptionJSON, userAgent: 
     user_agent: userAgent,
   });
 
+/** GET /me/admin-status — leve, usado pelo AuthMenu pra mostrar "Administração". */
+export const getMyAdminStatus = () =>
+  apiGetCredentialed<{ is_admin: boolean }>('/api/v1/me/admin-status');
+
 /** Template de e-mail editável pela UI admin (migration 0151). */
 export interface EmailTemplateDto {
   key: string;

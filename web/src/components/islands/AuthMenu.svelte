@@ -8,7 +8,7 @@
   // the login response only carries the opaque `u-<hex>` public handle, which we never
   // show as a label anymore.
   import { onMount } from 'svelte';
-  import { getMyProfile, refreshMyActor } from '../../lib/api';
+  import { getMyProfile, refreshMyActor, getMyAdminStatus } from '../../lib/api';
   import { toast } from '../../lib/toasts';
   import ThemeToggle from './ThemeToggle.svelte';
 
@@ -19,6 +19,9 @@
   let open = $state(false);
   let ready = $state(false);
   let root = $state<HTMLElement | null>(null);
+  // isAdmin é cacheado em localStorage pra pintar o link "Administração"
+  // sem esperar o round-trip da /me/admin-status.
+  let isAdmin = $state(false);
 
   function read(key: string): string | null {
     try {
@@ -50,6 +53,8 @@
     const cachedHandle = read('dsoc_handle');
     userHandle =
       cachedHandle && !cachedHandle.startsWith('u-') ? cachedHandle : null;
+    // Cached admin flag: paint imediato, revalida em background.
+    isAdmin = read('dsoc_is_admin') === '1';
     ready = true;
     if (!loggedIn) return;
     const res = await getMyProfile();
@@ -63,6 +68,11 @@
     }
     // On failure keep the cached label — the drawer still works and the next
     // successful load refreshes it.
+    const ar = await getMyAdminStatus();
+    if (ar.success && ar.data) {
+      isAdmin = ar.data.is_admin;
+      write('dsoc_is_admin', isAdmin ? '1' : '0');
+    }
   });
 
   function onDocumentClick(event: MouseEvent) {
@@ -107,7 +117,7 @@
     } catch {
       /* still clear locally; the cookie's TTL will expire it server-side */
     }
-    for (const k of ['dsoc_citizen', 'dsoc_handle', 'dsoc_name', 'dsoc_avatar'])
+    for (const k of ['dsoc_citizen', 'dsoc_handle', 'dsoc_name', 'dsoc_avatar', 'dsoc_is_admin'])
       write(k, null);
     window.location.href = '/';
   }
@@ -151,6 +161,11 @@
           </button>
           <hr class="sep" />
           <a class="item" href="/configuracoes">Configurações</a>
+          {#if isAdmin}
+            <a class="item item-admin" href="/admin">
+              ⚙️ Administração
+            </a>
+          {/if}
           <div class="theme-row">
             <span class="theme-label">Tema</span>
             <ThemeToggle />
@@ -258,6 +273,10 @@
   }
   .item:hover {
     background: var(--surface-2);
+  }
+  .item-admin {
+    color: var(--accent-strong);
+    font-weight: var(--fw-semibold);
   }
   .item-button {
     border: none;
