@@ -294,6 +294,18 @@ fn subscriptions(state: &AppState) -> Vec<Subscription> {
                     .unwrap_or_else(|_| "https://democracia.social.br".to_owned()),
             }),
         ),
+        // Recibo de entrega da proposta (autor + gabinete). No ProposalCreated,
+        // dispara dois e-mails via SMTP e grava os timestamps em
+        // proposal.notified_{author,mandate}_at.
+        sub(
+            "proposal-delivery-worker",
+            EventTopic::Proposals,
+            Arc::new(crate::proposal_delivery::ProposalDeliverySub {
+                db: state.db.clone(),
+                public_origin: std::env::var("PUBLIC_ORIGIN")
+                    .unwrap_or_else(|_| "https://democracia.social.br".to_owned()),
+            }),
+        ),
     ]
     .into_iter()
     .flatten()

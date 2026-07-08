@@ -14,6 +14,7 @@ pub mod elections;
 pub mod federation;
 pub mod me_settings;
 pub mod politicos_ext;
+pub mod proposal_delivery;
 pub mod social_graph;
 pub mod titulo_eleitor;
 pub mod web_push;

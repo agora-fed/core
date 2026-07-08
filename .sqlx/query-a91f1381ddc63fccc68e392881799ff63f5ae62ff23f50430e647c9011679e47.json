@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, org_id, mandate_id, cluster_id, title, body, status,\n                  support_count, threshold, threshold_crossed_at, published_at,\n                  author_citizen_id, urgencia, created_at\n           FROM proposal\n           WHERE id = $1\n           FOR UPDATE",
+  "query": "SELECT id, org_id, mandate_id, cluster_id, title, body, status,\n                  support_count, threshold, threshold_crossed_at, published_at,\n                  author_citizen_id, urgencia, notified_author_at, notified_mandate_at, created_at\n           FROM proposal\n           WHERE id = $1\n           FOR UPDATE",
   "describe": {
     "columns": [
       {
@@ -70,6 +70,16 @@
       },
       {
         "ordinal": 13,
+        "name": "notified_author_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "notified_mandate_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
@@ -93,8 +103,10 @@
       true,
       true,
       false,
+      true,
+      true,
       false
     ]
   },
-  "hash": "0e4b0d9a0dedc63e9c6a98917b26bb520e7e741362a57b307cda05fe84707d8b"
+  "hash": "a91f1381ddc63fccc68e392881799ff63f5ae62ff23f50430e647c9011679e47"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT p.id, p.org_id, p.mandate_id, p.cluster_id, p.title, p.body, p.status,\n                  p.support_count, p.threshold, p.threshold_crossed_at, p.published_at,\n                  p.author_citizen_id, p.urgencia, p.created_at,\n                  c.handle              AS \"author_handle?\",\n                  c.avatar_object_key   AS \"author_avatar_object_key?\"\n           FROM proposal p\n           LEFT JOIN citizen c ON c.id = p.author_citizen_id\n           WHERE p.org_id = $1 AND ($2::uuid IS NULL OR p.id > $2)\n           ORDER BY p.id\n           LIMIT $3",
+  "query": "SELECT p.id, p.org_id, p.mandate_id, p.cluster_id, p.title, p.body, p.status,\n                  p.support_count, p.threshold, p.threshold_crossed_at, p.published_at,\n                  p.author_citizen_id, p.urgencia, p.notified_author_at, p.notified_mandate_at, p.created_at,\n                  c.handle              AS \"author_handle?\",\n                  c.avatar_object_key   AS \"author_avatar_object_key?\"\n           FROM proposal p\n           LEFT JOIN citizen c ON c.id = p.author_citizen_id\n           WHERE p.org_id = $1 AND ($2::uuid IS NULL OR p.id > $2)\n           ORDER BY p.id\n           LIMIT $3",
   "describe": {
     "columns": [
       {
@@ -70,16 +70,26 @@
       },
       {
         "ordinal": 13,
-        "name": "created_at",
+        "name": "notified_author_at",
         "type_info": "Timestamptz"
       },
       {
         "ordinal": 14,
+        "name": "notified_mandate_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
         "name": "author_handle?",
         "type_info": "Text"
       },
       {
-        "ordinal": 15,
+        "ordinal": 17,
         "name": "author_avatar_object_key?",
         "type_info": "Text"
       }
@@ -105,10 +115,12 @@
       true,
       true,
       false,
+      true,
+      true,
       false,
       true,
       true
     ]
   },
-  "hash": "fc10cce6945f4b3f294cd8125e27684d26211bb3837a6a6b1b99885040d5eb64"
+  "hash": "125d36c38e5192e9702a8edd0b5a0d1cf01a4d5bba3f3ff07d18bc1f9644e097"
 }

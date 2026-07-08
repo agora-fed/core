@@ -35,6 +35,15 @@ pub struct ProposalDto {
     /// retrocompatível: front antigo ignora o campo.
     #[serde(default = "default_urgencia")]
     pub urgencia: String,
+    /// Recibo de entrega ao autor (0.25.0-fediverso). `Some(ts)` = e-mail de
+    /// confirmação já saiu; `None` = ainda não. Populado pelo worker
+    /// `proposal-delivery-worker`.
+    #[serde(default)]
+    pub notified_author_at: Option<DateTime<Utc>>,
+    /// Recibo de entrega ao gabinete (mandate.public_email). `Some(ts)` = e-mail
+    /// foi entregue ao relay SMTP; `None` = ainda não (ou mandato sem e-mail).
+    #[serde(default)]
+    pub notified_mandate_at: Option<DateTime<Utc>>,
     /// Creation time.
     pub created_at: DateTime<Utc>,
 }

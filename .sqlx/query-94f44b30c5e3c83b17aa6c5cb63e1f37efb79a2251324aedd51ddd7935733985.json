@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT p.id, p.org_id, p.mandate_id, p.cluster_id, p.title, p.body, p.status,\n                  p.support_count, p.threshold, p.threshold_crossed_at, p.published_at,\n                  p.author_citizen_id, p.urgencia, p.created_at,\n                  c.handle              AS \"author_handle?\",\n                  c.avatar_object_key   AS \"author_avatar_object_key?\"\n           FROM proposal p\n           LEFT JOIN citizen c ON c.id = p.author_citizen_id\n           WHERE p.id = $1",
+  "query": "INSERT INTO proposal (id, org_id, mandate_id, title, body, threshold, created_at, author_citizen_id)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n           RETURNING id, org_id, mandate_id, cluster_id, title, body, status,\n                     support_count, threshold, threshold_crossed_at, published_at,\n                     author_citizen_id, urgencia, notified_author_at, notified_mandate_at, created_at",
   "describe": {
     "columns": [
       {
@@ -70,22 +70,29 @@
       },
       {
         "ordinal": 13,
-        "name": "created_at",
+        "name": "notified_author_at",
         "type_info": "Timestamptz"
       },
       {
         "ordinal": 14,
-        "name": "author_handle?",
-        "type_info": "Text"
+        "name": "notified_mandate_at",
+        "type_info": "Timestamptz"
       },
       {
         "ordinal": 15,
-        "name": "author_avatar_object_key?",
-        "type_info": "Text"
+        "name": "created_at",
+        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Int4",
+        "Timestamptz",
         "Uuid"
       ]
     },
@@ -103,10 +110,10 @@
       true,
       true,
       false,
-      false,
       true,
-      true
+      true,
+      false
     ]
   },
-  "hash": "820a5b24bdd321c5f149da505ffcd7edec077d8afb56a4346f773c77b1eec60f"
+  "hash": "94f44b30c5e3c83b17aa6c5cb63e1f37efb79a2251324aedd51ddd7935733985"
 }

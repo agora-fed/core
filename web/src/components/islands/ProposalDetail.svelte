@@ -11,6 +11,7 @@
     DEFAULT_ORG_ID,
     apiGet,
     apiPost,
+    postNote,
   } from '../../lib/api';
   // (DEFAULT_ORG_ID still imported because getSlas() defaults are convenient — left for future.)
   import type { ProposalDto, MandateDto, SlaDto, SlaStatus, CommentDto } from '../../lib/types';
@@ -67,6 +68,39 @@
       ? `@${proposal.author_handle}`
       : proposal?.author_public_handle ?? null,
   );
+
+  // "Sou o autor?" — mostra o recibo de entrega. citizen_id local ↔
+  // proposta.author_public_handle (formato u-<simple>).
+  let isAuthor = $derived.by(() => {
+    if (typeof window === 'undefined') return false;
+    const me = readCitizenId();
+    if (!me || !proposal?.author_public_handle) return false;
+    const expected = `u-${me.replace(/-/g, '')}`;
+    return proposal.author_public_handle === expected;
+  });
+
+  let publishing = $state(false);
+  let publishMsg = $state<{ kind: 'error' | 'info' | 'ok'; text: string } | null>(null);
+
+  async function publishToFediverse() {
+    if (!proposal || publishing) return;
+    if (!readCitizenId()) {
+      publishMsg = { kind: 'info', text: 'Entre na sua conta para publicar.' };
+      return;
+    }
+    publishing = true;
+    publishMsg = null;
+    const url = window.location.href;
+    const mandateBit = mandate
+      ? ` para ${mandate.display_name}${mandate.party ? ` (${mandate.party})` : ''}`
+      : '';
+    const content = `Nova proposta cidadã${mandateBit}: "${proposal.title}"\n\nApoie e amplie:\n${url}\n\n#DemocraciaBR`;
+    const res = await postNote(content);
+    publishing = false;
+    publishMsg = res.success
+      ? { kind: 'ok', text: 'Publicado no fediverso. Federou pra quem te segue.' }
+      : { kind: 'error', text: res.error?.message ?? 'Não foi possível publicar.' };
+  }
 
   onMount(async () => {
     const [pr, slr] = await Promise.all([
@@ -323,6 +357,34 @@
 
     <h1>{proposal.title}</h1>
 
+    {#if isAuthor && (proposal.notified_author_at || proposal.notified_mandate_at)}
+      <aside class="receipt" aria-label="Recibo de entrega">
+        {#if proposal.notified_mandate_at}
+          <p>
+            ✉️ E-mail entregue ao gabinete
+            {#if mandate}
+              <strong>{mandate.display_name}</strong>
+            {/if}
+            em <time datetime={proposal.notified_mandate_at}>
+              {new Date(proposal.notified_mandate_at).toLocaleString('pt-BR', {
+                dateStyle: 'short',
+                timeStyle: 'short',
+              })}
+            </time>
+          </p>
+        {/if}
+        {#if proposal.notified_author_at}
+          <p class="muted small">
+            (Você também recebeu uma cópia por e-mail em
+            {new Date(proposal.notified_author_at).toLocaleTimeString('pt-BR', {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}.)
+          </p>
+        {/if}
+      </aside>
+    {/if}
+
     {#if authorLabel}
       <p class="author">
         {#if proposal.author_avatar_url}
@@ -373,7 +435,23 @@
         <button class="btn btn-ghost" type="button" onclick={share}>
           Compartilhar
         </button>
+        {#if isAuthor}
+          <button
+            class="btn btn-ghost"
+            type="button"
+            onclick={publishToFediverse}
+            disabled={publishing}
+            title="Publica uma nota na sua timeline federada com o link desta proposta"
+          >
+            {publishing ? 'Publicando…' : 'Publicar no fediverso'}
+          </button>
+        {/if}
       </div>
+      {#if publishMsg}
+        <p class={`vote-msg ${publishMsg.kind}`} role="status">
+          {publishMsg.text}
+        </p>
+      {/if}
       {#if voteMsg}
         <p class={`vote-msg ${voteMsg.kind}`} role="status">
           {voteMsg.text}
@@ -560,6 +638,24 @@
     font-size: 1.7rem;
     margin: 0 0 0.6rem;
     line-height: 1.25;
+  }
+  .receipt {
+    display: grid;
+    gap: 4px;
+    padding: 10px 14px;
+    margin: 12px 0 16px;
+    background: var(--c-green-soft, #e6f7ed);
+    border: 1px solid #b7e4c7;
+    border-radius: 10px;
+    font-size: var(--fs-sm, 0.9rem);
+    color: var(--c-green-dark, #115c2d);
+  }
+  .receipt p {
+    margin: 0;
+  }
+  .receipt .small {
+    font-size: var(--fs-xs, 0.8rem);
+    color: var(--c-text-muted);
   }
   .author {
     display: flex;

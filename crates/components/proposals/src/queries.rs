@@ -43,6 +43,10 @@ pub struct ProposalRow {
     /// Nível de urgência (`comum` | `urgente`), migration 0302. Voto em `urgente` exige
     /// `titulo_status ∈ (validated,verified)` — gate na crate votes (0.25.0-fediverso).
     pub urgencia: String,
+    /// Timestamp do e-mail de confirmação pro autor (migration 0303).
+    pub notified_author_at: Option<DateTime<Utc>>,
+    /// Timestamp do e-mail entregue ao gabinete (migration 0303).
+    pub notified_mandate_at: Option<DateTime<Utc>>,
     /// Creation time.
     pub created_at: DateTime<Utc>,
 }
@@ -85,7 +89,7 @@ pub async fn insert_proposal(
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            RETURNING id, org_id, mandate_id, cluster_id, title, body, status,
                      support_count, threshold, threshold_crossed_at, published_at,
-                     author_citizen_id, urgencia, created_at"#,
+                     author_citizen_id, urgencia, notified_author_at, notified_mandate_at, created_at"#,
         id,
         org_id,
         mandate_id,
@@ -115,6 +119,8 @@ pub async fn insert_proposal(
         author_handle: None,
         author_avatar_object_key: None,
         urgencia: row.urgencia,
+        notified_author_at: row.notified_author_at,
+        notified_mandate_at: row.notified_mandate_at,
         created_at: row.created_at,
     })
 }
@@ -130,7 +136,7 @@ pub async fn get_proposal(
     let row = sqlx::query!(
         r#"SELECT p.id, p.org_id, p.mandate_id, p.cluster_id, p.title, p.body, p.status,
                   p.support_count, p.threshold, p.threshold_crossed_at, p.published_at,
-                  p.author_citizen_id, p.urgencia, p.created_at,
+                  p.author_citizen_id, p.urgencia, p.notified_author_at, p.notified_mandate_at, p.created_at,
                   c.handle              AS "author_handle?",
                   c.avatar_object_key   AS "author_avatar_object_key?"
            FROM proposal p
@@ -156,6 +162,8 @@ pub async fn get_proposal(
         author_handle: row.author_handle,
         author_avatar_object_key: row.author_avatar_object_key,
         urgencia: row.urgencia,
+        notified_author_at: row.notified_author_at,
+        notified_mandate_at: row.notified_mandate_at,
         created_at: row.created_at,
     })
 }
@@ -174,7 +182,7 @@ pub async fn lock_proposal(
     let row = sqlx::query!(
         r#"SELECT id, org_id, mandate_id, cluster_id, title, body, status,
                   support_count, threshold, threshold_crossed_at, published_at,
-                  author_citizen_id, urgencia, created_at
+                  author_citizen_id, urgencia, notified_author_at, notified_mandate_at, created_at
            FROM proposal
            WHERE id = $1
            FOR UPDATE"#,
@@ -198,6 +206,8 @@ pub async fn lock_proposal(
         author_handle: None,
         author_avatar_object_key: None,
         urgencia: row.urgencia,
+        notified_author_at: row.notified_author_at,
+        notified_mandate_at: row.notified_mandate_at,
         created_at: row.created_at,
     }))
 }
@@ -216,7 +226,7 @@ pub async fn list_proposals(
     let rows = sqlx::query!(
         r#"SELECT p.id, p.org_id, p.mandate_id, p.cluster_id, p.title, p.body, p.status,
                   p.support_count, p.threshold, p.threshold_crossed_at, p.published_at,
-                  p.author_citizen_id, p.urgencia, p.created_at,
+                  p.author_citizen_id, p.urgencia, p.notified_author_at, p.notified_mandate_at, p.created_at,
                   c.handle              AS "author_handle?",
                   c.avatar_object_key   AS "author_avatar_object_key?"
            FROM proposal p
@@ -248,6 +258,8 @@ pub async fn list_proposals(
             author_handle: row.author_handle,
             author_avatar_object_key: row.author_avatar_object_key,
             urgencia: row.urgencia,
+            notified_author_at: row.notified_author_at,
+            notified_mandate_at: row.notified_mandate_at,
             created_at: row.created_at,
         })
         .collect())
