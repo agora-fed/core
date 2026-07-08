@@ -733,7 +733,7 @@ export const getConsultations = (orgId = DEFAULT_ORG_ID, limit = 30) =>
 // --- Auth: centralized so the org_id (required by the backend Register/LoginRequest) can NEVER be
 //     forgotten by a form. A contract test (web/tests/api.contract.test.ts) guards these shapes. ---
 
-/** Session returned by /auth/register and /auth/login. */
+/** Session returned by /auth/login e /auth/register/confirm. */
 export interface SessionData {
   id: string;
   citizen_id: string;
@@ -742,9 +742,20 @@ export interface SessionData {
   public_handle: string;
 }
 
-/** Register a citizen (e-mail + senha + CPF). Always includes org_id. */
+/**
+ * 0.25.0-fediverso: o cadastro passou a exigir verificação de e-mail. O
+ * request `POST /auth/register` responde 202 `{status:"verification_sent",email}`
+ * e dispara um e-mail com link `/confirmar-conta?token=…`. Só depois do clique
+ * a conta é materializada (via `registerConfirm`) e a sessão é emitida.
+ */
+export interface SignupPendingData {
+  status: 'verification_sent';
+  email: string;
+}
+
+/** Inicia o cadastro de cidadão. Não emite sessão — dispara link por e-mail. */
 export const register = (email: string, password: string, cpf: string, orgId = DEFAULT_ORG_ID) =>
-  apiPost<SessionData>('/api/v1/auth/register', {
+  apiPost<SignupPendingData>('/api/v1/auth/register', {
     org_id: orgId,
     email: email.trim(),
     password,
@@ -752,10 +763,10 @@ export const register = (email: string, password: string, cpf: string, orgId = D
   });
 
 /**
- * Register as a politician/candidate (F1.3/F1.4). Requires `email` to match the mandate's
- * `public_email` (case-insensitive) on the server side — the only automatic proof of
- * mandate control at registration time. On success the citizen is created at `directory`
- * verification level with `is_public=true` and a mandate_identity_binding.
+ * Inicia o cadastro de político(a)/candidata(o) (F1.3/F1.4). Exige que
+ * `email` bata com `mandate.public_email` (case-insensitive) — checado no
+ * back antes de gravar o pending. Também não emite sessão; o e-mail
+ * carrega o link de confirmação.
  */
 export const registerPolitician = (
   email: string,
@@ -764,13 +775,20 @@ export const registerPolitician = (
   mandateId: string,
   orgId = DEFAULT_ORG_ID,
 ) =>
-  apiPost<SessionData>('/api/v1/auth/register/politician', {
+  apiPost<SignupPendingData>('/api/v1/auth/register/politician', {
     org_id: orgId,
     email: email.trim(),
     password,
     cpf,
     mandate_id: mandateId,
   });
+
+/**
+ * Redime o token do e-mail de verificação e finaliza o cadastro. Emite a
+ * sessão como se fosse um login — o front seta o cookie e redireciona.
+ */
+export const registerConfirm = (token: string) =>
+  apiPost<SessionData>('/api/v1/auth/register/confirm', { token });
 
 /** Authenticate (e-mail + senha). Always includes org_id. */
 export const login = (email: string, password: string, orgId = DEFAULT_ORG_ID) =>

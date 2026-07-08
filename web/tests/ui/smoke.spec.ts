@@ -296,6 +296,16 @@ test('/eleicoes/2026: carrega comparador com filtros', async ({ page }) => {
   expect(netErrors).toEqual([]);
 });
 
+test('/cadastrar: mostra regras do fediverso (3000 chars + 15 min + verificação)', async ({ page }) => {
+  await page.goto('/cadastrar/', { waitUntil: 'networkidle' });
+  await page.waitForTimeout(1000);
+  const body = await page.locator('body').innerText();
+  expect(body).toMatch(/3\s*000\s*caracteres/i);
+  expect(body).toMatch(/15\s*minutos/i);
+  expect(body).toMatch(/T[íi]tulo de eleitor/i);
+  expect(body).toMatch(/vota[çc][ãa]o restrita|não computam voto/i);
+});
+
 test('menu principal: link "Eleições 2026" navegável', async ({ page }) => {
   await page.goto('/', { waitUntil: 'networkidle' });
   await page.waitForTimeout(500);

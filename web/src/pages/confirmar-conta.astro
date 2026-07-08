@@ -1,0 +1,43 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import ConfirmSignupForm from '../components/islands/ConfirmSignupForm.svelte';
+
+const description =
+  'Verificação final do cadastro na DemocraciaBR. Ativa a conta e leva ao painel inicial.';
+---
+
+<BaseLayout title="Confirmar conta" {description} noindex>
+  <section class="section">
+    <div class="container auth-shell">
+      <div class="auth-card card">
+        <img
+          src="/logo.png"
+          width="180"
+          height="120"
+          alt="DemocraciaBR"
+          class="logo"
+        />
+        <h1>Confirmando cadastro</h1>
+        <ConfirmSignupForm client:load />
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .auth-shell {
+    max-width: 26rem;
+  }
+  .auth-card {
+    padding: 2rem;
+  }
+  .logo {
+    height: 44px;
+    width: auto;
+    display: block;
+    margin-bottom: 1rem;
+  }
+  h1 {
+    margin-bottom: 1rem;
+  }
+</style>

@@ -30,6 +30,10 @@
   let busy = $state(false);
   let serverError = $state<string | null>(null);
   let cpfTouched = $state(false);
+  // 0.25.0-fediverso: /auth/register agora responde 202 e dispara e-mail com
+  // link de confirmação. Trocamos o formulário por uma tela "verifique seu
+  // e-mail" nesse caso, ao invés de já redirecionar pra /bem-vinda.
+  let verificationSentTo = $state<string | null>(null);
 
   // Politician-mode state.
   let mandateSearch = $state('');
@@ -110,18 +114,10 @@
     busy = false;
 
     if (res.success) {
-      if (res.data?.citizen_id) {
-        try {
-          localStorage.setItem('dsoc_citizen', res.data.citizen_id);
-          if (res.data.public_handle) {
-            localStorage.setItem('dsoc_handle', res.data.public_handle);
-          }
-        } catch {
-          /* storage may be blocked; session cookie still set */
-        }
-      }
-      window.location.href =
-        role === 'politico' ? '/painel-mandato' : '/bem-vinda';
+      // Não há mais citizen_id nem sessão aqui — só a confirmação de que
+      // o e-mail saiu. O clique no link cai em /confirmar-conta e é lá que
+      // a sessão é emitida e o localStorage é populado.
+      verificationSentTo = res.data?.email ?? email.trim().toLowerCase();
     } else {
       serverError =
         res.error?.message ??
@@ -129,6 +125,53 @@
     }
   }
 </script>
+
+{#if verificationSentTo}
+  <section class="sent" aria-live="polite">
+    <div class="sent-ic" aria-hidden="true">
+      <Icon name="at" size={28} />
+    </div>
+    <h2>Confirme seu e-mail pra ativar a conta</h2>
+    <p>
+      Enviamos um link de verificação pra <strong>{verificationSentTo}</strong>.
+      Abra a mensagem em até 24 horas e clique no link — só depois disso a
+      conta é criada e você entra automaticamente.
+    </p>
+    <p class="hint muted">
+      Não achou? Confira spam / lixeira. Se preferir, clique abaixo pra
+      recomeçar com outro e-mail.
+    </p>
+    <Button
+      type="button"
+      variant="ghost"
+      size="md"
+      onclick={() => (verificationSentTo = null)}
+    >
+      Usar outro e-mail
+    </Button>
+  </section>
+{:else}
+<section class="rules" aria-label="Regras da conta">
+  <h2>Antes de criar sua conta</h2>
+  <ul>
+    <li>
+      <strong>Até 3 000 caracteres por publicação</strong> — foco em
+      argumentar, não em spammar.
+    </li>
+    <li>
+      <strong>Uma publicação a cada 15 minutos</strong> — pra debate saudável,
+      não enxurrada.
+    </li>
+    <li>
+      <strong>Só cidadã(o) verificada(o) vota em pauta urgente.</strong>
+      Título de eleitor confirmado sinaliza voz brasileira.
+    </li>
+    <li>
+      <strong>Enquetes fediversadas, mas votação restrita a esta instância.</strong>
+      Perfis de outras instâncias veem, mas não computam voto.
+    </li>
+  </ul>
+</section>
 
 <form class="auth-form" onsubmit={submit} novalidate>
   <fieldset class="role-picker" aria-label="Tipo de conta">
@@ -306,8 +349,60 @@
     Já tem conta? <a href="/entrar">Entrar</a>
   </p>
 </form>
+{/if}
 
 <style>
+  .sent {
+    display: grid;
+    gap: var(--sp-3);
+    padding: var(--sp-5);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: var(--r-base);
+    text-align: center;
+  }
+  .sent-ic {
+    display: inline-flex;
+    justify-content: center;
+    color: var(--accent-strong);
+  }
+  .sent h2 {
+    margin: 0;
+    font-size: var(--fs-lg);
+    color: var(--text-1);
+  }
+  .sent p {
+    margin: 0;
+    line-height: var(--lh-relaxed);
+    color: var(--text-2);
+  }
+  .sent .hint {
+    font-size: var(--fs-sm);
+  }
+  .rules {
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-base);
+    padding: var(--sp-4);
+    margin-bottom: var(--sp-4);
+  }
+  .rules h2 {
+    margin: 0 0 var(--sp-3);
+    font-size: var(--fs-base);
+    color: var(--text-1);
+  }
+  .rules ul {
+    margin: 0;
+    padding-left: var(--sp-4);
+    display: grid;
+    gap: var(--sp-2);
+    color: var(--text-2);
+    font-size: var(--fs-sm);
+    line-height: var(--lh-snug);
+  }
+  .rules strong {
+    color: var(--text-1);
+  }
   .auth-form {
     display: block;
   }

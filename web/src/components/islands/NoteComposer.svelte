@@ -231,7 +231,10 @@
     }
   }
 
-  const MAX = 5000;
+  // Limite alinhado ao backend (3000 chars). Ver validação em
+  // `create_public_note` (crates/platform/auth/src/profile.rs) e o texto
+  // do cadastro que explica a regra ao novo usuário.
+  const MAX = 3000;
   const MAX_CW = 500;
   const charCount = $derived(content.length);
   const cwCount = $derived(spoilerText.length);

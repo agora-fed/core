@@ -14,6 +14,7 @@ pub mod federation;
 pub mod me_settings;
 pub mod politicos_ext;
 pub mod social_graph;
+pub mod titulo_eleitor;
 pub mod federation_feed;
 pub mod mastodon_api;
 pub mod mastodon_dto;
@@ -145,6 +146,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(federation::client_routes(state.clone()))
         // Per-citizen settings: authorized OAuth apps + change password.
         .merge(me_settings::routes(state.clone()))
+        // Cidadania política — validação do título de eleitor.
+        .merge(titulo_eleitor::routes(state.clone()))
         // Social-graph endpoints (bookmarks, mutes, blocks, filters, lists —
         // migration 0500). Mastodon-parity fase 2A.
         .merge(social_graph::routes(state.clone()))

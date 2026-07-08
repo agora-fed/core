@@ -8,6 +8,23 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.25.0-fediverso-verify** — verificação de e-mail obrigatória antes do cadastro virar
+  conta. `POST /auth/register` (e `/register/politician`) passa a gravar um `auth_pending_signup`
+  (migration 0106) com token SHA-256 e dispara `<origin>/confirmar-conta?token=…` via SMTP
+  (mesmo relay do password-reset). Nova rota `POST /auth/register/confirm` redime o token e
+  materializa citizen + credential + sessão numa única transação. CPF só é "consumido"
+  depois da confirmação — bots com CPF válido não sujam mais a base. Nova página Astro
+  `/confirmar-conta` (island `ConfirmSignupForm.svelte`) auto-submete o token e redireciona.
+  Junto: `citizen.is_public` default virou `true` (padrão Mastodon, opt-out em Configurações).
+- **0.25.0-fediverso-limits** — anti-spam da fatia federada: nota cap 5000 → 3000 chars, 1
+  publicação a cada 15 min por cidadão (`POST /me/notes` retorna 429 c/ mensagem em pt-BR),
+  voto de enquete rejeitado quando o `voter_url` não é local (`RemoteVoterForbidden` — enquete
+  federa, apuração não). Regras aparecem no `/cadastrar` (RegisterForm), gate note no
+  `PollView`. Playwright smoke cobre `/cadastrar` mostrando as 4 regras.
+- **0.25.0 — Título de eleitor** (`crates/gateway/src/titulo_eleitor.rs`, migration 0105):
+  `POST /me/titulo-eleitor` valida algoritmicamente (12 dígitos + 2 DVs TSE, com regra SP/MG)
+  e grava `citizen.titulo_status='validated'`. `GET` devolve `{titulo_last4, titulo_status}`
+  (LGPD-safe, sem número cheio). UNIQUE parcial em `titulo_eleitor` bloqueia sock-puppets.
 - Foundational Cargo workspace: 23 crates across Tier 0–3 (PLAN.md §5.2), each with a `CRATE.md`
   contract describing responsibility, emitted/consumed events, and owned tables.
 - Tier-0 contract crates `core`, `db`, `api-contract` (the freeze bottleneck).

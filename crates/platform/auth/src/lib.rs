@@ -32,6 +32,7 @@ pub mod password_reset;
 pub mod profile;
 pub mod queries;
 pub mod service;
+pub mod signup_verify;
 
 pub use credential::{AlgorithmicCpfVerifier, Cpf, CpfStatus, CpfVerifier};
 pub use domain::{

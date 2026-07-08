@@ -323,6 +323,19 @@ pub async fn cast_vote(
     media_base_url_for_dto: &str,
 ) -> Result<PollDto, PollError> {
     let _ = media_base_url_for_dto; // reserved for later media-related read paths
+    // Defense-in-depth: apenas cidadãos DESTA instância podem votar. O único
+    // caller hoje (`POST /me/notes/vote`) constrói o voter_url do CallerId
+    // autenticado, mas guardamos o invariante aqui pra qualquer futuro
+    // hook de inbox federado que tente enfiar voto remoto (ex.: Create(Note)
+    // com `name`+inReplyTo, convenção Mastodon). Regra: o texto do site é
+    // "enquete propaga no fediverso mas voto é restrito a democracia.social.br".
+    let po = std::env::var("PUBLIC_ORIGIN")
+        .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
+    let expected_prefix = format!("{}/actors/", po.trim_end_matches('/'));
+    if !actor_url.starts_with(&expected_prefix) {
+        tracing::warn!(actor_url, "cast_vote: rejeitado — voter_url não é local");
+        return Err(PollError::RemoteVoterForbidden);
+    }
     // Fetch poll header.
     let Some((poll_id, multiple, expires_at, closed_at)): Option<(
         Uuid,
@@ -412,6 +425,10 @@ pub enum PollError {
     TooManyForSingle,
     UnknownOption,
     AlreadyVoted,
+    /// Voto vindo de instância federada — a política é: enquete propaga
+    /// pelo fediverso, mas a apuração vale apenas para cidadãos com conta
+    /// nesta instância.
+    RemoteVoterForbidden,
     Db(sqlx::Error),
 }
 
@@ -432,6 +449,10 @@ impl PollError {
             Self::TooManyForSingle => "esta enquete permite apenas 1 opção".into(),
             Self::UnknownOption => "opção inválida".into(),
             Self::AlreadyVoted => "você já votou nesta enquete".into(),
+            Self::RemoteVoterForbidden =>
+                "enquetes podem circular no fediverso, mas a apuração só conta \
+                 votos de cidadãos com conta em democracia.social.br"
+                    .into(),
             Self::Db(_) => "erro ao registrar o voto".into(),
         }
     }

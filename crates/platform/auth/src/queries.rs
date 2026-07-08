@@ -1329,6 +1329,130 @@ pub(crate) async fn password_reset_mark_used<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
+// -----------------------------------------------------------------------------
+// Pending signup (migration 0106) — verificação de e-mail antes de criar conta
+// -----------------------------------------------------------------------------
+
+/// A pending signup redimível pelo token. Traz de volta tudo que o request
+/// gravou pra que o confirm materialize citizen+credential+session numa única
+/// tx sem re-perguntar nada ao usuário.
+#[derive(Debug, Clone)]
+pub(crate) struct PendingSignupRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub email: String,
+    pub password_hash: String,
+    pub cpf: String,
+    pub role: String,
+    pub mandate_id: Option<Uuid>,
+}
+
+/// Insere um pending_signup. Caller pré-computou o SHA-256 do token (só o
+/// hash entra no banco) e já normalizou email/cpf/role.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn pending_signup_insert<'e, E: PgExecutor<'e>>(
+    ex: E,
+    id: Uuid,
+    org_id: Uuid,
+    email: &str,
+    password_hash: &str,
+    cpf: &str,
+    role: &str,
+    mandate_id: Option<Uuid>,
+    token_hash: &[u8],
+    expires_at: DateTime<Utc>,
+    request_ip: Option<&str>,
+    now: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"
+        INSERT INTO auth_pending_signup
+            (id, org_id, email, password_hash, cpf, role, mandate_id,
+             token_hash, expires_at, used_at, request_ip, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, $10, $11)
+        "#,
+        id,
+        org_id,
+        email,
+        password_hash,
+        cpf,
+        role,
+        mandate_id,
+        token_hash,
+        expires_at,
+        request_ip,
+        now,
+    )
+    .execute(ex)
+    .await?;
+    Ok(())
+}
+
+/// Marca como usada qualquer pending live pra `(org_id, email)`. Chamada
+/// antes de inserir uma nova — o link mais recente sempre vence. Same UX que
+/// o password_reset.
+pub(crate) async fn pending_signup_invalidate_live_for_email<'e, E: PgExecutor<'e>>(
+    ex: E,
+    org_id: Uuid,
+    email: &str,
+    now: DateTime<Utc>,
+) -> Result<u64, sqlx::Error> {
+    let r = sqlx::query!(
+        r#"
+        UPDATE auth_pending_signup
+           SET used_at = $3
+         WHERE org_id = $1 AND email = $2 AND used_at IS NULL
+        "#,
+        org_id,
+        email,
+        now,
+    )
+    .execute(ex)
+    .await?;
+    Ok(r.rows_affected())
+}
+
+/// Look up pending redimível por token_hash + guarda de expiração. Retorna
+/// `None` pra token desconhecido / expirado / já usado (o confirm nunca diz
+/// ao chamador qual caso ocorreu).
+pub(crate) async fn pending_signup_find_live<'e, E: PgExecutor<'e>>(
+    ex: E,
+    token_hash: &[u8],
+    now: DateTime<Utc>,
+) -> Result<Option<PendingSignupRow>, sqlx::Error> {
+    let row = sqlx::query_as!(
+        PendingSignupRow,
+        r#"
+        SELECT id, org_id, email, password_hash, cpf, role, mandate_id
+          FROM auth_pending_signup
+         WHERE token_hash = $1 AND used_at IS NULL AND expires_at > $2
+        "#,
+        token_hash,
+        now,
+    )
+    .fetch_optional(ex)
+    .await?;
+    Ok(row)
+}
+
+/// Marca a pending como usada (single-use). Chamada dentro da tx do confirm
+/// junto com o insert do citizen/credential; se a tx roll-back, a linha
+/// continua redimível.
+pub(crate) async fn pending_signup_mark_used<'e, E: PgExecutor<'e>>(
+    ex: E,
+    id: Uuid,
+    now: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "UPDATE auth_pending_signup SET used_at = $2 WHERE id = $1",
+        id,
+        now,
+    )
+    .execute(ex)
+    .await?;
+    Ok(())
+}
+
 /// Swap the credential's password hash. Re-uses the existing `auth_credential` row keyed by
 /// `citizen_id` (1-1 because `auth_credential.citizen_id` is UNIQUE per migration 0101).
 pub(crate) async fn credential_update_password<'e, E: PgExecutor<'e>>(

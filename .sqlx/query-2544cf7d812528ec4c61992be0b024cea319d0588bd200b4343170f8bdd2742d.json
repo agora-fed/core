@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE auth_pending_signup\n           SET used_at = $3\n         WHERE org_id = $1 AND email = $2 AND used_at IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2544cf7d812528ec4c61992be0b024cea319d0588bd200b4343170f8bdd2742d"
+}

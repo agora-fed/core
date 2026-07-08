@@ -823,7 +823,7 @@ struct NoteRefQuery {
 /// deferred to a later cut.
 #[derive(Debug, Deserialize)]
 struct PatchNoteRequest {
-    /// New text content. Same 1–5000 char validation as post_my_note.
+    /// New text content. Same 1–3000 char validation as post_my_note.
     content: String,
     #[serde(default)]
     sensitive: bool,
@@ -834,7 +834,7 @@ struct PatchNoteRequest {
 /// Body for `POST /api/v1/me/notes`.
 #[derive(Debug, Deserialize)]
 struct PostNoteRequest {
-    /// The note's text content. Server-side validation: non-empty, max 5000 chars.
+    /// The note's text content. Server-side validation: non-empty, max 3000 chars.
     content: String,
     /// 0.18.0: parent Note object URI (for threaded replies). Optional.
     #[serde(default)]
@@ -861,11 +861,54 @@ struct PostNoteRequest {
 /// `POST /api/v1/me/notes` — publish a public Note. Wraps the content in a `Create(Note)`,
 /// persists into the outbox, fans out one delivery row per ACK'd inbound follower; the worker
 /// drains the queue asynchronously. Returns `{activity_id, fanout_count, status: "queued"}`.
+/// Anti-spam: cidadão pode publicar no máximo 1 nota a cada 15 min. Rate
+/// limit reforçado no back — mesma regra é anunciada no cadastro pra
+/// setar expectativa desde a inscrição.
+const POST_RATE_LIMIT_SECS: i64 = 15 * 60;
+
 async fn post_my_note(
     State(state): State<AppState>,
     caller: CallerId,
     AxumJson(body): AxumJson<PostNoteRequest>,
 ) -> Response {
+    // Rate limit ANTES de tudo — barato, dispensa carregar o profile.
+    match sqlx::query_scalar::<_, chrono::DateTime<chrono::Utc>>(
+        r"SELECT created_at FROM federation_outbox_entry
+           WHERE citizen_id = $1
+           ORDER BY created_at DESC
+           LIMIT 1",
+    )
+    .bind(caller.citizen.as_uuid())
+    .fetch_optional(&state.db)
+    .await
+    {
+        Ok(Some(last_at)) => {
+            let elapsed = chrono::Utc::now() - last_at;
+            let remaining = POST_RATE_LIMIT_SECS - elapsed.num_seconds();
+            if remaining > 0 {
+                let mins = ((remaining as f64) / 60.0).ceil() as i64;
+                let msg = if mins <= 1 {
+                    "aguarde 1 minuto pra publicar de novo (limite de 1 publicação a cada 15 min)".to_owned()
+                } else {
+                    format!(
+                        "aguarde {} min pra publicar de novo (limite de 1 publicação a cada 15 min)",
+                        mins
+                    )
+                };
+                return (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    Json(ApiResponse::<()>::fail("http_429", msg.as_str())),
+                )
+                    .into_response();
+            }
+        }
+        Ok(None) => {}
+        Err(err) => {
+            tracing::error!(error = ?err, "post_my_note rate limit check failed");
+            // Falha DB é seguridade — bloqueia por segurança.
+            return server_error();
+        }
+    };
     let svc = ProfileService::from_state(&state);
     // The author must be a public citizen (federation surface is opt-in per ADR-0010).
     let me = match svc
@@ -1191,8 +1234,8 @@ async fn patch_my_note(
     if content.is_empty() {
         return client_error("digite alguma coisa antes de salvar");
     }
-    if content.chars().count() > 5_000 {
-        return client_error("o texto está muito longo (máx 5000 caracteres)");
+    if content.chars().count() > 3_000 {
+        return client_error("o texto está muito longo (máx 3000 caracteres)");
     }
     let spoiler = body
         .spoiler_text

@@ -31,6 +31,7 @@ use crate::mandate_invite::{AcceptRequest, MandateInviteService};
 use crate::password_reset::PasswordResetService;
 use crate::profile::{ProfileService, ProfileUpdate};
 use crate::service::{IssuedSession, ZitadelAuth};
+use crate::signup_verify::SignupVerifyService;
 
 /// Build the routed service surface. Reads sovereign-issuer configuration from the environment
 /// (never hardcoded — PLAN.md principle 8). When the issuer/JWKS is unconfigured the endpoints
@@ -41,8 +42,6 @@ pub fn routes(state: AppState) -> Router<()> {
     // headers, and the ProfileService is built per-request from state — cheap, no shared mutable
     // surface). Auth routes carry Arc<ZitadelAuth>; the two sub-routers are merged.
     let auth_routes = Router::new()
-        .route("/auth/register", post(register))
-        .route("/auth/register/politician", post(register_politician))
         .route("/auth/login", post(login))
         .route("/auth/logout", post(logout))
         .route("/auth/session", post(create_session))
@@ -55,6 +54,12 @@ pub fn routes(state: AppState) -> Router<()> {
         .route("/me/sessions", get(list_me_sessions))
         .route("/me/sessions/{session_id}", axum::routing::delete(delete_me_session))
         .route("/profiles/{handle}", get(get_public_profile))
+        // Cadastro com verificação de e-mail (0.25.0): register/register-politician
+        // agora começam um pending signup e disparam um link de confirmação; a
+        // conta só é materializada em /auth/register/confirm.
+        .route("/auth/register", post(register))
+        .route("/auth/register/politician", post(register_politician))
+        .route("/auth/register/confirm", post(register_confirm))
         .route("/auth/password-reset/request", post(password_reset_request))
         .route("/auth/password-reset/confirm", post(password_reset_confirm))
         // Admin-driven mandate-invite bypass of F1.4 auto-proof (crates/platform/auth/src/mandate_invite.rs).
@@ -147,40 +152,103 @@ struct MeQuery {
     org_id: Uuid,
 }
 
-/// `POST /auth/register` — sovereign sign-up with e-mail + senha + CPF (ADR-0008).
+/// Extract "IP de origem" do X-Forwarded-For (o gateway roda atrás do Caddy).
+/// Mesma leitura que o `password_reset_request` faz — deduplicado aqui.
+fn caller_ip(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(',').next())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+}
+
+/// Corpo de resposta pros dois `/auth/register` — 202 Accepted, sem sessão ainda.
+/// O front usa `status` pra saber que precisa mostrar a tela "verifique seu e-mail".
+#[derive(Debug, serde::Serialize)]
+struct SignupPendingDto {
+    status: &'static str,
+    email: String,
+}
+
+/// `POST /auth/register` — inicia o cadastro. Grava um pending_signup e
+/// dispara e-mail com link `/confirmar-conta?token=…`. **Não cria a conta**
+/// nem retorna sessão — o front navega pra tela de "verifique seu e-mail".
 async fn register(
-    State(svc): State<Arc<ZitadelAuth>>,
+    State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<RegisterRequest>,
 ) -> Response {
+    let svc = SignupVerifyService::from_state(&state);
     let org = OrgId::from_uuid(req.org_id);
-    match svc.register(org, &req.email, &req.password, &req.cpf).await {
-        Ok(session) => {
-            let cookie = session_cookie(&session);
-            (
-                StatusCode::CREATED,
-                [(header::SET_COOKIE, cookie)],
-                Json(ApiResponse::ok(SessionDto::from(session))),
-            )
-                .into_response()
-        }
+    let ip = caller_ip(&headers);
+    match svc
+        .request_cidadao(org, &req.email, &req.password, &req.cpf, ip.as_deref())
+        .await
+    {
+        Ok(()) => (
+            StatusCode::ACCEPTED,
+            Json(ApiResponse::ok(SignupPendingDto {
+                status: "verification_sent",
+                email: req.email.trim().to_lowercase(),
+            })),
+        )
+            .into_response(),
         Err(error) => error_response(&error),
     }
 }
 
-/// `POST /auth/register/politician` — self-onboarding for sitting/candidate parliamentarians
-/// (F1.3/F1.4). Requires `body.email == mandate.public_email` (the only proof of mandate
-/// control available at registration time without an out-of-band channel). Same wire shape
-/// as `/auth/register` but returns a session already at `directory` verification level and
-/// an implicit `mandate_identity_binding`, plus forces `is_public=true` on the citizen row.
+/// `POST /auth/register/politician` — inicia o cadastro F1.3/F1.4. Antes de
+/// gravar o pending, valida `body.email == mandate.public_email`. Mesmo shape
+/// de resposta do `/auth/register`.
 async fn register_politician(
-    State(svc): State<Arc<ZitadelAuth>>,
+    State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<RegisterPoliticianRequest>,
 ) -> Response {
+    let svc = SignupVerifyService::from_state(&state);
     let org = OrgId::from_uuid(req.org_id);
+    let ip = caller_ip(&headers);
     match svc
-        .register_politician(org, &req.email, &req.password, &req.cpf, req.mandate_id)
+        .request_politico(
+            org,
+            &req.email,
+            &req.password,
+            &req.cpf,
+            req.mandate_id,
+            ip.as_deref(),
+        )
         .await
     {
+        Ok(()) => (
+            StatusCode::ACCEPTED,
+            Json(ApiResponse::ok(SignupPendingDto {
+                status: "verification_sent",
+                email: req.email.trim().to_lowercase(),
+            })),
+        )
+            .into_response(),
+        Err(error) => error_response(&error),
+    }
+}
+
+/// Corpo de `POST /auth/register/confirm`.
+#[derive(Debug, Deserialize)]
+struct RegisterConfirmBody {
+    token: String,
+}
+
+/// `POST /auth/register/confirm` — redime o token de verificação e materializa
+/// citizen + credential + sessão numa tx. Retorna o mesmo `SessionDto` do
+/// login pra que o front redirecione direto pra o painel/bem-vinda como se
+/// fosse um cadastro que "só demorou um passo".
+async fn register_confirm(
+    State(state): State<AppState>,
+    Json(body): Json<RegisterConfirmBody>,
+) -> Response {
+    let svc = SignupVerifyService::from_state(&state);
+    match svc.confirm(&body.token).await {
         Ok(session) => {
             let cookie = session_cookie(&session);
             (
@@ -322,8 +390,10 @@ fn message_for(error: &Error) -> &'static str {
 
 fn error_response(error: &Error) -> Response {
     // Log internal detail server-side only; the body carries a stable code + safe message.
+    // Debug (`?error`) walks the `#[source]` chain — Display esconde a causa raiz (por design,
+    // pra não vazar na resposta), o que atrapalha o diagnóstico nos logs.
     if matches!(error, Error::Storage(_) | Error::Dependency { .. }) {
-        tracing::error!(code = error.code(), detail = %error, "auth request failed");
+        tracing::error!(code = error.code(), detail = ?error, "auth request failed");
     }
     let body = ApiResponse::<()>::fail(error.code(), message_for(error));
     (status_for(error), Json(body)).into_response()
@@ -487,17 +557,9 @@ async fn password_reset_request(
     Json(body): Json<PasswordResetRequestBody>,
 ) -> Response {
     let svc = PasswordResetService::from_state(&state);
-    // Best-effort source IP for the audit column. The deployment is behind Caddy, which sets
-    // `X-Forwarded-For`; falling back to the RemoteAddr would require Axum's `ConnectInfo`,
-    // which we do not wire here — `None` is acceptable.
-    let request_ip = headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.split(',').next())
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
+    let request_ip = caller_ip(&headers);
     if let Err(error) = svc
-        .request(OrgId::from_uuid(body.org_id), &body.email, request_ip)
+        .request(OrgId::from_uuid(body.org_id), &body.email, request_ip.as_deref())
         .await
     {
         // A hard storage failure is logged but still surfaces success at the wire — the user

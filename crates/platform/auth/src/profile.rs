@@ -323,8 +323,10 @@ impl ProfileService {
         if trimmed.is_empty() {
             return Err(Error::Validation("digite alguma coisa antes de publicar".to_owned()));
         }
-        if trimmed.chars().count() > 5_000 {
-            return Err(Error::Validation("o texto está muito longo (máx 5000 caracteres)".to_owned()));
+        if trimmed.chars().count() > 3_000 {
+            return Err(Error::Validation(
+                "o texto está muito longo (máx 3000 caracteres)".to_owned(),
+            ));
         }
         // Trim + cap CW at 500 chars (matches migration 0404 CHECK on the local side).
         let spoiler = spoiler_text

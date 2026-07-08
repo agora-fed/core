@@ -139,6 +139,10 @@
       </Button>
     {/if}
   </div>
+  <p class="gate-note muted" title="A enquete circula no fediverso, mas o voto é local.">
+    Apenas cidadãos com conta em <strong>democracia.social.br</strong> votam
+    aqui. Fediversos parceiros veem a enquete, mas o voto de fora não conta.
+  </p>
 </div>
 
 <style>
@@ -221,6 +225,17 @@
     accent-color: var(--accent);
   }
 
+  .gate-note {
+    margin: var(--sp-2) 0 0;
+    padding: var(--sp-2) var(--sp-3);
+    background: var(--surface-2);
+    border-radius: var(--r-sm);
+    font-size: var(--fs-xs);
+    line-height: var(--lh-snug);
+  }
+  .gate-note strong {
+    color: var(--text-1);
+  }
   .foot {
     display: flex;
     align-items: center;
