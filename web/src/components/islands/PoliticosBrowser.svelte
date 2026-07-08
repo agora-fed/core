@@ -355,11 +355,12 @@
     background: var(--surface-1);
     border: 1px solid var(--border-subtle);
     color: var(--text-1);
-    padding: var(--sp-2) var(--sp-3);
+    padding: var(--sp-3);
     border-radius: var(--r-sm);
     font: inherit;
     font-size: var(--fs-sm);
     cursor: pointer;
+    height: 44px;
   }
   .filters select:disabled {
     opacity: 0.5;

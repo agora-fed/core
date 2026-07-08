@@ -5,6 +5,7 @@
 // dava conta: cada novo seed exigia novo deploy.
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import ColorBar from '../../components/illustrations/ColorBar.astro';
+import PoliticosTabs from '../../components/PoliticosTabs.astro';
 import PoliticosPage from '../../components/islands/PoliticosPage.svelte';
 
 const description =
@@ -31,6 +32,7 @@ const jsonLd = {
           <strong>esfera → estado → município</strong> pra ver quem é quem.
         </p>
       </header>
+      <PoliticosTabs />
       <PoliticosPage client:load />
     </div>
   </section>

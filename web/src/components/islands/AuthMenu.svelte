@@ -282,7 +282,7 @@
     border: none;
     background: transparent;
     cursor: pointer;
-    font: inherit;
+    font-family: inherit;
     width: 100%;
     color: var(--text-1);
   }
@@ -305,11 +305,11 @@
     justify-content: space-between;
     gap: var(--sp-3);
     padding: var(--sp-2) var(--sp-2);
-  }
-  .theme-label {
     font-size: var(--fs-sm);
     font-weight: var(--fw-medium);
-    color: var(--text-2);
+  }
+  .theme-label {
+    color: var(--text-1);
   }
   .btn {
     padding: 0.55rem 1rem;

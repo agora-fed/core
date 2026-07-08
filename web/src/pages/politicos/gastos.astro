@@ -3,6 +3,7 @@
 // agregado por partido, político, casa, UF ou cargo. Estadual/municipal não
 // têm fonte pública unificada equivalente — ver comentário no island.
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import PoliticosTabs from '../../components/PoliticosTabs.astro';
 import GastoParlamentarDashboard from '../../components/islands/GastoParlamentarDashboard.svelte';
 
 const description =
@@ -12,6 +13,7 @@ const description =
 <BaseLayout title="Gasto Parlamentar" {description}>
   <section class="section">
     <div class="container narrow">
+      <PoliticosTabs />
       <GastoParlamentarDashboard client:load />
     </div>
   </section>

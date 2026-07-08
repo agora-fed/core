@@ -1,0 +1,64 @@
+---
+// Sub-navegação horizontal do cluster /politicos/*. Aparece logo abaixo do
+// H1 nas 3 páginas: Diretório · Gasto Parlamentar · Propostas dos Mandatos.
+// O header não expõe mais um dropdown — a hierarquia é: "Políticos" no menu
+// leva ao diretório; as tabs internas fazem o roteamento entre irmãs.
+const path = Astro.url.pathname;
+
+const tabs = [
+  { href: '/politicos/', label: 'Diretório' },
+  { href: '/politicos/gastos/', label: 'Gasto Parlamentar' },
+  { href: '/politicos/propostas/', label: 'Propostas dos Mandatos' },
+];
+
+const norm = (p: string) => (p.endsWith('/') ? p : p + '/');
+const current = norm(path);
+const isActive = (href: string) => norm(href) === current;
+---
+
+<nav class="pol-tabs" aria-label="Seções do cluster Políticos">
+  {
+    tabs.map((t) => (
+      <a
+        href={t.href}
+        class:list={['tab', { active: isActive(t.href) }]}
+        aria-current={isActive(t.href) ? 'page' : undefined}
+      >
+        {t.label}
+      </a>
+    ))
+  }
+</nav>
+
+<style>
+  .pol-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-1);
+    margin-bottom: var(--sp-5);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .tab {
+    display: inline-block;
+    padding: var(--sp-2) var(--sp-3);
+    margin-bottom: -1px;
+    text-decoration: none;
+    color: var(--text-2);
+    font-weight: var(--fw-medium);
+    font-size: var(--fs-sm);
+    line-height: 1.2;
+    white-space: nowrap;
+    border-bottom: 2px solid transparent;
+    transition:
+      color var(--dur-fast) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out);
+  }
+  .tab:hover {
+    color: var(--text-1);
+  }
+  .tab.active {
+    color: var(--accent-strong);
+    border-bottom-color: var(--accent-strong);
+    font-weight: var(--fw-semibold);
+  }
+</style>

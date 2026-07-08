@@ -3,6 +3,7 @@
 // político | casa | esfera | UF | cargo) com filtros de status.
 // Sub-menu de Políticos.
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import PoliticosTabs from '../../components/PoliticosTabs.astro';
 import PropostasDashboard from '../../components/islands/PropostasDashboard.svelte';
 
 const description =
@@ -12,6 +13,7 @@ const description =
 <BaseLayout title="Propostas dos Mandatos" {description}>
   <section class="section">
     <div class="container narrow">
+      <PoliticosTabs />
       <PropostasDashboard client:load />
     </div>
   </section>
