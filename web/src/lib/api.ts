@@ -834,6 +834,78 @@ export const subscribeWebPush = (subscription: PushSubscriptionJSON, userAgent: 
 export const getMyAdminStatus = () =>
   apiGetCredentialed<{ is_admin: boolean }>('/api/v1/me/admin-status');
 
+/** GUI completa de usuários — admin only. */
+export interface AdminUserRow {
+  citizen_id: string;
+  display_name: string | null;
+  handle: string | null;
+  email: string | null;
+  verification_level: string;
+  is_public: boolean;
+  titulo_status: string | null;
+  party_sigla: string | null;
+  created_at: string;
+  platform_role: 'owner' | 'admin' | 'auditor' | null;
+  party_admin_sigla: string | null;
+  party_admin_role: 'admin' | 'moderador' | null;
+  has_mandate: boolean;
+  has_candidacy: boolean;
+}
+export interface AdminUsersFilter {
+  q?: string;
+  party?: string;
+  platform_role?: 'owner' | 'admin' | 'auditor' | 'none' | 'any';
+  party_role?: 'admin' | 'moderador' | 'none' | 'any';
+  civic_type?: 'cidadao' | 'politico' | 'candidato' | 'any';
+  limit?: number;
+  offset?: number;
+}
+export const listAdminUsers = (f: AdminUsersFilter = {}) => {
+  const qs = new URLSearchParams();
+  if (f.q) qs.set('q', f.q);
+  if (f.party) qs.set('party', f.party);
+  if (f.platform_role) qs.set('platform_role', f.platform_role);
+  if (f.party_role) qs.set('party_role', f.party_role);
+  if (f.civic_type) qs.set('civic_type', f.civic_type);
+  if (f.limit != null) qs.set('limit', String(f.limit));
+  if (f.offset != null) qs.set('offset', String(f.offset));
+  return apiGetCredentialed<AdminUserRow[]>(
+    `/api/v1/admin/users-rich${qs.toString() ? `?${qs.toString()}` : ''}`,
+  );
+};
+
+export const patchAdminUser = (
+  citizen_id: string,
+  patch: {
+    party_sigla?: string | null;
+    verification_level?: string;
+    is_public?: boolean;
+  },
+) =>
+  fetch(`${API_BASE}/api/v1/admin/users/${citizen_id}`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    // party_sigla: null envia JSON null (limpa); undefined omite.
+    body: JSON.stringify(patch),
+  }).then((r) => r.json());
+
+export const setPlatformRole = (
+  citizen_id: string,
+  role: 'owner' | 'admin' | 'auditor' | 'none',
+) =>
+  apiPost<null>(`/api/v1/admin/users/${citizen_id}/platform-role`, { role });
+
+export const setPartyRole = (
+  citizen_id: string,
+  role: 'admin' | 'moderador' | 'none',
+  party_sigla?: string,
+) =>
+  apiPost<null>(`/api/v1/admin/users/${citizen_id}/party-role`, {
+    role,
+    party_sigla: role === 'none' ? undefined : party_sigla,
+  });
+
 /** Template de e-mail editável pela UI admin (migration 0151). */
 export interface EmailTemplateDto {
   key: string;

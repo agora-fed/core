@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod admin_ext;
+pub mod admin_users;
 pub mod amendments;
 pub mod civic_notify;
 pub mod email_templates;
@@ -156,6 +157,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(web_push::routes(state.clone()))
         // Templates de e-mail editáveis (admin CRUD).
         .merge(email_templates::routes(state.clone()))
+        // GUI completa de usuários (admin CRUD).
+        .merge(admin_users::routes(state.clone()))
         // Social-graph endpoints (bookmarks, mutes, blocks, filters, lists —
         // migration 0500). Mastodon-parity fase 2A.
         .merge(social_graph::routes(state.clone()))

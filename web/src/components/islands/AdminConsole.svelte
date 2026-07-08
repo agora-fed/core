@@ -283,6 +283,15 @@
           </div>
         {/if}
       {:else if active === 'usuarios'}
+        <div class="promo-card">
+          <p>
+            <strong>Nova GUI de usuários</strong> — busca, filtros por partido,
+            papel plataforma, papel partido e tipo cívico + drawer de edição.
+          </p>
+          <a class="btn btn-primary" href="/admin/usuarios">
+            Abrir GUI completa →
+          </a>
+        </div>
         <div class="filters">
           <div class="q-wrap">
             <Input
@@ -465,6 +474,31 @@
 </div>
 
 <style>
+  .promo-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--sp-4);
+    padding: var(--sp-3) var(--sp-4);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: var(--r-base);
+    margin-bottom: var(--sp-4);
+    flex-wrap: wrap;
+  }
+  .promo-card p {
+    margin: 0;
+    color: var(--text-1);
+  }
+  .promo-card .btn {
+    background: var(--accent);
+    color: var(--accent-contrast);
+    padding: 8px 16px;
+    border-radius: var(--r-sm);
+    text-decoration: none;
+    font-weight: var(--fw-semibold);
+    white-space: nowrap;
+  }
   .console {
     display: block;
   }
