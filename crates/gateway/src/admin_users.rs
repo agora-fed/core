@@ -160,10 +160,17 @@ async fn list(
     let rows: Vec<AdminUserRow> = match sqlx::query_as(
         r"
         WITH
+          -- Um cidadão pode ter mais de um role no binding (ex.: admin +
+          -- owner). Colapsa pro mais alto: owner > admin > auditor.
           plat AS (
-            SELECT citizen_id, role
+            SELECT citizen_id,
+                   CASE
+                     WHEN bool_or(role = 'owner')   THEN 'owner'
+                     WHEN bool_or(role = 'admin')   THEN 'admin'
+                     WHEN bool_or(role = 'auditor') THEN 'auditor'
+                   END AS role
               FROM admin_role_binding
-             GROUP BY citizen_id, role
+             GROUP BY citizen_id
           ),
           party_admin AS (
             SELECT citizen_id,
@@ -172,7 +179,7 @@ async fn list(
               FROM party_administrator
              GROUP BY citizen_id
           ),
-          mandate AS (
+          mib_agg AS (
             SELECT citizen_id, TRUE AS has_it
               FROM mandate_identity_binding
              GROUP BY citizen_id
@@ -195,7 +202,7 @@ async fn list(
           plat.role             AS platform_role,
           party_admin.party_sigla AS party_admin_sigla,
           party_admin.role      AS party_admin_role,
-          COALESCE(mandate.has_it, FALSE) AS has_mandate,
+          COALESCE(mib_agg.has_it, FALSE) AS has_mandate,
           -- Cidadão como candidato: se tem binding em mandate is_candidate
           -- OU se o mandato dele aparece em candidacy.
           COALESCE(
@@ -209,7 +216,7 @@ async fn list(
           LEFT JOIN auth_credential ac ON ac.citizen_id = c.id
           LEFT JOIN plat         ON plat.citizen_id = c.id
           LEFT JOIN party_admin  ON party_admin.citizen_id = c.id
-          LEFT JOIN mandate      ON mandate.citizen_id = c.id
+          LEFT JOIN mib_agg      ON mib_agg.citizen_id = c.id
          WHERE
           -- q (handle/email/display_name)
           ($1::text IS NULL
@@ -233,7 +240,7 @@ async fn list(
           -- civic_type
           AND (
             $5::text IS NULL OR $5 = 'any'
-            OR ($5 = 'politico' AND COALESCE(mandate.has_it, FALSE) = TRUE)
+            OR ($5 = 'politico' AND COALESCE(mib_agg.has_it, FALSE) = TRUE)
             OR ($5 = 'candidato' AND EXISTS (
                  SELECT 1 FROM mandate_identity_binding mib
                    JOIN mandate m ON m.id = mib.mandate_id
