@@ -273,6 +273,27 @@ fn subscriptions(state: &AppState) -> Vec<Subscription> {
                 db: state.db.clone(),
             }),
         ),
+        // Feed cidadão (0.25.0-fediverso): notifica o AUTOR da proposta em cada
+        // marco cívico (threshold, sla started/response/expired). NotifySlaSub
+        // acima cobre o operador do mandato; este cobre o cidadão que propôs.
+        sub(
+            "civic-notify-proposals-worker",
+            EventTopic::Proposals,
+            Arc::new(crate::civic_notify::CivicNotifySub {
+                db: state.db.clone(),
+                public_origin: std::env::var("PUBLIC_ORIGIN")
+                    .unwrap_or_else(|_| "https://democracia.social.br".to_owned()),
+            }),
+        ),
+        sub(
+            "civic-notify-consequence-worker",
+            EventTopic::Consequence,
+            Arc::new(crate::civic_notify::CivicNotifySub {
+                db: state.db.clone(),
+                public_origin: std::env::var("PUBLIC_ORIGIN")
+                    .unwrap_or_else(|_| "https://democracia.social.br".to_owned()),
+            }),
+        ),
     ]
     .into_iter()
     .flatten()

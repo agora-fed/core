@@ -8,6 +8,7 @@
 
 pub mod admin_ext;
 pub mod amendments;
+pub mod civic_notify;
 pub mod discovery;
 pub mod elections;
 pub mod federation;

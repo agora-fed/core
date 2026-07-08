@@ -960,10 +960,26 @@ export const getThreadContext = (uri: string) =>
     `/api/v1/notes/context?uri=${encodeURIComponent(uri)}`,
   );
 
-/** One notification item as returned by `/api/v1/me/notifications`. */
+/**
+ * One notification item as returned by `/api/v1/me/notifications`.
+ *
+ * Kinds fediverso (migration 0406): mention | reply | favourite | reblog | follow.
+ * Kinds cívicas (migration 0411, 0.25.0-fediverso Feed): proposal_threshold |
+ * sla_started | sla_response | sla_expired. Front unknown kinds usam fallback.
+ */
 export interface NotificationDto {
   id: string;
-  kind: 'mention' | 'reply' | 'favourite' | 'reblog' | 'follow';
+  kind:
+    | 'mention'
+    | 'reply'
+    | 'favourite'
+    | 'reblog'
+    | 'follow'
+    | 'proposal_threshold'
+    | 'sla_started'
+    | 'sla_response'
+    | 'sla_expired'
+    | string;
   source_actor_url: string | null;
   source_handle: string;
   source_display_name: string | null;

@@ -25,22 +25,33 @@
 
   type Kind = NotificationDto['kind'];
 
-  const iconByKind: Record<Kind, string> = {
+  // Kinds cívicas (migration 0411) — feed do 'propor → threshold → SLA → resposta'.
+  // Fallback pra kind desconhecido usa 'info' + 'bell' pra sobreviver a novas kinds
+  // servidas antes do front deployar.
+  const iconByKind: Record<string, string> = {
     mention: 'at',
     reply: 'reply',
     favourite: 'heart-fill',
     reblog: 'boost',
     follow: 'profile',
+    proposal_threshold: 'bell',
+    sla_started: 'bell',
+    sla_response: 'check',
+    sla_expired: 'alert',
   };
-  const labelByKind: Record<Kind, string> = {
+  const labelByKind: Record<string, string> = {
     mention: 'mencionou você',
     reply: 'respondeu a você',
     favourite: 'favoritou seu post',
     reblog: 'repostou seu post',
     follow: 'começou a seguir você',
+    proposal_threshold: 'sua proposta cruzou o gatilho',
+    sla_started: 'SLA do mandato começou',
+    sla_response: 'o mandato respondeu você',
+    sla_expired: 'silêncio público registrado',
   };
   const toneByKind: Record<
-    Kind,
+    string,
     'accent' | 'danger' | 'info' | 'success' | 'warning'
   > = {
     mention: 'accent',
@@ -48,6 +59,10 @@
     favourite: 'danger',
     reblog: 'success',
     follow: 'accent',
+    proposal_threshold: 'success',
+    sla_started: 'info',
+    sla_response: 'success',
+    sla_expired: 'warning',
   };
 
   let ready = $state(false);
@@ -108,8 +123,20 @@
     else loading = false;
   });
 
+  const CIVIC_KINDS = new Set([
+    'proposal_threshold',
+    'sla_started',
+    'sla_response',
+    'sla_expired',
+  ]);
+
   function targetHref(item: NotificationDto): string | null {
     if (item.kind === 'follow') return item.source_actor_url;
+    // Kinds cívicas: object_uri já vem como URL completa `/propostas/<id>`.
+    // Reutilizar direto — /publicacao?uri= é só pro fediverso.
+    if (item.object_uri && CIVIC_KINDS.has(item.kind)) {
+      return item.object_uri;
+    }
     if (item.object_uri) {
       return `/publicacao?uri=${encodeURIComponent(item.object_uri)}`;
     }
@@ -193,8 +220,8 @@
                   alt=""
                   size="sm"
                 />
-                <span class="kind" data-tone={toneByKind[item.kind]}>
-                  <Icon name={iconByKind[item.kind]} size={14} />
+                <span class="kind" data-tone={toneByKind[item.kind] ?? 'info'}>
+                  <Icon name={iconByKind[item.kind] ?? 'bell'} size={14} />
                 </span>
               </div>
               <div class="body">
@@ -202,7 +229,7 @@
                   <strong>
                     {item.source_display_name ?? `@${item.source_handle}`}
                   </strong>
-                  <span class="muted">{labelByKind[item.kind]}</span>
+                  <span class="muted">{labelByKind[item.kind] ?? item.kind}</span>
                 </p>
                 {#if item.object_preview}
                   <p class="preview">{item.object_preview}</p>
