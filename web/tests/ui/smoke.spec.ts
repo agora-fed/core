@@ -295,3 +295,19 @@ test('/eleicoes/2026: carrega comparador com filtros', async ({ page }) => {
   ).toEqual([]);
   expect(netErrors).toEqual([]);
 });
+
+test('/eleicoes/2026: painel TSE mostra countdown + calendário', async ({ page }) => {
+  const { jsErrors, netErrors } = await collectPageIssues(page);
+  await page.goto('/eleicoes/2026/', { waitUntil: 'networkidle' });
+  await page.waitForTimeout(2000);
+  const body = await page.locator('body').innerText();
+  // O painel TSE deve mostrar pelo menos "Próximo passo" (eyebrow do countdown).
+  expect(body).toMatch(/Pr[óo]ximo passo/i);
+  // Milestones críticos do calendário.
+  expect(body).toMatch(/Registro de candidatura/i);
+  expect(body).toMatch(/1º turno/i);
+  expect(body).toMatch(/2º turno/i);
+  expect(body).toMatch(/Posse dos eleitos/i);
+  expect(jsErrors.filter((e) => !/hydrat|status of 40[134]|favicon/i.test(e))).toEqual([]);
+  expect(netErrors).toEqual([]);
+});

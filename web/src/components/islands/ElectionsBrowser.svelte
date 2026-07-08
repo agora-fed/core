@@ -120,6 +120,11 @@
   onMount(() => {
     readQuery();
     loadElections();
+    // Countdown tick — 60s é suficiente pra granularidade de dias/horas.
+    tickTimer = setInterval(() => { now = Date.now(); }, 60_000);
+    return () => {
+      if (tickTimer) clearInterval(tickTimer);
+    };
   });
 
   function pickElection(id: string) {
@@ -176,6 +181,64 @@
     return OFFICES.find((o) => o.id === id)?.label ?? id;
   }
 
+  // Calendário TSE 2026 — datas oficiais Resolução TSE 23.735/2024.
+  // Cada entrada tem uma UTC ISO pra alimentar o countdown + comparar
+  // "já passou" / "está aberto" / "próximo".
+  interface CalMilestone {
+    label: string;
+    detail: string;
+    when: string; // ISO date (00:00 BRT)
+  }
+  const CAL_2026: CalMilestone[] = [
+    { label: 'Convenções partidárias', detail: 'Escolha dos candidatos e coligações', when: '2026-07-20T00:00:00-03:00' },
+    { label: 'Registro de candidatura', detail: 'Último dia pra registrar candidatura no TSE', when: '2026-08-15T00:00:00-03:00' },
+    { label: 'Início da campanha', detail: 'Propaganda eleitoral autorizada', when: '2026-08-16T00:00:00-03:00' },
+    { label: 'Horário eleitoral gratuito', detail: 'Início do HEG em rádio e TV', when: '2026-09-04T00:00:00-03:00' },
+    { label: '1º turno', detail: 'Presidente · Governador · Senador · Deputados Federal e Estadual', when: '2026-10-04T08:00:00-03:00' },
+    { label: '2º turno', detail: 'Presidente e Governador (se necessário)', when: '2026-10-25T08:00:00-03:00' },
+    { label: 'Prestação de contas final', detail: 'Prazo TSE pra prestação de contas', when: '2026-11-04T00:00:00-03:00' },
+    { label: 'Posse dos eleitos', detail: 'Presidente, Governadores, Senadores, Deputados', when: '2027-01-01T00:00:00-03:00' },
+  ];
+
+  // Live-updating "agora" — tick a cada 60s. Suficiente pro countdown por
+  // dias/horas (não é relógio de foguete).
+  let now = $state<number>(Date.now());
+  let tickTimer: ReturnType<typeof setInterval> | null = null;
+
+  // Próximo milestone (o primeiro no futuro).
+  let nextMilestone = $derived.by<CalMilestone | null>(() => {
+    for (const m of CAL_2026) {
+      if (new Date(m.when).getTime() > now) return m;
+    }
+    return null;
+  });
+
+  function fmtCountdown(target: string): string {
+    const ms = new Date(target).getTime() - now;
+    if (ms <= 0) return 'já ocorreu';
+    const days = Math.floor(ms / 86_400_000);
+    const hours = Math.floor((ms % 86_400_000) / 3_600_000);
+    if (days >= 7) return `em ${days} dias`;
+    if (days >= 1) return `em ${days}d ${hours}h`;
+    const mins = Math.floor((ms % 3_600_000) / 60_000);
+    return `em ${hours}h ${mins}m`;
+  }
+
+  function fmtCalDate(iso: string): string {
+    try {
+      return new Date(iso).toLocaleDateString('pt-BR', {
+        day: '2-digit', month: 'short', year: 'numeric',
+      });
+    } catch { return iso; }
+  }
+
+  function calState(iso: string): 'passed' | 'active' | 'future' {
+    const t = new Date(iso).getTime();
+    if (t < now - 86_400_000) return 'passed';
+    if (t < now) return 'active';
+    return 'future';
+  }
+
   // Aggregate stats visible at the top of the grid.
   let stats = $derived.by(() => {
     const total = candidacies.length;
@@ -194,6 +257,42 @@
 </script>
 
 <div class="wrap">
+  <!-- Countdown + calendário TSE — sempre visível, dá ancoragem temporal ao usuário
+       enquanto a base de candidatos não é povoada (registro só abre 15/08/2026). -->
+  <section class="tse-panel">
+    <div class="cd-row">
+      <div class="cd-main">
+        {#if nextMilestone}
+          <span class="cd-eyebrow muted">Próximo passo</span>
+          <strong class="cd-title">{nextMilestone.label}</strong>
+          <span class="cd-when">
+            {fmtCalDate(nextMilestone.when)} · <em>{fmtCountdown(nextMilestone.when)}</em>
+          </span>
+          <p class="cd-detail muted">{nextMilestone.detail}</p>
+        {:else}
+          <span class="cd-eyebrow muted">Calendário 2026</span>
+          <strong class="cd-title">Ciclo eleitoral encerrado</strong>
+        {/if}
+      </div>
+    </div>
+
+    <ol class="cal">
+      {#each CAL_2026 as m}
+        {@const s = calState(m.when)}
+        <li class:passed={s === 'passed'} class:active={s === 'active'}>
+          <span class="dot" aria-hidden="true"></span>
+          <div class="cal-body">
+            <div class="cal-head">
+              <strong>{m.label}</strong>
+              <span class="cal-date muted">{fmtCalDate(m.when)}</span>
+            </div>
+            <span class="cal-detail muted">{m.detail}</span>
+          </div>
+        </li>
+      {/each}
+    </ol>
+  </section>
+
   {#if electionsLoading}
     <div class="loading"><Spinner /></div>
   {:else if electionsErr}
@@ -387,6 +486,127 @@
   .wrap {
     display: grid;
     gap: var(--sp-5);
+  }
+
+  /* --- painel TSE (countdown + calendário) --- */
+  .tse-panel {
+    padding: var(--sp-5);
+    background: linear-gradient(
+      180deg,
+      var(--accent-soft) 0%,
+      var(--surface-2) 100%
+    );
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-lg);
+    display: grid;
+    gap: var(--sp-4);
+  }
+  .cd-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+  }
+  .cd-main {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+  }
+  .cd-eyebrow {
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .cd-title {
+    font-size: var(--fs-2xl);
+    color: var(--text-1);
+    line-height: 1.15;
+  }
+  .cd-when {
+    font-size: var(--fs-base);
+    color: var(--text-1);
+    font-variant-numeric: tabular-nums;
+  }
+  .cd-when em {
+    color: var(--accent);
+    font-style: normal;
+    font-weight: var(--fw-semibold);
+  }
+  .cd-detail {
+    font-size: var(--fs-sm);
+    margin: 0;
+  }
+
+  .cal {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: var(--sp-2);
+    counter-reset: cal;
+  }
+  .cal li {
+    display: flex;
+    gap: var(--sp-3);
+    padding: var(--sp-2) var(--sp-3);
+    background: var(--surface-1);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-base);
+  }
+  .cal li.passed {
+    opacity: 0.6;
+  }
+  .cal li.active {
+    border-color: var(--accent);
+    background: var(--surface-1);
+    box-shadow: var(--shadow-sm);
+  }
+  .cal .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--border-strong);
+    margin-top: 6px;
+    flex-shrink: 0;
+  }
+  .cal li.active .dot {
+    background: var(--accent);
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 25%, transparent);
+  }
+  .cal li.passed .dot {
+    background: var(--positive, #22c55e);
+  }
+  .cal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+  }
+  .cal-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    flex-wrap: wrap;
+  }
+  .cal-head strong {
+    color: var(--text-1);
+    font-size: var(--fs-sm);
+  }
+  .cal-date {
+    font-size: var(--fs-xs);
+    font-variant-numeric: tabular-nums;
+  }
+  .cal-detail {
+    font-size: var(--fs-xs);
+    line-height: var(--lh-snug);
+  }
+  @media (max-width: 640px) {
+    .cd-title {
+      font-size: var(--fs-xl);
+    }
   }
   .loading {
     display: flex;
