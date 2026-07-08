@@ -397,6 +397,36 @@
       </p>
     {/if}
 
+    {#if thresholdCrossed}
+      <aside class="threshold-banner" role="status">
+        <div class="tb-icon">🚨</div>
+        <div class="tb-copy">
+          <strong>Limiar atingido — o relógio começou a correr</strong>
+          <p>
+            O gabinete de {mandate?.display_name ?? 'do mandato'} foi
+            notificado. Agora é responder no prazo ou o silêncio vira
+            registro público.
+          </p>
+        </div>
+        <div class="tb-cta">
+          {#if isAuthor}
+            <button
+              class="btn btn-primary"
+              type="button"
+              onclick={publishToFediverse}
+              disabled={publishing}
+            >
+              🌐 Amplifique no fediverso
+            </button>
+          {:else}
+            <button class="btn btn-primary" type="button" onclick={share}>
+              Compartilhar
+            </button>
+          {/if}
+        </div>
+      </aside>
+    {/if}
+
     <!-- Bloco GRANDE de votação — o coração da página -->
     <section class="vote-block" class:crossed={thresholdCrossed}>
       <div class="vote-stats">
@@ -673,6 +703,39 @@
   }
   .author .muted {
     font-size: 0.88rem;
+  }
+  .threshold-banner {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 1rem;
+    align-items: center;
+    padding: 1rem 1.25rem;
+    margin: 0 0 1.5rem;
+    background: linear-gradient(135deg, #fff7e6 0%, #ffe4b5 100%);
+    border: 1.5px solid #ffb020;
+    border-radius: 12px;
+  }
+  @media (max-width: 640px) {
+    .threshold-banner {
+      grid-template-columns: 1fr;
+      text-align: center;
+    }
+  }
+  .tb-icon {
+    font-size: 2rem;
+    line-height: 1;
+  }
+  .tb-copy strong {
+    display: block;
+    color: #7a4a00;
+    font-size: 1rem;
+    margin-bottom: 4px;
+  }
+  .tb-copy p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #5a3800;
+    line-height: 1.5;
   }
   .vote-block {
     background: var(--c-paper);

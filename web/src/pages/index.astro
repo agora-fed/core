@@ -2,6 +2,7 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import HeroArt from '../components/illustrations/HeroArt.astro';
 import ColorBar from '../components/illustrations/ColorBar.astro';
+import LandingStats from '../components/islands/LandingStats.svelte';
 import Emblem from '../components/illustrations/Emblem.astro';
 import Dialogo from '../components/icons/Dialogo.astro';
 import Compreensao from '../components/icons/Compreensao.astro';
@@ -100,6 +101,20 @@ const jsonLd = {
     </div>
   </section>
 
+  <!-- Números ao vivo — ancoram a tese em dado real -->
+  <section class="section stats-section" aria-labelledby="stats-title">
+    <div class="container">
+      <div class="sec-head center">
+        <h2 id="stats-title">Contadores ao vivo</h2>
+        <p class="muted sub">
+          Puxados agora do banco de dados. Sem estimativa, sem estatística
+          fabricada. Se o silêncio cresce, aparece aqui.
+        </p>
+      </div>
+      <LandingStats client:load />
+    </div>
+  </section>
+
   <!-- Selos de garantia — TSE-worthy: quem opera e como -->
   <section class="badges-strip" aria-label="Garantias da plataforma">
     <div class="container">
@@ -121,6 +136,14 @@ const jsonLd = {
   </section>
 
   <style>
+    .stats-section {
+      background: linear-gradient(180deg, var(--surface-1) 0%, var(--surface-2) 100%);
+      padding-top: 3rem;
+      padding-bottom: 3rem;
+    }
+    .stats-section .sec-head {
+      margin-bottom: 2rem;
+    }
     .badges-strip {
       background: var(--surface-2);
       border-top: 1px solid var(--border-subtle);

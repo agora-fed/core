@@ -841,6 +841,19 @@ export const exportMyData = () =>
 export const deleteMyAccount = () =>
   apiPost<null>('/api/v1/me/lgpd/delete-account', {});
 
+/** Estatísticas públicas — usadas na landing pra ancorar a tese. */
+export interface PublicStats {
+  citizens_active: number;
+  proposals_published: number;
+  mandates_indexed: number;
+  responses_public: number;
+  silences_public: number;
+  response_rate: number | null;
+  generated_at: string;
+}
+export const getPublicStats = () =>
+  apiGet<PublicStats>('/api/v1/stats/public');
+
 /** GET /auth/govbr/status — front usa pra decidir se mostra o botão. */
 export const getGovbrStatus = () =>
   apiGet<{ enabled: boolean }>('/api/v1/auth/govbr/status');
