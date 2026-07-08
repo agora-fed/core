@@ -790,6 +790,39 @@ export const registerPolitician = (
 export const registerConfirm = (token: string) =>
   apiPost<SessionData>('/api/v1/auth/register/confirm', { token });
 
+/**
+ * Reenvia o link de verificação para uma pending viva. Sempre resolve
+ * `success: true` no wire (enumeration-safe, mesmo padrão do password-reset).
+ */
+export const registerResend = (email: string, orgId = DEFAULT_ORG_ID) =>
+  apiPost<null>('/api/v1/auth/register/resend', {
+    org_id: orgId,
+    email: email.trim(),
+  });
+
+/**
+ * Status do título de eleitor da cidadã(o) logada. NULL quando não cadastrado.
+ * `titulo_last4`: só os 4 últimos dígitos (LGPD-safe). `titulo_status`:
+ *   `unverified` (submetido, sem cross-check ainda),
+ *   `validated` (dígitos verificadores TSE OK),
+ *   `verified` (cross-check com fonte oficial).
+ */
+export interface TituloEleitorStatus {
+  titulo_last4: string | null;
+  titulo_status: 'unverified' | 'validated' | 'verified' | null;
+}
+
+/** GET /me/titulo-eleitor — status da cidadania política. */
+export const getTituloEleitor = () =>
+  apiGetCredentialed<TituloEleitorStatus>('/api/v1/me/titulo-eleitor');
+
+/** POST /me/titulo-eleitor — valida algoritmicamente (12 dígitos) e persiste. */
+export const submitTituloEleitor = (titulo: string) =>
+  apiPost<{ titulo_status: string; titulo_last4: string }>(
+    '/api/v1/me/titulo-eleitor',
+    { titulo },
+  );
+
 /** Authenticate (e-mail + senha). Always includes org_id. */
 export const login = (email: string, password: string, orgId = DEFAULT_ORG_ID) =>
   apiPost<SessionData>('/api/v1/auth/login', {

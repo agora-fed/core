@@ -42,12 +42,14 @@ pub fn routes(state: AppState) -> Router<()> {
     // headers, and the ProfileService is built per-request from state — cheap, no shared mutable
     // surface). Auth routes carry Arc<ZitadelAuth>; the two sub-routers are merged.
     let auth_routes = Router::new()
-        .route("/auth/login", post(login))
         .route("/auth/logout", post(logout))
         .route("/auth/session", post(create_session))
         .route("/auth/me", get(me))
         .with_state(svc);
     let profile_routes = Router::new()
+        // Login movido pra profile_routes (AppState) pra ler request_ip +
+        // gravar auth_login_attempt como parte do rate limit (P5.1).
+        .route("/auth/login", post(login))
         .route("/me", get(get_me_profile).patch(patch_me_profile))
         .route("/me/avatar", post(post_me_avatar))
         .route("/me/cover", post(post_me_cover))
@@ -60,6 +62,7 @@ pub fn routes(state: AppState) -> Router<()> {
         .route("/auth/register", post(register))
         .route("/auth/register/politician", post(register_politician))
         .route("/auth/register/confirm", post(register_confirm))
+        .route("/auth/register/resend", post(register_resend))
         .route("/auth/password-reset/request", post(password_reset_request))
         .route("/auth/password-reset/confirm", post(password_reset_confirm))
         // Admin-driven mandate-invite bypass of F1.4 auto-proof (crates/platform/auth/src/mandate_invite.rs).
@@ -239,6 +242,33 @@ struct RegisterConfirmBody {
     token: String,
 }
 
+/// Corpo de `POST /auth/register/resend`. Mesmo shape do password-reset
+/// request — org_id + email, sem senha (a gente reusa a da pending).
+#[derive(Debug, Deserialize)]
+struct RegisterResendBody {
+    org_id: Uuid,
+    email: String,
+}
+
+/// `POST /auth/register/resend` — reenvia o link de verificação. **Sempre**
+/// responde 200 OK: se não houver pending viva pra esse e-mail, o front
+/// vê sucesso mesmo assim (enumeration-safe — o mesmo padrão do reset).
+async fn register_resend(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<RegisterResendBody>,
+) -> Response {
+    let svc = SignupVerifyService::from_state(&state);
+    let ip = caller_ip(&headers);
+    if let Err(error) = svc
+        .resend(OrgId::from_uuid(body.org_id), &body.email, ip.as_deref())
+        .await
+    {
+        tracing::error!(error = ?error, "signup resend storage failure");
+    }
+    (StatusCode::OK, Json(ApiResponse::<()>::ok(()))).into_response()
+}
+
 /// `POST /auth/register/confirm` — redime o token de verificação e materializa
 /// citizen + credential + sessão numa tx. Retorna o mesmo `SessionDto` do
 /// login pra que o front redirecione direto pra o painel/bem-vinda como se
@@ -262,10 +292,58 @@ async fn register_confirm(
     }
 }
 
-/// `POST /auth/login` — authenticate with e-mail + senha.
-async fn login(State(svc): State<Arc<ZitadelAuth>>, Json(req): Json<LoginRequest>) -> Response {
+/// Máximo de tentativas de login por IP na janela de 1h (P5.1). Override
+/// via `AUTH_LOGIN_RATE_MAX_PER_HOUR`. Uma pessoa comum faz 3-5 logins/dia;
+/// 10/h já é sinal de bot/força-bruta.
+const DEFAULT_LOGIN_RATE_MAX_PER_HOUR: i64 = 10;
+
+/// `POST /auth/login` — authenticate with e-mail + senha. Rate-limitado por
+/// IP: 10 tentativas/hora (sucesso + falha), configurável via env. Toda
+/// tentativa é auditada em `auth_login_attempt`.
+async fn login(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<LoginRequest>,
+) -> Response {
+    let ip = caller_ip(&headers);
+    // Rate check. Quem não vem com XFF passa; a política de "no XFF = trust"
+    // é uma decisão consciente (o front está sempre atrás do Caddy que
+    // preenche o header — se veio None, provavelmente é um teste local).
+    if let Some(ip_str) = ip.as_deref() {
+        let since = state.clock.now() - chrono::Duration::hours(1);
+        match crate::queries::login_attempt_count_by_ip_since(&state.db, ip_str, since).await {
+            Ok(count) => {
+                let max = std::env::var("AUTH_LOGIN_RATE_MAX_PER_HOUR")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .filter(|&v: &i64| v > 0)
+                    .unwrap_or(DEFAULT_LOGIN_RATE_MAX_PER_HOUR);
+                if count >= max {
+                    return error_response(&Error::RateLimit(
+                        "muitas tentativas de login deste IP na última hora".to_owned(),
+                    ));
+                }
+            }
+            Err(err) => {
+                tracing::error!(error = ?err, "login rate check DB failure");
+                // Não é catastrófico — segue pro login. Falha aberta em cima
+                // de storage down é aceitável (o login vai falhar de qualquer
+                // jeito se DB não responder).
+            }
+        }
+    }
+
+    let svc = zitadel_from_state(&state);
     let org = OrgId::from_uuid(req.org_id);
-    match svc.login(org, &req.email, &req.password).await {
+    let result = svc.login(org, &req.email, &req.password).await;
+    // Grava a tentativa antes de responder (mesmo em erro) — audit + rate.
+    if let Some(ip_str) = ip.as_deref() {
+        let outcome = if result.is_ok() { "ok" } else { "fail" };
+        if let Err(err) = crate::queries::login_attempt_record(&state.db, ip_str, outcome).await {
+            tracing::warn!(error = ?err, "login attempt audit failed");
+        }
+    }
+    match result {
         Ok(session) => {
             let cookie = session_cookie(&session);
             (
@@ -364,6 +442,7 @@ fn status_for(error: &Error) -> StatusCode {
         Error::Validation(_) => StatusCode::BAD_REQUEST,
         Error::Conflict(_) => StatusCode::CONFLICT,
         Error::Dependency { .. } => StatusCode::BAD_GATEWAY,
+        Error::RateLimit(_) => StatusCode::TOO_MANY_REQUESTS,
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }
@@ -384,6 +463,7 @@ fn message_for(error: &Error) -> &'static str {
             _ => "Conflito de estado.",
         },
         Error::Dependency { .. } => "Falha ao contatar dependência soberana.",
+        Error::RateLimit(_) => "Muitas tentativas. Aguarde um pouco antes de tentar novamente.",
         _ => "Erro interno do servidor.",
     }
 }

@@ -467,6 +467,7 @@ pub(crate) struct ProfileRow {
     pub cover_object_key: Option<String>,
     pub is_public: bool,
     pub verification_level: String,
+    pub titulo_status: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -487,6 +488,7 @@ pub(crate) async fn find_profile<'e, E: PgExecutor<'e>>(
                cover_object_key,
                is_public,
                verification_level,
+               titulo_status,
                created_at
           FROM citizen
          WHERE id = $1
@@ -1172,6 +1174,7 @@ pub(crate) async fn find_public_citizen_by_handle<'e, E: PgExecutor<'e>>(
                cover_object_key,
                is_public,
                verification_level,
+               titulo_status,
                created_at
           FROM citizen
          WHERE org_id = $1 AND handle = $2 AND is_public = true
@@ -1435,6 +1438,122 @@ pub(crate) async fn pending_signup_find_live<'e, E: PgExecutor<'e>>(
     Ok(row)
 }
 
+/// Conta pending_signups criadas por um `request_ip` desde `since`. Usada
+/// pelo rate-limit do cadastro: bots com CPFs válidos poderiam floodar
+/// pending_signups; limitamos 3/hora por IP como defesa em profundidade
+/// (o SMTP relay já rejeitaria envios em massa, mas melhor não chegar lá).
+/// `request_ip = NULL` (X-Forwarded-For ausente) escapa por design — nunca
+/// contamos o mesmo bucket "sem-IP".
+pub(crate) async fn pending_signup_count_by_ip_since<'e, E: PgExecutor<'e>>(
+    ex: E,
+    request_ip: &str,
+    since: DateTime<Utc>,
+) -> Result<i64, sqlx::Error> {
+    let count = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "count!" FROM auth_pending_signup
+           WHERE request_ip = $1 AND created_at >= $2"#,
+        request_ip,
+        since,
+    )
+    .fetch_one(ex)
+    .await?;
+    Ok(count)
+}
+
+/// Acha a pending live mais recente por `(org_id, email)`, se houver. Usada
+/// pelo resend endpoint: reaproveita password_hash+cpf+role+mandate_id do
+/// pending que ainda está vivo (senão o usuário teria que digitar tudo de
+/// novo). Mesma UX que password_reset com "novo link mata o anterior".
+pub(crate) async fn pending_signup_find_live_for_email<'e, E: PgExecutor<'e>>(
+    ex: E,
+    org_id: Uuid,
+    email: &str,
+    now: DateTime<Utc>,
+) -> Result<Option<PendingSignupRow>, sqlx::Error> {
+    let row = sqlx::query_as!(
+        PendingSignupRow,
+        r#"
+        SELECT id, org_id, email, password_hash, cpf, role, mandate_id
+          FROM auth_pending_signup
+         WHERE org_id = $1 AND email = $2
+           AND used_at IS NULL AND expires_at > $3
+         ORDER BY created_at DESC
+         LIMIT 1
+        "#,
+        org_id,
+        email,
+        now,
+    )
+    .fetch_optional(ex)
+    .await?;
+    Ok(row)
+}
+
+/// Deleta pendings antigos vencidos há mais de `cutoff_days` — cleanup
+/// worker (P3.3). Idempotente.
+pub(crate) async fn pending_signup_cleanup_expired<'e, E: PgExecutor<'e>>(
+    ex: E,
+    cutoff: DateTime<Utc>,
+) -> Result<u64, sqlx::Error> {
+    let r = sqlx::query!(
+        "DELETE FROM auth_pending_signup WHERE expires_at < $1",
+        cutoff,
+    )
+    .execute(ex)
+    .await?;
+    Ok(r.rows_affected())
+}
+
+/// Registra uma tentativa de login (rate limit + auditoria, P5.1). Insert
+/// simples — a política de bloqueio é do serviço.
+pub(crate) async fn login_attempt_record<'e, E: PgExecutor<'e>>(
+    ex: E,
+    request_ip: &str,
+    outcome: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "INSERT INTO auth_login_attempt (request_ip, outcome) VALUES ($1, $2)",
+        request_ip,
+        outcome,
+    )
+    .execute(ex)
+    .await?;
+    Ok(())
+}
+
+/// Conta tentativas de login de um IP desde `since`. `sucesso + falha` — a
+/// política é limitar QUALQUER volume anormal, não só falhas.
+pub(crate) async fn login_attempt_count_by_ip_since<'e, E: PgExecutor<'e>>(
+    ex: E,
+    request_ip: &str,
+    since: DateTime<Utc>,
+) -> Result<i64, sqlx::Error> {
+    let count = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "count!" FROM auth_login_attempt
+           WHERE request_ip = $1 AND at >= $2"#,
+        request_ip,
+        since,
+    )
+    .fetch_one(ex)
+    .await?;
+    Ok(count)
+}
+
+/// Limpa tentativas antigas — invocada pelo mesmo worker do
+/// pending_signup_cleanup.
+pub(crate) async fn login_attempt_cleanup<'e, E: PgExecutor<'e>>(
+    ex: E,
+    cutoff: DateTime<Utc>,
+) -> Result<u64, sqlx::Error> {
+    let r = sqlx::query!(
+        "DELETE FROM auth_login_attempt WHERE at < $1",
+        cutoff,
+    )
+    .execute(ex)
+    .await?;
+    Ok(r.rows_affected())
+}
+
 /// Marca a pending como usada (single-use). Chamada dentro da tx do confirm
 /// junto com o insert do citizen/credential; se a tx roll-back, a linha
 /// continua redimível.
@@ -1536,6 +1655,7 @@ pub(crate) async fn update_profile<'e, E: PgExecutor<'e>>(
                   cover_object_key,
                   is_public,
                   verification_level,
+                  titulo_status,
                   created_at
         "#,
         citizen_id,

@@ -30,6 +30,20 @@
     }
   });
 
+  // Badge de cidadania política (0.25.0-fediverso): sinaliza pra outros que a
+  // conta é de brasileira(o) apta a votar em pauta urgente. Não expõe o número
+  // do título — só o status.
+  let tituloBadge = $derived.by(() => {
+    switch (profile?.titulo_status) {
+      case 'verified':
+        return { label: 'Cidadania política verificada (TSE)', cls: 'ok' };
+      case 'validated':
+        return { label: 'Título de eleitor validado', cls: 'ok' };
+      default:
+        return null;
+    }
+  });
+
   let displayName = $derived(
     profile?.display_name ?? profile?.handle ?? 'Cidadã(o)',
   );
@@ -108,6 +122,14 @@
         <div class="chips">
           {#if verifBadge}
             <span class="chip chip-ok">✓ {verifBadge.label}</span>
+          {/if}
+          {#if tituloBadge}
+            <span
+              class="chip chip-titulo"
+              title="Cidadã(o) com título de eleitor validado — vota em pauta urgente."
+            >
+              🇧🇷 {tituloBadge.label}
+            </span>
           {/if}
           {#if profile.created_at}
             <span class="chip chip-plain" title={formatDate(profile.created_at)}>
@@ -221,6 +243,11 @@
     color: var(--c-text-muted);
     border: 1px solid var(--c-border);
     font-weight: 500;
+  }
+  .chip-titulo {
+    background: var(--c-blue-soft, #e6efff);
+    color: var(--c-blue-dark, #143c78);
+    border: 1px solid #b7d0ff;
   }
   .bio {
     padding: 0 1.5rem 1.5rem;

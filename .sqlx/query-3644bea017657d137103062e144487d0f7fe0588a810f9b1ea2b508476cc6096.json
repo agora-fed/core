@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE citizen\n           SET display_name       = CASE WHEN $2 THEN NULLIF($3, '') ELSE display_name END,\n               bio                = CASE WHEN $4 THEN NULLIF($5, '') ELSE bio END,\n               handle             = CASE WHEN $6 THEN NULLIF($7, '') ELSE handle END,\n               is_public          = CASE WHEN $8 THEN $9 ELSE is_public END,\n               profile_updated_at = now()\n         WHERE id = $1\n        RETURNING id AS citizen_id,\n                  org_id,\n                  handle,\n                  display_name,\n                  bio,\n                  avatar_object_key,\n                  cover_object_key,\n                  is_public,\n                  verification_level,\n                  created_at\n        ",
+  "query": "\n        SELECT id AS citizen_id,\n               org_id,\n               handle,\n               display_name,\n               bio,\n               avatar_object_key,\n               cover_object_key,\n               is_public,\n               verification_level,\n               titulo_status,\n               created_at\n          FROM citizen\n         WHERE id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -50,21 +50,18 @@
       },
       {
         "ordinal": 9,
+        "name": "titulo_status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Bool",
-        "Text",
-        "Bool",
-        "Text",
-        "Bool",
-        "Text",
-        "Bool",
-        "Bool"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -77,8 +74,9 @@
       true,
       false,
       false,
+      true,
       false
     ]
   },
-  "hash": "8e8ae8a4aac019e0796f8a6f94e783c2d3f5302298d437437a9c11aedba0e92a"
+  "hash": "3644bea017657d137103062e144487d0f7fe0588a810f9b1ea2b508476cc6096"
 }

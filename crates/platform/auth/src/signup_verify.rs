@@ -42,6 +42,10 @@ const DEFAULT_TTL_SECS: i64 = 24 * 3600;
 const TOKEN_BYTES: usize = 32;
 /// SMTP send timeout — não travar a requisição se o relay estiver lento.
 const SMTP_TIMEOUT_SECS: u64 = 5;
+/// Janela e teto do rate-limit por IP no `request` (P3.1). Configurável via
+/// `AUTH_SIGNUP_RATE_MAX_PER_HOUR` (default 3). Sem override quando
+/// `request_ip=None` — quem não vem com X-Forwarded-For não trava ninguém.
+const DEFAULT_RATE_MAX_PER_HOUR: i64 = 3;
 
 /// Papel do cadastro pendente. Determina qual materialização o `confirm`
 /// executa (register vs register_politician).
@@ -243,6 +247,24 @@ impl SignupVerifyService {
         request_ip: Option<&str>,
     ) -> Result<()> {
         let now = self.clock.now();
+        // Rate-limit por IP ANTES de tudo — barato (uma query) e evita
+        // gastar Argon2 em cima de flood.
+        if let Some(ip) = request_ip {
+            let since = now - chrono::Duration::hours(1);
+            let count = queries::pending_signup_count_by_ip_since(&self.db, ip, since)
+                .await
+                .map_err(map_sqlx)?;
+            let max = std::env::var("AUTH_SIGNUP_RATE_MAX_PER_HOUR")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .filter(|&v: &i64| v > 0)
+                .unwrap_or(DEFAULT_RATE_MAX_PER_HOUR);
+            if count >= max {
+                return Err(Error::RateLimit(
+                    "muitas tentativas de cadastro deste IP na última hora".to_owned(),
+                ));
+            }
+        }
         let email = normalize_email(email)?;
         let cpf = Cpf::parse(cpf_raw)?;
         // Trava mínima de senha aqui — bater com validação do register atual.
@@ -286,6 +308,96 @@ impl SignupVerifyService {
         let url = format!("{}/confirmar-conta?token={}", self.public_origin, token);
         self.deliver_email(&email, &url).await;
         Ok(())
+    }
+
+    /// Reenvia o link de verificação pra um e-mail que tem pending viva. Se
+    /// não houver pending live, silenciosamente não faz nada — resposta 200
+    /// no wire independe (enumeration-safe, mesmo padrão do password_reset).
+    ///
+    /// Reaproveita password_hash+cpf+role+mandate_id da pending existente
+    /// (o usuário não digita nada de novo). Gera token novo, invalida a
+    /// pending anterior, insere nova, dispara e-mail.
+    ///
+    /// # Errors
+    /// [`Error::Storage`] em falha dura de persistência.
+    pub async fn resend(&self, org: OrgId, email: &str, request_ip: Option<&str>) -> Result<()> {
+        let now = self.clock.now();
+        let email = match normalize_email(email) {
+            Ok(e) => e,
+            Err(_) => return Ok(()), // silêncio pra e-mail obviamente inválido
+        };
+        let Some(row) = queries::pending_signup_find_live_for_email(
+            &self.db,
+            org.as_uuid(),
+            &email,
+            now,
+        )
+        .await
+        .map_err(map_sqlx)?
+        else {
+            return Ok(()); // nada pra reenviar
+        };
+        let role = PendingRole::parse(&row.role).ok_or_else(|| {
+            Error::Storage(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("unknown pending_signup.role: {}", row.role),
+            )))
+        })?;
+        let token = generate_token();
+        let token_hash = sha256(&token);
+        let expires_at = now + chrono::Duration::seconds(self.ttl_secs);
+
+        queries::pending_signup_invalidate_live_for_email(&self.db, org.as_uuid(), &email, now)
+            .await
+            .map_err(map_sqlx)?;
+        queries::pending_signup_insert(
+            &self.db,
+            Uuid::now_v7(),
+            org.as_uuid(),
+            &email,
+            &row.password_hash,
+            &row.cpf,
+            role.as_str(),
+            row.mandate_id,
+            &token_hash,
+            expires_at,
+            request_ip,
+            now,
+        )
+        .await
+        .map_err(map_sqlx)?;
+
+        let url = format!("{}/confirmar-conta?token={}", self.public_origin, token);
+        self.deliver_email(&email, &url).await;
+        Ok(())
+    }
+
+    /// Cleanup worker (P3.3): remove pendings expiradas há mais de
+    /// `cutoff_days` dias. Retorna quantas foram apagadas — útil pra métricas.
+    ///
+    /// # Errors
+    /// [`Error::Storage`] em falha de DELETE.
+    pub async fn cleanup_expired(&self, cutoff_days: i64) -> Result<u64> {
+        let cutoff = self.clock.now() - chrono::Duration::days(cutoff_days.max(1));
+        queries::pending_signup_cleanup_expired(&self.db, cutoff)
+            .await
+            .map_err(map_sqlx)
+    }
+
+    /// Cleanup do `auth_login_attempt` (P5.1). Não faz parte do serviço de
+    /// signup em si, mas rodamos no mesmo worker pra economizar loops. Usa
+    /// o mesmo cutoff_days por consistência operacional.
+    ///
+    /// # Errors
+    /// [`Error::Storage`] em falha de DELETE.
+    pub async fn cleanup_login_attempts_via(
+        state: &dsoc_app::AppState,
+        cutoff_days: i64,
+    ) -> Result<u64> {
+        let cutoff = state.clock.now() - chrono::Duration::days(cutoff_days.max(1));
+        queries::login_attempt_cleanup(&state.db, cutoff)
+            .await
+            .map_err(map_sqlx)
     }
 
     /// Passo 2 — redime o token e materializa a conta. Retorna a sessão pronta

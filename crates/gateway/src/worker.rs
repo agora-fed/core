@@ -45,6 +45,13 @@ const DELIVERY_BATCH: u32 = 50;
 /// Drop a delivery row after this many failed attempts (the worker stops claiming it; the row
 /// stays in DB for ops introspection). Matches the longest reasonable Mastodon retry window.
 const DELIVERY_MAX_ATTEMPTS: i32 = 10;
+/// Cadência do cleanup de pending_signups vencidos. Uma vez por hora é suficiente —
+/// pending TTL é 24h e o volume esperado é baixíssimo. Override com
+/// `WORKER_SIGNUP_CLEANUP_MS`.
+const DEFAULT_SIGNUP_CLEANUP_MS: u64 = 3_600_000;
+/// Idade (em dias) que uma pending expirada precisa ter pra ser apagada. Guardamos
+/// uns dias após o vencimento pra auditoria/ops. Override com `AUTH_SIGNUP_CLEANUP_DAYS`.
+const DEFAULT_SIGNUP_CLEANUP_DAYS: i64 = 7;
 
 /// Read a millisecond interval from the environment, falling back to `default`.
 fn env_ms(key: &str, default: u64) -> u64 {
@@ -307,13 +314,50 @@ pub fn spawn(state: AppState) {
     let delivery_ms = env_ms("WORKER_DELIVERY_MS", DEFAULT_DELIVERY_MS);
     tokio::spawn(federation_delivery_loop(state.clone(), delivery_ms));
 
+    // Cleanup de auth_pending_signup vencidos (P3.3). Deletar bem depois do
+    // vencimento — a auditoria pode querer ver quem tentou o quê.
+    let signup_cleanup_ms = env_ms("WORKER_SIGNUP_CLEANUP_MS", DEFAULT_SIGNUP_CLEANUP_MS);
+    let signup_cleanup_days = std::env::var("AUTH_SIGNUP_CLEANUP_DAYS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|&v: &i64| v > 0)
+        .unwrap_or(DEFAULT_SIGNUP_CLEANUP_DAYS);
+    tokio::spawn(signup_cleanup_loop(state.clone(), signup_cleanup_ms, signup_cleanup_days));
+
     tracing::info!(
         subscriptions = count,
         dispatch_ms,
         sweep_ms,
         delivery_ms,
+        signup_cleanup_ms,
         "event worker started: consequence loop is live"
     );
+}
+
+/// Loop de cleanup do `auth_pending_signup` + `auth_login_attempt`. Faz
+/// dois DELETEs por tick (barato, indexed); nunca falha o processo.
+async fn signup_cleanup_loop(state: AppState, period_ms: u64, cutoff_days: i64) {
+    let mut ticker = interval(Duration::from_millis(period_ms));
+    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    let svc = dsoc_auth::signup_verify::SignupVerifyService::from_state(&state);
+    loop {
+        ticker.tick().await;
+        match svc.cleanup_expired(cutoff_days).await {
+            Ok(0) => {}
+            Ok(n) => tracing::info!(deleted = n, cutoff_days, "signup_verify cleanup"),
+            Err(err) => tracing::warn!(error = ?err, "signup_verify cleanup falhou"),
+        }
+        // login_attempt: TTL curto (mesmo cutoff) — só interessa pra rate + audit.
+        match dsoc_auth::signup_verify::SignupVerifyService::cleanup_login_attempts_via(
+            &state, cutoff_days,
+        )
+        .await
+        {
+            Ok(0) => {}
+            Ok(n) => tracing::info!(deleted = n, cutoff_days, "login_attempt cleanup"),
+            Err(err) => tracing::warn!(error = ?err, "login_attempt cleanup falhou"),
+        }
+    }
 }
 
 /// Drain one subscription forever, polling on its interval. Each tick drains the topic in batches

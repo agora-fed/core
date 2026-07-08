@@ -764,6 +764,7 @@ pub async fn ensure_actor_public_key(&self, citizen: CitizenId) -> Result<String
             cover_url: self.object_url(row.cover_object_key.as_deref()),
             is_public: row.is_public,
             verification_level: row.verification_level,
+            titulo_status: row.titulo_status,
             created_at: row.created_at,
         }
     }

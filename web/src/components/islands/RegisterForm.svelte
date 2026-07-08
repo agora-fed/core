@@ -10,6 +10,7 @@
   import {
     register,
     registerPolitician,
+    registerResend,
     getAllMandates,
     DEFAULT_ORG_ID,
     type MandateDto,
@@ -34,6 +35,16 @@
   // link de confirmação. Trocamos o formulário por uma tela "verifique seu
   // e-mail" nesse caso, ao invés de já redirecionar pra /bem-vinda.
   let verificationSentTo = $state<string | null>(null);
+  let resendState = $state<'idle' | 'busy' | 'sent'>('idle');
+
+  async function resendLink() {
+    if (!verificationSentTo || resendState === 'busy') return;
+    resendState = 'busy';
+    await registerResend(verificationSentTo);
+    resendState = 'sent';
+    // Volta ao idle depois de 6s pra permitir uma nova tentativa.
+    window.setTimeout(() => (resendState = 'idle'), 6000);
+  }
 
   // Politician-mode state.
   let mandateSearch = $state('');
@@ -138,17 +149,32 @@
       conta é criada e você entra automaticamente.
     </p>
     <p class="hint muted">
-      Não achou? Confira spam / lixeira. Se preferir, clique abaixo pra
-      recomeçar com outro e-mail.
+      Não achou? Confira spam / lixeira. Se ainda não aparecer, peça outro
+      envio.
     </p>
-    <Button
-      type="button"
-      variant="ghost"
-      size="md"
-      onclick={() => (verificationSentTo = null)}
-    >
-      Usar outro e-mail
-    </Button>
+    <div class="sent-cta">
+      <Button
+        type="button"
+        variant="primary"
+        size="md"
+        loading={resendState === 'busy'}
+        disabled={resendState !== 'idle'}
+        onclick={resendLink}
+      >
+        {resendState === 'sent' ? 'Enviado ✓' : 'Reenviar link'}
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="md"
+        onclick={() => {
+          verificationSentTo = null;
+          resendState = 'idle';
+        }}
+      >
+        Usar outro e-mail
+      </Button>
+    </div>
   </section>
 {:else}
 <section class="rules" aria-label="Regras da conta">
@@ -378,6 +404,12 @@
   }
   .sent .hint {
     font-size: var(--fs-sm);
+  }
+  .sent-cta {
+    display: flex;
+    gap: var(--sp-2);
+    justify-content: center;
+    flex-wrap: wrap;
   }
   .rules {
     background: var(--surface-2);

@@ -45,6 +45,12 @@ pub enum Error {
         #[source]
         source: Box<dyn std::error::Error + Send + Sync>,
     },
+
+    /// O chamador estourou um limite de taxa (por IP, por citizen, etc.).
+    /// Mensagem em pt-BR (public-safe) segue no wrapper — a domain layer
+    /// escolhe *quantos*/em *que janela* segundo a política do caso.
+    #[error("rate limited: {0}")]
+    RateLimit(String),
 }
 
 impl Error {
@@ -59,6 +65,7 @@ impl Error {
             Error::Conflict(_) => "conflict",
             Error::Storage(_) => "storage_error",
             Error::Dependency { .. } => "dependency_error",
+            Error::RateLimit(_) => "rate_limited",
         }
     }
 }

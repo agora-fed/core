@@ -12,11 +12,19 @@
   import ChangePasswordForm from './ChangePasswordForm.svelte';
   import AuthorizedApps from './AuthorizedApps.svelte';
   import FediverseSearch from './FediverseSearch.svelte';
+  import TituloEleitorForm from './TituloEleitorForm.svelte';
 
-  type TabId = 'perfil' | 'aparencia' | 'seguranca' | 'aplicativos' | 'fediverso';
+  type TabId =
+    | 'perfil'
+    | 'identidade'
+    | 'aparencia'
+    | 'seguranca'
+    | 'aplicativos'
+    | 'fediverso';
 
   const tabs: { id: TabId; label: string }[] = [
     { id: 'perfil', label: 'Perfil' },
+    { id: 'identidade', label: 'Identidade' },
     { id: 'aparencia', label: 'Aparência' },
     { id: 'seguranca', label: 'Segurança' },
     { id: 'aplicativos', label: 'Aplicativos' },
@@ -52,6 +60,19 @@
           </p>
         </header>
         <ProfileForm />
+      </section>
+    {:else if active === 'identidade'}
+      <section class="section">
+        <header class="s-head">
+          <h2>Identidade cívica</h2>
+          <p class="muted">
+            Vincule seu <strong>título de eleitor</strong> pra participar de decisões
+            vinculantes. A validação é feita algoritmicamente pelo próprio TSE
+            (dígitos verificadores). Guardamos apenas os 4 últimos dígitos por padrão
+            de segurança e LGPD.
+          </p>
+        </header>
+        <TituloEleitorForm />
       </section>
     {:else if active === 'aparencia'}
       <section class="section">

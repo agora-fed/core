@@ -119,6 +119,11 @@ pub struct ProfileDto {
     /// Verification level reached (`anonymous` / `email` / `directory` / `strong`). Cosmetic
     /// badge today; gates some operations elsewhere in the platform.
     pub verification_level: String,
+    /// Status do título de eleitor (0.25.0-fediverso): `unverified` (submetido, sem
+    /// cross-check), `validated` (dígitos TSE OK), `verified` (cross-check TSE), ou `None`
+    /// (nunca cadastrado). Sinaliza cidadania política brasileira — gate pra pauta urgente.
+    #[serde(default)]
+    pub titulo_status: Option<String>,
     /// First seen on the platform.
     pub created_at: DateTime<Utc>,
 }
