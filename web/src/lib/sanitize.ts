@@ -28,6 +28,25 @@ const DROP = new Set([
 
 const SAFE_HREF = /^https?:\/\//i;
 
+/** Turn a Mastodon-style mention link (<a href="https://host/@user">@user</a>)
+ *  into an in-app link that opens the profile inside DemocraciaBR. Returns
+ *  `null` if the anchor is a plain external link, not a mention. */
+function rewriteMentionHref(el: Element, href: string): string | null {
+  const text = (el.textContent ?? '').trim();
+  const m = text.match(/^@([A-Za-z0-9._-]+)(?:@([A-Za-z0-9.-]+))?/);
+  if (!m) return null;
+  const user = m[1];
+  let host = m[2];
+  if (!host) {
+    try {
+      host = new URL(href).host;
+    } catch {
+      return null;
+    }
+  }
+  return `/perfil/?u=${encodeURIComponent(`@${user}@${host}`)}`;
+}
+
 function sanitizeNode(node: Node, doc: Document): Node | null {
   if (node.nodeType === Node.TEXT_NODE) {
     return doc.createTextNode(node.textContent ?? '');
@@ -53,9 +72,16 @@ function sanitizeNode(node: Node, doc: Document): Node | null {
   if (tag === 'A') {
     const href = el.getAttribute('href')?.trim() ?? '';
     if (SAFE_HREF.test(href)) {
-      out.setAttribute('href', href);
-      out.setAttribute('rel', 'nofollow noopener noreferrer');
-      out.setAttribute('target', '_blank');
+      // Menções (@user / @user@host) viram links internos pro perfil dentro
+      // do DemocraciaBR. Qualquer outro link segue com target="_blank".
+      const inApp = rewriteMentionHref(el, href);
+      if (inApp) {
+        out.setAttribute('href', inApp);
+      } else {
+        out.setAttribute('href', href);
+        out.setAttribute('rel', 'nofollow noopener noreferrer');
+        out.setAttribute('target', '_blank');
+      }
     }
   }
   for (const child of Array.from(el.childNodes)) {
