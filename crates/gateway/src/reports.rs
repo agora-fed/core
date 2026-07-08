@@ -420,8 +420,15 @@ pub struct GastoQuery {
 
 async fn gasto_parlamentar(
     State(state): State<AppState>,
-    Query(q): Query<GastoQuery>,
+    Query(mut q): Query<GastoQuery>,
 ) -> Response {
+    // Sphere é federal-only aqui (ver load_mandate_slims). Se o cliente pediu
+    // estadual/municipal, normalizamos pra federal em vez de retornar 400 —
+    // links antigos com `?sphere=municipal` continuam funcionando, só que
+    // sobre a base federal (que é a única com dado real).
+    if q.filters.sphere.as_deref() != Some("federal") {
+        q.filters.sphere = Some("federal".to_owned());
+    }
     let force_refresh = q.refresh.as_deref().is_some_and(|s| s == "1" || s == "true");
     // Check cache; refresh if stale, first hit, or forced.
     if !force_refresh {
@@ -466,6 +473,12 @@ async fn gasto_parlamentar(
 
 async fn load_mandate_slims(state: &AppState) -> Result<Vec<MandateSlim>, sqlx::Error> {
     // NULL org_id excluded — we only ever aggregate DemocraciaBR org's mandates.
+    //
+    // FEDERAL-ONLY: CEAP + CEAPS são cotas do Congresso Federal. Não faz
+    // sentido puxar 70k mandatos estaduais + municipais aqui (que não têm
+    // fonte de dado equivalente) — a query scanea a tabela toda inutilmente.
+    // Restrição federal deixa a leitura em ~594 rows, tornando o cold start
+    // ~50× mais rápido.
     let rows: Vec<(
         Uuid,
         String,
@@ -480,7 +493,9 @@ async fn load_mandate_slims(state: &AppState) -> Result<Vec<MandateSlim>, sqlx::
         r"SELECT id, display_name, party, uf, house, sphere, office,
                  source_external_id, source
             FROM mandate
-           WHERE org_id = '11111111-1111-1111-1111-111111111111'::uuid",
+           WHERE org_id = '11111111-1111-1111-1111-111111111111'::uuid
+             AND sphere = 'federal'
+             AND house IN ('camara', 'senado')",
     )
     .fetch_all(&state.db)
     .await?;

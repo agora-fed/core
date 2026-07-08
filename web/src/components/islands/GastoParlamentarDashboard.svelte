@@ -29,14 +29,14 @@
 
   type GroupBy = NonNullable<ReportFilters['group_by']>;
   type House = NonNullable<ReportFilters['house']>;
-  type Sphere = NonNullable<ReportFilters['sphere']>;
   type SortBy = 'value' | 'count' | 'name';
 
+  // Sem "Esfera" — agrupar por esfera nesta base federal-only produziria
+  // um único grupo (Federal). Ver `sphereOptions` acima.
   const groupByOptions: { value: GroupBy; label: string }[] = [
     { value: 'partido', label: 'Partido' },
     { value: 'politico', label: 'Político' },
     { value: 'casa', label: 'Casa (Câmara/Senado)' },
-    { value: 'esfera', label: 'Esfera' },
     { value: 'uf', label: 'Estado' },
     { value: 'office', label: 'Cargo' },
   ];
@@ -45,12 +45,12 @@
     { value: 'camara', label: 'Câmara' },
     { value: 'senado', label: 'Senado' },
   ];
-  const sphereOptions: { value: Sphere; label: string }[] = [
-    { value: '', label: 'Todas' },
-    { value: 'federal', label: 'Federal' },
-    { value: 'estadual', label: 'Estadual' },
-    { value: 'municipal', label: 'Municipal' },
-  ];
+  // Federal-only: CEAP (Câmara) + CEAPS (Senado) são as únicas cotas
+  // parlamentares com API pública unificada. Assembleias legislativas
+  // e câmaras municipais NÃO têm dado equivalente — cada uma tem regra
+  // própria de disclosure. `filters.sphere` fica fixo em 'federal' e o
+  // chip foi retirado da UI (não induzir a leitura errada de gráfico
+  // com R$ 0).
   const sortOptions: { value: SortBy; label: string }[] = [
     { value: 'value', label: 'Valor' },
     { value: 'count', label: 'Nº de mandatos' },
@@ -89,7 +89,8 @@
     return p ?? 'var(--accent)';
   }
 
-  let filters = $state<ReportFilters>({ group_by: 'partido' });
+  // Sempre federal — ver comentário em `sphereOptions` acima.
+  let filters = $state<ReportFilters>({ group_by: 'partido', sphere: 'federal' });
   let sortBy = $state<SortBy>('value');
   let report = $state<GastoReport | null>(null);
   let loading = $state(true);
@@ -110,7 +111,9 @@
       uf: p.get('uf') || undefined,
       house: (p.get('house') as House) || undefined,
       party: p.get('party') || undefined,
-      sphere: (p.get('sphere') as Sphere) || undefined,
+      // Sempre federal — sphere estadual/municipal não tem fonte de dado.
+      // Ignora explicitamente parâmetro na URL vindo de link antigo.
+      sphere: 'federal',
     };
     const sortParam = p.get('sort') as SortBy | null;
     if (sortParam && ['value', 'count', 'name'].includes(sortParam)) {
@@ -247,7 +250,10 @@
   <div class="head-body">
     <h1>Gasto parlamentar</h1>
     <p class="muted">
-      Câmara (CEAP) + Senado (CEAPS), ano fiscal fechado. Fontes:
+      <strong>Federal apenas.</strong> Câmara (CEAP) + Senado (CEAPS), ano
+      fiscal fechado. Assembleias Legislativas e Câmaras Municipais não
+      possuem cota parlamentar com API pública unificada — cada casa
+      publica em formato próprio, quando publica. Fontes:
       <a href="https://dadosabertos.camara.leg.br" target="_blank" rel="noreferrer noopener">
         dadosabertos.camara.leg.br</a> ·
       <a
@@ -318,19 +324,7 @@
       {/each}
     </div>
   </div>
-  <div class="ctrl">
-    <span class="ctrl-label">Esfera</span>
-    <div class="chips">
-      {#each sphereOptions as o (o.value + '')}
-        <Chip
-          selected={(filters.sphere ?? '') === o.value}
-          onclick={() => setFilter('sphere', o.value)}
-        >
-          {o.label}
-        </Chip>
-      {/each}
-    </div>
-  </div>
+  <!-- Chip de esfera removido — este painel é federal-only (CEAP+CEAPS). -->
   <div class="ctrl">
     <span class="ctrl-label">Estado</span>
     <div class="chips scroll">

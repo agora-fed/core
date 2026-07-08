@@ -257,6 +257,27 @@ test('gasto parlamentar: dashboard hidrata sem erro de carregamento', async ({ p
   expect(netErrors).toEqual([]);
 });
 
+test('gasto parlamentar: federal-only (chip Esfera removido) e link antigo cai em federal', async ({ page }) => {
+  const { jsErrors, netErrors } = await collectPageIssues(page);
+  // Link antigo com sphere=municipal — o front deve normalizar / o back
+  // deve ignorar. O painel precisa mostrar CEAP+CEAPS (dado real), nunca
+  // "R$ 0" enganoso vindo de estadual/municipal.
+  await page.goto('/politicos/gastos/?sphere=municipal', {
+    waitUntil: 'networkidle',
+  });
+  await page.waitForTimeout(2500);
+  const bodyText = await page.locator('body').innerText();
+  // A UI não pode oferecer chip de Esfera nesta página.
+  expect(bodyText, 'chip esfera não deve existir').not.toMatch(/^Esfera$/m);
+  // O aviso deve estar visível para orientar o usuário.
+  expect(bodyText).toMatch(/Federal apenas|CEAP|CEAPS/);
+  // Total deve ser positivo (dado real) — nunca R$ 0,00 no grande.
+  expect(bodyText).toMatch(/R\$\s*\d/);
+  expect(bodyText).not.toMatch(/R\$\s*0[.,]00\s*$/m);
+  expect(jsErrors.filter((e) => !/hydrat|status of 40[134]|favicon/i.test(e))).toEqual([]);
+  expect(netErrors).toEqual([]);
+});
+
 test('/eleicoes/2026: carrega comparador com filtros', async ({ page }) => {
   const { jsErrors, netErrors } = await collectPageIssues(page);
   await page.goto('/eleicoes/2026/', { waitUntil: 'networkidle' });
