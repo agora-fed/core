@@ -76,6 +76,7 @@ pub fn public_routes(state: AppState) -> Router<()> {
 pub fn client_routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/federation/lookup", get(lookup_remote))
+        .route("/federation/actor-outbox", get(get_remote_outbox))
         .route("/me/follow", post(follow_remote))
         .route("/me/notes", post(post_my_note).delete(delete_my_note).patch(patch_my_note))
         .route("/me/feed", get(get_my_feed))
@@ -719,6 +720,154 @@ async fn lookup_remote(
     };
     let dto = sanitize_actor(actor, actor_url, raw);
     (StatusCode::OK, Json(ApiResponse::ok(dto))).into_response()
+}
+
+/// Query for `GET /api/v1/federation/actor-outbox`.
+#[derive(Debug, Deserialize)]
+struct OutboxProxyQuery {
+    /// The remote actor's stable URL (as returned by `/federation/lookup.remote_actor_url`).
+    actor_url: String,
+}
+
+/// A note surfaced by the outbox proxy. Sanitization of `content_html` happens client-side
+/// (same path as feed notes) so this DTO is just a transport shell.
+#[derive(Debug, Clone, Serialize)]
+struct RemoteNoteDto {
+    /// The AP object id — used as a stable key on the client.
+    id: String,
+    /// The human-facing permalink on the origin instance (if the remote exposes one).
+    url: Option<String>,
+    /// Raw HTML from the remote. UI runs `sanitizeNoteHtml` before render.
+    content_html: String,
+    /// ISO-8601 timestamp from the remote (`published`).
+    published_at: Option<String>,
+    /// If it's a reply, the URI of the parent post.
+    in_reply_to: Option<String>,
+}
+
+/// 60 s is short enough that a visitor rarely sees stale notes, long enough that we don't
+/// hammer the remote instance on refresh loops. In-memory only; loss on pod restart is fine.
+const OUTBOX_CACHE_TTL_SECS: u64 = 60;
+
+/// Cache map: actor_url → (fetched_at, notes). Grows unbounded in practice but the working
+/// set is tiny (visited remote actors). A proper LRU is a future concern.
+static OUTBOX_CACHE: std::sync::LazyLock<
+    tokio::sync::RwLock<std::collections::HashMap<String, (std::time::Instant, Vec<RemoteNoteDto>)>>,
+> = std::sync::LazyLock::new(|| tokio::sync::RwLock::new(std::collections::HashMap::new()));
+
+async fn fetch_actor_outbox(actor_url: &str) -> Result<Vec<RemoteNoteDto>, String> {
+    // Step 1: get the actor doc → find the `outbox` URL.
+    let actor = fetch_remote_actor(actor_url)
+        .await
+        .map_err(|e| format!("actor fetch: {e:?}"))?;
+    let outbox_url = actor
+        .get("outbox")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "actor sem campo outbox".to_string())?;
+    // Step 2: fetch the OrderedCollection wrapper (has `first` pointing at page 1).
+    let collection = fetch_remote_actor(outbox_url)
+        .await
+        .map_err(|e| format!("outbox collection: {e:?}"))?;
+    let first_page_url = collection
+        .get("first")
+        .and_then(|f| {
+            f.as_str()
+                .or_else(|| f.get("id").and_then(Value::as_str))
+                .map(str::to_owned)
+        })
+        .ok_or_else(|| "outbox sem primeira página".to_string())?;
+    // Step 3: fetch first page → orderedItems.
+    let page = fetch_remote_actor(&first_page_url)
+        .await
+        .map_err(|e| format!("outbox page: {e:?}"))?;
+    let items = page
+        .get("orderedItems")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "página sem orderedItems".to_string())?;
+    let mut notes = Vec::new();
+    for item in items.iter().take(20) {
+        // Mastodon wraps Notes in Create; some instances emit Note directly. Announce (boost)
+        // and Delete are skipped in this slice.
+        let item_type = item.get("type").and_then(Value::as_str);
+        let object = match item_type {
+            Some("Create") => item.get("object"),
+            Some("Note") => Some(item),
+            _ => continue,
+        };
+        let Some(obj) = object else { continue };
+        if obj.get("type").and_then(Value::as_str) != Some("Note") {
+            continue;
+        }
+        let id = obj
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let content_html = obj
+            .get("content")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        if id.is_empty() || content_html.is_empty() {
+            continue;
+        }
+        let published_at = obj
+            .get("published")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        let url = obj.get("url").and_then(Value::as_str).map(str::to_owned);
+        let in_reply_to = obj
+            .get("inReplyTo")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        notes.push(RemoteNoteDto {
+            id,
+            url,
+            content_html,
+            published_at,
+            in_reply_to,
+        });
+    }
+    Ok(notes)
+}
+
+async fn get_actor_outbox_cached(actor_url: &str) -> Result<Vec<RemoteNoteDto>, String> {
+    let now = std::time::Instant::now();
+    {
+        let cache = OUTBOX_CACHE.read().await;
+        if let Some((when, notes)) = cache.get(actor_url) {
+            if now.duration_since(*when) < std::time::Duration::from_secs(OUTBOX_CACHE_TTL_SECS) {
+                return Ok(notes.clone());
+            }
+        }
+    }
+    let notes = fetch_actor_outbox(actor_url).await?;
+    {
+        let mut cache = OUTBOX_CACHE.write().await;
+        cache.insert(actor_url.to_string(), (now, notes.clone()));
+    }
+    Ok(notes)
+}
+
+/// `GET /api/v1/federation/actor-outbox?actor_url=…` — pull the last ~20 notes from a remote
+/// actor's outbox (Mastodon/Pleroma/…) so the front can render the timeline INSIDE
+/// DemocraciaBR instead of redirecting. Auth-gated (same rationale as `/lookup`).
+async fn get_remote_outbox(
+    State(_state): State<AppState>,
+    _caller: CallerId,
+    Query(query): Query<OutboxProxyQuery>,
+) -> Response {
+    let url = query.actor_url.trim();
+    if !url.starts_with("https://") {
+        return client_error("URL do actor precisa ser https://…");
+    }
+    match get_actor_outbox_cached(url).await {
+        Ok(notes) => (StatusCode::OK, Json(ApiResponse::ok(notes))).into_response(),
+        Err(err) => {
+            tracing::warn!(error = %err, actor_url = url, "outbox proxy failed");
+            upstream_error("não consegui carregar as notas desse perfil")
+        }
+    }
 }
 
 /// Body for `POST /api/v1/me/follow`.

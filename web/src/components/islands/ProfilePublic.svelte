@@ -12,11 +12,14 @@
     getPublicProfile,
     lookupRemoteActor,
     followRemoteActor,
+    getRemoteActorOutbox,
     DEFAULT_ORG_ID,
+    type RemoteNoteDto,
   } from '../../lib/api';
   import type { ProfileDto } from '../../lib/types';
-  import { formatDate } from '../../lib/format';
+  import { formatDate, formatRelative } from '../../lib/format';
   import { toast } from '../../lib/toasts';
+  import { sanitizeNoteHtml } from '../../lib/sanitize';
 
   let { handle: handleProp = '' }: { handle?: string } = $props();
 
@@ -38,6 +41,11 @@
   let following = $state(false);
   let followState = $state<'idle' | 'sent' | 'failed'>('idle');
   let loggedIn = $state(false);
+  // Timeline remota carregada via /federation/actor-outbox proxy — cache backend
+  // 60 s, front pinta enquanto o card do perfil fica no lugar.
+  let remoteNotes = $state<RemoteNoteDto[]>([]);
+  let notesLoading = $state(false);
+  let notesError = $state<string | null>(null);
 
   function stripHtml(html: string): string {
     return html
@@ -121,6 +129,8 @@
         summary: res.data.summary ? stripHtml(res.data.summary) : null,
         actor_url: res.data.remote_actor_url,
       };
+      // Puxa timeline em background: se o outbox demorar, o card já apareceu.
+      void loadRemoteNotes(res.data.remote_actor_url);
       return;
     }
     const res = await getPublicProfile(handle, DEFAULT_ORG_ID);
@@ -148,6 +158,20 @@
     } else {
       followState = 'failed';
       toast.error(res.error?.message ?? 'Não foi possível seguir agora.');
+    }
+  }
+
+  async function loadRemoteNotes(actorUrl: string) {
+    notesLoading = true;
+    notesError = null;
+    const res = await getRemoteActorOutbox(actorUrl);
+    notesLoading = false;
+    if (res.success && res.data) {
+      remoteNotes = res.data;
+    } else {
+      notesError =
+        res.error?.message ??
+        'Não consegui carregar as notas desse perfil agora.';
     }
   }
 
@@ -230,11 +254,38 @@
           {following ? 'Enviando…' : 'Seguir'}
         </button>
       {/if}
-      <span class="muted note-remote">
-        As publicações desse perfil aparecem no seu feed depois que você segue. Timeline
-        completa dentro do site vem em breve.
-      </span>
     </footer>
+
+    <section class="remote-timeline" aria-label="Publicações">
+      <h2 class="timeline-h">Publicações</h2>
+      {#if notesLoading}
+        <p class="muted">Carregando notas…</p>
+      {:else if notesError}
+        <p class="hint-error">{notesError}</p>
+      {:else if remoteNotes.length === 0}
+        <p class="muted">Sem publicações públicas recentes.</p>
+      {:else}
+        <ol class="notes-list">
+          {#each remoteNotes as note (note.id)}
+            <li class="note">
+              <div class="note-meta">
+                {#if note.published_at}
+                  <time class="muted" datetime={note.published_at} title={formatDate(note.published_at)}>
+                    {formatRelative(note.published_at)}
+                  </time>
+                {/if}
+                {#if note.in_reply_to}
+                  <span class="muted"> · em resposta a algo</span>
+                {/if}
+              </div>
+              <div class="note-body">
+                {@html sanitizeNoteHtml(note.content_html)}
+              </div>
+            </li>
+          {/each}
+        </ol>
+      {/if}
+    </section>
   </article>
 {:else if profile}
   <article class="profile">
@@ -400,6 +451,58 @@
   .hint-ok {
     color: var(--c-green-dark, #115c2d);
     font-weight: 600;
+  }
+  .remote-timeline {
+    border-top: 1px solid var(--c-border);
+    padding: 1rem 1.5rem 1.5rem;
+  }
+  .timeline-h {
+    font-size: 1rem;
+    margin: 0 0 0.75rem;
+    color: var(--c-text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .notes-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 1rem;
+  }
+  .note {
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--c-border);
+    border-radius: 10px;
+    background: var(--c-paper, #fff);
+  }
+  .note-meta {
+    font-size: 0.82rem;
+    margin-bottom: 0.4rem;
+  }
+  .note-body {
+    line-height: 1.55;
+    font-size: 0.95rem;
+    overflow-wrap: anywhere;
+  }
+  .note-body :global(p) {
+    margin: 0 0 0.5rem;
+  }
+  .note-body :global(p:last-child) {
+    margin-bottom: 0;
+  }
+  .note-body :global(a) {
+    color: var(--c-green-dark, #115c2d);
+  }
+  .hint-error {
+    color: var(--danger, #b91c1c);
+    font-size: 0.9rem;
+  }
+  @media (max-width: 560px) {
+    .remote-timeline {
+      padding-inline: 1rem;
+    }
   }
   .bio {
     padding: 0 1.5rem 1.5rem;

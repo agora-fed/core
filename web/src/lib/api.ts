@@ -1050,6 +1050,21 @@ export const lookupRemoteActor = (acct: string) =>
 export const followRemoteActor = (remote_actor_url: string) =>
   apiPost<{ status: string }>('/api/v1/me/follow', { remote_actor_url });
 
+/** A note surfaced by the remote outbox proxy — the shape mirrors the Rust `RemoteNoteDto`. */
+export interface RemoteNoteDto {
+  id: string;
+  url: string | null;
+  content_html: string;
+  published_at: string | null;
+  in_reply_to: string | null;
+}
+
+/** Proxy the last ~20 notes from a remote actor's outbox, rendered inside our profile page. */
+export const getRemoteActorOutbox = (actor_url: string) =>
+  apiGetCredentialed<RemoteNoteDto[]>(
+    `/api/v1/federation/actor-outbox?actor_url=${encodeURIComponent(actor_url)}`,
+  );
+
 /** Options passed to `postNote` for 0.18.0's Mastodon-parity fields. */
 export interface PostNoteOptions {
   in_reply_to_uri?: string;
