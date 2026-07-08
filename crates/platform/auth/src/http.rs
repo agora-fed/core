@@ -98,8 +98,10 @@ fn validator_from_env() -> TokenValidator {
             TokenValidator::new(Arc::new(JwksKeySource::new(jwks_url, issuer, audience)))
         }
         _ => {
-            tracing::error!(
-                "AUTH_OIDC_ISSUER / AUTH_OIDC_JWKS_URL are not configured; /auth endpoints will reject"
+            // ADR-0012: Zitadel abandonado — cred sovereign é o único path ativo. O rejeitador
+            // é o comportamento esperado se alguém tentar `POST /auth/session` (path morto).
+            tracing::info!(
+                "AUTH_OIDC_* unset — OIDC path dormant (ADR-0012). Cred sovereign (email+senha+CPF) é o único auth ativo."
             );
             TokenValidator::new(Arc::new(UnconfiguredKeySource))
         }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO proposal (id, org_id, mandate_id, title, body, threshold, created_at, author_citizen_id)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n           RETURNING id, org_id, mandate_id, cluster_id, title, body, status,\n                     support_count, threshold, threshold_crossed_at, published_at,\n                     author_citizen_id, created_at",
+  "query": "SELECT id, org_id, mandate_id, cluster_id, title, body, status,\n                  support_count, threshold, threshold_crossed_at, published_at,\n                  author_citizen_id, urgencia, created_at\n           FROM proposal\n           WHERE id = $1\n           FOR UPDATE",
   "describe": {
     "columns": [
       {
@@ -65,19 +65,17 @@
       },
       {
         "ordinal": 12,
+        "name": "urgencia",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Uuid",
-        "Uuid",
-        "Text",
-        "Text",
-        "Int4",
-        "Timestamptz",
         "Uuid"
       ]
     },
@@ -94,8 +92,9 @@
       true,
       true,
       true,
+      false,
       false
     ]
   },
-  "hash": "7ba99e10c26fc0dcd7541bba8e4fcfd9424ee0d33c03d70e5bdee8af0325e061"
+  "hash": "0e4b0d9a0dedc63e9c6a98917b26bb520e7e741362a57b307cda05fe84707d8b"
 }

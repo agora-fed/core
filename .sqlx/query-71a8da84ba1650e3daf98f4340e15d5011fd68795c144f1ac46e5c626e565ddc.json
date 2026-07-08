@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT p.id, p.org_id, p.mandate_id, p.cluster_id, p.title, p.body, p.status,\n                  p.support_count, p.threshold, p.threshold_crossed_at, p.published_at,\n                  p.author_citizen_id, p.created_at,\n                  c.handle              AS \"author_handle?\",\n                  c.avatar_object_key   AS \"author_avatar_object_key?\"\n           FROM proposal p\n           LEFT JOIN citizen c ON c.id = p.author_citizen_id\n           WHERE p.id = $1",
+  "query": "INSERT INTO proposal (id, org_id, mandate_id, title, body, threshold, created_at, author_citizen_id)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n           RETURNING id, org_id, mandate_id, cluster_id, title, body, status,\n                     support_count, threshold, threshold_crossed_at, published_at,\n                     author_citizen_id, urgencia, created_at",
   "describe": {
     "columns": [
       {
@@ -65,22 +65,24 @@
       },
       {
         "ordinal": 12,
-        "name": "created_at",
-        "type_info": "Timestamptz"
+        "name": "urgencia",
+        "type_info": "Text"
       },
       {
         "ordinal": 13,
-        "name": "author_handle?",
-        "type_info": "Text"
-      },
-      {
-        "ordinal": 14,
-        "name": "author_avatar_object_key?",
-        "type_info": "Text"
+        "name": "created_at",
+        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Int4",
+        "Timestamptz",
         "Uuid"
       ]
     },
@@ -98,9 +100,8 @@
       true,
       true,
       false,
-      true,
-      true
+      false
     ]
   },
-  "hash": "e8326fdf308bc4bd58e0b7ff86696593a1718edd8ccbfd674d338c36b5c83a26"
+  "hash": "71a8da84ba1650e3daf98f4340e15d5011fd68795c144f1ac46e5c626e565ddc"
 }

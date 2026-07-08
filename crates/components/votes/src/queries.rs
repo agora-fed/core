@@ -133,6 +133,45 @@ pub(crate) async fn list_tallies<'e, E: PgExecutor<'e>>(
     Ok(rows)
 }
 
+// ---------------------------------------------------------------------------
+// Cross-table reads pra o gate de voto urgente (0.25.0-fediverso — P4.3).
+//
+// Exceção intencional ao padrão "cada crate lê só suas tabelas": o gate
+// depende de `proposal.urgencia` (owner: dsoc-proposals) + `citizen.titulo_status`
+// (owner: dsoc-auth). Ambos são **facts** identity-tier — mesma justificativa
+// que já permite votes ler `citizen.verification_level` via `authz.require`.
+// O check-crate-boundaries.sh valida deps do Cargo, não SQL, então isto passa.
+// ---------------------------------------------------------------------------
+
+/// Lê `proposal.urgencia`. `None` quando o proposal id é inválido.
+pub(crate) async fn read_proposal_urgencia<'e, E: PgExecutor<'e>>(
+    exec: E,
+    proposal_id: Uuid,
+) -> Result<Option<String>, sqlx::Error> {
+    let row = sqlx::query_scalar!(
+        "SELECT urgencia FROM proposal WHERE id = $1",
+        proposal_id,
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(row)
+}
+
+/// Lê `citizen.titulo_status`. `None` quando o cidadão nunca vinculou título.
+pub(crate) async fn read_citizen_titulo_status<'e, E: PgExecutor<'e>>(
+    exec: E,
+    citizen_id: Uuid,
+) -> Result<Option<String>, sqlx::Error> {
+    let row = sqlx::query_scalar!(
+        "SELECT titulo_status FROM citizen WHERE id = $1",
+        citizen_id,
+    )
+    .fetch_optional(exec)
+    .await?
+    .flatten();
+    Ok(row)
+}
+
 /// Count all aggregate rows (for list pagination metadata). Aggregate-only; no citizen exposure.
 pub(crate) async fn count_tallies<'e, E: PgExecutor<'e>>(exec: E) -> Result<i64, sqlx::Error> {
     let total = sqlx::query_scalar!(

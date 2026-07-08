@@ -101,6 +101,7 @@ fn proposal_dto(row: ProposalRow) -> ProposalDto {
         author_handle: row.author_handle,
         author_public_handle,
         author_avatar_url,
+        urgencia: row.urgencia,
         created_at: row.created_at,
     }
 }
@@ -304,6 +305,7 @@ mod tests {
             author_citizen_id: None,
             author_handle: None,
             author_avatar_object_key: None,
+            urgencia: "comum".to_owned(),
             created_at: Utc::now(),
         };
         let dto = proposal_dto(row.clone());

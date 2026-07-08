@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, org_id, mandate_id, cluster_id, title, body, status,\n                  support_count, threshold, threshold_crossed_at, published_at,\n                  author_citizen_id, created_at\n           FROM proposal\n           WHERE id = $1\n           FOR UPDATE",
+  "query": "SELECT p.id, p.org_id, p.mandate_id, p.cluster_id, p.title, p.body, p.status,\n                  p.support_count, p.threshold, p.threshold_crossed_at, p.published_at,\n                  p.author_citizen_id, p.urgencia, p.created_at,\n                  c.handle              AS \"author_handle?\",\n                  c.avatar_object_key   AS \"author_avatar_object_key?\"\n           FROM proposal p\n           LEFT JOIN citizen c ON c.id = p.author_citizen_id\n           WHERE p.org_id = $1 AND ($2::uuid IS NULL OR p.id > $2)\n           ORDER BY p.id\n           LIMIT $3",
   "describe": {
     "columns": [
       {
@@ -65,13 +65,30 @@
       },
       {
         "ordinal": 12,
+        "name": "urgencia",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
         "name": "created_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "author_handle?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "author_avatar_object_key?",
+        "type_info": "Text"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Uuid",
+        "Uuid",
+        "Int8"
       ]
     },
     "nullable": [
@@ -87,8 +104,11 @@
       true,
       true,
       true,
-      false
+      false,
+      false,
+      true,
+      true
     ]
   },
-  "hash": "5e75d0f33192e5af203e1299483ac8b87cb7737281d66385131a54935ed613e8"
+  "hash": "fc10cce6945f4b3f294cd8125e27684d26211bb3837a6a6b1b99885040d5eb64"
 }

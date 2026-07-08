@@ -30,8 +30,17 @@ pub struct ProposalDto {
     pub author_public_handle: Option<String>,
     /// Author avatar URL (resolved server-side from `MEDIA_BASE_URL`). `None` if no avatar.
     pub author_avatar_url: Option<String>,
+    /// Nível de urgência (0.25.0-fediverso). `comum` (default) ou `urgente` — este
+    /// exige `titulo_status ∈ (validated,verified)` do votante (Fatia D). Aditivo,
+    /// retrocompatível: front antigo ignora o campo.
+    #[serde(default = "default_urgencia")]
+    pub urgencia: String,
     /// Creation time.
     pub created_at: DateTime<Utc>,
+}
+
+fn default_urgencia() -> String {
+    "comum".to_owned()
 }
 
 /// Public view of a mandate / candidacy.

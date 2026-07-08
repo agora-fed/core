@@ -302,6 +302,93 @@ async fn anonymous_caller_is_forbidden_by_handler() {
     assert_eq!(tally, 0);
 }
 
+/// Insere uma proposta minimal com `urgencia` explícito. `mandate` também precisa
+/// existir por causa do FK. Retorna o proposal id.
+async fn seed_proposal(db: &Db, org: OrgId, urgencia: &str) -> ProposalId {
+    // Seed mandate primeiro (FK obrigatório).
+    let mandate_id = uuid::Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO mandate (id, org_id, office, display_name, public_email, sphere, is_candidate, created_at) \
+         VALUES ($1, $2, 'DEPUTADO', 'Test', 'x@example.br', 'federal', false, $3)",
+    )
+    .bind(mandate_id)
+    .bind(org.as_uuid())
+    .bind(now())
+    .execute(db)
+    .await
+    .expect("seed mandate");
+    let proposal_id = uuid::Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO proposal (id, org_id, mandate_id, title, body, threshold, urgencia, created_at) \
+         VALUES ($1, $2, $3, 'T', 'B', 10, $4, $5)",
+    )
+    .bind(proposal_id)
+    .bind(org.as_uuid())
+    .bind(mandate_id)
+    .bind(urgencia)
+    .bind(now())
+    .execute(db)
+    .await
+    .expect("seed proposal");
+    ProposalId::from_uuid(proposal_id)
+}
+
+async fn set_titulo(db: &Db, citizen: CitizenId, status: Option<&str>) {
+    sqlx::query("UPDATE citizen SET titulo_status = $2 WHERE id = $1")
+        .bind(citizen.as_uuid())
+        .bind(status)
+        .execute(db)
+        .await
+        .expect("set titulo");
+}
+
+#[tokio::test]
+async fn urgent_proposal_rejects_citizen_without_titulo() {
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    let citizen = seed_citizen(&db, org).await; // titulo_status = NULL por default
+    let proposal = seed_proposal(&db, org, "urgente").await;
+
+    let err = service(db.clone())
+        .cast(org, proposal, citizen)
+        .await
+        .unwrap_err();
+    match err {
+        Error::Forbidden(reason) => assert!(reason.contains("urgente"), "reason: {reason}"),
+        other => panic!("esperava Forbidden, veio {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn urgent_proposal_accepts_citizen_with_titulo_validated() {
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    let citizen = seed_citizen(&db, org).await;
+    set_titulo(&db, citizen, Some("validated")).await;
+    let proposal = seed_proposal(&db, org, "urgente").await;
+
+    let receipt = service(db.clone())
+        .cast(org, proposal, citizen)
+        .await
+        .expect("cast urgente com titulo validado");
+    assert_eq!(receipt.support_count, 1);
+}
+
+#[tokio::test]
+async fn comum_proposal_ignores_titulo_status() {
+    // Backward-compat: propostas 'comum' (default) não passam pelo gate.
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    let citizen = seed_citizen(&db, org).await; // titulo = NULL
+    let proposal = seed_proposal(&db, org, "comum").await;
+
+    let receipt = service(db.clone())
+        .cast(org, proposal, citizen)
+        .await
+        .expect("cast em comum sem titulo");
+    assert_eq!(receipt.support_count, 1);
+}
+
 #[tokio::test]
 async fn email_verified_caller_votes_via_handler() {
     let db = connect().await;

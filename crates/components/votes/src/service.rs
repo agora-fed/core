@@ -82,6 +82,8 @@ impl VoteService {
     ///
     /// # Errors
     /// - [`Error::Conflict`] when the citizen already supported this proposal.
+    /// - [`Error::Forbidden`] quando a proposta é `urgencia='urgente'` e o cidadão não tem
+    ///   `titulo_status ∈ ('validated','verified')` — 0.25.0-fediverso Fatia D.
     /// - [`Error::Storage`] on any other persistence failure.
     pub async fn cast(
         &self,
@@ -91,6 +93,28 @@ impl VoteService {
     ) -> Result<CastReceipt> {
         let now = self.clock.now();
         let vote_id = VoteId::new();
+
+        // Gate de voto urgente (P4.3). Feito ANTES da tx: rejeição barata e o
+        // status/urgência não muda no meio de uma requisição.
+        if let Some(urgencia) =
+            queries::read_proposal_urgencia(&self.db, proposal.as_uuid())
+                .await
+                .map_err(map_sqlx)?
+        {
+            if urgencia == "urgente" {
+                let status =
+                    queries::read_citizen_titulo_status(&self.db, citizen.as_uuid())
+                        .await
+                        .map_err(map_sqlx)?;
+                let ok = matches!(status.as_deref(), Some("validated") | Some("verified"));
+                if !ok {
+                    return Err(Error::Forbidden(
+                        "esta pauta é urgente — o voto exige título de eleitor validado"
+                            .to_owned(),
+                    ));
+                }
+            }
+        }
 
         let mut tx = self.db.begin().await.map_err(map_sqlx)?;
 

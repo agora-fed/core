@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT p.id, p.org_id, p.mandate_id, p.cluster_id, p.title, p.body, p.status,\n                  p.support_count, p.threshold, p.threshold_crossed_at, p.published_at,\n                  p.author_citizen_id, p.created_at,\n                  c.handle              AS \"author_handle?\",\n                  c.avatar_object_key   AS \"author_avatar_object_key?\"\n           FROM proposal p\n           LEFT JOIN citizen c ON c.id = p.author_citizen_id\n           WHERE p.org_id = $1 AND ($2::uuid IS NULL OR p.id > $2)\n           ORDER BY p.id\n           LIMIT $3",
+  "query": "SELECT p.id, p.org_id, p.mandate_id, p.cluster_id, p.title, p.body, p.status,\n                  p.support_count, p.threshold, p.threshold_crossed_at, p.published_at,\n                  p.author_citizen_id, p.urgencia, p.created_at,\n                  c.handle              AS \"author_handle?\",\n                  c.avatar_object_key   AS \"author_avatar_object_key?\"\n           FROM proposal p\n           LEFT JOIN citizen c ON c.id = p.author_citizen_id\n           WHERE p.id = $1",
   "describe": {
     "columns": [
       {
@@ -65,25 +65,28 @@
       },
       {
         "ordinal": 12,
+        "name": "urgencia",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "author_handle?",
         "type_info": "Text"
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "author_avatar_object_key?",
         "type_info": "Text"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Uuid",
-        "Int8"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -100,9 +103,10 @@
       true,
       true,
       false,
+      false,
       true,
       true
     ]
   },
-  "hash": "9d0ed8da16cc5b7972a051a65c04300cde657ac213477bf199c2a90a07ca62c7"
+  "hash": "820a5b24bdd321c5f149da505ffcd7edec077d8afb56a4346f773c77b1eec60f"
 }
