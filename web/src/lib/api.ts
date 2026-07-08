@@ -816,6 +816,20 @@ export interface TituloEleitorStatus {
 export const getTituloEleitor = () =>
   apiGetCredentialed<TituloEleitorStatus>('/api/v1/me/titulo-eleitor');
 
+/** GET público — chave VAPID pra criar subscription no navegador. */
+export const getVapidPublicKey = () =>
+  apiGetCredentialed<{ public_key: string }>(
+    '/api/v1/me/push-subscriptions/vapid-public-key',
+  );
+
+/** POST — envia subscription do PushManager pro back persistir. */
+export const subscribeWebPush = (subscription: PushSubscriptionJSON, userAgent: string) =>
+  apiPost<null>('/api/v1/me/push-subscriptions', {
+    endpoint: subscription.endpoint,
+    keys: subscription.keys,
+    user_agent: userAgent,
+  });
+
 /** POST /me/titulo-eleitor — valida algoritmicamente (12 dígitos) e persiste. */
 export const submitTituloEleitor = (titulo: string) =>
   apiPost<{ titulo_status: string; titulo_last4: string }>(

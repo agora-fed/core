@@ -10,6 +10,7 @@
     clearLocalSession,
     type NotificationDto,
   } from '../../lib/api';
+  import { enablePush, disablePush, isSubscribed, pushStatus } from '../../lib/webpush';
   import { formatRelative, formatDate } from '../../lib/format';
   import { toast } from '../../lib/toasts';
   import Card from '../ui/Card.svelte';
@@ -72,6 +73,11 @@
   let unread = $state(0);
   let loadError = $state<string | null>(null);
   let busy = $state(false);
+  // Push notifications state.
+  let pushSupported = $state(false);
+  let pushOn = $state(false);
+  let pushBusy = $state(false);
+  let pushMsg = $state<string | null>(null);
 
   function isLogged(): boolean {
     try {
@@ -116,12 +122,34 @@
     }
   }
 
-  onMount(() => {
+  onMount(async () => {
     loggedIn = isLogged();
     ready = true;
     if (loggedIn) void load();
     else loading = false;
+    pushSupported = pushStatus() !== 'unsupported';
+    if (pushSupported) pushOn = await isSubscribed();
   });
+
+  async function togglePush() {
+    if (pushBusy) return;
+    pushBusy = true;
+    pushMsg = null;
+    if (pushOn) {
+      await disablePush();
+      pushOn = false;
+      pushMsg = 'Notificações push desativadas neste dispositivo.';
+    } else {
+      const r = await enablePush();
+      if (r.ok) {
+        pushOn = true;
+        pushMsg = 'Notificações push ativadas neste dispositivo.';
+      } else {
+        pushMsg = r.reason ?? 'Não foi possível ativar.';
+      }
+    }
+    pushBusy = false;
+  }
 
   const CIVIC_KINDS = new Set([
     'proposal_threshold',
@@ -166,17 +194,34 @@
         <Badge tone="accent" size="sm">{unread} novas</Badge>
       {/if}
     </div>
-    <Button
-      variant="ghost"
-      size="sm"
-      onclick={clearAll}
-      disabled={unread === 0 || busy}
-      loading={busy}
-    >
-      <Icon name="check" size={14} />
-      Marcar todas como lidas
-    </Button>
+    <div class="head-actions">
+      {#if pushSupported}
+        <Button
+          variant={pushOn ? 'primary' : 'ghost'}
+          size="sm"
+          onclick={togglePush}
+          loading={pushBusy}
+          title={pushOn ? 'Notificações push ativadas neste dispositivo' : 'Ativar notificações push neste dispositivo'}
+        >
+          <Icon name="bell" size={14} />
+          {pushOn ? 'Push ativado' : 'Ativar push'}
+        </Button>
+      {/if}
+      <Button
+        variant="ghost"
+        size="sm"
+        onclick={clearAll}
+        disabled={unread === 0 || busy}
+        loading={busy}
+      >
+        <Icon name="check" size={14} />
+        Marcar todas como lidas
+      </Button>
+    </div>
   </header>
+  {#if pushMsg}
+    <p class="push-msg muted">{pushMsg}</p>
+  {/if}
 
   {#if loading}
     <div class="skeletons">
@@ -273,6 +318,19 @@
     margin: 0;
     font-size: var(--fs-xl);
     color: var(--text-1);
+  }
+  .head-actions {
+    display: flex;
+    gap: var(--sp-2);
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .push-msg {
+    margin: 0 0 var(--sp-4);
+    padding: var(--sp-2) var(--sp-3);
+    background: var(--surface-2);
+    border-radius: var(--r-sm);
+    font-size: var(--fs-sm);
   }
   .list {
     list-style: none;

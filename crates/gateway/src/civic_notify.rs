@@ -131,5 +131,19 @@ impl CivicNotifySub {
         if let Err(err) = notifications::insert(&self.db, n).await {
             tracing::warn!(citizen = %author, error = ?err, "civic_notify: insert falhou");
         }
+        // Push real (RFC 8291) — não bloqueia o dispatch loop, spawn interno.
+        let title = match kind {
+            "proposal_threshold" => "🚨 Sua proposta cruzou o gatilho",
+            "sla_started" => "⏳ SLA do mandato começou",
+            "sla_response" => "✅ O mandato respondeu você",
+            "sla_expired" => "🔇 Silêncio público registrado",
+            _ => "DemocraciaBR",
+        };
+        let payload = serde_json::json!({
+            "title": title,
+            "body": full_preview,
+            "url": object_uri,
+        });
+        crate::web_push::send_to_citizen(&self.db, author, &payload.to_string()).await;
     }
 }
