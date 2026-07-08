@@ -12,6 +12,7 @@ pub mod amendments;
 pub mod civic_notify;
 pub mod email_templates;
 pub mod govbr_oidc;
+pub mod lgpd;
 pub mod discovery;
 pub mod elections;
 pub mod federation;
@@ -162,6 +163,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(admin_users::routes(state.clone()))
         // gov.br OIDC status (só o "enabled?"). Start/callback ficam na raiz.
         .merge(govbr_oidc::api_routes(state.clone()))
+        // LGPD art. 18 — exportar/excluir dados pessoais.
+        .merge(lgpd::routes(state.clone()))
         // Social-graph endpoints (bookmarks, mutes, blocks, filters, lists —
         // migration 0500). Mastodon-parity fase 2A.
         .merge(social_graph::routes(state.clone()))

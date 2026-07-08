@@ -13,6 +13,7 @@
   import AuthorizedApps from './AuthorizedApps.svelte';
   import FediverseSearch from './FediverseSearch.svelte';
   import TituloEleitorForm from './TituloEleitorForm.svelte';
+  import LgpdPanel from './LgpdPanel.svelte';
 
   type TabId =
     | 'perfil'
@@ -20,7 +21,8 @@
     | 'aparencia'
     | 'seguranca'
     | 'aplicativos'
-    | 'fediverso';
+    | 'fediverso'
+    | 'lgpd';
 
   const tabs: { id: TabId; label: string }[] = [
     { id: 'perfil', label: 'Perfil' },
@@ -29,6 +31,7 @@
     { id: 'seguranca', label: 'Segurança' },
     { id: 'aplicativos', label: 'Aplicativos' },
     { id: 'fediverso', label: 'Fediverso' },
+    { id: 'lgpd', label: 'LGPD' },
   ];
 
   let active = $state<TabId>('perfil');
@@ -131,6 +134,17 @@
           </p>
         </header>
         <FediverseSearch />
+      </section>
+    {:else if active === 'lgpd'}
+      <section class="section">
+        <header class="s-head">
+          <h2>Meus dados (LGPD)</h2>
+          <p class="muted">
+            Direitos do titular conforme Lei 13.709/2018 art. 18: exportar seus
+            dados em formato portável, ou excluir sua conta.
+          </p>
+        </header>
+        <LgpdPanel />
       </section>
     {/if}
   </div>

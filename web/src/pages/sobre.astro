@@ -1,0 +1,134 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import ColorBar from '../components/illustrations/ColorBar.astro';
+
+const description =
+  'DemocraciaBR: infraestrutura pública, soberana e auditável para converter demanda popular em accountability parlamentar. Feito pela PopSolutions Cooperativa de Tecnologia.';
+---
+
+<BaseLayout title="Sobre" {description}>
+  <section class="section">
+    <div class="container narrow">
+      <header class="head">
+        <ColorBar class="head-bar" />
+        <h1>Sobre a DemocraciaBR</h1>
+        <p class="lede muted">
+          Infraestrutura pública para conectar cidadania e mandatos —
+          participação com consequência, silêncio com registro.
+        </p>
+      </header>
+
+      <article class="prose">
+        <h2>A tese</h2>
+        <p>
+          <strong>Participação sem consequência é teatro.</strong> Vinte anos de
+          plataformas civic-tech tentaram converter engajamento em pressão
+          política e falharam porque tratavam o mandato como um destinatário
+          passivo. Aqui é o inverso: cada demanda cidadã dirigida a um mandato
+          <strong>tem prazo público de resposta</strong>. Silêncio vira registro.
+        </p>
+
+        <h2>O loop</h2>
+        <ol>
+          <li><strong>Propor</strong> — cidadã(o) verificada(o) por título de eleitor endereça uma demanda a um(a) parlamentar específico(a).</li>
+          <li><strong>Agrupar</strong> — propostas similares são clusterizadas por semelhança semântica (vetores).</li>
+          <li><strong>Atingir gatilho</strong> — quando um cluster reúne apoio suficiente, o relógio começa a correr.</li>
+          <li><strong>Notificar</strong> — o gabinete recebe e-mail oficial + a proposta entra no painel do mandato.</li>
+          <li><strong>Responder ou silenciar</strong> — resposta dentro do prazo entra no placar como respondida; silêncio, como <em>silêncio público registrado</em>. Ambos ficam para sempre.</li>
+        </ol>
+
+        <h2>O que a plataforma NÃO é</h2>
+        <ul>
+          <li>Não é rede social genérica. Não tem timeline algorítmica de atenção.</li>
+          <li>Não é blog, marketplace, ou CMS. Não vende anúncios, dados ou visibilidade.</li>
+          <li>Não é gestada por partido, governo ou fundação. Não recebe dinheiro público.</li>
+        </ul>
+
+        <h2>Quem faz</h2>
+        <p>
+          <strong>PopSolutions Cooperativa de Tecnologia</strong> — cooperativa de
+          desenvolvedores, doutores e cientistas comprometidos com infraestrutura
+          democrática auditável. Código aberto sob AGPLv3 + Cláusula do Contrato Social
+          (herdada do Decidim). Sem investidores. Sem fins lucrativos.
+        </p>
+
+        <h2>Como é sustentada</h2>
+        <p>
+          Autofinanciada pela cooperativa e por contratos de suporte a instituições
+          públicas ou coletivos que hospedam suas próprias instâncias. Nunca por
+          venda de dados nem por publicidade.
+        </p>
+
+        <h2>Onde está</h2>
+        <ul>
+          <li>Instância principal: <code>democracia.social.br</code> — IPv6-first, hospedada em VM soberana no Brasil.</li>
+          <li>Federação ActivityPub: cada cidadã(o) tem endereço fediverso público (<code>@handle@democracia.social.br</code>) e pode seguir/ser seguido por qualquer instância Mastodon, Pleroma, etc.</li>
+          <li>Auto-hosteável: qualquer coletivo pode subir uma instância própria com os mesmos garantias.</li>
+        </ul>
+
+        <h2>Contato</h2>
+        <p>
+          Dúvidas gerais: <a href="mailto:contato@popsolutions.co">contato@popsolutions.co</a><br />
+          Encarregado de dados (LGPD/DPO): <a href="mailto:dpo@popsolutions.co">dpo@popsolutions.co</a><br />
+          Denúncias de moderação / abuso: <a href="mailto:moderacao@democracia.social.br">moderacao@democracia.social.br</a><br />
+          Segurança (responsible disclosure): <a href="mailto:security@popsolutions.co">security@popsolutions.co</a>
+        </p>
+
+        <h2>Documentação técnica</h2>
+        <ul>
+          <li><a href="/transparencia">Transparência: código, licenças, dependências</a></li>
+          <li><a href="/privacidade">Política de privacidade (LGPD)</a></li>
+          <li><a href="/termos">Termos de uso + Contrato Social</a></li>
+        </ul>
+      </article>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .narrow {
+    max-width: 42rem;
+  }
+  .head {
+    margin-bottom: var(--sp-6);
+  }
+  .head-bar {
+    margin-bottom: var(--sp-3);
+  }
+  h1 {
+    margin: 0 0 var(--sp-2);
+  }
+  .lede {
+    font-size: var(--fs-lg);
+    line-height: var(--lh-relaxed);
+  }
+  .prose h2 {
+    margin: var(--sp-5) 0 var(--sp-2);
+    font-size: var(--fs-lg);
+    color: var(--text-1);
+  }
+  .prose p,
+  .prose ul,
+  .prose ol {
+    line-height: var(--lh-relaxed);
+    color: var(--text-2);
+  }
+  .prose ul,
+  .prose ol {
+    padding-left: 1.5rem;
+    display: grid;
+    gap: 0.35rem;
+  }
+  .prose strong {
+    color: var(--text-1);
+  }
+  .prose a {
+    color: var(--accent-strong);
+  }
+  code {
+    background: var(--surface-2);
+    padding: 2px 6px;
+    border-radius: var(--r-sm);
+    font-size: 0.9em;
+  }
+</style>

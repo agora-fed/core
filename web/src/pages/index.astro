@@ -100,6 +100,56 @@ const jsonLd = {
     </div>
   </section>
 
+  <!-- Selos de garantia — TSE-worthy: quem opera e como -->
+  <section class="badges-strip" aria-label="Garantias da plataforma">
+    <div class="container">
+      <ul class="badges">
+        <li title="Servidores no Brasil, VM soberana, PostgreSQL 17.">
+          🇧🇷 <span>Instância soberana no Brasil</span>
+        </li>
+        <li title="Todo o código está publicado sob AGPL v3.">
+          <a href="/transparencia">🔓 <span>Código aberto AGPLv3</span></a>
+        </li>
+        <li title="Nenhum anúncio, nenhum tracker, nenhuma venda de dados.">
+          🚫 <span>Sem publicidade nem venda de dados</span>
+        </li>
+        <li title="IPv6 nativo. Federação ActivityPub com o fediverso global.">
+          🌐 <span>IPv6-first · federado</span>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <style>
+    .badges-strip {
+      background: var(--surface-2);
+      border-top: 1px solid var(--border-subtle);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 12px 0;
+    }
+    .badges {
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .badges li,
+    .badges a {
+      color: var(--text-2);
+      text-decoration: none;
+      font-size: 0.9rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 500;
+    }
+    .badges a:hover {
+      color: var(--accent-strong);
+    }
+  </style>
   <!-- Pilares -->
   <section class="section pilares-section" aria-labelledby="pilares-title">
     <div class="container">

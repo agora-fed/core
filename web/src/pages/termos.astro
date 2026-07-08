@@ -1,0 +1,180 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import ColorBar from '../components/illustrations/ColorBar.astro';
+
+const description =
+  'Termos de uso da DemocraciaBR + Contrato Social herdado do Decidim: regras de convivência, participação civil, moderação auditável.';
+---
+
+<BaseLayout title="Termos de uso" {description}>
+  <section class="section">
+    <div class="container narrow">
+      <header class="head">
+        <ColorBar class="head-bar" />
+        <h1>Termos de uso</h1>
+        <p class="lede muted">
+          Última atualização: 2026-07-08. Aceitação implícita ao criar conta.
+        </p>
+      </header>
+
+      <article class="prose">
+        <h2>1. Aceitação</h2>
+        <p>
+          Ao criar uma conta na DemocraciaBR, você aceita estes termos +
+          a nossa <a href="/privacidade">Política de Privacidade</a>. Se não
+          concorda, não crie conta.
+        </p>
+
+        <h2>2. Elegibilidade</h2>
+        <p>
+          Você deve ter capacidade civil para aceitar contrato. Participação em
+          votações vinculantes exige título de eleitor válido (art. 14 CF).
+          Contas fictícias, automatizadas, ou massificadas violam estes termos.
+        </p>
+
+        <h2>3. Conta e verificação</h2>
+        <ul>
+          <li>Uma conta por CPF. Uma conta por e-mail.</li>
+          <li>Verificação de e-mail obrigatória para ativar conta.</li>
+          <li>Verificação de identidade opcional via gov.br (traz nome legal).</li>
+          <li>Verificação de cidadania política opcional via título de eleitor.</li>
+          <li>Você é responsável por manter a segurança do seu login e por atividades feitas dele.</li>
+        </ul>
+
+        <h2>4. Conduta esperada</h2>
+        <p><strong>Uso legítimo</strong>: propor demandas, apoiar, comentar,
+        emendar, responder (se você é parlamentar). Debate político é o
+        propósito da plataforma.</p>
+        <p><strong>Uso proibido</strong>:</p>
+        <ul>
+          <li>Discurso de ódio, incitação à violência, ameaças, assédio, doxxing.</li>
+          <li>Desinformação eleitoral deliberada (fake news sobre urnas, candidatos, TSE).</li>
+          <li>Automação não autorizada de contas (bots), massificação artificial de apoios ou comentários.</li>
+          <li>Publicação de dados pessoais de terceiros sem consentimento.</li>
+          <li>Uso comercial não autorizado (venda de visibilidade, spam, marketing).</li>
+          <li>Interferência técnica (tentativas de invasão, scraping abusivo, negação de serviço).</li>
+        </ul>
+
+        <h2>5. Rate limits</h2>
+        <ul>
+          <li>Até 1 publicação a cada 15 minutos por cidadã(o).</li>
+          <li>Até 3.000 caracteres por publicação.</li>
+          <li>Até 3 cadastros por hora por IP.</li>
+          <li>Até 10 tentativas de login por hora por IP.</li>
+        </ul>
+
+        <h2>6. Moderação</h2>
+        <ul>
+          <li>Moderação por regras determinísticas + estatísticas auditáveis
+              (sem "caixa-preta" de terceiros).</li>
+          <li>Toda decisão de moderação é registrada e pode ser contestada.</li>
+          <li>Você tem direito a recurso: <a href="mailto:moderacao@democracia.social.br">moderacao@democracia.social.br</a>.</li>
+          <li>Suspensão/banimento em casos graves (violência, doxxing, fraude eleitoral).</li>
+        </ul>
+
+        <h2>7. Conteúdo público e federação</h2>
+        <p>
+          Quando você publica algo público (proposta, comentário, resposta),
+          esse conteúdo:
+        </p>
+        <ul>
+          <li>Fica no registro histórico (silêncio ou resposta pública faz parte da tese).</li>
+          <li>Federa via ActivityPub — pode ser lido/cache-ado por outras instâncias.</li>
+          <li>Pode ser citado por jornalistas, pesquisadores, cidadãs.</li>
+        </ul>
+        <p>
+          Perfis não-públicos e mensagens diretas (quando existirem) não federam.
+        </p>
+
+        <h2>8. Enquetes federadas, voto local</h2>
+        <p>
+          Enquetes publicadas circulam no fediverso, mas apenas cidadã(o)s com
+          conta em <code>democracia.social.br</code> podem votar. Perfis de outras
+          instâncias veem mas não computam voto.
+        </p>
+
+        <h2>9. Propriedade intelectual</h2>
+        <ul>
+          <li>Você mantém a autoria do que publica. Ao publicar, concede à plataforma licença não-exclusiva para exibir, distribuir e arquivar (necessário para o produto funcionar).</li>
+          <li>O código-fonte da plataforma é AGPLv3 + <a href="/transparencia">Cláusula do Contrato Social</a>.</li>
+          <li>Marcas "DemocraciaBR" e "PopSolutions" são de titularidade da cooperativa.</li>
+        </ul>
+
+        <h2>10. Encerramento de conta</h2>
+        <ul>
+          <li>Você pode excluir sua conta a qualquer momento em Configurações → LGPD.</li>
+          <li>Podemos encerrar contas que violem estes termos após aviso prévio (exceto casos graves).</li>
+        </ul>
+
+        <h2>11. Limitação de responsabilidade</h2>
+        <p>
+          A plataforma é disponibilizada "no estado em que se encontra". A
+          cooperativa mantém boa-fé operacional (segurança, disponibilidade,
+          moderação auditável) mas não garante ausência total de interrupções
+          nem qualidade específica de conteúdo publicado por terceiros.
+        </p>
+
+        <h2>12. Foro</h2>
+        <p>
+          Foro da comarca do Recife/PE, com renúncia de qualquer outro. Aplica-se a
+          legislação brasileira (LGPD, CDC, Marco Civil da Internet).
+        </p>
+
+        <h2>13. Contrato Social (herdado do Decidim)</h2>
+        <p>
+          Esta plataforma adere ao <strong>Social Contract</strong> herdado do
+          Decidim — garantias democráticas de código aberto, governança
+          comunitária, e vedação a usos autoritários. Texto completo em
+          <a href="/transparencia">/transparencia</a>.
+        </p>
+      </article>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .narrow {
+    max-width: 42rem;
+  }
+  .head {
+    margin-bottom: var(--sp-6);
+  }
+  .head-bar {
+    margin-bottom: var(--sp-3);
+  }
+  h1 {
+    margin: 0 0 var(--sp-2);
+  }
+  .lede {
+    font-size: var(--fs-lg);
+  }
+  .prose h2 {
+    margin: var(--sp-5) 0 var(--sp-2);
+    font-size: var(--fs-lg);
+    color: var(--text-1);
+  }
+  .prose p,
+  .prose ul,
+  .prose ol {
+    line-height: var(--lh-relaxed);
+    color: var(--text-2);
+  }
+  .prose ul,
+  .prose ol {
+    padding-left: 1.5rem;
+    display: grid;
+    gap: 0.35rem;
+  }
+  .prose strong {
+    color: var(--text-1);
+  }
+  .prose a {
+    color: var(--accent-strong);
+  }
+  code {
+    background: var(--surface-2);
+    padding: 2px 6px;
+    border-radius: var(--r-sm);
+    font-size: 0.9em;
+  }
+</style>

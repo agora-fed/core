@@ -1,0 +1,184 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import ColorBar from '../components/illustrations/ColorBar.astro';
+
+const description =
+  'Política de privacidade da DemocraciaBR conforme Lei Geral de Proteção de Dados (LGPD): dados coletados, base legal, seus direitos, contato do encarregado.';
+---
+
+<BaseLayout title="Privacidade" {description}>
+  <section class="section">
+    <div class="container narrow">
+      <header class="head">
+        <ColorBar class="head-bar" />
+        <h1>Política de privacidade</h1>
+        <p class="lede muted">
+          Conforme <strong>Lei nº 13.709/2018 (LGPD)</strong>. Última atualização: 2026-07-08.
+        </p>
+      </header>
+
+      <article class="prose">
+        <h2>Quem trata seus dados</h2>
+        <p>
+          <strong>PopSolutions Cooperativa de Tecnologia</strong>, mantenedora da
+          instância <code>democracia.social.br</code>. Contato do Encarregado
+          de Proteção de Dados (DPO): <a href="mailto:dpo@popsolutions.co">dpo@popsolutions.co</a>.
+        </p>
+
+        <h2>Quais dados coletamos</h2>
+        <ul>
+          <li>
+            <strong>Cadastro:</strong> e-mail, senha (armazenada apenas como
+            hash Argon2id, jamais em texto), CPF (11 dígitos, para verificação
+            algorítmica de identidade).
+          </li>
+          <li>
+            <strong>Perfil público:</strong> nome de exibição, handle, bio, avatar, capa —
+            você controla o que aparece e o que é privado. Nasce privado por
+            padrão.
+          </li>
+          <li>
+            <strong>Cidadania política (opcional):</strong> título de eleitor (12
+            dígitos) para participar de decisões vinculantes. Guardamos apenas
+            os 4 últimos dígitos após validação.
+          </li>
+          <li>
+            <strong>Filiação partidária (opcional):</strong> sigla do partido que
+            você declara. Só informativo.
+          </li>
+          <li>
+            <strong>Login gov.br (opcional):</strong> quando você entra pelo
+            gov.br, recebemos seu nome completo, e-mail, CPF (se você autorizou)
+            e nível de confiabilidade (bronze/prata/ouro). Guardamos por
+            necessidade legal e para exibir seu selo de verificação.
+          </li>
+          <li>
+            <strong>Ações públicas na plataforma:</strong> propostas, apoios,
+            comentários, emendas. Isso é registro público — o produto é
+            justamente a auditabilidade.
+          </li>
+          <li>
+            <strong>Metadados operacionais:</strong> IP de origem de tentativas
+            de login e cadastro (para rate limit), timestamps, User-Agent do
+            navegador (nas subscrições push).
+          </li>
+        </ul>
+
+        <h2>Base legal (art. 7º LGPD)</h2>
+        <ul>
+          <li>Cadastro, sessões, comunicação transacional → <strong>execução de contrato</strong> (inciso V).</li>
+          <li>Rate limit, prevenção a fraude → <strong>legítimo interesse</strong> (inciso IX).</li>
+          <li>Filiação partidária, título de eleitor, login gov.br → <strong>consentimento</strong> (inciso I) — você opta.</li>
+          <li>Publicação de propostas, votos, comentários → <strong>exercício regular de direitos</strong> (inciso VI): manifestação política pública é constitucionalmente protegida.</li>
+        </ul>
+
+        <h2>Com quem compartilhamos</h2>
+        <ul>
+          <li><strong>Ninguém, exceto quando você publica algo público.</strong> Todo perfil nasce privado.</li>
+          <li>Propostas publicadas viram objetos ActivityPub federáveis — instâncias que seus seguidores usam podem baixar cópias (isso é a natureza do fediverso).</li>
+          <li>Nunca vendemos dados. Nunca compartilhamos com anunciantes.</li>
+          <li>Podemos ser obrigados a atender ordens judiciais — nesses casos, notificamos você quando legalmente possível.</li>
+        </ul>
+
+        <h2>Onde ficam os dados</h2>
+        <p>
+          Servidores no Brasil, VM soberana, PostgreSQL 17 + pgvector. Backups
+          diários criptografados. Sem transferência internacional de dados
+          pessoais para operação normal (você continua acessível
+          internacionalmente porque o fediverso é público — mas seu dado
+          sensível fica aqui).
+        </p>
+
+        <h2>Por quanto tempo</h2>
+        <ul>
+          <li>Conta ativa: enquanto você quiser.</li>
+          <li>Conta excluída: dados pessoais apagados em até 30 dias. Registros públicos anonimizados (proposta permanece, mas sem seu nome) — em nome do interesse público na accountability histórica.</li>
+          <li>Logs de segurança (rate limit): 7 dias por default.</li>
+          <li>Backups: rotação de 30 dias.</li>
+        </ul>
+
+        <h2>Seus direitos (art. 18 LGPD)</h2>
+        <p>Você pode, a qualquer momento:</p>
+        <ul>
+          <li><strong>Confirmar</strong> se tratamos seus dados: sim, se você tem conta aqui.</li>
+          <li><strong>Acessar</strong> seus dados: veja em <a href="/configuracoes">Configurações</a> ou baixe o pacote completo em JSON no botão "Exportar meus dados".</li>
+          <li><strong>Corrigir</strong> dados incompletos, inexatos ou desatualizados: também em Configurações.</li>
+          <li><strong>Anonimizar, bloquear ou eliminar</strong> dados desnecessários: excluir conta em Configurações → LGPD.</li>
+          <li><strong>Portabilidade</strong>: o mesmo pacote JSON exportado é portável — leve pra qualquer instância que aceite o formato ActivityPub.</li>
+          <li><strong>Eliminar dados tratados com consentimento</strong>: sim, exceto os que a plataforma precisa reter por outra base legal (por exemplo, votação com consequência já registrada).</li>
+          <li><strong>Revogar consentimento</strong>: desvincular gov.br, remover título de eleitor, etc. em Configurações.</li>
+          <li><strong>Reclamar à ANPD</strong>: <a href="https://www.gov.br/anpd/pt-br">Autoridade Nacional de Proteção de Dados</a>.</li>
+        </ul>
+
+        <h2>Cookies</h2>
+        <ul>
+          <li><code>dsoc_session</code> — HttpOnly, Secure, SameSite=Lax. Necessário para autenticar. TTL 30 dias.</li>
+          <li><code>dsoc_govbr</code> — HttpOnly, TTL 10 min. Só durante o fluxo de login gov.br (proteção CSRF).</li>
+          <li>Nenhum cookie de terceiros. Nenhum tracker. Nenhuma analytics.</li>
+        </ul>
+
+        <h2>Segurança</h2>
+        <ul>
+          <li>Senhas: Argon2id (nunca em texto).</li>
+          <li>Transporte: TLS 1.3, HSTS.</li>
+          <li>Rate limit em cadastro e login por IP.</li>
+          <li>Auditoria de código aberto — todo o código está em <a href="/transparencia">/transparencia</a>.</li>
+          <li>Divulgação responsável de vulnerabilidades: <a href="mailto:security@popsolutions.co">security@popsolutions.co</a>.</li>
+        </ul>
+
+        <h2>Alterações</h2>
+        <p>
+          Mudanças materiais nesta política serão anunciadas por e-mail e
+          exibidas na plataforma com pelo menos 15 dias de antecedência.
+        </p>
+      </article>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .narrow {
+    max-width: 42rem;
+  }
+  .head {
+    margin-bottom: var(--sp-6);
+  }
+  .head-bar {
+    margin-bottom: var(--sp-3);
+  }
+  h1 {
+    margin: 0 0 var(--sp-2);
+  }
+  .lede {
+    font-size: var(--fs-lg);
+  }
+  .prose h2 {
+    margin: var(--sp-5) 0 var(--sp-2);
+    font-size: var(--fs-lg);
+    color: var(--text-1);
+  }
+  .prose p,
+  .prose ul,
+  .prose ol {
+    line-height: var(--lh-relaxed);
+    color: var(--text-2);
+  }
+  .prose ul,
+  .prose ol {
+    padding-left: 1.5rem;
+    display: grid;
+    gap: 0.35rem;
+  }
+  .prose strong {
+    color: var(--text-1);
+  }
+  .prose a {
+    color: var(--accent-strong);
+  }
+  code {
+    background: var(--surface-2);
+    padding: 2px 6px;
+    border-radius: var(--r-sm);
+    font-size: 0.9em;
+  }
+</style>

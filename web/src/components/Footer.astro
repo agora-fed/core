@@ -54,11 +54,18 @@ const pillars = [
         <a href="/consultas">Consultas</a>
         <a href="/cadastrar">Criar conta</a>
       </nav>
+      <nav aria-label="Institucional" class="foot-nav institutional">
+        <a href="/sobre">Sobre</a>
+        <a href="/transparencia">Transparência</a>
+        <a href="/privacidade">Privacidade (LGPD)</a>
+        <a href="/termos">Termos</a>
+      </nav>
     </div>
 
     <p class="copy muted">
       © {year} DemocraciaBR · Infraestrutura democrática soberana, aberta e
-      auditável. Participação sem consequência é teatro.
+      auditável. Participação sem consequência é teatro.<br />
+      Código aberto sob AGPLv3 · IPv6-first · Sem publicidade · Sem venda de dados.
     </p>
   </div>
 </footer>
@@ -118,6 +125,15 @@ const pillars = [
     margin: var(--sp-1) 0 0;
     font-size: var(--fs-sm);
     color: var(--text-3);
+  }
+  .foot-nav.institutional {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--c-border, rgba(0, 0, 0, 0.08));
+  }
+  .foot-nav.institutional a {
+    font-size: 0.85rem;
+    color: var(--c-text-muted);
   }
   .foot-nav {
     display: flex;

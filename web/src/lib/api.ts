@@ -834,6 +834,13 @@ export const subscribeWebPush = (subscription: PushSubscriptionJSON, userAgent: 
 export const getMyAdminStatus = () =>
   apiGetCredentialed<{ is_admin: boolean }>('/api/v1/me/admin-status');
 
+/** LGPD art. 18 — direitos do titular. */
+export const exportMyData = () =>
+  apiGetCredentialed<Record<string, unknown>>('/api/v1/me/lgpd/export');
+
+export const deleteMyAccount = () =>
+  apiPost<null>('/api/v1/me/lgpd/delete-account', {});
+
 /** GET /auth/govbr/status — front usa pra decidir se mostra o botão. */
 export const getGovbrStatus = () =>
   apiGet<{ enabled: boolean }>('/api/v1/auth/govbr/status');
