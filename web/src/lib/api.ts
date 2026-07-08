@@ -830,6 +830,45 @@ export const subscribeWebPush = (subscription: PushSubscriptionJSON, userAgent: 
     user_agent: userAgent,
   });
 
+/** Template de e-mail editável pela UI admin (migration 0151). */
+export interface EmailTemplateDto {
+  key: string;
+  label: string;
+  subject: string;
+  body: string;
+  default_subject: string;
+  default_body: string;
+  variables: string[];
+  updated_at: string;
+}
+
+export const listEmailTemplates = () =>
+  apiGetCredentialed<EmailTemplateDto[]>('/api/v1/admin/email-templates');
+
+export const updateEmailTemplate = (
+  key: string,
+  patch: { subject?: string; body?: string; reset?: boolean },
+) =>
+  fetch(`${API_BASE}/api/v1/admin/email-templates/${encodeURIComponent(key)}`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(patch),
+  }).then((r) => r.json());
+
+export const previewEmailTemplate = (
+  key: string,
+  payload: {
+    context: Record<string, string>;
+    subject?: string;
+    body?: string;
+  },
+) =>
+  apiPost<{ subject: string; body: string }>(
+    `/api/v1/admin/email-templates/${encodeURIComponent(key)}/preview`,
+    payload,
+  );
+
 /** POST /me/titulo-eleitor — valida algoritmicamente (12 dígitos) e persiste. */
 export const submitTituloEleitor = (titulo: string) =>
   apiPost<{ titulo_status: string; titulo_last4: string }>(

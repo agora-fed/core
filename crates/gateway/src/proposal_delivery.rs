@@ -28,8 +28,11 @@ use lettre::transport::smtp::authentication::Credentials;
 use lettre::transport::smtp::AsyncSmtpTransport;
 use lettre::{AsyncTransport, Message, Tokio1Executor};
 use sqlx::PgPool;
+use std::collections::HashMap;
 use std::time::Duration;
 use uuid::Uuid;
+
+use crate::email_templates;
 
 #[derive(Debug)]
 pub struct ProposalDeliverySub {
@@ -84,25 +87,40 @@ impl ProposalDeliverySub {
         );
         let smtp = smtp_from_env();
 
+        let mandate_name = row
+            .mandate_display_name
+            .clone()
+            .unwrap_or_else(|| "(mandato)".to_owned());
+        let body_short: String = row.body.chars().take(400).collect::<String>()
+            + if row.body.chars().count() > 400 { "…" } else { "" };
+
         // AUTHOR — só se ainda não notificado E se tem e-mail.
         if row.notified_author_at.is_none() {
             if let Some(email) = row.author_email.as_deref() {
+                let mut ctx: HashMap<&str, String> = HashMap::new();
+                ctx.insert("proposal_title", row.title.clone());
+                ctx.insert("proposal_url", proposal_url.clone());
+                ctx.insert("mandate_name", mandate_name.clone());
+                let (subject, body) = email_templates::render(
+                    &self.db,
+                    "proposal_confirm_author",
+                    &ctx,
+                )
+                .await
+                .unwrap_or_else(|| {
+                    // Fallback hardcoded — só se a linha na DB sumiu.
+                    (
+                        format!("Sua proposta foi registrada — {}", row.title),
+                        format!(
+                            "Sua proposta \"{}\" foi registrada e enviada ao gabinete de {}.\n\nAcompanhe: {}\n\n— DemocraciaBR",
+                            row.title, mandate_name, proposal_url,
+                        ),
+                    )
+                });
                 self.send_and_stamp(
                     email,
-                    &format!("Sua proposta foi registrada — {}", row.title),
-                    &format!(
-                        "Olá,\n\n\
-                         Sua proposta \"{}\" foi registrada e enviada ao gabinete \
-                         de {} para conhecimento.\n\n\
-                         Acompanhe aqui:\n{}\n\n\
-                         Quando outras pessoas apoiarem e o limiar for atingido, \
-                         o relógio de resposta começa a correr. Silêncio vira \
-                         registro público.\n\n\
-                         — DemocraciaBR",
-                        row.title,
-                        row.mandate_display_name.as_deref().unwrap_or("(mandato)"),
-                        proposal_url,
-                    ),
+                    &subject,
+                    &body,
                     &smtp,
                     proposal_id,
                     "notified_author_at",
@@ -114,26 +132,29 @@ impl ProposalDeliverySub {
         // MANDATE — só se ainda não notificado E se o mandato tem e-mail público.
         if row.notified_mandate_at.is_none() {
             if let Some(email) = row.mandate_email.as_deref() {
-                let body_short: String = row.body.chars().take(400).collect();
-                let ellipsis = if row.body.chars().count() > 400 { "…" } else { "" };
+                let mut ctx: HashMap<&str, String> = HashMap::new();
+                ctx.insert("proposal_title", row.title.clone());
+                ctx.insert("proposal_body_short", body_short.clone());
+                ctx.insert("proposal_url", proposal_url.clone());
+                let (subject, body) = email_templates::render(
+                    &self.db,
+                    "proposal_confirm_mandate",
+                    &ctx,
+                )
+                .await
+                .unwrap_or_else(|| {
+                    (
+                        format!("[DemocraciaBR] Nova proposta cidadã — {}", row.title),
+                        format!(
+                            "Nova proposta cidadã pela DemocraciaBR.\n\nTítulo: {}\n\nTrecho:\n{}\n\nLeia: {}\n\n— DemocraciaBR (sistema automático)",
+                            row.title, body_short, proposal_url,
+                        ),
+                    )
+                });
                 self.send_and_stamp(
                     email,
-                    &format!("[DemocraciaBR] Nova proposta cidadã — {}", row.title),
-                    &format!(
-                        "Olá,\n\n\
-                         Você recebeu uma nova proposta cidadã pela DemocraciaBR, \
-                         infraestrutura pública de accountability parlamentar.\n\n\
-                         Título: {}\n\n\
-                         Trecho:\n{}{}\n\n\
-                         Leia o texto completo, veja o número de apoios e responda:\n\
-                         {}\n\n\
-                         Enviada por cidadã(o) verificada(o) da plataforma. \
-                         Não é necessário responder por esta caixa — a resposta \
-                         formal fica registrada dentro do link acima e conta pro \
-                         placar público de accountability.\n\n\
-                         — DemocraciaBR (sistema automático)",
-                        row.title, body_short, ellipsis, proposal_url,
-                    ),
+                    &subject,
+                    &body,
                     &smtp,
                     proposal_id,
                     "notified_mandate_at",

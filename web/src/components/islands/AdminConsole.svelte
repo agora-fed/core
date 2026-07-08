@@ -29,12 +29,15 @@
     type AdminPeerRow,
   } from '../../lib/api';
 
-  type TabId = 'painel' | 'usuarios' | 'federacao' | 'moderacao';
+  import EmailTemplatesAdmin from './EmailTemplatesAdmin.svelte';
+
+  type TabId = 'painel' | 'usuarios' | 'federacao' | 'moderacao' | 'emails';
   const tabs: { id: TabId; label: string }[] = [
     { id: 'painel', label: 'Painel' },
     { id: 'usuarios', label: 'Usuários' },
     { id: 'federacao', label: 'Federação' },
     { id: 'moderacao', label: 'Moderação' },
+    { id: 'emails', label: 'E-mails' },
   ];
   let active = $state<TabId>('painel');
 
@@ -454,6 +457,8 @@
             </div>
           {/if}
         </Card>
+      {:else if active === 'emails'}
+        <EmailTemplatesAdmin />
       {/if}
     </div>
   {/if}

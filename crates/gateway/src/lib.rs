@@ -9,6 +9,7 @@
 pub mod admin_ext;
 pub mod amendments;
 pub mod civic_notify;
+pub mod email_templates;
 pub mod discovery;
 pub mod elections;
 pub mod federation;
@@ -153,6 +154,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(titulo_eleitor::routes(state.clone()))
         // Web Push (0.25.0-fediverso): subscribe + GET da chave VAPID pública.
         .merge(web_push::routes(state.clone()))
+        // Templates de e-mail editáveis (admin CRUD).
+        .merge(email_templates::routes(state.clone()))
         // Social-graph endpoints (bookmarks, mutes, blocks, filters, lists —
         // migration 0500). Mastodon-parity fase 2A.
         .merge(social_graph::routes(state.clone()))
