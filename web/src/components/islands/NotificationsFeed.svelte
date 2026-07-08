@@ -117,6 +117,8 @@
       // Optimistic: flip local state so the badge zeroes right away.
       items = items.map((i) => ({ ...i, read: true }));
       unread = 0;
+      // Avisa LeftRail + BottomNav pra reajustarem o badge sem esperar poll.
+      window.dispatchEvent(new CustomEvent('dsoc-notifications-changed'));
     } else {
       toast.error(res.error?.message ?? 'Não foi possível marcar como lidas.');
     }

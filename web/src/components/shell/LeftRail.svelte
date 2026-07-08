@@ -50,6 +50,13 @@
     }
   }
 
+  // Handler compartilhado — /notificacoes dispara este evento após clearAll;
+  // BottomNav faz o mesmo. Assinatura instantânea sem esperar o poll de 60s.
+  const onChanged = () => void refreshUnread();
+  const onSwMessage = (e: MessageEvent) => {
+    if (e.data?.type === 'dsoc-push') void refreshUnread();
+  };
+
   onMount(() => {
     try {
       loggedIn = Boolean(localStorage.getItem('dsoc_citizen'));
@@ -61,10 +68,19 @@
       // Poll every 60s. Cheap query (partial-indexed COUNT).
       pollTimer = setInterval(refreshUnread, 60_000);
     }
+    window.addEventListener('dsoc-notifications-changed', onChanged);
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', onSwMessage);
+    }
   });
 
   onDestroy(() => {
     if (pollTimer) clearInterval(pollTimer);
+    if (typeof window === 'undefined') return;
+    window.removeEventListener('dsoc-notifications-changed', onChanged);
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.removeEventListener('message', onSwMessage);
+    }
   });
 </script>
 

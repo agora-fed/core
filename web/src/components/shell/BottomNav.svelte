@@ -3,19 +3,64 @@
   // Route detection is hydrated client-side (SSG can't know the URL at
   // compile time for every host); we use window.location.pathname.
   import Icon from '../ui/Icon.svelte';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
+  import { getMyNotifications, isAuthError, clearLocalSession } from '../../lib/api';
 
   const items = [
     { href: '/', icon: 'home', label: 'Início' },
     { href: '/feed', icon: 'feed', label: 'Feed' },
     { href: '/propor', icon: 'plus', label: 'Propor', cta: true },
-    { href: '/notificacoes', icon: 'bell', label: 'Notif.' },
+    { href: '/notificacoes', icon: 'bell', label: 'Notif.', unread: true },
     { href: '/politicos', icon: 'users', label: 'Políticos' },
   ];
 
   let path = $state('');
+  let loggedIn = $state(false);
+  let unread = $state(0);
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function refreshUnread() {
+    if (!loggedIn) return;
+    const res = await getMyNotifications(1, 0);
+    if (res.success && res.data) {
+      unread = res.data.unread_count;
+    } else if (isAuthError(res)) {
+      clearLocalSession();
+      loggedIn = false;
+      unread = 0;
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    }
+  }
+
+  // Handler compartilhado com LeftRail: /notificacoes emite este evento após
+  // clearAll ou quando um push chega enquanto a aba tá aberta.
+  const onChanged = () => void refreshUnread();
+
   onMount(() => {
     path = window.location.pathname;
+    try {
+      loggedIn = Boolean(localStorage.getItem('dsoc_citizen'));
+    } catch {}
+    if (loggedIn) {
+      void refreshUnread();
+      pollTimer = setInterval(refreshUnread, 60_000);
+    }
+    window.addEventListener('dsoc-notifications-changed', onChanged);
+    // Push chegando com aba aberta: SW postMessage → refresh instantâneo.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', (e) => {
+        if (e.data?.type === 'dsoc-push') void refreshUnread();
+      });
+    }
+  });
+
+  onDestroy(() => {
+    if (pollTimer) clearInterval(pollTimer);
+    if (typeof window === 'undefined') return;
+    window.removeEventListener('dsoc-notifications-changed', onChanged);
   });
 
   function isActive(href: string) {
@@ -32,7 +77,14 @@
       class:cta={it.cta}
       aria-current={isActive(it.href) ? 'page' : undefined}
     >
-      <Icon name={it.icon} size={22} />
+      <span class="ic-wrap">
+        <Icon name={it.icon} size={22} />
+        {#if it.unread && loggedIn && unread > 0}
+          <span class="dot" aria-label={`${unread} não lidas`}>
+            {unread > 9 ? '9+' : unread}
+          </span>
+        {/if}
+      </span>
       <span>{it.label}</span>
     </a>
   {/each}
@@ -97,5 +149,28 @@
   a.cta:hover {
     color: var(--accent-contrast);
     background: var(--accent-strong);
+  }
+  .ic-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .dot {
+    position: absolute;
+    top: -6px;
+    right: -10px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    background: var(--accent);
+    color: var(--accent-contrast);
+    border: 1.5px solid var(--surface-1);
+    border-radius: var(--r-full);
+    font-size: 10px;
+    font-weight: var(--fw-bold);
+    line-height: 13px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
   }
 </style>

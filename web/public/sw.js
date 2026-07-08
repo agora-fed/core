@@ -30,7 +30,20 @@ self.addEventListener('push', (event) => {
     // Vibração leve — só efeito em Android.
     vibrate: [80, 40, 80],
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(
+    (async () => {
+      await self.registration.showNotification(title, options);
+      // Broadcast pras abas abertas atualizarem o badge do sino sem
+      // esperar o poll de 60s.
+      const clients = await self.clients.matchAll({
+        type: 'window',
+        includeUncontrolled: true,
+      });
+      for (const client of clients) {
+        client.postMessage({ type: 'dsoc-push', payload: data });
+      }
+    })(),
+  );
 });
 
 self.addEventListener('notificationclick', (event) => {
