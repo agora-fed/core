@@ -8,6 +8,116 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.26.0-fase-DE** — comparador de candidatos com dado (seed idempotente de 10 candidacies
+  vinculadas aos 10 mandate.is_candidate=true, cobrindo as 4 elections estruturais);
+  estatísticas públicas ao vivo na landing (`GET /stats/public` sem autenticação e sem PII —
+  citizens_active, proposals_published, mandates_indexed, responses_public, silences_public,
+  response_rate); banner âmbar destacado no `/propostas/:id` quando `thresholdCrossed`, com
+  copy "o relógio começou a correr" + CTA "🌐 Amplifique no fediverso" (autor) ou
+  "Compartilhar" (demais).
+- **0.26.0-fase-FG** — 4 páginas institucionais com conteúdo real editorial:
+  `/sobre` (tese, loop propor→responder/silenciar, PopSolutions, contatos DPO/moderação/security);
+  `/privacidade` (LGPD completa: art. 7º base legal por finalidade + art. 18 direitos + cookies
+  listados + retenção 30d); `/termos` (TOS + Contrato Social herdado do Decidim + rate limits
+  publicados); `/transparencia` (código aberto em git.pop.coop, AGPLv3 + Cláusula Social,
+  ADRs numerados, changelog público, dependências auditáveis — sem OpenAI/GCP em runtime).
+  Endpoints LGPD (`crates/gateway/src/lgpd.rs`): `GET /me/lgpd/export` (JSON portável completo)
+  + `POST /me/lgpd/delete-account` (soft-delete transacional em `citizen.deleted_at`, apaga PII,
+  mantém conteúdo público anonimizado — LGPD art. 16). Migration 0154 `citizen.deleted_at`.
+  Aba "LGPD" em `/configuracoes`; Footer com nav institucional; rodapé reforçado
+  ("AGPLv3 · IPv6-first · Sem publicidade · Sem venda de dados"). Landing ganha barra de
+  selos (🇧🇷 soberana · 🔓 AGPLv3 · 🚫 sem publicidade · 🌐 IPv6-first federado) + seção
+  "Contadores ao vivo" com `LandingStats.svelte`.
+- **0.26.0-fase-B-placar** — página pública dedicada `/politicos/[mandate]/placar` (SSG,
+  ~1.663 novas páginas): card com % de resposta em fonte gigante colorida (verde/amarelo/vermelho),
+  grid de 3 stats, empty state pra mandato sem SLA, botões Compartilhar (Web Share) + Publicar
+  no fediverso. `MandateDetail` ganha CTA "📊 Placar público" ao lado de "Propor demanda".
+  `MandatePanel` (Fase C polish) ganha 3 contadores no topo (com prazo correndo / respondidas /
+  silêncio registrado) + link pro próprio placar público.
+- **0.26.0-fase-A-eval** — fecha o loop `ProposalCreated → moderation.evaluate →
+  ModerationCleared → publish_proposal`. Antes: propostas ficavam eternas em `status='draft'`
+  porque ninguém disparava a moderação; nada aparecia publicamente. Fix: novo
+  `ModerationEvaluateSub` no `worker.rs` consome `Event::ProposalCreated` e chama
+  `moderation.evaluate(target=Proposal(id))`. `ModerationService::from_state(&AppState)`
+  construtor de conveniência. `ProposalDto` ganha `status` + `published_at` (aditivos,
+  retrocompat). Backfill em prod destravou 2 propostas antigas. Worker sobe com 14
+  subscriptions (era 13).
+- **0.25.0-fediverso-govbr** — skeleton do login gov.br (OIDC Authorization Code Flow),
+  dormant enquanto não houver `GOVBR_CLIENT_ID`/`GOVBR_CLIENT_SECRET`. `GET /auth/govbr/start`
+  gera state+nonce em cookie HttpOnly de 10min e redireciona pra `authorize` com escopos
+  `openid profile email govbr_confiabilidades`. `GET /auth/govbr/callback` valida state (CSRF),
+  troca code por tokens no `/token`, decoda id_token, valida nonce+aud, upsert citizen
+  (novo com `verification_level='directory'`, ou update de `legal_name` se já existia via
+  `govbr_sub`) + issue session cookie + 302 pra `/bem-vinda`. `GET /api/v1/auth/govbr/status`
+  devolve `{enabled: bool}` pro front. `LoginForm.svelte` ganha botão azul gov.br oficial
+  (#1351b4) acima do form quando enabled. Migration 0153: `citizen.legal_name` (nunca exposto
+  na UI pública), `govbr_sub` (UNIQUE), `govbr_confiabilidade` (bronze|prata|ouro),
+  `govbr_linked_at`. Débito conhecido: validação JWKS do id_token e mapeamento amr/acr →
+  bronze/prata/ouro ficam pra fatia próxima (hoje decode-only, mitigado por TLS + state + nonce).
+- **0.25.0 admin** — link "⚙️ Administração" no dropdown do perfil (`AuthMenu.svelte`),
+  visível só pra owner/admin em `admin_role_binding`. `GET /me/admin-status` responde
+  `{is_admin: bool}` (anônimo → `false`, sem vazar sinal). Cache em
+  `localStorage.dsoc_is_admin` pinta imediato; revalida em background. GUI completa de
+  usuários (`/admin/usuarios` — nova página dedicada) via `AdminUsersPage.svelte`: busca
+  por nome/handle/email + 4 selects de filtro (partido / papel plataforma / papel partido /
+  tipo cívico) + tabela rica (chips cidadão/político/candidato + título ✓ + privado) +
+  drawer lateral de edição inline (um "Salvar" dispara 3 PATCHes em sequência: citizen →
+  platform role → party role). Backend `crates/gateway/src/admin_users.rs`:
+  `GET /admin/users-rich` (CTE com joins colapsa multi-role owner>admin>auditor),
+  `PATCH /admin/users/{id}`, `PUT /.../platform-role`, `PUT /.../party-role`. Migration 0152
+  `citizen.party_sigla` (filiação partidária opcional, só informativa).
+- **0.25.0-templates** — templates de e-mail editáveis pela UI (Odoo-style). Migration 0151
+  `email_template` (key PK, label, subject, body, default_subject/body, variables text[],
+  updated_at/by), seed idempotente das 4 templates que a plataforma dispara. Novo
+  `crates/gateway/src/email_templates.rs`: `render(db, key, vars) -> Option<(subject, body)>`
+  com substituição `{{var_name}}` (parser mínimo, unknown key vira literal, 4 unit tests).
+  Admin CRUD gated por `admin_role_binding IN ('owner','admin')`: `GET
+  /admin/email-templates` + `PATCH /admin/email-templates/{key}` (payload
+  `{subject?, body?, reset?}`) + `POST /admin/email-templates/{key}/preview`.
+  `AdminConsole` ganha aba "E-mails" com `EmailTemplatesAdmin.svelte` (split view lista +
+  form, chips clicáveis pra colar variáveis no cursor, botão "Voltar ao padrão", preview
+  pré-populado). `proposal_delivery.rs` refatorado como demo pra usar render (fallback
+  hardcoded se render → None).
+- **0.25.0-delivery** — recibo de entrega da proposta: migration 0303 adiciona
+  `proposal.notified_author_at` + `notified_mandate_at`. Novo `ProposalDeliverySub` no
+  worker consome `ProposalCreated`, envia 2 e-mails via SMTP (autor: "sua proposta foi
+  registrada" + mandato: "nova proposta cidadã"), grava timestamps em `IS NULL` guard.
+  `ProposalDetail.svelte` mostra pro autor "✉️ E-mail entregue ao gabinete X em DD/MM HH:MM"
+  + botão "Publicar no fediverso" que cria uma nota via `postNote()` com o link da proposta.
+- **0.25.0-badge** — bell badge instantâneo em LeftRail + BottomNav via
+  `window.dispatchEvent('dsoc-notifications-changed')` (disparado no clearAll do
+  NotificationsFeed) e `navigator.serviceWorker.onmessage` (o `sw.js` faz `postMessage({type:
+  'dsoc-push'})` após cada push recebido). Badges atualizam sem esperar poll de 60s.
+  Guards `typeof window === 'undefined'` no `onDestroy` — Svelte 5 SSR chama cleanup no server.
+- **0.25.0-push** — Web Push RFC 8291 end-to-end. Migration 0111
+  `notify_web_push_subscription` (endpoint, p256dh, auth, user_agent, dead_at). Novo
+  `crates/gateway/src/web_push.rs`: `POST /me/push-subscriptions` (persiste subscription do
+  PushManager), `GET .../vapid-public-key` (503 sem VAPID), `pub async fn send_to_citizen(db,
+  citizen_id, payload)` chamado por `civic_notify` após cada `user_notification` insert.
+  410 Gone marca `dead_at`. Deps: `web-push = "0.10"` (hyper-client). Env
+  `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` (gerados uma vez com
+  `openssl ecparam -name prime256v1`). Frontend: `sw.js` mínimo, `webpush.ts` com
+  enablePush/disablePush/isSubscribed, botão "Ativar push" no header do NotificationsFeed.
+- **0.25.0-feed** — feed cidadão: migration 0411 expande `user_notification.kind` pra
+  incluir 4 kinds cívicas (`proposal_threshold`, `sla_started`, `sla_response`, `sla_expired`).
+  Novo `civic_notify.rs` com `CivicNotifySub` (2 subscriptions: Proposals + Consequence).
+  Resolve `author_citizen_id` via join `SlaId → consequence_sla.proposal_id → proposal.author`,
+  insere em `user_notification` com kind cívica + preview em pt-BR + `object_uri =
+  /propostas/<id>`. `NotificationsFeed.svelte` ganha ícones/labels/tons pras 4 kinds cívicas
+  (com fallback `?? 'info'/'bell'/kind` pra sobreviver a kinds novas antes do front deployar).
+- **0.25.0-fediverso-urgente** — gate voto urgente por título eleitor. Migration 0302
+  `proposal.urgencia` (`comum` | `urgente`). `VoteService::cast` lê `proposal.urgencia`; se
+  urgente, lê `citizen.titulo_status`; se não bater `validated`/`verified`, retorna
+  `Error::Forbidden` com mensagem específica pt-BR. `ProposalDto` ganha `urgencia`.
+  ADR-0012 formaliza abandono do Zitadel/OIDC (log ERROR de startup vira INFO).
+- **0.25.0-fediverso-defense** — migration 0107 `auth_login_attempt` (rate limit + auditoria).
+  Rate-limit em `POST /auth/register` (3/h por IP via query em pending_signups) +
+  `POST /auth/login` (10/h por IP via count em login_attempt). Nova rota
+  `POST /auth/register/resend` reenvia link (enumeration-safe). Cleanup worker roda 1x/h
+  (`WORKER_SIGNUP_CLEANUP_MS`) limpando pending_signup + login_attempt > 7 dias.
+  `Error::RateLimit(String)` no dsoc-core (429 no auth). UX do título eleitor:
+  aba `/configuracoes#identidade` com máscara 4-4-4 + status validado/verificado.
+  `ProfileDto` ganha `titulo_status` — badge "🇧🇷 Título validado" no perfil público.
 - **0.25.0-fediverso-verify** — verificação de e-mail obrigatória antes do cadastro virar
   conta. `POST /auth/register` (e `/register/politician`) passa a gravar um `auth_pending_signup`
   (migration 0106) com token SHA-256 e dispara `<origin>/confirmar-conta?token=…` via SMTP
