@@ -16,6 +16,7 @@
     editNote,
     searchHashtags,
     searchMentions,
+    lookupRemoteActor,
     type PostNoteOptions,
     type HashtagHit,
     type MentionHit,
@@ -101,10 +102,20 @@
   );
 
   // 0.18.0-rc2: autocomplete for @ and #.
+  // 0.26.5: quando a query tem formato @user@host, também dispara WebFinger
+  // (lookupRemoteActor) e adiciona a conta federada como sugestão.
   type AcTrigger = '@' | '#';
   type AcItem =
     | { kind: 'mention'; value: MentionHit }
-    | { kind: 'hashtag'; value: HashtagHit };
+    | { kind: 'hashtag'; value: HashtagHit }
+    | {
+        kind: 'remote';
+        value: {
+          handle: string;
+          display_name: string | null;
+          avatar_url: string | null;
+        };
+      };
   let taRef = $state<HTMLTextAreaElement | null>(null);
   let acOpen = $state(false);
   let acItems = $state<AcItem[]>([]);
@@ -175,12 +186,34 @@
         acOpen = acItems.length > 0;
       }
     } else {
-      const res = await searchMentions(q, 8);
-      if (res.success && res.data && acQuery === q && acTrigger === '@') {
-        acItems = res.data.items.map((m) => ({ kind: 'mention', value: m }));
-        acCursor = 0;
-        acOpen = acItems.length > 0;
+      // Locais + (se q parece @user@host) hit remoto via WebFinger.
+      const isRemoteShape = /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+\.[A-Za-z0-9.-]+$/.test(q);
+      const [localRes, remoteRes] = await Promise.all([
+        searchMentions(q, 8),
+        isRemoteShape ? lookupRemoteActor(q) : Promise.resolve(null),
+      ]);
+      if (acQuery !== q || acTrigger !== '@') return;
+      const items: AcItem[] = [];
+      if (remoteRes && remoteRes.success && remoteRes.data) {
+        items.push({
+          kind: 'remote',
+          value: {
+            handle: remoteRes.data.handle.startsWith('@')
+              ? remoteRes.data.handle
+              : `@${remoteRes.data.handle}`,
+            display_name: remoteRes.data.name ?? remoteRes.data.preferred_username,
+            avatar_url: remoteRes.data.avatar_url,
+          },
+        });
       }
+      if (localRes.success && localRes.data) {
+        for (const m of localRes.data.items) {
+          items.push({ kind: 'mention', value: m });
+        }
+      }
+      acItems = items;
+      acCursor = 0;
+      acOpen = acItems.length > 0;
     }
   }
 
@@ -203,7 +236,9 @@
     const insert =
       item.kind === 'mention'
         ? `@${item.value.handle} `
-        : `#${item.value.tag_original} `;
+        : item.kind === 'remote'
+          ? `${item.value.handle} `
+          : `#${item.value.tag_original} `;
     content = before + insert + after;
     closeAc();
     // Restore focus + caret after the inserted token.
@@ -432,7 +467,7 @@
       />
       {#if acOpen}
         <ul class="ac" role="listbox">
-          {#each acItems as item, i (item.kind + '::' + (item.kind === 'mention' ? item.value.handle : item.value.tag_normalized))}
+          {#each acItems as item, i (item.kind + '::' + (item.kind === 'mention' ? item.value.handle : item.kind === 'remote' ? item.value.handle : item.value.tag_normalized))}
             <li
               role="option"
               aria-selected={i === acCursor}
@@ -449,6 +484,16 @@
                 <span class="ac-body">
                   <strong>{item.value.display_name || item.value.handle}</strong>
                   <span class="muted">@{item.value.handle}</span>
+                </span>
+              {:else if item.kind === 'remote'}
+                {#if item.value.avatar_url}
+                  <img class="ac-avatar" src={item.value.avatar_url} alt="" referrerpolicy="no-referrer" />
+                {:else}
+                  <span class="ac-avatar ac-avatar-ph">{item.value.handle.replace(/^@/, '').charAt(0).toUpperCase()}</span>
+                {/if}
+                <span class="ac-body">
+                  <strong>{item.value.display_name || item.value.handle}</strong>
+                  <span class="muted">{item.value.handle} · fediverso</span>
                 </span>
               {:else}
                 <span class="ac-hash">#</span>
