@@ -35,6 +35,13 @@ pub struct ProposalDto {
     /// retrocompatível: front antigo ignora o campo.
     #[serde(default = "default_urgencia")]
     pub urgencia: String,
+    /// Ciclo de vida (`draft` | `published` | `clustered`). Draft = ainda em
+    /// moderação (não aparece publicamente). Fase A do plano TSE (0.26.0).
+    #[serde(default = "default_status")]
+    pub status: String,
+    /// Quando o moderador liberou (evento `moderation.cleared`). Null enquanto em draft.
+    #[serde(default)]
+    pub published_at: Option<DateTime<Utc>>,
     /// Recibo de entrega ao autor (0.25.0-fediverso). `Some(ts)` = e-mail de
     /// confirmação já saiu; `None` = ainda não. Populado pelo worker
     /// `proposal-delivery-worker`.
@@ -50,6 +57,9 @@ pub struct ProposalDto {
 
 fn default_urgencia() -> String {
     "comum".to_owned()
+}
+fn default_status() -> String {
+    "published".to_owned()
 }
 
 /// Public view of a mandate / candidacy.

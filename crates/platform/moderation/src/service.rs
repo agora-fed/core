@@ -84,6 +84,12 @@ impl ModerationService {
         Self { db, clock, bus }
     }
 
+    /// Convenience constructor from the composition-root `AppState`.
+    #[must_use]
+    pub fn from_state(state: &dsoc_app::AppState) -> Self {
+        Self::new(state.db.clone(), state.clock.clone(), state.bus.clone())
+    }
+
     /// Create a moderation rule for an organization, validating its parameter.
     ///
     /// # Errors

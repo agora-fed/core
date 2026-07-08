@@ -86,6 +86,29 @@ impl EventHandler for ConsensusSub {
     }
 }
 
+/// `moderation`: on `proposals.created`, evaluate the proposal against rules
+/// and emit `moderation.cleared`/`moderation.flagged`. Sem este subscriber, a
+/// proposta ficava presa em `draft` pra sempre — não havia trigger natural
+/// pra publicar. Fecha o gap "não estão 100%" das propostas.
+struct ModerationEvaluateSub {
+    moderation: dsoc_moderation::ModerationService,
+    proposals: dsoc_proposals::ProposalService,
+}
+
+#[async_trait]
+impl EventHandler for ModerationEvaluateSub {
+    async fn handle(&self, envelope: &EventEnvelope) -> Result<()> {
+        if let Event::ProposalCreated { proposal, .. } = envelope.event {
+            let row = self.proposals.get(proposal).await?;
+            let text = format!("{}\n{}", row.title, row.body);
+            let org = dsoc_core::ids::OrgId::from_uuid(row.org_id);
+            let target = dsoc_moderation::ModerationTarget::Proposal(proposal);
+            self.moderation.evaluate(org, target, &text).await?;
+        }
+        Ok(())
+    }
+}
+
 /// `proposals`: link to clusters, publish on moderation clearance, fold vote tallies, and fire the
 /// threshold crossing. Drives the front half of the loop toward `proposals.threshold.crossed`.
 struct ProposalsSub {
@@ -212,6 +235,17 @@ fn subscriptions(state: &AppState) -> Vec<Subscription> {
             "proposals-moderation-worker",
             EventTopic::Moderation,
             Arc::new(ProposalsSub {
+                proposals: dsoc_proposals::ProposalService::from_state(state),
+            }),
+        ),
+        // NOVO: avalia propostas recém-criadas contra as regras de moderação
+        // e emite ModerationCleared/Flagged. Sem isso, o proposal ficava
+        // eterno em `draft` (o publish só dispara em `ModerationCleared`).
+        sub(
+            "moderation-evaluate-worker",
+            EventTopic::Proposals,
+            Arc::new(ModerationEvaluateSub {
+                moderation: dsoc_moderation::ModerationService::from_state(state),
                 proposals: dsoc_proposals::ProposalService::from_state(state),
             }),
         ),

@@ -102,6 +102,8 @@ fn proposal_dto(row: ProposalRow) -> ProposalDto {
         author_public_handle,
         author_avatar_url,
         urgencia: row.urgencia,
+        status: row.status,
+        published_at: row.published_at,
         notified_author_at: row.notified_author_at,
         notified_mandate_at: row.notified_mandate_at,
         created_at: row.created_at,
