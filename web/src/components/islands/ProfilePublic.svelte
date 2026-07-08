@@ -13,6 +13,8 @@
     lookupRemoteActor,
     followRemoteActor,
     getRemoteActorOutbox,
+    toggleLike,
+    toggleBoost,
     DEFAULT_ORG_ID,
     type RemoteNoteDto,
   } from '../../lib/api';
@@ -20,6 +22,8 @@
   import { formatDate, formatRelative } from '../../lib/format';
   import { toast } from '../../lib/toasts';
   import { sanitizeNoteHtml } from '../../lib/sanitize';
+  import NoteComposer from './NoteComposer.svelte';
+  import Icon from '../ui/Icon.svelte';
 
   let { handle: handleProp = '' }: { handle?: string } = $props();
 
@@ -46,6 +50,11 @@
   let remoteNotes = $state<RemoteNoteDto[]>([]);
   let notesLoading = $state(false);
   let notesError = $state<string | null>(null);
+  // Estado local das reações (otimista) — chave: object_uri da nota.
+  let liked = $state<Set<string>>(new Set());
+  let boosted = $state<Set<string>>(new Set());
+  let reactBusy = $state<Set<string>>(new Set());
+  let replyingTo = $state<string | null>(null);
 
   function stripHtml(html: string): string {
     return html
@@ -144,6 +153,12 @@
     profile = res.data;
     if (profile.is_public && profile.handle) {
       fediAddress = `@${profile.handle}@${window.location.host}`;
+      // Timeline do perfil local reusa o mesmo proxy do outbox — passa a URL
+      // do próprio actor. Rebate no gateway e cai no fluxo AP, sem novo endpoint.
+      if (loggedIn) {
+        const selfActorUrl = `${window.location.origin}/actors/${profile.handle}`;
+        void loadRemoteNotes(selfActorUrl);
+      }
     }
   });
 
@@ -173,6 +188,62 @@
         res.error?.message ??
         'Não consegui carregar as notas desse perfil agora.';
     }
+  }
+
+  async function onLikeNote(noteId: string) {
+    if (!loggedIn) {
+      toast.info('Entre pra favoritar.');
+      return;
+    }
+    const key = `like:${noteId}`;
+    if (reactBusy.has(key)) return;
+    reactBusy = new Set(reactBusy).add(key);
+    // Otimista: alterna já.
+    const wasLiked = liked.has(noteId);
+    const next = new Set(liked);
+    if (wasLiked) next.delete(noteId); else next.add(noteId);
+    liked = next;
+    const res = await toggleLike(noteId);
+    const done = new Set(reactBusy);
+    done.delete(key);
+    reactBusy = done;
+    if (!res.success) {
+      // Reverte otimismo.
+      const revert = new Set(liked);
+      if (wasLiked) revert.add(noteId); else revert.delete(noteId);
+      liked = revert;
+      toast.error(res.error?.message ?? 'Não consegui favoritar agora.');
+    }
+  }
+
+  async function onBoostNote(noteId: string) {
+    if (!loggedIn) {
+      toast.info('Entre pra republicar.');
+      return;
+    }
+    const key = `boost:${noteId}`;
+    if (reactBusy.has(key)) return;
+    reactBusy = new Set(reactBusy).add(key);
+    const wasBoosted = boosted.has(noteId);
+    const next = new Set(boosted);
+    if (wasBoosted) next.delete(noteId); else next.add(noteId);
+    boosted = next;
+    const res = await toggleBoost(noteId);
+    const done = new Set(reactBusy);
+    done.delete(key);
+    reactBusy = done;
+    if (!res.success) {
+      const revert = new Set(boosted);
+      if (wasBoosted) revert.add(noteId); else revert.delete(noteId);
+      boosted = revert;
+      toast.error(res.error?.message ?? 'Não consegui republicar agora.');
+    }
+  }
+
+  function replyHandleFor(): string {
+    // "@user@host" sem o @ inicial — casa com o que o NoteComposer espera.
+    if (!remote) return '';
+    return remote.handle.replace(/^@/, '');
   }
 
   async function copyFedi() {
@@ -281,6 +352,56 @@
               <div class="note-body">
                 {@html sanitizeNoteHtml(note.content_html)}
               </div>
+              <footer class="note-actions">
+                <button
+                  type="button"
+                  class="react"
+                  class:on={liked.has(note.id)}
+                  disabled={reactBusy.has(`like:${note.id}`)}
+                  onclick={() => onLikeNote(note.id)}
+                  aria-pressed={liked.has(note.id)}
+                  aria-label={liked.has(note.id) ? 'Remover favorito' : 'Favoritar'}
+                >
+                  <Icon name={liked.has(note.id) ? 'heart-fill' : 'heart'} size={16} />
+                  <span>Favoritar</span>
+                </button>
+                <button
+                  type="button"
+                  class="react"
+                  class:on={boosted.has(note.id)}
+                  disabled={reactBusy.has(`boost:${note.id}`)}
+                  onclick={() => onBoostNote(note.id)}
+                  aria-pressed={boosted.has(note.id)}
+                  aria-label={boosted.has(note.id) ? 'Desfazer republicação' : 'Republicar'}
+                >
+                  <Icon name="boost" size={16} />
+                  <span>Republicar</span>
+                </button>
+                <button
+                  type="button"
+                  class="react"
+                  onclick={() => (replyingTo = replyingTo === note.id ? null : note.id)}
+                  aria-label="Responder"
+                >
+                  <Icon name="reply" size={16} />
+                  <span>Responder</span>
+                </button>
+                {#if note.url}
+                  <a class="react react-external" href={note.url} target="_blank" rel="noopener noreferrer" title="Abrir no servidor original">
+                    <Icon name="external" size={14} />
+                    <span>Origem</span>
+                  </a>
+                {/if}
+              </footer>
+              {#if replyingTo === note.id}
+                <div class="reply-inline">
+                  <NoteComposer
+                    variant="reply"
+                    replyTo={{ uri: note.id, handle: replyHandleFor() }}
+                    onposted={() => { replyingTo = null; toast.success('Resposta publicada.'); }}
+                  />
+                </div>
+              {/if}
             </li>
           {/each}
         </ol>
@@ -343,6 +464,80 @@
           {copied ? 'Copiado ✓' : 'Copiar'}
         </button>
       </footer>
+    {/if}
+
+    {#if profile.is_public && loggedIn}
+      <section class="remote-timeline" aria-label="Publicações">
+        <h2 class="timeline-h">Publicações</h2>
+        {#if notesLoading}
+          <p class="muted">Carregando notas…</p>
+        {:else if notesError}
+          <p class="hint-error">{notesError}</p>
+        {:else if remoteNotes.length === 0}
+          <p class="muted">Sem publicações públicas recentes.</p>
+        {:else}
+          <ol class="notes-list">
+            {#each remoteNotes as note (note.id)}
+              <li class="note">
+                <div class="note-meta">
+                  {#if note.published_at}
+                    <time class="muted" datetime={note.published_at} title={formatDate(note.published_at)}>
+                      {formatRelative(note.published_at)}
+                    </time>
+                  {/if}
+                </div>
+                <div class="note-body">
+                  {@html sanitizeNoteHtml(note.content_html)}
+                </div>
+                <footer class="note-actions">
+                  <button
+                    type="button"
+                    class="react"
+                    class:on={liked.has(note.id)}
+                    disabled={reactBusy.has(`like:${note.id}`)}
+                    onclick={() => onLikeNote(note.id)}
+                    aria-pressed={liked.has(note.id)}
+                    aria-label={liked.has(note.id) ? 'Remover favorito' : 'Favoritar'}
+                  >
+                    <Icon name={liked.has(note.id) ? 'heart-fill' : 'heart'} size={16} />
+                    <span>Favoritar</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="react"
+                    class:on={boosted.has(note.id)}
+                    disabled={reactBusy.has(`boost:${note.id}`)}
+                    onclick={() => onBoostNote(note.id)}
+                    aria-pressed={boosted.has(note.id)}
+                    aria-label={boosted.has(note.id) ? 'Desfazer republicação' : 'Republicar'}
+                  >
+                    <Icon name="boost" size={16} />
+                    <span>Republicar</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="react"
+                    onclick={() => (replyingTo = replyingTo === note.id ? null : note.id)}
+                    aria-label="Responder"
+                  >
+                    <Icon name="reply" size={16} />
+                    <span>Responder</span>
+                  </button>
+                </footer>
+                {#if replyingTo === note.id}
+                  <div class="reply-inline">
+                    <NoteComposer
+                      variant="reply"
+                      replyTo={{ uri: note.id, handle: (profile.handle ?? profile.public_handle) ?? '' }}
+                      onposted={() => { replyingTo = null; toast.success('Resposta publicada.'); }}
+                    />
+                  </div>
+                {/if}
+              </li>
+            {/each}
+          </ol>
+        {/if}
+      </section>
     {/if}
   </article>
 {/if}
@@ -498,6 +693,53 @@
   .hint-error {
     color: var(--danger, #b91c1c);
     font-size: 0.9rem;
+  }
+  .note-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.65rem;
+    padding-top: 0.5rem;
+    border-top: 1px dashed var(--c-border);
+  }
+  .react {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.65rem;
+    border: 1px solid var(--c-border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--c-text-muted);
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition:
+      background 120ms ease-out,
+      color 120ms ease-out;
+  }
+  .react:hover:not(:disabled) {
+    background: var(--c-bg, #f2f4f7);
+    color: var(--c-text, #0f172a);
+  }
+  .react.on {
+    color: var(--c-green-dark, #115c2d);
+    background: var(--c-green-soft, #e6f7ed);
+    border-color: #b7e4c7;
+  }
+  .react:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .react-external {
+    margin-inline-start: auto;
+  }
+  .reply-inline {
+    margin-top: 0.7rem;
+    padding-top: 0.7rem;
+    border-top: 1px dashed var(--c-border);
   }
   @media (max-width: 560px) {
     .remote-timeline {
