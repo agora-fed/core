@@ -1,6 +1,7 @@
 <script lang="ts">
   // Login: e-mail + senha. On success the gateway sets a session cookie.
-  import { login } from '../../lib/api';
+  import { onMount } from 'svelte';
+  import { login, getGovbrStatus } from '../../lib/api';
   import Input from '../ui/Input.svelte';
   import Button from '../ui/Button.svelte';
   import Alert from '../ui/Alert.svelte';
@@ -10,6 +11,20 @@
   let password = $state('');
   let busy = $state(false);
   let serverError = $state<string | null>(null);
+  let govbrEnabled = $state(false);
+
+  onMount(async () => {
+    const r = await getGovbrStatus();
+    govbrEnabled = r.ok && r.data?.enabled === true;
+    // Erro devolvido pelo callback do gov.br (query ?govbr_erro=...).
+    try {
+      const p = new URLSearchParams(window.location.search);
+      const g = p.get('govbr_erro');
+      if (g) {
+        serverError = `Falha no login gov.br (${g}). Tente com e-mail e senha ou entre em contato.`;
+      }
+    } catch {}
+  });
 
   let emailValid = $derived(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
   let valid = $derived(emailValid && password.length > 0);
@@ -51,6 +66,14 @@
     }
   }
 </script>
+
+{#if govbrEnabled}
+  <a class="govbr-btn" href="/auth/govbr/start" aria-label="Entrar com gov.br">
+    <span class="govbr-mark" aria-hidden="true">gov.br</span>
+    <span>Entrar com gov.br</span>
+  </a>
+  <p class="or muted">ou</p>
+{/if}
 
 <form class="auth-form" onsubmit={submit} novalidate>
   <Input
@@ -109,6 +132,50 @@
 </form>
 
 <style>
+  .govbr-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-2);
+    width: 100%;
+    padding: 14px 16px;
+    background: #1351b4; /* Azul gov.br oficial */
+    color: white;
+    border-radius: var(--r-base);
+    text-decoration: none;
+    font-weight: var(--fw-semibold);
+    font-size: var(--fs-md);
+    margin-bottom: var(--sp-3);
+    transition: background var(--dur-fast) var(--ease-out);
+  }
+  .govbr-btn:hover {
+    background: #0e3f8a;
+  }
+  .govbr-mark {
+    background: white;
+    color: #1351b4;
+    padding: 2px 8px;
+    border-radius: var(--r-sm);
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-bold);
+    letter-spacing: 0.02em;
+  }
+  .or {
+    text-align: center;
+    font-size: var(--fs-sm);
+    margin: var(--sp-2) 0 var(--sp-3);
+    position: relative;
+  }
+  .or::before,
+  .or::after {
+    content: '';
+    display: inline-block;
+    height: 1px;
+    background: var(--border-subtle);
+    width: 35%;
+    vertical-align: middle;
+    margin: 0 var(--sp-2);
+  }
   .auth-form {
     display: block;
   }

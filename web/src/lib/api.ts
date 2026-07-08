@@ -834,6 +834,10 @@ export const subscribeWebPush = (subscription: PushSubscriptionJSON, userAgent: 
 export const getMyAdminStatus = () =>
   apiGetCredentialed<{ is_admin: boolean }>('/api/v1/me/admin-status');
 
+/** GET /auth/govbr/status — front usa pra decidir se mostra o botão. */
+export const getGovbrStatus = () =>
+  apiGet<{ enabled: boolean }>('/api/v1/auth/govbr/status');
+
 /** GUI completa de usuários — admin only. */
 export interface AdminUserRow {
   citizen_id: string;

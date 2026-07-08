@@ -11,6 +11,7 @@ pub mod admin_users;
 pub mod amendments;
 pub mod civic_notify;
 pub mod email_templates;
+pub mod govbr_oidc;
 pub mod discovery;
 pub mod elections;
 pub mod federation;
@@ -159,6 +160,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(email_templates::routes(state.clone()))
         // GUI completa de usuários (admin CRUD).
         .merge(admin_users::routes(state.clone()))
+        // gov.br OIDC status (só o "enabled?"). Start/callback ficam na raiz.
+        .merge(govbr_oidc::api_routes(state.clone()))
         // Social-graph endpoints (bookmarks, mutes, blocks, filters, lists —
         // migration 0500). Mastodon-parity fase 2A.
         .merge(social_graph::routes(state.clone()))
@@ -191,6 +194,9 @@ pub fn api_router(state: AppState) -> Router {
         .nest("/api/v1", api)
         .merge(federation_public)
         .merge(oauth)
+        // gov.br OIDC — start/callback na raiz porque o gov.br exige que
+        // `redirect_uri` seja exatamente `<origin>/auth/govbr/callback`.
+        .merge(govbr_oidc::root_routes(state.clone()))
         .fallback_service(static_site)
 }
 
