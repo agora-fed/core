@@ -296,6 +296,20 @@ test('/eleicoes/2026: carrega comparador com filtros', async ({ page }) => {
   expect(netErrors).toEqual([]);
 });
 
+test('menu principal: link "Eleições 2026" navegável', async ({ page }) => {
+  await page.goto('/', { waitUntil: 'networkidle' });
+  await page.waitForTimeout(500);
+  // Header nav é sempre visível (drawer se abre em mobile, mas viewport
+  // default do Playwright é 1280×800).
+  const link = page.locator('nav a[href="/eleicoes/2026"]').first();
+  await expect(link).toBeVisible();
+  await expect(link).toHaveText(/Elei[çc][õo]es 2026/i);
+  await link.click();
+  await page.waitForURL(/\/eleicoes\/2026/);
+  const body = await page.locator('body').innerText();
+  expect(body).toMatch(/Pr[óo]ximo passo|Registro de candidatura/i);
+});
+
 test('/eleicoes/2026: painel TSE mostra countdown + calendário', async ({ page }) => {
   const { jsErrors, netErrors } = await collectPageIssues(page);
   await page.goto('/eleicoes/2026/', { waitUntil: 'networkidle' });
