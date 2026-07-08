@@ -440,3 +440,164 @@ async fn invalid_cpf_is_rejected() {
         .unwrap_err();
     assert!(matches!(err, dsoc_core::Error::Validation(_)));
 }
+
+// -----------------------------------------------------------------------------
+// signup_verify (0.25.0-fediverso-verify): request grava pending; confirm
+// materializa citizen+credential+session numa única tx.
+// -----------------------------------------------------------------------------
+
+/// Extrai o token plaintext do pending row lendo a chamada mais recente ao
+/// serviço. Como o token é hasheado em repouso, o teste não pode
+/// "roubar" o plaintext do banco — em vez disso, injeta um token conhecido
+/// via SQL bruto no `auth_pending_signup`, cortando o `request` do fluxo e
+/// exercendo apenas o `confirm` (que é a parte crítica: materialização
+/// transacional).
+#[tokio::test]
+async fn signup_verify_confirm_materializes_citizen_and_session() {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine;
+    use sha2::{Digest, Sha256};
+
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    let clock: Arc<dyn Clock> = Arc::new(FixedClock(now()));
+    let svc = dsoc_auth::signup_verify::SignupVerifyService::new_for_tests(
+        db.clone(),
+        clock.clone(),
+        "https://test.local",
+        3600,
+        3600,
+    );
+
+    // Gera um token e insere um pending manualmente (equivalente a request_cidadao,
+    // mas sem tocar em SMTP).
+    // 32 bytes ~ o mesmo tamanho de token do serviço em prod.
+    let token: String = URL_SAFE_NO_PAD.encode([7u8; 32]);
+    let hash: Vec<u8> = {
+        let mut h = Sha256::new();
+        h.update(token.as_bytes());
+        h.finalize().to_vec()
+    };
+    let pending_id = Uuid::now_v7();
+    let email = format!("verify-{}@exemplo.br", Uuid::now_v7());
+    let expires_at = now() + chrono::Duration::hours(1);
+    let password_hash = "$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHQ$hash".to_owned();
+    sqlx::query(
+        r"INSERT INTO auth_pending_signup
+            (id, org_id, email, password_hash, cpf, role, mandate_id,
+             token_hash, expires_at, used_at, request_ip, created_at)
+          VALUES ($1, $2, $3, $4, $5, 'cidadao', NULL,
+                  $6, $7, NULL, NULL, $8)",
+    )
+    .bind(pending_id)
+    .bind(org.as_uuid())
+    .bind(&email)
+    .bind(&password_hash)
+    .bind("52998224725")
+    .bind(&hash)
+    .bind(expires_at)
+    .bind(now())
+    .execute(&db)
+    .await
+    .expect("seed pending");
+
+    let session = svc.confirm(&token).await.expect("confirm");
+
+    // Row pending marcada como usada.
+    let used_at: Option<DateTime<Utc>> =
+        sqlx::query_scalar("SELECT used_at FROM auth_pending_signup WHERE id = $1")
+            .bind(pending_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert!(used_at.is_some(), "pending marcada como usada dentro da tx");
+
+    // Credential/citizen materializados com o hash exato do pending (nunca
+    // rehashed no confirm) e o e-mail normalizado.
+    let (cred_email, cred_hash, cred_cpf): (String, String, String) = sqlx::query_as(
+        "SELECT email, password_hash, cpf FROM auth_credential WHERE citizen_id = $1",
+    )
+    .bind(session.citizen.as_uuid())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(cred_email, email);
+    assert_eq!(cred_hash, password_hash);
+    assert_eq!(cred_cpf, "52998224725");
+
+    // Session emitida com o public_handle esperado (formato @cidadao-<curto>).
+    assert!(!session.public_handle.is_empty());
+    let live: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM auth_session WHERE id = $1 AND expires_at > $2",
+    )
+    .bind(session.id)
+    .bind(now())
+    .fetch_optional(&db)
+    .await
+    .unwrap();
+    assert_eq!(live, Some(session.id), "sessão viva depois do commit");
+
+    // Retry do mesmo token deve falhar (single-use, agora used_at NOT NULL).
+    let err = svc.confirm(&token).await.unwrap_err();
+    assert!(matches!(err, dsoc_core::Error::Unauthorized));
+}
+
+#[tokio::test]
+async fn signup_verify_confirm_rejects_expired_token() {
+    use sha2::{Digest, Sha256};
+
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    let clock: Arc<dyn Clock> = Arc::new(FixedClock(now()));
+    let svc = dsoc_auth::signup_verify::SignupVerifyService::new_for_tests(
+        db.clone(),
+        clock.clone(),
+        "https://test.local",
+        3600,
+        3600,
+    );
+    let token = format!("expired-{}", Uuid::now_v7());
+    let hash: Vec<u8> = {
+        let mut h = Sha256::new();
+        h.update(token.as_bytes());
+        h.finalize().to_vec()
+    };
+    // Já vencido no momento da consulta (expires_at = 1h ANTES do relógio fixado).
+    let expires_at = now() - chrono::Duration::hours(1);
+    sqlx::query(
+        r"INSERT INTO auth_pending_signup
+            (id, org_id, email, password_hash, cpf, role, mandate_id,
+             token_hash, expires_at, used_at, request_ip, created_at)
+          VALUES ($1, $2, $3, $4, $5, 'cidadao', NULL, $6, $7, NULL, NULL, $8)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(org.as_uuid())
+    .bind(format!("exp-{}@exemplo.br", Uuid::now_v7()))
+    .bind("$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHQ$hash")
+    .bind("52998224725")
+    .bind(&hash)
+    .bind(expires_at)
+    .bind(now())
+    .execute(&db)
+    .await
+    .expect("seed pending");
+
+    let err = svc.confirm(&token).await.unwrap_err();
+    assert!(matches!(err, dsoc_core::Error::Unauthorized));
+}
+
+#[tokio::test]
+async fn signup_verify_confirm_rejects_unknown_token() {
+    let db = connect().await;
+    let _org = seed_org(&db).await;
+    let clock: Arc<dyn Clock> = Arc::new(FixedClock(now()));
+    let svc = dsoc_auth::signup_verify::SignupVerifyService::new_for_tests(
+        db.clone(),
+        clock,
+        "https://test.local",
+        3600,
+        3600,
+    );
+    let err = svc.confirm("no-such-token").await.unwrap_err();
+    assert!(matches!(err, dsoc_core::Error::Unauthorized));
+}

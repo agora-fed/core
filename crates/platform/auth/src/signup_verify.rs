@@ -101,6 +101,29 @@ impl std::fmt::Debug for SignupVerifyService {
 }
 
 impl SignupVerifyService {
+    /// Constrói o serviço explicitamente, útil pra testes de integração que
+    /// injetam `Db` + `Arc<dyn Clock>` diretos (sem passar por `AppState`
+    /// nem env vars). Sempre em dev-mode (SMTP=None) — o e-mail é logado,
+    /// não enviado.
+    #[must_use]
+    pub fn new_for_tests(
+        db: Db,
+        clock: std::sync::Arc<dyn dsoc_core::Clock>,
+        public_origin: impl Into<String>,
+        ttl_secs: i64,
+        session_ttl_secs: i64,
+    ) -> Self {
+        Self {
+            db,
+            clock,
+            public_origin: public_origin.into(),
+            smtp: None,
+            ttl_secs,
+            session_ttl_secs,
+            cpf_verifier: std::sync::Arc::new(AlgorithmicCpfVerifier),
+        }
+    }
+
     /// Constrói a partir do `AppState` + env. Env recognizadas:
     /// - `PUBLIC_ORIGIN` (default `https://democracia.social.br`)
     /// - `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM`

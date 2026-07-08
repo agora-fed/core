@@ -306,6 +306,30 @@ test('/cadastrar: mostra regras do fediverso (3000 chars + 15 min + verificaçã
   expect(body).toMatch(/vota[çc][ãa]o restrita|não computam voto/i);
 });
 
+test('/confirmar-conta sem token: mostra erro + botão pra refazer', async ({ page }) => {
+  // Sem `?token=`, a página deve cair no branch de erro do ConfirmSignupForm
+  // e oferecer o CTA de refazer cadastro — protege contra alguém aterrissar
+  // aqui via link colado errado.
+  await page.goto('/confirmar-conta/', { waitUntil: 'networkidle' });
+  await page.waitForTimeout(1500);
+  const body = await page.locator('body').innerText();
+  expect(body).toMatch(/Link inv[áa]lido|Refazer cadastro/i);
+  await expect(page.locator('a[href="/cadastrar"]').first()).toBeVisible();
+});
+
+test('/confirmar-conta com token bogus: back → 401 + CTA visível', async ({ page }) => {
+  // O front chama POST /auth/register/confirm{token:"…"}; o back responde 401
+  // pra token inexistente, e o island mostra o alerta em vermelho + os botões
+  // de Refazer/Entrar. Não estamos mockando o back — assume que o gateway
+  // co-servindo o site também responde /api/v1/… (mesma origem, sem CORS).
+  await page.goto('/confirmar-conta/?token=this-token-does-not-exist', {
+    waitUntil: 'networkidle',
+  });
+  await page.waitForTimeout(2500);
+  const body = await page.locator('body').innerText();
+  expect(body).toMatch(/link pode ter expirado|Refazer cadastro|N[ãa]o autenticado/i);
+});
+
 test('menu principal: link "Eleições 2026" navegável', async ({ page }) => {
   await page.goto('/', { waitUntil: 'networkidle' });
   await page.waitForTimeout(500);
