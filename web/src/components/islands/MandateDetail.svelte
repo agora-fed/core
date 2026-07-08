@@ -166,9 +166,14 @@
         <p class="muted">Sem demandas registradas ainda.</p>
       {/if}
     </div>
-    <a class="btn btn-primary cta" href={`/propor?mandate=${mandate.id}`}>
-      Propor demanda
-    </a>
+    <div class="cta-group">
+      <a class="btn btn-primary cta" href={`/propor?mandate=${mandate.id}`}>
+        Propor demanda
+      </a>
+      <a class="btn btn-ghost cta-alt" href={`/politicos/${mandate.id}/placar`}>
+        📊 Placar público
+      </a>
+    </div>
   </header>
 
   {#if pendingSlas.length > 0}
@@ -407,6 +412,15 @@
     color: var(--c-navy);
   }
   .cta {
+    align-self: center;
+  }
+  .cta-group {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .cta-alt {
     align-self: center;
   }
   .urgent {

@@ -120,7 +120,7 @@
     {:else}
       <span class="avatar avatar-placeholder">👤</span>
     {/if}
-    <div>
+    <div class="who">
       <h1>Painel do mandato</h1>
       <p class="muted">
         <strong>{mine.mandate.display_name}</strong> ·
@@ -131,7 +131,25 @@
         Vínculo verificado em nível <strong>{mine.binding_level}</strong>.
       </p>
     </div>
+    <a class="btn btn-ghost placar" href={`/politicos/${mine.mandate.id}/placar`}>
+      📊 Ver placar público
+    </a>
   </header>
+
+  <section class="counters" aria-label="Resumo">
+    <div class="counter">
+      <strong>{pending.length}</strong>
+      <span>com prazo correndo</span>
+    </div>
+    <div class="counter ok">
+      <strong>{settled.filter((s) => s.status === 'answered').length}</strong>
+      <span>respondidas</span>
+    </div>
+    <div class="counter bad">
+      <strong>{settled.filter((s) => s.status === 'ignored').length}</strong>
+      <span>silêncio registrado</span>
+    </div>
+  </section>
 
   <section>
     <h2>
@@ -260,6 +278,58 @@
   section h2 {
     font-size: 1.05rem;
     margin: 0 0 1rem;
+  }
+  .who {
+    flex: 1;
+  }
+  .placar {
+    margin-left: auto;
+    align-self: center;
+    white-space: nowrap;
+  }
+  .counters {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+    margin: 0 0 1.5rem;
+  }
+  @media (max-width: 480px) {
+    .counters {
+      grid-template-columns: 1fr;
+    }
+  }
+  .counter {
+    padding: 0.85rem 1rem;
+    background: var(--c-bg, #f2f4f7);
+    border: 1px solid var(--c-border);
+    border-radius: 10px;
+    text-align: center;
+  }
+  .counter strong {
+    display: block;
+    font-size: 1.75rem;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .counter span {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--c-text-muted);
+    margin-top: 4px;
+  }
+  .counter.ok {
+    background: var(--c-green-soft, #e6f7ed);
+    border-color: #b7e4c7;
+  }
+  .counter.ok strong {
+    color: #115c2d;
+  }
+  .counter.bad {
+    background: #fff1f0;
+    border-color: #ffa39e;
+  }
+  .counter.bad strong {
+    color: #a8071a;
   }
   .sla-list {
     list-style: none;

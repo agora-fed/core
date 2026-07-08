@@ -1,0 +1,57 @@
+---
+// Página dedicada do PLACAR PÚBLICO de um(a) parlamentar. Existência
+// justificada: URL curta pra compartilhar no fediverso ("olha o placar
+// dessa deputada:") + Open Graph card social + foco visual no dado que
+// importa (respondidas × ignoradas + tempo médio).
+//
+// SSG: pré-gera 1 página por mandato federal/estadual (mesma lógica do
+// perfil detalhado /politicos/[mandate].astro). Municipais caem no fallback
+// via query param.
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import ScorecardCard from '../../../components/islands/ScorecardCard.svelte';
+import { getAllMandates, DEFAULT_ORG_ID } from '../../../lib/api';
+
+export async function getStaticPaths() {
+  const [fed, est] = await Promise.all([
+    getAllMandates(DEFAULT_ORG_ID, 5000, 'federal'),
+    getAllMandates(DEFAULT_ORG_ID, 5000, 'estadual'),
+  ]);
+  const merged = [
+    ...(fed.ok && fed.data ? fed.data : []),
+    ...(est.ok && est.data ? est.data : []),
+  ];
+  return merged.map((m) => ({ params: { mandate: m.id } }));
+}
+
+const { mandate } = Astro.params;
+const description =
+  'Placar público de accountability: propostas cidadãs recebidas, respondidas dentro do prazo, e silêncio público registrado.';
+---
+
+<BaseLayout title="Placar do parlamentar" {description}>
+  <section class="section">
+    <div class="container">
+      <p class="crumb muted">
+        <a href={`/politicos/${mandate}`}>← Voltar ao perfil</a>
+      </p>
+      <ScorecardCard client:load mandateId={mandate!} />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .container {
+    max-width: 48rem;
+  }
+  .crumb {
+    margin: 0 0 var(--sp-3);
+    font-size: var(--fs-sm);
+  }
+  .crumb a {
+    color: var(--text-3);
+    text-decoration: none;
+  }
+  .crumb a:hover {
+    color: var(--text-1);
+  }
+</style>
