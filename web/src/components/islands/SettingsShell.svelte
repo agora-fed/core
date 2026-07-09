@@ -14,6 +14,7 @@
   import FediverseSearch from './FediverseSearch.svelte';
   import TituloEleitorForm from './TituloEleitorForm.svelte';
   import LgpdPanel from './LgpdPanel.svelte';
+  import FiltersPanel from './FiltersPanel.svelte';
 
   type TabId =
     | 'perfil'
@@ -22,6 +23,7 @@
     | 'seguranca'
     | 'aplicativos'
     | 'fediverso'
+    | 'filtros'
     | 'lgpd';
 
   const tabs: { id: TabId; label: string }[] = [
@@ -31,6 +33,7 @@
     { id: 'seguranca', label: 'Segurança' },
     { id: 'aplicativos', label: 'Aplicativos' },
     { id: 'fediverso', label: 'Fediverso' },
+    { id: 'filtros', label: 'Filtros' },
     { id: 'lgpd', label: 'LGPD' },
   ];
 
@@ -134,6 +137,17 @@
           </p>
         </header>
         <FediverseSearch />
+      </section>
+    {:else if active === 'filtros'}
+      <section class="section">
+        <header class="s-head">
+          <h2>Filtros de conteúdo</h2>
+          <p class="muted">
+            Adicione termos que devem esconder publicações do seu feed. Zero
+            fanfarra: match simples por substring, case-insensitive.
+          </p>
+        </header>
+        <FiltersPanel />
       </section>
     {:else if active === 'lgpd'}
       <section class="section">

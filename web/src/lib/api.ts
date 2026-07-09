@@ -1247,6 +1247,31 @@ export const adminAddDomainBlock = (domain: string, severity: 'silence' | 'suspe
     severity,
     reason,
   });
+/** Filtros pessoais do cidadão (esconde publicações por termo). */
+export interface ContentFilterDto {
+  id: string;
+  phrase: string;
+  context: string[];
+  expires_at: string | null;
+  created_at: string;
+}
+export const listMyFilters = () =>
+  apiGetCredentialed<ContentFilterDto[]>('/api/v1/filters');
+export const createMyFilter = (phrase: string, context: string[] = ['home'], expires_in?: number) =>
+  apiPost<ContentFilterDto>('/api/v1/filters', { phrase, context, expires_in });
+export async function deleteMyFilter(id: string): Promise<ApiResponse<{ ok: true }>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/filters/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { accept: 'application/json' },
+    });
+    return (await res.json()) as ApiResponse<{ ok: true }>;
+  } catch (err) {
+    return { success: false, error: { code: 'network', message: String(err) } };
+  }
+}
+
 export async function adminRemoveDomainBlock(domain: string): Promise<ApiResponse<{ ok: true }>> {
   try {
     const res = await fetch(
