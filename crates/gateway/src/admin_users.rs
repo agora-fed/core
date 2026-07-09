@@ -109,6 +109,9 @@ pub struct AdminUserRow {
     // Perfil cívico — flags derivadas.
     pub has_mandate: bool,
     pub has_candidacy: bool,
+    // Estado de moderação (0.26.11).
+    pub suspended_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub silenced_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -211,7 +214,9 @@ async fn list(
                JOIN mandate m ON m.id = mib.mandate_id
               WHERE mib.citizen_id = c.id),
             FALSE
-          )                     AS has_candidacy
+          )                     AS has_candidacy,
+          c.suspended_at,
+          c.silenced_at
           FROM citizen c
           LEFT JOIN auth_credential ac ON ac.citizen_id = c.id
           LEFT JOIN plat         ON plat.citizen_id = c.id

@@ -14,8 +14,13 @@
     patchAdminUser,
     setPlatformRole,
     setPartyRole,
+    adminSuspendAccount,
+    adminUnsuspendAccount,
+    adminSilenceAccount,
+    adminUnsilenceAccount,
     type AdminUserRow,
   } from '../../lib/api';
+  import { toast } from '../../lib/toasts';
   import Card from '../ui/Card.svelte';
   import Button from '../ui/Button.svelte';
   import Input from '../ui/Input.svelte';
@@ -61,6 +66,44 @@
   let draftVerif = $state('email');
   let saving = $state(false);
   let saveMsg = $state<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  // Ações de moderação em voo (por citizen_id).
+  let modBusy = $state<Set<string>>(new Set());
+
+  async function runMod(action: 'suspend' | 'unsuspend' | 'silence' | 'unsilence') {
+    if (!editing) return;
+    const id = editing.citizen_id;
+    if (modBusy.has(id)) return;
+    modBusy = new Set(modBusy).add(id);
+    let res;
+    if (action === 'suspend') {
+      const reason = prompt('Razão da suspensão (opcional, aparece no audit log):') ?? undefined;
+      res = await adminSuspendAccount(id, reason || undefined);
+    } else if (action === 'unsuspend') {
+      res = await adminUnsuspendAccount(id);
+    } else if (action === 'silence') {
+      const reason = prompt('Razão do silenciamento (opcional, aparece no audit log):') ?? undefined;
+      res = await adminSilenceAccount(id, reason || undefined);
+    } else {
+      res = await adminUnsilenceAccount(id);
+    }
+    const done = new Set(modBusy);
+    done.delete(id);
+    modBusy = done;
+    if (res.success) {
+      toast.success(
+        action === 'suspend' ? 'Conta suspensa.'
+        : action === 'unsuspend' ? 'Suspensão removida.'
+        : action === 'silence' ? 'Conta silenciada.'
+        : 'Silenciamento removido.',
+      );
+      // Refresca a lista e sincroniza o editing.
+      await refresh();
+      const fresh = rows.find((r) => r.citizen_id === id);
+      if (fresh) editing = fresh;
+    } else {
+      toast.error(res.error?.message ?? 'Falha na ação de moderação.');
+    }
+  }
 
   async function refresh(append = false) {
     loading = true;
@@ -420,6 +463,46 @@
       {/if}
     </div>
 
+    <hr />
+    <div class="field">
+      <label>Moderação da conta</label>
+      <div class="mod-status">
+        {#if editing.suspended_at}
+          <Badge tone="danger" size="sm">Suspensa</Badge>
+        {/if}
+        {#if editing.silenced_at}
+          <Badge tone="warning" size="sm">Silenciada</Badge>
+        {/if}
+        {#if !editing.suspended_at && !editing.silenced_at}
+          <span class="muted small">Sem restrições.</span>
+        {/if}
+      </div>
+      <div class="mod-actions">
+        {#if editing.suspended_at}
+          <Button variant="ghost" size="sm" onclick={() => runMod('unsuspend')} loading={modBusy.has(editing.citizen_id)}>
+            Retirar suspensão
+          </Button>
+        {:else}
+          <Button variant="danger" size="sm" onclick={() => runMod('suspend')} loading={modBusy.has(editing.citizen_id)}>
+            Suspender
+          </Button>
+        {/if}
+        {#if editing.silenced_at}
+          <Button variant="ghost" size="sm" onclick={() => runMod('unsilence')} loading={modBusy.has(editing.citizen_id)}>
+            Retirar silenciamento
+          </Button>
+        {:else}
+          <Button variant="secondary" size="sm" onclick={() => runMod('silence')} loading={modBusy.has(editing.citizen_id)}>
+            Silenciar
+          </Button>
+        {/if}
+      </div>
+      <p class="hint muted small">
+        <strong>Suspender</strong>: bloqueia login, oculta a conta e seu conteúdo, encerra sessões ativas.
+        <strong>Silenciar</strong>: notas só aparecem para quem já segue; conta some do diretório público.
+      </p>
+    </div>
+
     <footer>
       {#if saveMsg}
         <div class="alert-slot">
@@ -580,6 +663,19 @@
     border: 0;
     border-top: 1px dashed var(--border-subtle);
     margin: var(--sp-2) 0;
+  }
+  .mod-status {
+    display: flex;
+    gap: var(--sp-2);
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: var(--sp-2);
+  }
+  .mod-actions {
+    display: flex;
+    gap: var(--sp-2);
+    flex-wrap: wrap;
+    margin-bottom: var(--sp-2);
   }
   .field {
     display: grid;

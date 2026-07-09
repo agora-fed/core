@@ -875,6 +875,8 @@ export interface AdminUserRow {
   party_admin_role: 'admin' | 'moderador' | null;
   has_mandate: boolean;
   has_candidacy: boolean;
+  suspended_at: string | null;
+  silenced_at: string | null;
 }
 export interface AdminUsersFilter {
   q?: string;
@@ -1198,6 +1200,34 @@ export const adminResolveReport = (id: string, notes?: string) =>
 
 export const adminReopenReport = (id: string) =>
   apiPost<{ ok: true }>(`/api/v1/admin/reports/${encodeURIComponent(id)}/reopen`, {});
+
+/** Admin: ações em contas (suspender/silenciar). */
+export const adminSuspendAccount = (id: string, reason?: string) =>
+  apiPost<{ ok: true }>(`/api/v1/admin/accounts/${encodeURIComponent(id)}/suspend`, { reason });
+export const adminUnsuspendAccount = (id: string) =>
+  apiPost<{ ok: true }>(`/api/v1/admin/accounts/${encodeURIComponent(id)}/unsuspend`, {});
+export const adminSilenceAccount = (id: string, reason?: string) =>
+  apiPost<{ ok: true }>(`/api/v1/admin/accounts/${encodeURIComponent(id)}/silence`, { reason });
+export const adminUnsilenceAccount = (id: string) =>
+  apiPost<{ ok: true }>(`/api/v1/admin/accounts/${encodeURIComponent(id)}/unsilence`, {});
+
+/** Admin: audit log. */
+export interface AdminAuditRowDto {
+  id: string;
+  admin_id: string;
+  admin_handle: string | null;
+  action: string;
+  target_citizen_id: string | null;
+  target_citizen_handle: string | null;
+  target_domain: string | null;
+  target_id: string | null;
+  detail: unknown;
+  created_at: string;
+}
+export const adminListAudit = (limit = 100, offset = 0) =>
+  apiGetCredentialed<AdminAuditRowDto[]>(
+    `/api/v1/admin/audit?limit=${limit}&offset=${offset}`,
+  );
 
 /** List de bookmarks (retorna object_uris; usa junto com getMyFeed pra hidratar). */
 export const listBookmarks = (limit = 20, offset = 0) =>

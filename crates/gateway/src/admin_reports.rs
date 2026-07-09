@@ -28,6 +28,13 @@ pub fn routes(state: AppState) -> Router<()> {
         .route("/admin/reports", get(list_reports))
         .route("/admin/reports/{id}/resolve", post(resolve_report))
         .route("/admin/reports/{id}/reopen", post(reopen_report))
+        // Ações de moderação em contas (Fatia 2).
+        .route("/admin/accounts/{id}/suspend", post(suspend_account))
+        .route("/admin/accounts/{id}/unsuspend", post(unsuspend_account))
+        .route("/admin/accounts/{id}/silence", post(silence_account))
+        .route("/admin/accounts/{id}/unsilence", post(unsilence_account))
+        // Audit log.
+        .route("/admin/audit", get(list_audit))
         .with_state(state)
 }
 
@@ -245,11 +252,23 @@ async fn resolve_report(
             Json(ApiResponse::<()>::fail("not_found", "Denúncia não encontrada ou já resolvida.")),
         )
             .into_response(),
-        Ok(_) => (
-            StatusCode::OK,
-            Json(ApiResponse::ok(serde_json::json!({ "ok": true }))),
-        )
-            .into_response(),
+        Ok(_) => {
+            let _ = audit(
+                &state.db,
+                admin_id,
+                "report_resolve",
+                None,
+                None,
+                Some(id),
+                notes.as_deref().map(|n| serde_json::json!({ "notes": n })),
+            )
+            .await;
+            (
+                StatusCode::OK,
+                Json(ApiResponse::ok(serde_json::json!({ "ok": true }))),
+            )
+                .into_response()
+        }
         Err(err) => storage_resp(err),
     }
 }
@@ -259,9 +278,10 @@ async fn reopen_report(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &state.db).await {
-        return r;
-    }
+    let admin_id = match require_admin(&headers, &state.db).await {
+        Ok(id) => id,
+        Err(r) => return r,
+    };
     let res = sqlx::query(
         r"UPDATE note_report
              SET resolved_at = NULL,
@@ -273,6 +293,23 @@ async fn reopen_report(
     .execute(&state.db)
     .await;
     match res {
+        Ok(r) if r.rows_affected() > 0 => {
+            let _ = audit(
+                &state.db,
+                admin_id,
+                "report_reopen",
+                None,
+                None,
+                Some(id),
+                None,
+            )
+            .await;
+            (
+                StatusCode::OK,
+                Json(ApiResponse::ok(serde_json::json!({ "ok": true }))),
+            )
+                .into_response()
+        }
         Ok(_) => (
             StatusCode::OK,
             Json(ApiResponse::ok(serde_json::json!({ "ok": true }))),
@@ -280,4 +317,310 @@ async fn reopen_report(
             .into_response(),
         Err(err) => storage_resp(err),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Ações em contas (Fatia 2)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, Default)]
+struct ModerateBody {
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+async fn suspend_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    body: Option<Json<ModerateBody>>,
+) -> Response {
+    let admin_id = match require_admin(&headers, &state.db).await {
+        Ok(id) => id,
+        Err(r) => return r,
+    };
+    let reason = body.and_then(|Json(b)| b.reason).and_then(|s| {
+        let t = s.trim().to_owned();
+        if t.is_empty() { None } else { Some(t) }
+    });
+    let res = sqlx::query(
+        r"UPDATE citizen
+             SET suspended_at = now(),
+                 suspended_reason = $2
+           WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(id)
+    .bind(reason.as_deref())
+    .execute(&state.db)
+    .await;
+    match res {
+        Ok(r) if r.rows_affected() == 0 => not_found_json("Conta não encontrada."),
+        Ok(_) => {
+            // Sessões ativas: força logout (best-effort).
+            let _ = sqlx::query(r"DELETE FROM auth_session WHERE citizen_id = $1")
+                .bind(id)
+                .execute(&state.db)
+                .await;
+            let _ = audit(
+                &state.db,
+                admin_id,
+                "account_suspend",
+                Some(id),
+                None,
+                None,
+                reason.as_deref().map(|s| serde_json::json!({ "reason": s })),
+            )
+            .await;
+            ok_json()
+        }
+        Err(err) => storage_resp(err),
+    }
+}
+
+async fn unsuspend_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Response {
+    let admin_id = match require_admin(&headers, &state.db).await {
+        Ok(id) => id,
+        Err(r) => return r,
+    };
+    let res = sqlx::query(
+        r"UPDATE citizen
+             SET suspended_at = NULL,
+                 suspended_reason = NULL
+           WHERE id = $1",
+    )
+    .bind(id)
+    .execute(&state.db)
+    .await;
+    match res {
+        Ok(_) => {
+            let _ = audit(&state.db, admin_id, "account_unsuspend", Some(id), None, None, None).await;
+            ok_json()
+        }
+        Err(err) => storage_resp(err),
+    }
+}
+
+async fn silence_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    body: Option<Json<ModerateBody>>,
+) -> Response {
+    let admin_id = match require_admin(&headers, &state.db).await {
+        Ok(id) => id,
+        Err(r) => return r,
+    };
+    let reason = body.and_then(|Json(b)| b.reason).and_then(|s| {
+        let t = s.trim().to_owned();
+        if t.is_empty() { None } else { Some(t) }
+    });
+    let res = sqlx::query(
+        r"UPDATE citizen
+             SET silenced_at = now(),
+                 silenced_reason = $2
+           WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(id)
+    .bind(reason.as_deref())
+    .execute(&state.db)
+    .await;
+    match res {
+        Ok(r) if r.rows_affected() == 0 => not_found_json("Conta não encontrada."),
+        Ok(_) => {
+            let _ = audit(
+                &state.db,
+                admin_id,
+                "account_silence",
+                Some(id),
+                None,
+                None,
+                reason.as_deref().map(|s| serde_json::json!({ "reason": s })),
+            )
+            .await;
+            ok_json()
+        }
+        Err(err) => storage_resp(err),
+    }
+}
+
+async fn unsilence_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Response {
+    let admin_id = match require_admin(&headers, &state.db).await {
+        Ok(id) => id,
+        Err(r) => return r,
+    };
+    let res = sqlx::query(
+        r"UPDATE citizen
+             SET silenced_at = NULL,
+                 silenced_reason = NULL
+           WHERE id = $1",
+    )
+    .bind(id)
+    .execute(&state.db)
+    .await;
+    match res {
+        Ok(_) => {
+            let _ = audit(&state.db, admin_id, "account_unsilence", Some(id), None, None, None).await;
+            ok_json()
+        }
+        Err(err) => storage_resp(err),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Audit log leitura
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+struct AuditRowDto {
+    id: Uuid,
+    admin_id: Uuid,
+    admin_handle: Option<String>,
+    action: String,
+    target_citizen_id: Option<Uuid>,
+    target_citizen_handle: Option<String>,
+    target_domain: Option<String>,
+    target_id: Option<Uuid>,
+    detail: Option<serde_json::Value>,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AuditQuery {
+    #[serde(default = "default_limit")]
+    limit: i64,
+    #[serde(default)]
+    offset: i64,
+}
+
+async fn list_audit(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<AuditQuery>,
+) -> Response {
+    if let Err(r) = require_admin(&headers, &state.db).await {
+        return r;
+    }
+    let limit = q.limit.clamp(1, 200);
+    let offset = q.offset.max(0);
+    let rows = sqlx::query_as::<
+        _,
+        (
+            Uuid,
+            Uuid,
+            Option<String>,
+            String,
+            Option<Uuid>,
+            Option<String>,
+            Option<String>,
+            Option<Uuid>,
+            Option<serde_json::Value>,
+            DateTime<Utc>,
+        ),
+    >(
+        r"SELECT a.id,
+                 a.admin_id,
+                 (SELECT handle FROM citizen WHERE id = a.admin_id) AS admin_handle,
+                 a.action,
+                 a.target_citizen_id,
+                 (SELECT handle FROM citizen WHERE id = a.target_citizen_id) AS target_citizen_handle,
+                 a.target_domain,
+                 a.target_id,
+                 a.detail,
+                 a.created_at
+            FROM admin_audit a
+           ORDER BY a.created_at DESC
+           LIMIT $1 OFFSET $2",
+    )
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&state.db)
+    .await;
+    match rows {
+        Ok(rows) => {
+            let list: Vec<AuditRowDto> = rows
+                .into_iter()
+                .map(
+                    |(
+                        id,
+                        admin_id,
+                        admin_handle,
+                        action,
+                        target_citizen_id,
+                        target_citizen_handle,
+                        target_domain,
+                        target_id,
+                        detail,
+                        created_at,
+                    )| AuditRowDto {
+                        id,
+                        admin_id,
+                        admin_handle,
+                        action,
+                        target_citizen_id,
+                        target_citizen_handle,
+                        target_domain,
+                        target_id,
+                        detail,
+                        created_at,
+                    },
+                )
+                .collect();
+            (StatusCode::OK, Json(ApiResponse::ok(list))).into_response()
+        }
+        Err(err) => storage_resp(err),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers compartilhados
+// ---------------------------------------------------------------------------
+
+fn ok_json() -> Response {
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(serde_json::json!({ "ok": true }))),
+    )
+        .into_response()
+}
+
+fn not_found_json(msg: &'static str) -> Response {
+    (
+        StatusCode::NOT_FOUND,
+        Json(ApiResponse::<()>::fail("not_found", msg)),
+    )
+        .into_response()
+}
+
+async fn audit(
+    db: &PgPool,
+    admin_id: Uuid,
+    action: &str,
+    target_citizen_id: Option<Uuid>,
+    target_domain: Option<&str>,
+    target_id: Option<Uuid>,
+    detail: Option<serde_json::Value>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r"INSERT INTO admin_audit
+            (id, admin_id, action, target_citizen_id, target_domain, target_id, detail)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(admin_id)
+    .bind(action)
+    .bind(target_citizen_id)
+    .bind(target_domain)
+    .bind(target_id)
+    .bind(detail)
+    .execute(db)
+    .await
+    .map(|_| ())
 }

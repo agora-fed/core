@@ -212,12 +212,27 @@ pub async fn list_feed(
                   JOIN citizen c ON c.id = oe.citizen_id
                  WHERE oe.kind = 'Create'
                    AND oe.deleted_at IS NULL
-                   AND (oe.citizen_id = $1
-                        OR (c.handle IS NOT NULL AND EXISTS (
-                              SELECT 1 FROM federation_follow f
-                               WHERE f.citizen_id = $1
-                                 AND f.direction = 'outbound'
-                                 AND f.remote_actor_url = $3 || '/actors/' || c.handle)))
+                   -- Suspensos pela moderação somem do feed. Silenciados só
+                   -- aparecem pra quem já os segue (mesmo caminho do OR abaixo).
+                   AND c.suspended_at IS NULL
+                   AND (
+                        oe.citizen_id = $1
+                        OR (
+                             c.handle IS NOT NULL
+                             AND c.silenced_at IS NULL
+                             AND EXISTS (
+                               SELECT 1 FROM federation_follow f
+                                WHERE f.citizen_id = $1
+                                  AND f.direction = 'outbound'
+                                  AND f.remote_actor_url = $3 || '/actors/' || c.handle))
+                        OR (
+                             c.handle IS NOT NULL
+                             AND c.silenced_at IS NOT NULL
+                             AND EXISTS (
+                               SELECT 1 FROM federation_follow f
+                                WHERE f.citizen_id = $1
+                                  AND f.direction = 'outbound'
+                                  AND f.remote_actor_url = $3 || '/actors/' || c.handle)))
                 UNION ALL
                 SELECT t.object_uri,
                        t.actor_handle,
