@@ -83,6 +83,7 @@ pub fn client_routes(state: AppState) -> Router<()> {
         .route("/me/follow/status", get(follow_status))
         .route("/me/social/following", get(my_following_list))
         .route("/me/social/followers", get(my_followers_list))
+        .route("/me/bulk_follow", post(bulk_follow))
         .route("/me/notes", post(post_my_note).delete(delete_my_note).patch(patch_my_note))
         .route("/me/feed", get(get_my_feed))
         .route("/me/like", post(toggle_like))
@@ -3213,6 +3214,183 @@ async fn my_followers_list(
     caller: CallerId,
 ) -> Response {
     social_list(&state, caller.citizen.as_uuid(), "inbound").await
+}
+
+#[derive(Debug, Deserialize)]
+struct BulkFollowBody {
+    /// Lista de actor URLs (`https://host/users/x` ou `https://host/actors/y`) ou
+    /// handles `@user@host`. Handles são resolvidos via WebFinger.
+    entries: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct BulkFollowResult {
+    total: usize,
+    followed: usize,
+    already: usize,
+    failed: usize,
+    errors: Vec<String>,
+}
+
+/// Recebe uma lista mista de handles/URLs e dispara Follow pra cada um.
+/// Best-effort: cada falha vira uma string em `errors`. Cap em 200 por chamada
+/// pra evitar abuso.
+async fn bulk_follow(
+    State(state): State<AppState>,
+    caller: CallerId,
+    AxumJson(body): AxumJson<BulkFollowBody>,
+) -> Response {
+    let entries: Vec<String> = body
+        .entries
+        .into_iter()
+        .filter_map(|s| {
+            let t = s.trim().to_owned();
+            if t.is_empty() { None } else { Some(t) }
+        })
+        .take(200)
+        .collect();
+    let mut result = BulkFollowResult {
+        total: entries.len(),
+        followed: 0,
+        already: 0,
+        failed: 0,
+        errors: Vec::new(),
+    };
+    for entry in entries {
+        // Resolve pra URL: se começa com http, é URL; se começa com @, é handle → webfinger.
+        let actor_url = if entry.starts_with("https://") || entry.starts_with("http://") {
+            entry.clone()
+        } else {
+            // Deriva via lookup_remote inline (reusa fetch_remote_actor + webfinger).
+            let raw = entry.trim_start_matches('@');
+            let Some((user, host)) = raw.rsplit_once('@') else {
+                result.failed += 1;
+                result.errors.push(format!("{entry}: formato inválido"));
+                continue;
+            };
+            let webfinger_url =
+                format!("https://{host}/.well-known/webfinger?resource=acct:{user}@{host}");
+            let jrd = match fetch_remote_actor(&webfinger_url).await {
+                Ok(v) => v,
+                Err(_) => {
+                    result.failed += 1;
+                    result.errors.push(format!("{entry}: webfinger falhou"));
+                    continue;
+                }
+            };
+            let self_url = jrd
+                .get("links")
+                .and_then(Value::as_array)
+                .and_then(|links| {
+                    links.iter().find_map(|l| {
+                        let rel = l.get("rel").and_then(Value::as_str)?;
+                        let typ = l.get("type").and_then(Value::as_str)?;
+                        if rel == "self" && typ.contains("activity") {
+                            l.get("href").and_then(Value::as_str).map(str::to_owned)
+                        } else {
+                            None
+                        }
+                    })
+                });
+            match self_url {
+                Some(url) => url,
+                None => {
+                    result.failed += 1;
+                    result
+                        .errors
+                        .push(format!("{entry}: instância sem ActivityPub self link"));
+                    continue;
+                }
+            }
+        };
+        // Verifica se já segue.
+        let already: bool = sqlx::query_scalar::<_, bool>(
+            r"SELECT EXISTS (SELECT 1 FROM federation_follow
+                             WHERE citizen_id = $1 AND direction = 'outbound' AND remote_actor_url = $2)",
+        )
+        .bind(caller.citizen.as_uuid())
+        .bind(&actor_url)
+        .fetch_one(&state.db)
+        .await
+        .unwrap_or(false);
+        if already {
+            result.already += 1;
+            continue;
+        }
+        // Dispara o mesmo caminho do follow_remote via chamada interna helper.
+        // Simplificado: só valida se resolve e insere pending row; delivery
+        // real usa o worker. Pra minimizar duplicação, reusa a rota:
+        match do_follow_remote(&state, caller.clone(), &actor_url).await {
+            Ok(()) => result.followed += 1,
+            Err(msg) => {
+                result.failed += 1;
+                result.errors.push(format!("{entry}: {msg}"));
+            }
+        }
+    }
+    (StatusCode::OK, Json(ApiResponse::ok(result))).into_response()
+}
+
+async fn do_follow_remote(
+    state: &AppState,
+    caller: CallerId,
+    actor_url: &str,
+) -> Result<(), String> {
+    let svc = ProfileService::from_state(state);
+    let me = svc
+        .find_public_by_handle(caller.org, &handle_of(&svc, caller.citizen).await)
+        .await
+        .map_err(|_| "perfil não é público".to_string())?;
+    let _ = svc
+        .ensure_actor_public_key(caller.citizen)
+        .await
+        .map_err(|e| format!("chave: {e:?}"))?;
+    let private_pem = svc
+        .read_actor_private_key(caller.citizen)
+        .await
+        .map_err(|e| format!("chave privada: {e:?}"))?;
+    let remote_actor = fetch_remote_actor(actor_url)
+        .await
+        .map_err(|_| "actor remoto não respondeu".to_string())?;
+    let remote_inbox = remote_actor
+        .get("inbox")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "actor sem inbox".to_string())?
+        .to_owned();
+    let public_origin = std::env::var("PUBLIC_ORIGIN")
+        .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
+    let me_url = format!(
+        "{}/actors/{}",
+        public_origin.trim_end_matches('/'),
+        me.handle.as_deref().unwrap_or(&me.public_handle)
+    );
+    let activity_id = format!("{me_url}/activities/follow-{}", uuid::Uuid::now_v7());
+    let follow = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": activity_id,
+        "type": "Follow",
+        "actor": me_url,
+        "object": actor_url,
+    });
+    deliver_signed(&me_url, &private_pem, &remote_inbox, &follow)
+        .await
+        .map_err(|e| format!("entrega: {e:?}"))?;
+    // Persiste outbound pending.
+    let _ = sqlx::query(
+        r"INSERT INTO federation_follow
+            (id, citizen_id, direction, remote_actor_url, remote_inbox_url,
+             activity_id, created_at)
+          VALUES ($1, $2, 'outbound', $3, $4, $5, now())
+          ON CONFLICT (citizen_id, direction, remote_actor_url) DO NOTHING",
+    )
+    .bind(uuid::Uuid::now_v7())
+    .bind(caller.citizen.as_uuid())
+    .bind(actor_url)
+    .bind(&remote_inbox)
+    .bind(&activity_id)
+    .execute(&state.db)
+    .await;
+    Ok(())
 }
 
 async fn social_list(state: &AppState, citizen: uuid::Uuid, direction: &str) -> Response {

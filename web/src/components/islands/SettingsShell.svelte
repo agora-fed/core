@@ -16,6 +16,7 @@
   import LgpdPanel from './LgpdPanel.svelte';
   import FiltersPanel from './FiltersPanel.svelte';
   import PreferencesPanel from './PreferencesPanel.svelte';
+  import ImportPanel from './ImportPanel.svelte';
 
   type TabId =
     | 'perfil'
@@ -26,6 +27,7 @@
     | 'fediverso'
     | 'preferencias'
     | 'filtros'
+    | 'importar'
     | 'lgpd';
 
   const tabs: { id: TabId; label: string }[] = [
@@ -37,6 +39,7 @@
     { id: 'aplicativos', label: 'Aplicativos' },
     { id: 'fediverso', label: 'Fediverso' },
     { id: 'filtros', label: 'Filtros' },
+    { id: 'importar', label: 'Importar' },
     { id: 'lgpd', label: 'LGPD' },
   ];
 
@@ -151,6 +154,17 @@
           </p>
         </header>
         <PreferencesPanel />
+      </section>
+    {:else if active === 'importar'}
+      <section class="section">
+        <header class="s-head">
+          <h2>Importar contas do fediverso</h2>
+          <p class="muted">
+            Cole ou envie um CSV com contas que você já segue em outra
+            instância. A gente dispara o Follow pra cada uma.
+          </p>
+        </header>
+        <ImportPanel />
       </section>
     {:else if active === 'filtros'}
       <section class="section">

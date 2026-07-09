@@ -1457,6 +1457,81 @@ export async function adminDeleteCwPreset(id: string): Promise<ApiResponse<{ ok:
   }
 }
 
+/** Bulk follow via CSV (0.26.21). */
+export interface BulkFollowResultDto {
+  total: number;
+  followed: number;
+  already: number;
+  failed: number;
+  errors: string[];
+}
+export const bulkFollow = (entries: string[]) =>
+  apiPost<BulkFollowResultDto>('/api/v1/me/bulk_follow', { entries });
+
+/** Admin: domínios de e-mail bloqueados. */
+export interface EmailDomainDto {
+  domain: string;
+  reason: string | null;
+  created_at: string;
+}
+export const adminListEmailDomains = () =>
+  apiGetCredentialed<EmailDomainDto[]>('/api/v1/admin/email_domain_blocks');
+export const adminAddEmailDomain = (domain: string, reason?: string) =>
+  apiPost<{ ok: true }>('/api/v1/admin/email_domain_blocks', { domain, reason });
+export async function adminRemoveEmailDomain(domain: string): Promise<ApiResponse<{ ok: true }>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/admin/email_domain_blocks/${encodeURIComponent(domain)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { accept: 'application/json' },
+    });
+    return (await res.json()) as ApiResponse<{ ok: true }>;
+  } catch (err) {
+    return { success: false, error: { code: 'network', message: String(err) } };
+  }
+}
+
+/** Admin: regras de IP. */
+export interface IpRuleDto {
+  id: string;
+  cidr: string;
+  scope: 'signup' | 'login' | 'all';
+  state: 'allow' | 'deny';
+  reason: string | null;
+  created_at: string;
+}
+export const adminListIpRules = () =>
+  apiGetCredentialed<IpRuleDto[]>('/api/v1/admin/ip_rules');
+export const adminAddIpRule = (body: { cidr: string; scope: IpRuleDto['scope']; state: IpRuleDto['state']; reason?: string }) =>
+  apiPost<{ ok: true }>('/api/v1/admin/ip_rules', body);
+export async function adminRemoveIpRule(id: string): Promise<ApiResponse<{ ok: true }>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/admin/ip_rules/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { accept: 'application/json' },
+    });
+    return (await res.json()) as ApiResponse<{ ok: true }>;
+  } catch (err) {
+    return { success: false, error: { code: 'network', message: String(err) } };
+  }
+}
+
+/** Admin: pending signups (revisão manual). */
+export interface PendingSignupDto {
+  citizen_id: string;
+  email: string | null;
+  handle: string | null;
+  display_name: string | null;
+  created_at: string;
+}
+export const adminListPending = () =>
+  apiGetCredentialed<PendingSignupDto[]>('/api/v1/admin/pending_signups');
+export const adminApprovePending = (id: string) =>
+  apiPost<{ ok: true }>(`/api/v1/admin/pending_signups/${encodeURIComponent(id)}/approve`, {});
+export const adminRejectPending = (id: string) =>
+  apiPost<{ ok: true }>(`/api/v1/admin/pending_signups/${encodeURIComponent(id)}/reject`, {});
+
 /** Associa o cidadão logado a um convite (pós-cadastro). */
 export const associateInvitation = (token: string) =>
   apiPost<{ ok: boolean; already?: boolean; reason?: string }>(

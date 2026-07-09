@@ -1,0 +1,23 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminPendingSignups from '../../components/islands/AdminPendingSignups.svelte';
+---
+
+<AdminLayout
+  title="Revisões de cadastro (admin)"
+  description="Contas que precisam de aprovação manual antes de logar."
+>
+  <header class="head">
+    <h1>Revisões de cadastro</h1>
+    <p class="muted">
+      Contas criadas mas em <strong>pending_review</strong>. Aprove pra
+      liberar login; rejeite pra suspender.
+    </p>
+  </header>
+  <AdminPendingSignups client:load />
+</AdminLayout>
+
+<style>
+  .head { margin-bottom: var(--sp-5); }
+  h1 { margin: 0 0 var(--sp-1); }
+</style>

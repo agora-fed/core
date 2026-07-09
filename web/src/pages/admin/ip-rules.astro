@@ -1,0 +1,24 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminIpRules from '../../components/islands/AdminIpRules.svelte';
+---
+
+<AdminLayout
+  title="Regras de IP (admin)"
+  description="Allow/deny de IP por scope (signup, login, all)."
+>
+  <header class="head">
+    <h1>Regras de IP</h1>
+    <p class="muted">
+      Bloqueia ou permite explicitamente ranges de IP no cadastro/login.
+      Formato CIDR (<code>192.0.2.0/24</code>) ou IP único (<code>203.0.113.5</code>).
+    </p>
+  </header>
+  <AdminIpRules client:load />
+</AdminLayout>
+
+<style>
+  .head { margin-bottom: var(--sp-5); }
+  h1 { margin: 0 0 var(--sp-1); }
+  code { background: var(--surface-2); padding: 2px 6px; border-radius: 4px; }
+</style>

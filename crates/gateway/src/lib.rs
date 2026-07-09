@@ -13,6 +13,7 @@ pub mod announcements;
 pub mod fediverso_admin;
 pub mod invitations;
 pub mod preferences;
+pub mod signup_gates;
 pub mod amendments;
 pub mod civic_notify;
 pub mod email_templates;
@@ -172,6 +173,7 @@ pub fn api_router(state: AppState) -> Router {
         .merge(announcements::routes(state.clone()))
         .merge(preferences::routes(state.clone()))
         .merge(fediverso_admin::routes(state.clone()))
+        .merge(signup_gates::routes(state.clone()))
         // gov.br OIDC status (só o "enabled?"). Start/callback ficam na raiz.
         .merge(govbr_oidc::api_routes(state.clone()))
         // LGPD art. 18 — exportar/excluir dados pessoais.
