@@ -1,0 +1,36 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import ColorBar from '../components/illustrations/ColorBar.astro';
+import InvitationsPage from '../components/islands/InvitationsPage.svelte';
+
+const description =
+  'Gere links de convite pra outras pessoas criarem conta na DemocraciaBR.';
+---
+
+<BaseLayout title="Convites" {description} noindex>
+  <section class="section">
+    <div class="container">
+      <header class="head">
+        <ColorBar class="head-bar" />
+        <h1>Convites</h1>
+        <p class="muted lede">
+          Gere um link único e mande pra quem você quer trazer pra
+          plataforma. Cada convite tem prazo e limite de usos.
+        </p>
+      </header>
+      <InvitationsPage client:load />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .container {
+    max-width: 60rem;
+  }
+  .head {
+    margin-bottom: var(--sp-6);
+  }
+  .lede {
+    max-width: 42rem;
+  }
+</style>

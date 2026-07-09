@@ -1,0 +1,39 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import InvitationLanding from '../components/islands/InvitationLanding.svelte';
+
+const description =
+  'Você foi convidado(a) pra criar conta na DemocraciaBR.';
+---
+
+<BaseLayout title="Convite" {description} noindex>
+  <section class="section">
+    <div class="container auth-shell">
+      <div class="auth-card card">
+        <img
+          src="/logo.png"
+          width="180"
+          height="120"
+          alt="DemocraciaBR"
+          class="logo"
+        />
+        <InvitationLanding client:load />
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .auth-shell {
+    max-width: 32rem;
+  }
+  .auth-card {
+    padding: 2rem;
+  }
+  .logo {
+    height: 44px;
+    width: auto;
+    display: block;
+    margin-bottom: 1rem;
+  }
+</style>

@@ -1229,6 +1229,52 @@ export const adminListAudit = (limit = 100, offset = 0) =>
     `/api/v1/admin/audit?limit=${limit}&offset=${offset}`,
   );
 
+/** Convites (0.26.15). */
+export interface InvitationDto {
+  id: string;
+  token: string;
+  target_email: string | null;
+  notes: string | null;
+  uses_left: number;
+  max_uses: number;
+  created_at: string;
+  expires_at: string | null;
+  first_used_at: string | null;
+  last_used_at: string | null;
+}
+export const listMyInvitations = () =>
+  apiGetCredentialed<InvitationDto[]>('/api/v1/invitations');
+export const createInvitation = (body: {
+  target_email?: string;
+  notes?: string;
+  max_uses?: number;
+  expires_in_hours?: number;
+}) => apiPost<InvitationDto>('/api/v1/invitations', body);
+export async function deleteInvitation(id: string): Promise<ApiResponse<{ ok: true }>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/invitations/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { accept: 'application/json' },
+    });
+    return (await res.json()) as ApiResponse<{ ok: true }>;
+  } catch (err) {
+    return { success: false, error: { code: 'network', message: String(err) } };
+  }
+}
+
+export interface InvitationPreviewDto {
+  valid: boolean;
+  reason: string | null;
+  invited_by_handle: string | null;
+  invited_by_display_name: string | null;
+  target_email: string | null;
+}
+export const previewInvitation = (token: string) =>
+  apiGet<InvitationPreviewDto>(
+    `/api/v1/invitations/${encodeURIComponent(token)}/preview`,
+  );
+
 /** Admin: bloqueios de domínio a nível de instância (Fatia 3). */
 export interface AdminDomainBlockDto {
   domain: string;
