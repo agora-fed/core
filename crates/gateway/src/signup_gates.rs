@@ -362,6 +362,11 @@ async fn approve_pending(
     .bind(admin)
     .execute(&state.db)
     .await;
+    crate::webhooks::dispatch_event(
+        state.db.clone(),
+        "account.approved",
+        serde_json::json!({ "citizen_id": id, "approved_by": admin }),
+    );
     ok_json()
 }
 

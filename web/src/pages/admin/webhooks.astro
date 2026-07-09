@@ -1,0 +1,25 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminWebhooks from '../../components/islands/AdminWebhooks.svelte';
+---
+
+<AdminLayout
+  title="Webhooks (admin)"
+  description="Notificações HTTP quando algo importante acontece na instância."
+>
+  <header class="head">
+    <h1>Webhooks</h1>
+    <p class="muted">
+      Cada evento ativo gera POST no seu endpoint com header
+      <code>X-DemocraciaBR-Signature: sha256=…</code> (HMAC do body).
+      O segredo é mostrado uma vez na criação — guarde.
+    </p>
+  </header>
+  <AdminWebhooks client:load />
+</AdminLayout>
+
+<style>
+  .head { margin-bottom: var(--sp-5); }
+  h1 { margin: 0 0 var(--sp-1); }
+  code { background: var(--surface-2); padding: 2px 6px; border-radius: 4px; }
+</style>

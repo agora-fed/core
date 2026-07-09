@@ -1348,6 +1348,7 @@ dependencies = [
  "dsoc-storage",
  "dsoc-surveys",
  "dsoc-votes",
+ "hmac 0.12.1",
  "image",
  "lettre",
  "rand 0.8.6",

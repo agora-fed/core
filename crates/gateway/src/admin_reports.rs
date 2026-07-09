@@ -377,6 +377,11 @@ async fn suspend_account(
                 reason.as_deref().map(|s| serde_json::json!({ "reason": s })),
             )
             .await;
+            crate::webhooks::dispatch_event(
+                state.db.clone(),
+                "account.suspended",
+                serde_json::json!({ "citizen_id": id, "reason": reason }),
+            );
             ok_json()
         }
         Err(err) => storage_resp(err),

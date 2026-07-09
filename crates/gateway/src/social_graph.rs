@@ -1485,7 +1485,19 @@ async fn create_note_report(
     .execute(&state.db)
     .await;
     match res {
-        Ok(_) => (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "ok": true })))).into_response(),
+        Ok(_) => {
+            // 0.26.22: notifica webhooks.
+            crate::webhooks::dispatch_event(
+                state.db.clone(),
+                "report.created",
+                serde_json::json!({
+                    "object_uri": body.object_uri,
+                    "author_actor_url": body.author_actor_url,
+                    "category": body.category,
+                }),
+            );
+            (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "ok": true })))).into_response()
+        }
         Err(err) => {
             tracing::error!(?err, "create_note_report");
             server_error()

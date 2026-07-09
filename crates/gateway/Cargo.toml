@@ -63,6 +63,7 @@ lettre = { workspace = true }
 chrono = { workspace = true }
 sqlx = { workspace = true }
 sha2 = "0.10"
+hmac = "0.12"
 base64 = "0.22"
 image = { workspace = true }
 rand = "0.8"

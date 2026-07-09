@@ -1532,6 +1532,36 @@ export const adminApprovePending = (id: string) =>
 export const adminRejectPending = (id: string) =>
   apiPost<{ ok: true }>(`/api/v1/admin/pending_signups/${encodeURIComponent(id)}/reject`, {});
 
+/** Webhooks (0.26.22). */
+export interface WebhookDto {
+  id: string;
+  url: string;
+  events: string[];
+  enabled: boolean;
+  last_status: number | null;
+  last_delivery_at: string | null;
+  created_at: string;
+}
+export interface WebhookWithSecretDto extends WebhookDto { secret: string; }
+export const adminListWebhooks = () =>
+  apiGetCredentialed<WebhookDto[]>('/api/v1/admin/webhooks');
+export const adminCreateWebhook = (url: string, events: string[]) =>
+  apiPost<WebhookWithSecretDto>('/api/v1/admin/webhooks', { url, events });
+export const adminUpdateWebhook = (id: string, enabled: boolean) =>
+  apiPatch<{ ok: true }>(`/api/v1/admin/webhooks/${encodeURIComponent(id)}`, { enabled });
+export async function adminDeleteWebhook(id: string): Promise<ApiResponse<{ ok: true }>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/admin/webhooks/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { accept: 'application/json' },
+    });
+    return (await res.json()) as ApiResponse<{ ok: true }>;
+  } catch (err) {
+    return { success: false, error: { code: 'network', message: String(err) } };
+  }
+}
+
 /** Associa o cidadão logado a um convite (pós-cadastro). */
 export const associateInvitation = (token: string) =>
   apiPost<{ ok: boolean; already?: boolean; reason?: string }>(
