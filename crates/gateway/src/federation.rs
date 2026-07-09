@@ -61,6 +61,7 @@ pub fn public_routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/.well-known/webfinger", get(webfinger_handler))
         .route("/actors/{handle}", get(actor_handler))
+        .route("/actors/{handle}/objects/{id}", get(object_handler))
         .route("/actors/{handle}/inbox", post(inbox_post).get(inbox_get_stub))
         .route("/actors/{handle}/outbox", get(outbox_get_populated))
         .route("/actors/{handle}/followers", get(followers_get))
@@ -135,6 +136,132 @@ async fn webfinger_handler(
         Ok(body) => ([(header::CONTENT_TYPE, JRD_JSON)], body).into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
+}
+
+/// `GET /actors/{handle}/objects/{id}` — dereferenceable AP Note (federation) OR a friendly
+/// HTML page with Open Graph tags (for social preview cards when the link is shared on
+/// Mastodon, WhatsApp, Slack, etc). Prior to this handler, this URL returned 404 — link
+/// previews were empty and remote servers couldn't refetch our notes.
+async fn object_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((handle, id)): Path<(String, String)>,
+) -> Response {
+    let Some(host) = host_from(&headers) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    // Reconstrói o activity_id que está armazenado (o object_id que estamos servindo é
+    // derivado dele: /activities/note-<uuid> ↔ /objects/<uuid>).
+    let activity_id = format!("https://{host}/actors/{handle}/activities/note-{id}");
+    let object_url = format!("https://{host}/actors/{handle}/objects/{id}");
+    let row: Result<Option<(Value,)>, _> = sqlx::query_as::<_, (Value,)>(
+        r"SELECT payload FROM federation_outbox_entry WHERE activity_id = $1",
+    )
+    .bind(&activity_id)
+    .fetch_optional(&state.db)
+    .await;
+    let payload = match row {
+        Ok(Some((p,))) => p,
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(err) => {
+            tracing::error!(error = ?err, "object_handler DB");
+            return server_error();
+        }
+    };
+    let Some(note) = payload.get("object").cloned() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    // Content-negotiation: AP client → Note JSON-LD.
+    let wants_ap = headers
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|a| {
+            a.contains("application/activity+json") || a.contains("application/ld+json")
+        });
+    if wants_ap {
+        return match serde_json::to_string(&note) {
+            Ok(body) => ([(header::CONTENT_TYPE, ACTIVITY_JSON)], body).into_response(),
+            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        };
+    }
+    // Browser: HTML com OG tags + redirect pra /publicacao/?uri=<object_url>.
+    let content_html = note
+        .get("content")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let plain = strip_html(content_html);
+    let title = truncate_chars(&plain, 80);
+    let desc = truncate_chars(&plain, 200);
+    let published = note
+        .get("published")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    // Avatar do autor pra og:image (opcional; a card ainda aparece sem).
+    let svc = ProfileService::from_state(&state);
+    let org = OrgId::from_uuid(DEFAULT_ORG_UUID);
+    let avatar = svc
+        .find_public_by_handle(org, &handle)
+        .await
+        .ok()
+        .and_then(|p| p.avatar_url)
+        .map(|u| absolutize(&host, &u));
+    let publicacao_url = format!(
+        "/publicacao/?uri={}",
+        urlencode(&object_url)
+    );
+    let og_title = escape_html(&format!("@{handle} · {title}"));
+    let og_desc = escape_html(&desc);
+    let canon = escape_html(&object_url);
+    let redirect_target = escape_html(&publicacao_url);
+    let og_image_tag = avatar
+        .as_deref()
+        .map(|u| format!(r#"<meta property="og:image" content="{}">"#, escape_html(u)))
+        .unwrap_or_default();
+    let article_time = if published.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"<meta property="article:published_time" content="{}">"#,
+            escape_html(published)
+        )
+    };
+    let html = format!(
+        r#"<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title} · @{handle} · DemocraciaBR</title>
+<meta name="description" content="{og_desc}">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="DemocraciaBR">
+<meta property="og:title" content="{og_title}">
+<meta property="og:description" content="{og_desc}">
+<meta property="og:url" content="{canon}">
+{og_image_tag}
+{article_time}
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="{og_title}">
+<meta name="twitter:description" content="{og_desc}">
+<link rel="canonical" href="{canon}">
+<link rel="alternate" type="application/activity+json" href="{canon}">
+<meta http-equiv="refresh" content="0; url={redirect_target}">
+<style>body{{font:14px system-ui;color:#334;margin:2rem}} a{{color:#115c2d}}</style>
+</head>
+<body>
+<p>Redirecionando para <a href="{redirect_target}">a publicação</a>…</p>
+</body>
+</html>"#,
+        title = escape_html(&title),
+        handle = escape_html(&handle),
+        og_title = og_title,
+        og_desc = og_desc,
+        canon = canon,
+        og_image_tag = og_image_tag,
+        article_time = article_time,
+        redirect_target = redirect_target,
+    );
+    ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], html).into_response()
 }
 
 async fn actor_handler(
@@ -3018,6 +3145,84 @@ fn host_from(headers: &HeaderMap) -> Option<String> {
         .get(header::HOST)
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned)
+}
+
+/// Escape as 5 chars perigosos pra qualquer atributo/texto HTML.
+fn escape_html(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// Percent-encode pra query string (subconjunto reservado do RFC 3986).
+fn urlencode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 3);
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+    out
+}
+
+/// Colapsa qualquer sequência de espaços/quebras + remove tags — bom o suficiente pra
+/// snippet de OG description sem trazer sanitizer de HTML no runtime.
+fn strip_html(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut in_tag = false;
+    let mut last_ws = false;
+    for c in s.chars() {
+        if in_tag {
+            if c == '>' {
+                in_tag = false;
+            }
+            continue;
+        }
+        if c == '<' {
+            in_tag = true;
+            continue;
+        }
+        if c.is_whitespace() {
+            if !last_ws && !out.is_empty() {
+                out.push(' ');
+                last_ws = true;
+            }
+        } else {
+            out.push(c);
+            last_ws = false;
+        }
+    }
+    out.trim().to_owned()
+}
+
+/// Trunca a `max` chars mantendo unicode grapheme rough; adiciona reticência quando corta.
+fn truncate_chars(s: &str, max: usize) -> String {
+    let mut count = 0;
+    let mut end = s.len();
+    for (i, _) in s.char_indices() {
+        if count == max {
+            end = i;
+            break;
+        }
+        count += 1;
+    }
+    if end == s.len() {
+        s.to_owned()
+    } else {
+        format!("{}…", &s[..end])
+    }
 }
 
 /// Turn a possibly-relative media path (`/media/…`) into an absolute `https://{host}/…` URL.
