@@ -35,6 +35,9 @@ pub fn routes(state: AppState) -> Router<()> {
         .route("/bookmarks", get(list_bookmarks))
         .route("/statuses/{id}/bookmark", post(bookmark_status))
         .route("/statuses/{id}/unbookmark", post(unbookmark_status))
+        // Bookmark de URIs cruas (notas remotas do outbox proxy, sem UUID local).
+        .route("/me/bookmarks", post(bookmark_uri).delete(unbookmark_uri))
+        .route("/me/bookmarks/status", get(bookmark_status_of))
         // Mutes
         .route("/mutes", get(list_mutes))
         .route("/accounts/{citizen_id}/mute", post(mute_account))
@@ -209,12 +212,20 @@ async fn bookmark_status(
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized();
     };
-    let object_uri = match crate::mastodon_api::resolve_status_id(&state.db, &id).await {
-        Ok(Some(uri)) => uri,
-        Ok(None) => return not_found("Nota não encontrada."),
-        Err(err) => {
-            tracing::error!(?err, "bookmark resolve_status_id");
-            return server_error();
+    // Aceita tanto o UUID de mastodon_status_id quanto o object_uri cru
+    // (AP URL, e.g. https://mastodon.social/users/x/statuses/123) — o
+    // segundo caso cobre notas do outbox remoto que ainda não têm
+    // mapeamento local, tipicamente vindas do proxy do perfil.
+    let object_uri = if id.starts_with("https://") || id.starts_with("http://") {
+        id.clone()
+    } else {
+        match crate::mastodon_api::resolve_status_id(&state.db, &id).await {
+            Ok(Some(uri)) => uri,
+            Ok(None) => return not_found("Nota não encontrada."),
+            Err(err) => {
+                tracing::error!(?err, "bookmark resolve_status_id");
+                return server_error();
+            }
         }
     };
     let res = sqlx::query(
@@ -248,19 +259,23 @@ async fn unbookmark_status(
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized();
     };
-    let object_uri = match crate::mastodon_api::resolve_status_id(&state.db, &id).await {
-        Ok(Some(uri)) => uri,
-        // Unbookmark of an unknown id is idempotent — the row cannot exist.
-        Ok(None) => {
-            return (
-                StatusCode::OK,
-                Json(ApiResponse::ok(serde_json::json!({ "ok": true }))),
-            )
-                .into_response();
-        }
-        Err(err) => {
-            tracing::error!(?err, "unbookmark resolve_status_id");
-            return server_error();
+    let object_uri = if id.starts_with("https://") || id.starts_with("http://") {
+        id.clone()
+    } else {
+        match crate::mastodon_api::resolve_status_id(&state.db, &id).await {
+            Ok(Some(uri)) => uri,
+            // Unbookmark of an unknown id is idempotent — the row cannot exist.
+            Ok(None) => {
+                return (
+                    StatusCode::OK,
+                    Json(ApiResponse::ok(serde_json::json!({ "ok": true }))),
+                )
+                    .into_response();
+            }
+            Err(err) => {
+                tracing::error!(?err, "unbookmark resolve_status_id");
+                return server_error();
+            }
         }
     };
     let res = sqlx::query(
@@ -278,6 +293,115 @@ async fn unbookmark_status(
             .into_response(),
         Err(err) => {
             tracing::error!(?err, "unbookmark delete");
+            server_error()
+        }
+    }
+}
+
+/// Body for POST/DELETE `/api/v1/me/bookmarks` — apenas `object_uri` cru.
+#[derive(Debug, Deserialize)]
+struct BookmarkUriBody {
+    object_uri: String,
+}
+
+async fn bookmark_uri(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<BookmarkUriBody>,
+) -> Response {
+    let Some(citizen) = caller_citizen(&headers) else {
+        return unauthorized();
+    };
+    let uri = body.object_uri.trim();
+    if uri.is_empty() || uri.len() > 2048 {
+        return not_found("object_uri inválido");
+    }
+    let res = sqlx::query(
+        r"INSERT INTO note_bookmark (id, citizen_id, object_uri)
+          VALUES ($1, $2, $3)
+          ON CONFLICT (citizen_id, object_uri) DO NOTHING",
+    )
+    .bind(Uuid::now_v7())
+    .bind(citizen)
+    .bind(uri)
+    .execute(&state.db)
+    .await;
+    match res {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(serde_json::json!({ "ok": true }))),
+        )
+            .into_response(),
+        Err(err) => {
+            tracing::error!(?err, "bookmark_uri insert");
+            server_error()
+        }
+    }
+}
+
+async fn unbookmark_uri(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<BookmarkUriBody>,
+) -> Response {
+    let Some(citizen) = caller_citizen(&headers) else {
+        return unauthorized();
+    };
+    let res = sqlx::query(
+        r"DELETE FROM note_bookmark WHERE citizen_id = $1 AND object_uri = $2",
+    )
+    .bind(citizen)
+    .bind(body.object_uri.trim())
+    .execute(&state.db)
+    .await;
+    match res {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(serde_json::json!({ "ok": true }))),
+        )
+            .into_response(),
+        Err(err) => {
+            tracing::error!(?err, "unbookmark_uri delete");
+            server_error()
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct BookmarkStatusQuery {
+    object_uri: String,
+}
+
+async fn bookmark_status_of(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<BookmarkStatusQuery>,
+) -> Response {
+    let Some(citizen) = caller_citizen(&headers) else {
+        return unauthorized();
+    };
+    let row: Result<Option<(i64,)>, _> = sqlx::query_as::<_, (i64,)>(
+        r"SELECT count(*)
+            FROM note_bookmark
+           WHERE citizen_id = $1 AND object_uri = $2",
+    )
+    .bind(citizen)
+    .bind(q.object_uri.trim())
+    .fetch_optional(&state.db)
+    .await;
+    match row {
+        Ok(Some((n,))) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(serde_json::json!({ "bookmarked": n > 0 }))),
+        )
+            .into_response(),
+        Ok(None) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(serde_json::json!({ "bookmarked": false }))),
+        )
+            .into_response(),
+        Err(err) => {
+            tracing::error!(?err, "bookmark_status_of");
             server_error()
         }
     }

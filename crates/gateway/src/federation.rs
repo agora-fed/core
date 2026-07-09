@@ -78,6 +78,7 @@ pub fn client_routes(state: AppState) -> Router<()> {
         .route("/federation/lookup", get(lookup_remote))
         .route("/federation/actor-outbox", get(get_remote_outbox))
         .route("/me/follow", post(follow_remote))
+        .route("/me/follow/status", get(follow_status))
         .route("/me/notes", post(post_my_note).delete(delete_my_note).patch(patch_my_note))
         .route("/me/feed", get(get_my_feed))
         .route("/me/like", post(toggle_like))
@@ -875,6 +876,66 @@ async fn get_remote_outbox(
 struct FollowRequest {
     /// The remote actor's URL (the `remote_actor_url` returned by `/lookup`).
     remote_actor_url: String,
+}
+
+/// Query for `GET /api/v1/me/follow/status?actor_url=…`.
+#[derive(Debug, Deserialize)]
+struct FollowStatusQuery {
+    actor_url: String,
+}
+
+#[derive(Debug, Serialize)]
+struct FollowStatusDto {
+    following: bool,
+    /// Pending: enviamos Follow mas o Accept remoto ainda não chegou.
+    pending: bool,
+}
+
+/// `GET /api/v1/me/follow/status?actor_url=…` — a UI usa isso ao pintar um
+/// perfil remoto pra saber se o botão deve dizer "Seguir" ou "Seguindo".
+async fn follow_status(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Query(query): Query<FollowStatusQuery>,
+) -> Response {
+    let actor_url = query.actor_url.trim();
+    if actor_url.is_empty() {
+        return client_error("informe actor_url");
+    }
+    let row: Result<Option<(bool,)>, _> = sqlx::query_as::<_, (bool,)>(
+        r"SELECT (accepted_at IS NOT NULL) AS accepted
+            FROM federation_follow
+           WHERE citizen_id = $1
+             AND direction  = 'outbound'
+             AND remote_actor_url = $2
+           LIMIT 1",
+    )
+    .bind(caller.citizen.as_uuid())
+    .bind(actor_url)
+    .fetch_optional(&state.db)
+    .await;
+    match row {
+        Ok(Some((accepted,))) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(FollowStatusDto {
+                following: accepted,
+                pending: !accepted,
+            })),
+        )
+            .into_response(),
+        Ok(None) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(FollowStatusDto {
+                following: false,
+                pending: false,
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            tracing::error!(error = ?err, "follow_status query failed");
+            server_error()
+        }
+    }
 }
 
 /// `POST /api/v1/me/follow` — send a signed Follow to a remote actor's inbox and persist the

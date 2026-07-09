@@ -11,6 +11,8 @@
     getMyFeed,
     toggleLike,
     toggleBoost,
+    bookmarkUri,
+    unbookmarkUri,
     deleteNote,
     isAuthError,
     clearLocalSession,
@@ -48,6 +50,8 @@
   let offset = 0;
   // Reações em voo, chaveadas por `${kind}:${uri}` — trava o botão certo, não o card todo.
   let inFlight = $state<Set<string>>(new Set());
+  // Bookmarks: só estado local otimista; a lista completa fica em /salvos.
+  let bookmarked = $state<Set<string>>(new Set());
   // 0.18.0: CW collapse — set of object_uri revelados; e composer de reply inline.
   let revealed = $state<Set<string>>(new Set());
   let replyingTo = $state<string | null>(null);
@@ -257,6 +261,30 @@
     const next = new Set(inFlight);
     next.delete(key);
     inFlight = next;
+  }
+
+  async function onBookmark(item: FeedItemDto) {
+    const key = `bookmark:${item.object_uri}`;
+    if (inFlight.has(key)) return;
+    inFlight = new Set(inFlight).add(key);
+    const was = bookmarked.has(item.object_uri);
+    const next = new Set(bookmarked);
+    if (was) next.delete(item.object_uri); else next.add(item.object_uri);
+    bookmarked = next;
+    const res = was
+      ? await unbookmarkUri(item.object_uri)
+      : await bookmarkUri(item.object_uri);
+    if (!res.success) {
+      const revert = new Set(bookmarked);
+      if (was) revert.add(item.object_uri); else revert.delete(item.object_uri);
+      bookmarked = revert;
+      toast.error(res.error?.message ?? 'Não foi possível salvar agora.');
+    } else {
+      toast.success(was ? 'Removido dos salvos.' : 'Salvo.');
+    }
+    const done = new Set(inFlight);
+    done.delete(key);
+    inFlight = done;
   }
 
   async function onBoost(item: FeedItemDto) {
@@ -576,6 +604,21 @@
               >
                 <Icon name="reply" size={18} />
                 <span class="lbl">Responder</span>
+              </button>
+              <button
+                type="button"
+                class="react"
+                class:on={bookmarked.has(item.object_uri)}
+                aria-pressed={bookmarked.has(item.object_uri)}
+                aria-label={bookmarked.has(item.object_uri) ? 'Remover dos salvos' : 'Salvar'}
+                disabled={inFlight.has(`bookmark:${item.object_uri}`)}
+                onclick={() => onBookmark(item)}
+              >
+                <Icon
+                  name={bookmarked.has(item.object_uri) ? 'bookmark-fill' : 'bookmark'}
+                  size={18}
+                />
+                <span class="lbl">Salvar</span>
               </button>
             </footer>
 

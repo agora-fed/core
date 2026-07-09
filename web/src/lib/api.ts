@@ -7,6 +7,7 @@ import type {
   BoostResultDto,
   ConsultationDto,
   DebateDto,
+  ApiResponse,
   FeedItemDto,
   LikeResultDto,
   MandateDto,
@@ -1063,6 +1064,38 @@ export interface RemoteNoteDto {
 export const getRemoteActorOutbox = (actor_url: string) =>
   apiGetCredentialed<RemoteNoteDto[]>(
     `/api/v1/federation/actor-outbox?actor_url=${encodeURIComponent(actor_url)}`,
+  );
+
+/** True if the current citizen already follows the given remote actor. */
+export const getFollowStatus = (actor_url: string) =>
+  apiGetCredentialed<{ following: boolean; pending: boolean }>(
+    `/api/v1/me/follow/status?actor_url=${encodeURIComponent(actor_url)}`,
+  );
+
+/** Bookmark helpers keyed by raw object_uri — covers notes from remote outbox. */
+export const bookmarkUri = (object_uri: string) =>
+  apiPost<{ ok: true }>('/api/v1/me/bookmarks', { object_uri });
+
+export async function unbookmarkUri(
+  object_uri: string,
+): Promise<ApiResponse<{ ok: true }>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/me/bookmarks`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ object_uri }),
+    });
+    const parsed = (await res.json()) as ApiResponse<{ ok: true }>;
+    return parsed;
+  } catch (err) {
+    return { success: false, error: { code: 'network', message: String(err) } };
+  }
+}
+
+export const getBookmarkStatus = (object_uri: string) =>
+  apiGetCredentialed<{ bookmarked: boolean }>(
+    `/api/v1/me/bookmarks/status?object_uri=${encodeURIComponent(object_uri)}`,
   );
 
 /** Options passed to `postNote` for 0.18.0's Mastodon-parity fields. */

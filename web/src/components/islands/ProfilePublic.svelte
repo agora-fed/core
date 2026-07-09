@@ -13,6 +13,7 @@
     lookupRemoteActor,
     followRemoteActor,
     getRemoteActorOutbox,
+    getFollowStatus,
     toggleLike,
     toggleBoost,
     DEFAULT_ORG_ID,
@@ -44,6 +45,7 @@
   } | null>(null);
   let following = $state(false);
   let followState = $state<'idle' | 'sent' | 'failed'>('idle');
+  let alreadyFollowing = $state(false);
   let loggedIn = $state(false);
   // Timeline remota carregada via /federation/actor-outbox proxy — cache backend
   // 60 s, front pinta enquanto o card do perfil fica no lugar.
@@ -138,6 +140,8 @@
         summary: res.data.summary ? stripHtml(res.data.summary) : null,
         actor_url: res.data.remote_actor_url,
       };
+      // Se já seguimos, o botão nasce como "Seguindo"; senão fica "Seguir".
+      void checkFollowStatus(res.data.remote_actor_url);
       // Puxa timeline em background: se o outbox demorar, o card já apareceu.
       void loadRemoteNotes(res.data.remote_actor_url);
       return;
@@ -161,6 +165,18 @@
       }
     }
   });
+
+  async function checkFollowStatus(actorUrl: string) {
+    const res = await getFollowStatus(actorUrl);
+    if (res.success && res.data) {
+      if (res.data.following) {
+        alreadyFollowing = true;
+        followState = 'sent';
+      } else if (res.data.pending) {
+        followState = 'sent';
+      }
+    }
+  }
 
   async function followRemote() {
     if (!remote || following) return;
@@ -313,7 +329,9 @@
     {/if}
 
     <footer class="fedi remote-actions">
-      {#if followState === 'sent'}
+      {#if alreadyFollowing}
+        <span class="hint hint-ok">Você segue este perfil ✓</span>
+      {:else if followState === 'sent'}
         <span class="hint hint-ok">Solicitação de seguir enviada ✓</span>
       {:else}
         <button
