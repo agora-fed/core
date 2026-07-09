@@ -1,0 +1,32 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminServerRules from '../../components/islands/AdminServerRules.svelte';
+---
+
+<AdminLayout
+  title="Regras do servidor (admin)"
+  description="Regras da instância exibidas no cadastro e em /sobre."
+>
+  <header class="head">
+    <h1>Regras do servidor</h1>
+    <p class="muted">
+      Lista ordenada. Aparece pra qualquer visitante em <code>/sobre</code>
+      e também no formulário de criar conta.
+    </p>
+  </header>
+  <AdminServerRules client:load />
+</AdminLayout>
+
+<style>
+  .head {
+    margin-bottom: var(--sp-5);
+  }
+  h1 {
+    margin: 0 0 var(--sp-1);
+  }
+  code {
+    background: var(--surface-2);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+</style>

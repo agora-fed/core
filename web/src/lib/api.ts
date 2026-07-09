@@ -1318,6 +1318,54 @@ export const adminPublishAnnouncement = (id: string) =>
   apiPost<{ ok: true }>(`/api/v1/admin/announcements/${encodeURIComponent(id)}/publish`, {});
 export const adminUnpublishAnnouncement = (id: string) =>
   apiPost<{ ok: true }>(`/api/v1/admin/announcements/${encodeURIComponent(id)}/unpublish`, {});
+/** Preferências pessoais (0.26.18). */
+export interface EmailPrefs {
+  mention?: boolean;
+  reply?: boolean;
+  favorite?: boolean;
+  reblog?: boolean;
+  follow?: boolean;
+  admin_action?: boolean;
+}
+export interface MyPreferencesDto {
+  email_prefs: EmailPrefs;
+  default_visibility: 'public' | 'unlisted' | 'followers' | 'direct';
+  default_sensitive: boolean;
+}
+export const getMyPreferences = () =>
+  apiGetCredentialed<MyPreferencesDto>('/api/v1/me/preferences');
+export const patchMyPreferences = (patch: Partial<MyPreferencesDto>) =>
+  apiPatch<{ ok: true }>('/api/v1/me/preferences', patch);
+
+/** Regras do servidor (0.26.18). */
+export interface ServerRuleDto {
+  id: string;
+  ordinal: number;
+  text: string;
+  created_at: string;
+  updated_at: string;
+}
+export const getServerRules = () =>
+  apiGet<ServerRuleDto[]>('/api/v1/server/rules');
+export const adminListRules = () =>
+  apiGetCredentialed<ServerRuleDto[]>('/api/v1/admin/rules');
+export const adminCreateRule = (text: string, ordinal = 0) =>
+  apiPost<ServerRuleDto>('/api/v1/admin/rules', { text, ordinal });
+export const adminUpdateRule = (id: string, patch: { text?: string; ordinal?: number }) =>
+  apiPatch<{ ok: true }>(`/api/v1/admin/rules/${encodeURIComponent(id)}`, patch);
+export async function adminDeleteRule(id: string): Promise<ApiResponse<{ ok: true }>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/admin/rules/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { accept: 'application/json' },
+    });
+    return (await res.json()) as ApiResponse<{ ok: true }>;
+  } catch (err) {
+    return { success: false, error: { code: 'network', message: String(err) } };
+  }
+}
+
 export async function adminDeleteAnnouncement(id: string): Promise<ApiResponse<{ ok: true }>> {
   try {
     const res = await fetch(`${API_BASE}/api/v1/admin/announcements/${encodeURIComponent(id)}`, {

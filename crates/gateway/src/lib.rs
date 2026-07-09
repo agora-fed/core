@@ -11,6 +11,7 @@ pub mod admin_reports;
 pub mod admin_users;
 pub mod announcements;
 pub mod invitations;
+pub mod preferences;
 pub mod amendments;
 pub mod civic_notify;
 pub mod email_templates;
@@ -168,6 +169,7 @@ pub fn api_router(state: AppState) -> Router {
         .merge(admin_reports::routes(state.clone()))
         .merge(invitations::routes(state.clone()))
         .merge(announcements::routes(state.clone()))
+        .merge(preferences::routes(state.clone()))
         // gov.br OIDC status (só o "enabled?"). Start/callback ficam na raiz.
         .merge(govbr_oidc::api_routes(state.clone()))
         // LGPD art. 18 — exportar/excluir dados pessoais.

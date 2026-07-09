@@ -15,6 +15,7 @@
   import TituloEleitorForm from './TituloEleitorForm.svelte';
   import LgpdPanel from './LgpdPanel.svelte';
   import FiltersPanel from './FiltersPanel.svelte';
+  import PreferencesPanel from './PreferencesPanel.svelte';
 
   type TabId =
     | 'perfil'
@@ -23,6 +24,7 @@
     | 'seguranca'
     | 'aplicativos'
     | 'fediverso'
+    | 'preferencias'
     | 'filtros'
     | 'lgpd';
 
@@ -31,6 +33,7 @@
     { id: 'identidade', label: 'Identidade' },
     { id: 'aparencia', label: 'Aparência' },
     { id: 'seguranca', label: 'Segurança' },
+    { id: 'preferencias', label: 'Preferências' },
     { id: 'aplicativos', label: 'Aplicativos' },
     { id: 'fediverso', label: 'Fediverso' },
     { id: 'filtros', label: 'Filtros' },
@@ -137,6 +140,17 @@
           </p>
         </header>
         <FediverseSearch />
+      </section>
+    {:else if active === 'preferencias'}
+      <section class="section">
+        <header class="s-head">
+          <h2>Preferências</h2>
+          <p class="muted">
+            Padrões de publicação (visibilidade / sensível) e notificações por
+            e-mail. As mudanças salvam automaticamente.
+          </p>
+        </header>
+        <PreferencesPanel />
       </section>
     {:else if active === 'filtros'}
       <section class="section">

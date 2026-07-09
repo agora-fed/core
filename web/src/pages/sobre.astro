@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import ColorBar from '../components/illustrations/ColorBar.astro';
+import ServerRulesList from '../components/ServerRulesList.astro';
 
 const description =
   'DemocraciaBR: infraestrutura pública, soberana e auditável para converter demanda popular em accountability parlamentar. Feito pela PopSolutions Cooperativa de Tecnologia.';
@@ -73,6 +74,13 @@ const description =
           Denúncias de moderação / abuso: <a href="mailto:moderacao@democracia.social.br">moderacao@democracia.social.br</a><br />
           Segurança (responsible disclosure): <a href="mailto:security@popsolutions.co">security@popsolutions.co</a>
         </p>
+
+        <h2>Regras da instância</h2>
+        <p class="muted">
+          Além dos Termos, a moderação segue estas regras específicas da
+          DemocraciaBR. Ao criar conta você as aceita.
+        </p>
+        <ServerRulesList />
 
         <h2>Documentação técnica</h2>
         <ul>

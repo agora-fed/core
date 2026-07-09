@@ -1,0 +1,47 @@
+---
+// Lista pública das regras (server_rule). Client-side pra evitar rebuild
+// quando o admin edita — o payload é pequeno.
+---
+
+<div id="server-rules-list" class="rules">
+  <p class="muted rules-loading">Carregando regras…</p>
+</div>
+
+<script is:inline>
+  (async () => {
+    const el = document.getElementById('server-rules-list');
+    if (!el) return;
+    try {
+      const res = await fetch('/api/v1/server/rules', {
+        headers: { accept: 'application/json' },
+      });
+      const body = await res.json();
+      const rules = body?.data || body || [];
+      if (!Array.isArray(rules) || rules.length === 0) {
+        el.innerHTML = '<p class="muted">Sem regras publicadas ainda.</p>';
+        return;
+      }
+      const ol = document.createElement('ol');
+      ol.className = 'rules-list';
+      for (const r of rules) {
+        const li = document.createElement('li');
+        li.textContent = r.text;
+        ol.appendChild(li);
+      }
+      el.innerHTML = '';
+      el.appendChild(ol);
+    } catch {
+      el.innerHTML = '<p class="muted">Regras indisponíveis.</p>';
+    }
+  })();
+</script>
+
+<style>
+  .rules-list {
+    padding-left: 1.5rem;
+    line-height: 1.6;
+  }
+  .rules-list li {
+    margin-bottom: 0.4rem;
+  }
+</style>

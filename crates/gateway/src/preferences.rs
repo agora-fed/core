@@ -1,0 +1,306 @@
+//! Preferências pessoais + regras do servidor (migration 0511).
+//!
+//! - `GET  /api/v1/me/preferences` — bloco { email_prefs, default_visibility, default_sensitive }.
+//! - `PATCH /api/v1/me/preferences` — mesclagem parcial.
+//! - `GET  /api/v1/server/rules` — público, ordenado.
+//! - `GET  /api/v1/admin/rules` — admin.
+//! - `POST /api/v1/admin/rules {text, ordinal?}` — cria.
+//! - `PATCH /api/v1/admin/rules/{id}` — edita.
+//! - `DELETE /api/v1/admin/rules/{id}` — apaga.
+
+use axum::extract::{Json, Path, State};
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
+use axum::routing::{delete, get, patch, post};
+use axum::Router;
+use chrono::{DateTime, Utc};
+use dsoc_api_contract::ApiResponse;
+use dsoc_app::AppState;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use sqlx::PgPool;
+use uuid::Uuid;
+
+pub fn routes(state: AppState) -> Router<()> {
+    Router::new()
+        .route("/me/preferences", get(get_prefs).patch(patch_prefs))
+        .route("/server/rules", get(public_rules))
+        .route("/admin/rules", get(admin_list_rules).post(admin_create_rule))
+        .route(
+            "/admin/rules/{id}",
+            patch(admin_update_rule).delete(admin_delete_rule),
+        )
+        .with_state(state)
+}
+
+fn caller_citizen(headers: &HeaderMap) -> Option<Uuid> {
+    headers
+        .get("x-dsoc-citizen-id")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse().ok())
+}
+
+async fn require_admin(headers: &HeaderMap, db: &PgPool) -> Result<Uuid, Response> {
+    let citizen = caller_citizen(headers).ok_or_else(unauthorized_resp)?;
+    let is_admin = sqlx::query_scalar::<_, bool>(
+        r"SELECT EXISTS (
+             SELECT 1 FROM admin_role_binding
+              WHERE citizen_id = $1 AND role IN ('owner','admin'))",
+    )
+    .bind(citizen)
+    .fetch_one(db)
+    .await
+    .unwrap_or(false);
+    if !is_admin {
+        return Err(forbidden_resp());
+    }
+    Ok(citizen)
+}
+
+fn unauthorized_resp() -> Response {
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(ApiResponse::<()>::fail("unauthorized", "Autenticação necessária.")),
+    )
+        .into_response()
+}
+fn forbidden_resp() -> Response {
+    (
+        StatusCode::FORBIDDEN,
+        Json(ApiResponse::<()>::fail("forbidden", "Acesso restrito a admins.")),
+    )
+        .into_response()
+}
+fn storage_err(err: impl std::fmt::Debug) -> Response {
+    tracing::error!(?err, "preferences storage");
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(ApiResponse::<()>::fail("storage_error", "Erro interno.")),
+    )
+        .into_response()
+}
+fn ok_json() -> Response {
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(serde_json::json!({ "ok": true }))),
+    )
+        .into_response()
+}
+
+// ---------------------------------------------------------------------------
+// Preferences
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+struct PrefsDto {
+    email_prefs: Value,
+    default_visibility: String,
+    default_sensitive: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct PatchPrefs {
+    email_prefs: Option<Value>,
+    default_visibility: Option<String>,
+    default_sensitive: Option<bool>,
+}
+
+async fn get_prefs(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    let Some(citizen) = caller_citizen(&headers) else {
+        return unauthorized_resp();
+    };
+    let row: Result<Option<(Value, String, bool)>, _> = sqlx::query_as::<_, (Value, String, bool)>(
+        r"SELECT email_prefs, default_visibility, default_sensitive
+            FROM citizen WHERE id = $1",
+    )
+    .bind(citizen)
+    .fetch_optional(&state.db)
+    .await;
+    match row {
+        Ok(Some((email_prefs, default_visibility, default_sensitive))) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(PrefsDto {
+                email_prefs,
+                default_visibility,
+                default_sensitive,
+            })),
+        )
+            .into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::<()>::fail("not_found", "conta não encontrada")),
+        )
+            .into_response(),
+        Err(err) => storage_err(err),
+    }
+}
+
+async fn patch_prefs(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<PatchPrefs>,
+) -> Response {
+    let Some(citizen) = caller_citizen(&headers) else {
+        return unauthorized_resp();
+    };
+    if let Some(v) = body.default_visibility.as_deref() {
+        if !matches!(v, "public" | "unlisted" | "followers" | "direct") {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ApiResponse::<()>::fail("bad_request", "default_visibility inválida")),
+            )
+                .into_response();
+        }
+        let _ = sqlx::query(r"UPDATE citizen SET default_visibility = $2 WHERE id = $1")
+            .bind(citizen)
+            .bind(v)
+            .execute(&state.db)
+            .await;
+    }
+    if let Some(b) = body.default_sensitive {
+        let _ = sqlx::query(r"UPDATE citizen SET default_sensitive = $2 WHERE id = $1")
+            .bind(citizen)
+            .bind(b)
+            .execute(&state.db)
+            .await;
+    }
+    if let Some(ep) = body.email_prefs {
+        // Merge shallow: só substitui as chaves fornecidas.
+        let _ = sqlx::query(
+            r"UPDATE citizen
+                 SET email_prefs = email_prefs || $2
+               WHERE id = $1",
+        )
+        .bind(citizen)
+        .bind(ep)
+        .execute(&state.db)
+        .await;
+    }
+    ok_json()
+}
+
+// ---------------------------------------------------------------------------
+// Server rules
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+struct RuleDto {
+    id: Uuid,
+    ordinal: i32,
+    text: String,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+async fn public_rules(State(state): State<AppState>) -> Response {
+    let rows: Result<Vec<RuleDto>, _> = sqlx::query_as::<_, RuleDto>(
+        r"SELECT id, ordinal, text, created_at, updated_at
+            FROM server_rule
+           ORDER BY ordinal, created_at",
+    )
+    .fetch_all(&state.db)
+    .await;
+    match rows {
+        Ok(list) => (StatusCode::OK, Json(ApiResponse::ok(list))).into_response(),
+        Err(err) => storage_err(err),
+    }
+}
+
+async fn admin_list_rules(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(r) = require_admin(&headers, &state.db).await {
+        return r;
+    }
+    public_rules(State(state)).await
+}
+
+#[derive(Debug, Deserialize)]
+struct RuleCreate {
+    text: String,
+    #[serde(default)]
+    ordinal: i32,
+}
+
+async fn admin_create_rule(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<RuleCreate>,
+) -> Response {
+    let admin = match require_admin(&headers, &state.db).await {
+        Ok(id) => id,
+        Err(r) => return r,
+    };
+    let text = body.text.trim();
+    if text.is_empty() || text.len() > 4000 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse::<()>::fail("bad_request", "texto entre 1 e 4000 chars")),
+        )
+            .into_response();
+    }
+    let res: Result<RuleDto, _> = sqlx::query_as::<_, RuleDto>(
+        r"INSERT INTO server_rule (id, ordinal, text, created_by)
+          VALUES ($1, $2, $3, $4)
+          RETURNING id, ordinal, text, created_at, updated_at",
+    )
+    .bind(Uuid::now_v7())
+    .bind(body.ordinal)
+    .bind(text)
+    .bind(admin)
+    .fetch_one(&state.db)
+    .await;
+    match res {
+        Ok(dto) => (StatusCode::OK, Json(ApiResponse::ok(dto))).into_response(),
+        Err(err) => storage_err(err),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct RuleUpdate {
+    text: Option<String>,
+    ordinal: Option<i32>,
+}
+
+async fn admin_update_rule(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(body): Json<RuleUpdate>,
+) -> Response {
+    if let Err(r) = require_admin(&headers, &state.db).await {
+        return r;
+    }
+    if let Some(t) = body.text.as_deref() {
+        let _ = sqlx::query(
+            r"UPDATE server_rule SET text = $2, updated_at = now() WHERE id = $1",
+        )
+        .bind(id)
+        .bind(t.trim())
+        .execute(&state.db)
+        .await;
+    }
+    if let Some(o) = body.ordinal {
+        let _ = sqlx::query(
+            r"UPDATE server_rule SET ordinal = $2, updated_at = now() WHERE id = $1",
+        )
+        .bind(id)
+        .bind(o)
+        .execute(&state.db)
+        .await;
+    }
+    ok_json()
+}
+
+async fn admin_delete_rule(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Response {
+    if let Err(r) = require_admin(&headers, &state.db).await {
+        return r;
+    }
+    let _ = sqlx::query(r"DELETE FROM server_rule WHERE id = $1")
+        .bind(id)
+        .execute(&state.db)
+        .await;
+    ok_json()
+}
