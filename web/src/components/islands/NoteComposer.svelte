@@ -92,6 +92,34 @@
   let cwOpen = $state(Boolean(edit?.spoiler_text));
   let spoilerText = $state(edit?.spoiler_text ?? '');
   let busy = $state(false);
+
+  // 0.26.20: CW presets — se o admin configurou frases-gatilho, elas
+  // sugerem marcar CW e prefixar spoilerText.
+  let cwPresets = $state<{ phrase: string; spoiler_text: string | null }[]>([]);
+  let cwSuggested = $state<string | null>(null);
+  onMount(async () => {
+    try {
+      const { getCwPresets } = await import('../../lib/api');
+      const res = await getCwPresets();
+      if (res.ok && res.data) {
+        cwPresets = res.data.map((p) => ({ phrase: p.phrase, spoiler_text: p.spoiler_text }));
+      }
+    } catch { /* ignore */ }
+  });
+  $effect(() => {
+    // Auto-detecção: se o texto contém alguma frase e o CW não foi aberto,
+    // sugerimos. Fecha imediato se o usuário abrir e digitar próprio label.
+    if (cwOpen) return;
+    const lower = content.toLowerCase();
+    const hit = cwPresets.find((p) => lower.includes(p.phrase.toLowerCase()));
+    cwSuggested = hit ? (hit.spoiler_text ?? hit.phrase) : null;
+  });
+  function acceptCwSuggestion() {
+    if (!cwSuggested) return;
+    cwOpen = true;
+    if (!spoilerText.trim()) spoilerText = cwSuggested;
+    cwSuggested = null;
+  }
   let attached = $state<Attached[]>([]);
   let dragActive = $state(false);
   const MAX_ATT = 4;
@@ -472,6 +500,13 @@
       </div>
     {/if}
 
+    {#if cwSuggested && !cwOpen}
+      <div class="cw-suggest">
+        <span>Sugerimos marcar como <strong>{cwSuggested}</strong> (aviso de conteúdo).</span>
+        <button type="button" class="cw-suggest-yes" onclick={acceptCwSuggestion}>Aplicar</button>
+        <button type="button" class="cw-suggest-no" onclick={() => (cwSuggested = null)}>Ignorar</button>
+      </div>
+    {/if}
     <div class="ta-wrap">
       <Textarea
         rows={variant === 'settings' ? 4 : 3}
@@ -743,6 +778,35 @@
     padding: 2px;
     border-radius: var(--r-xs);
     display: inline-flex;
+  }
+  .cw-suggest {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+    background: #fef3c7;
+    color: #92400e;
+    border-radius: var(--r-sm);
+    font-size: var(--fs-sm);
+    margin-bottom: var(--sp-2);
+    flex-wrap: wrap;
+  }
+  .cw-suggest button {
+    border: 1px solid transparent;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    padding: 2px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .cw-suggest-yes {
+    background: #92400e;
+    color: white;
+    font-weight: var(--fw-semibold);
+  }
+  .cw-suggest-no {
+    text-decoration: underline;
   }
   .cw-close:hover {
     color: var(--text-1);

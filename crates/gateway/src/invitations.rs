@@ -25,7 +25,75 @@ pub fn routes(state: AppState) -> Router<()> {
         .route("/invitations", post(create_invitation).get(list_my_invitations))
         .route("/invitations/{id}", delete(delete_invitation))
         .route("/invitations/{token}/preview", get(preview_invitation))
+        // 0.26.20: pós-signup associa o cidadão logado ao convite que ele usou.
+        .route("/me/associate-invitation", post(associate_invitation))
         .with_state(state)
+}
+
+#[derive(Debug, Deserialize)]
+struct AssociateBody {
+    token: String,
+}
+
+async fn associate_invitation(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<AssociateBody>,
+) -> Response {
+    let Some(citizen) = caller_citizen(&headers) else {
+        return unauthorized();
+    };
+    // Idempotente — se já tem convite associado, não sobrescreve.
+    let already: Option<Option<Uuid>> = sqlx::query_scalar::<_, Option<Uuid>>(
+        r"SELECT invited_via_invitation_id FROM citizen WHERE id = $1",
+    )
+    .bind(citizen)
+    .fetch_optional(&state.db)
+    .await
+    .unwrap_or(None);
+    if let Some(Some(_)) = already {
+        return (
+            StatusCode::OK,
+            Json(ApiResponse::ok(serde_json::json!({ "ok": true, "already": true }))),
+        )
+            .into_response();
+    }
+    // Pega o e-mail do cidadão pra validar target_email do convite.
+    let email: Option<String> = sqlx::query_scalar(
+        r"SELECT email FROM auth_credential WHERE citizen_id = $1",
+    )
+    .bind(citizen)
+    .fetch_optional(&state.db)
+    .await
+    .unwrap_or(None);
+    let email = email.unwrap_or_default();
+    let token = body.token.trim();
+    if token.is_empty() {
+        return bad_request("token vazio");
+    }
+    let invited_via = match consume_token(&state.db, token, &email).await {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+            return (
+                StatusCode::OK,
+                Json(ApiResponse::ok(serde_json::json!({ "ok": false, "reason": "invalid" }))),
+            )
+                .into_response();
+        }
+        Err(err) => return server_error(err),
+    };
+    let _ = sqlx::query(
+        r"UPDATE citizen SET invited_via_invitation_id = $2 WHERE id = $1",
+    )
+    .bind(citizen)
+    .bind(invited_via)
+    .execute(&state.db)
+    .await;
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(serde_json::json!({ "ok": true, "invited_via": invited_via }))),
+    )
+        .into_response()
 }
 
 fn caller_citizen(headers: &HeaderMap) -> Option<Uuid> {

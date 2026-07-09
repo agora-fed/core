@@ -1,0 +1,23 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminCwPresets from '../../components/islands/AdminCwPresets.svelte';
+---
+
+<AdminLayout
+  title="Predefinições de aviso (admin)"
+  description="Termos que sugerem CW no compose."
+>
+  <header class="head">
+    <h1>Predefinições de aviso</h1>
+    <p class="muted">
+      Quando o cidadão digitar uma dessas frases no compose, sugerimos
+      marcar CW (aviso de conteúdo) e preenchemos o rótulo automaticamente.
+    </p>
+  </header>
+  <AdminCwPresets client:load />
+</AdminLayout>
+
+<style>
+  .head { margin-bottom: var(--sp-5); }
+  h1 { margin: 0 0 var(--sp-1); }
+</style>

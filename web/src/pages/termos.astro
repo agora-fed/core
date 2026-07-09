@@ -17,7 +17,11 @@ const description =
         </p>
       </header>
 
-      <article class="prose">
+      <article id="server-terms" class="prose server-terms" style="display: none;">
+        <div id="server-terms-body"></div>
+      </article>
+
+      <article id="default-terms" class="prose">
         <h2>1. Aceitação</h2>
         <p>
           Ao criar uma conta na DemocraciaBR, você aceita estes termos +
@@ -131,6 +135,27 @@ const description =
     </div>
   </section>
 </BaseLayout>
+
+<script is:inline>
+  (async () => {
+    try {
+      const res = await fetch('/api/v1/server/terms', { headers: { accept: 'application/json' } });
+      const body = await res.json();
+      const txt = body?.data?.body;
+      if (txt && typeof txt === 'string' && txt.trim().length > 0) {
+        const server = document.getElementById('server-terms');
+        const bodyEl = document.getElementById('server-terms-body');
+        const def = document.getElementById('default-terms');
+        if (server && bodyEl && def) {
+          bodyEl.textContent = txt;
+          bodyEl.style.whiteSpace = 'pre-wrap';
+          server.style.display = 'block';
+          def.style.display = 'none';
+        }
+      }
+    } catch { /* mantém default */ }
+  })();
+</script>
 
 <style>
   .narrow {

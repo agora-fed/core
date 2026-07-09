@@ -1,0 +1,24 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminTerms from '../../components/islands/AdminTerms.svelte';
+---
+
+<AdminLayout
+  title="Termos de Serviço (admin)"
+  description="Edite os Termos exibidos em /termos."
+>
+  <header class="head">
+    <h1>Termos de Serviço</h1>
+    <p class="muted">
+      Texto exibido em <code>/termos</code>. Se estiver vazio, mostra o
+      conteúdo do template padrão embutido no site.
+    </p>
+  </header>
+  <AdminTerms client:load />
+</AdminLayout>
+
+<style>
+  .head { margin-bottom: var(--sp-5); }
+  h1 { margin: 0 0 var(--sp-1); }
+  code { background: var(--surface-2); padding: 2px 6px; border-radius: 4px; }
+</style>

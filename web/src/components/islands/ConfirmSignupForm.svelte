@@ -9,7 +9,7 @@
   // e-mail/CPF colidindo com outro cadastro concluído no meio, etc), a
   // gente mostra o motivo em português.
   import { onMount } from 'svelte';
-  import { registerConfirm } from '../../lib/api';
+  import { registerConfirm, associateInvitation } from '../../lib/api';
   import Alert from '../ui/Alert.svelte';
   import Button from '../ui/Button.svelte';
 
@@ -43,6 +43,16 @@
         /* storage may be blocked; cookie foi setado do lado do server */
       }
       citizenId = res.data.citizen_id;
+      // 0.26.20: se o cidadão veio via /junte-se?convite=X, associa agora
+      // que a conta existe e a sessão foi emitida.
+      try {
+        const invToken = localStorage.getItem('dsoc_invitation');
+        if (invToken) {
+          void associateInvitation(invToken).finally(() => {
+            try { localStorage.removeItem('dsoc_invitation'); } catch { /* ignore */ }
+          });
+        }
+      } catch { /* storage bloqueado */ }
       phase = 'done';
       // Delay curto pra o usuário ver a confirmação; aí redireciona.
       window.setTimeout(() => {

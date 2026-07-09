@@ -1422,6 +1422,48 @@ export async function adminDeleteHashtag(tag: string): Promise<ApiResponse<{ ok:
 /** Auto-delete de publicações antigas (0.26.19). */
 export const getAutoDelete = () =>
   apiGetCredentialed<{ days: number | null }>('/api/v1/me/preferences/auto_delete');
+/** Termos editáveis (0.26.20). */
+export interface ServerTermsDto { body: string | null; updated_at: string | null; }
+export const getServerTerms = () =>
+  apiGet<ServerTermsDto>('/api/v1/server/terms');
+export const adminGetTerms = () =>
+  apiGetCredentialed<ServerTermsDto>('/api/v1/admin/server/terms');
+export const adminPatchTerms = (body: string) =>
+  apiPatch<{ ok: true }>('/api/v1/admin/server/terms', { body });
+
+/** CW presets (0.26.20). */
+export interface CwPresetDto {
+  id: string;
+  phrase: string;
+  spoiler_text: string | null;
+  created_at: string;
+}
+export const getCwPresets = () =>
+  apiGet<CwPresetDto[]>('/api/v1/server/cw_presets');
+export const adminListCwPresets = () =>
+  apiGetCredentialed<CwPresetDto[]>('/api/v1/admin/cw_presets');
+export const adminCreateCwPreset = (phrase: string, spoiler_text?: string) =>
+  apiPost<CwPresetDto>('/api/v1/admin/cw_presets', { phrase, spoiler_text });
+export async function adminDeleteCwPreset(id: string): Promise<ApiResponse<{ ok: true }>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/admin/cw_presets/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { accept: 'application/json' },
+    });
+    return (await res.json()) as ApiResponse<{ ok: true }>;
+  } catch (err) {
+    return { success: false, error: { code: 'network', message: String(err) } };
+  }
+}
+
+/** Associa o cidadão logado a um convite (pós-cadastro). */
+export const associateInvitation = (token: string) =>
+  apiPost<{ ok: boolean; already?: boolean; reason?: string }>(
+    '/api/v1/me/associate-invitation',
+    { token },
+  );
+
 export async function putAutoDelete(days: number | null): Promise<ApiResponse<{ ok: true }>> {
   try {
     const res = await fetch(`${API_BASE}/api/v1/me/preferences/auto_delete`, {

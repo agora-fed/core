@@ -30,7 +30,164 @@ pub fn routes(state: AppState) -> Router<()> {
             "/admin/rules/{id}",
             patch(admin_update_rule).delete(admin_delete_rule),
         )
+        // 0.26.20: Termos editáveis + CW presets.
+        .route("/server/terms", get(public_terms))
+        .route("/admin/server/terms", get(admin_get_terms).patch(admin_patch_terms))
+        .route("/server/cw_presets", get(public_cw_presets))
+        .route(
+            "/admin/cw_presets",
+            get(admin_list_cw_presets).post(admin_create_cw_preset),
+        )
+        .route("/admin/cw_presets/{id}", delete(admin_delete_cw_preset))
         .with_state(state)
+}
+
+async fn public_terms(State(state): State<AppState>) -> Response {
+    let row: Option<(String, DateTime<Utc>)> = sqlx::query_as::<_, (String, DateTime<Utc>)>(
+        r"SELECT body, updated_at FROM server_terms WHERE id = 1",
+    )
+    .fetch_optional(&state.db)
+    .await
+    .unwrap_or(None);
+    let body = row
+        .map(|(b, u)| serde_json::json!({ "body": b, "updated_at": u }))
+        .unwrap_or_else(|| serde_json::json!({ "body": null, "updated_at": null }));
+    (StatusCode::OK, Json(ApiResponse::ok(body))).into_response()
+}
+
+async fn admin_get_terms(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(r) = require_admin(&headers, &state.db).await {
+        return r;
+    }
+    public_terms(State(state)).await
+}
+
+#[derive(Debug, Deserialize)]
+struct TermsPatch {
+    body: String,
+}
+
+async fn admin_patch_terms(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<TermsPatch>,
+) -> Response {
+    let admin = match require_admin(&headers, &state.db).await {
+        Ok(id) => id,
+        Err(r) => return r,
+    };
+    let txt = body.body.trim();
+    if txt.is_empty() || txt.len() > 100_000 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse::<()>::fail("bad_request", "corpo obrigatório (até 100 KB)")),
+        )
+            .into_response();
+    }
+    let res = sqlx::query(
+        r"INSERT INTO server_terms (id, body, updated_by) VALUES (1, $1, $2)
+          ON CONFLICT (id) DO UPDATE SET body = EXCLUDED.body,
+                                         updated_at = now(),
+                                         updated_by = EXCLUDED.updated_by",
+    )
+    .bind(txt)
+    .bind(admin)
+    .execute(&state.db)
+    .await;
+    match res {
+        Ok(_) => ok_json(),
+        Err(err) => storage_err(err),
+    }
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+struct CwPresetDto {
+    id: Uuid,
+    phrase: String,
+    spoiler_text: Option<String>,
+    created_at: DateTime<Utc>,
+}
+
+async fn public_cw_presets(State(state): State<AppState>) -> Response {
+    let rows: Result<Vec<CwPresetDto>, _> = sqlx::query_as::<_, CwPresetDto>(
+        r"SELECT id, phrase, spoiler_text, created_at FROM cw_preset ORDER BY phrase",
+    )
+    .fetch_all(&state.db)
+    .await;
+    match rows {
+        Ok(list) => (StatusCode::OK, Json(ApiResponse::ok(list))).into_response(),
+        Err(err) => storage_err(err),
+    }
+}
+
+async fn admin_list_cw_presets(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(r) = require_admin(&headers, &state.db).await {
+        return r;
+    }
+    public_cw_presets(State(state)).await
+}
+
+#[derive(Debug, Deserialize)]
+struct CwPresetCreate {
+    phrase: String,
+    #[serde(default)]
+    spoiler_text: Option<String>,
+}
+
+async fn admin_create_cw_preset(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<CwPresetCreate>,
+) -> Response {
+    let admin = match require_admin(&headers, &state.db).await {
+        Ok(id) => id,
+        Err(r) => return r,
+    };
+    let phrase = body.phrase.trim();
+    if phrase.is_empty() || phrase.len() > 200 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse::<()>::fail("bad_request", "phrase 1..200 chars")),
+        )
+            .into_response();
+    }
+    let spoiler = body
+        .spoiler_text
+        .and_then(|s| {
+            let t = s.trim().to_owned();
+            if t.is_empty() { None } else { Some(t) }
+        });
+    let res: Result<CwPresetDto, _> = sqlx::query_as::<_, CwPresetDto>(
+        r"INSERT INTO cw_preset (id, phrase, spoiler_text, created_by)
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT (phrase) DO UPDATE SET spoiler_text = EXCLUDED.spoiler_text
+          RETURNING id, phrase, spoiler_text, created_at",
+    )
+    .bind(Uuid::now_v7())
+    .bind(phrase)
+    .bind(spoiler.as_deref())
+    .bind(admin)
+    .fetch_one(&state.db)
+    .await;
+    match res {
+        Ok(dto) => (StatusCode::OK, Json(ApiResponse::ok(dto))).into_response(),
+        Err(err) => storage_err(err),
+    }
+}
+
+async fn admin_delete_cw_preset(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Response {
+    if let Err(r) = require_admin(&headers, &state.db).await {
+        return r;
+    }
+    let _ = sqlx::query(r"DELETE FROM cw_preset WHERE id = $1")
+        .bind(id)
+        .execute(&state.db)
+        .await;
+    ok_json()
 }
 
 fn caller_citizen(headers: &HeaderMap) -> Option<Uuid> {

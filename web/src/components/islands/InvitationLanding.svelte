@@ -17,6 +17,8 @@
       loading = false;
       return;
     }
+    // Guarda pra o /confirmar-conta consumir depois do signup.
+    try { localStorage.setItem('dsoc_invitation', t); } catch { /* storage blocked */ }
     const res = await previewInvitation(t);
     loading = false;
     if (res.ok && res.data) {
