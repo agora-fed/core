@@ -1167,6 +1167,38 @@ export const getDomainBlockStatus = (domain: string) =>
     `/api/v1/me/domain_blocks/status?domain=${encodeURIComponent(domain)}`,
   );
 
+/** Admin: fila de denúncias. */
+export interface AdminReportDto {
+  id: string;
+  object_uri: string;
+  author_actor_url: string;
+  category: 'spam' | 'violation' | 'other';
+  reason: string | null;
+  created_at: string;
+  resolved_at: string | null;
+  resolution_notes: string | null;
+  reporter_handle: string | null;
+  reporter_display_name: string | null;
+  total_for_note: number;
+}
+
+export const adminListReports = (
+  status: 'pending' | 'resolved' | 'all' = 'pending',
+  limit = 30,
+  offset = 0,
+) =>
+  apiGetCredentialed<AdminReportDto[]>(
+    `/api/v1/admin/reports?status=${status}&limit=${limit}&offset=${offset}`,
+  );
+
+export const adminResolveReport = (id: string, notes?: string) =>
+  apiPost<{ ok: true }>(`/api/v1/admin/reports/${encodeURIComponent(id)}/resolve`, {
+    notes,
+  });
+
+export const adminReopenReport = (id: string) =>
+  apiPost<{ ok: true }>(`/api/v1/admin/reports/${encodeURIComponent(id)}/reopen`, {});
+
 /** List de bookmarks (retorna object_uris; usa junto com getMyFeed pra hidratar). */
 export const listBookmarks = (limit = 20, offset = 0) =>
   apiGetCredentialed<{ object_uri: string; created_at: string }[]>(

@@ -1,0 +1,38 @@
+---
+// /admin/denuncias — fila de note_report pra moderação humana.
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import ColorBar from '../../components/illustrations/ColorBar.astro';
+import AdminReports from '../../components/islands/AdminReports.svelte';
+
+const description =
+  'Fila de denúncias submetidas por cidadãos, aguardando avaliação da moderação.';
+---
+
+<BaseLayout title="Denúncias" {description} noindex>
+  <section class="section">
+    <div class="container">
+      <header class="head">
+        <ColorBar class="head-bar" />
+        <h1>Denúncias</h1>
+        <p class="muted lede">
+          Publicações denunciadas por cidadãos. Você pode ver o conteúdo,
+          registrar notas e marcar como resolvida. Acesso restrito a papéis
+          <code>owner</code> e <code>admin</code>.
+        </p>
+      </header>
+      <AdminReports client:load />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .container {
+    max-width: 72rem;
+  }
+  .head {
+    margin-bottom: 2rem;
+  }
+  .lede {
+    max-width: 42rem;
+  }
+</style>

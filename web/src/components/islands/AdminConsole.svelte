@@ -433,6 +433,16 @@
           </div>
         {/if}
       {:else if active === 'moderacao'}
+        <div class="promo-card">
+          <p>
+            <strong>Fila de denúncias</strong> — publicações reportadas por
+            cidadãos, com filtro por status (pendentes / resolvidas), notas do
+            moderador e histórico.
+          </p>
+          <a class="btn btn-primary" href="/admin/denuncias">
+            Abrir fila de denúncias →
+          </a>
+        </div>
         <Card>
           <h3 class="sub"><Icon name="trash" size={18} /> Ocultar uma publicação</h3>
           <p class="muted">
