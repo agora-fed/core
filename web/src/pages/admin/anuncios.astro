@@ -1,0 +1,27 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminAnnouncements from '../../components/islands/AdminAnnouncements.svelte';
+---
+
+<AdminLayout
+  title="Anúncios (admin)"
+  description="Banners servidor-wide: cria, edita, publica, apaga."
+>
+  <header class="head">
+    <h1>Anúncios</h1>
+    <p class="muted">
+      Banner exibido pra todos os cidadãos. Use pra downtime programado,
+      mudanças de regras, notícias operacionais.
+    </p>
+  </header>
+  <AdminAnnouncements client:load />
+</AdminLayout>
+
+<style>
+  .head {
+    margin-bottom: var(--sp-5);
+  }
+  h1 {
+    margin: 0 0 var(--sp-1);
+  }
+</style>

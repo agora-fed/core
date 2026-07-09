@@ -160,6 +160,7 @@
             {refreshing ? 'Propagando…' : 'Atualizar perfil no fediverso'}
           </button>
           <hr class="sep" />
+          <a class="item" href="/rede">Seguindo e seguidores</a>
           <a class="item" href="/convites">Convidar pessoas</a>
           <a class="item" href="/configuracoes">Configurações</a>
           {#if isAdmin}

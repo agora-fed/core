@@ -19,6 +19,7 @@
 
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use axum::body::Bytes;
 use axum::extract::{Json as AxumJson, Path, Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
@@ -80,6 +81,8 @@ pub fn client_routes(state: AppState) -> Router<()> {
         .route("/federation/actor-outbox", get(get_remote_outbox))
         .route("/me/follow", post(follow_remote))
         .route("/me/follow/status", get(follow_status))
+        .route("/me/social/following", get(my_following_list))
+        .route("/me/social/followers", get(my_followers_list))
         .route("/me/notes", post(post_my_note).delete(delete_my_note).patch(patch_my_note))
         .route("/me/feed", get(get_my_feed))
         .route("/me/like", post(toggle_like))
@@ -3164,6 +3167,84 @@ fn host_from(headers: &HeaderMap) -> Option<String> {
         .get(header::HOST)
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned)
+}
+
+/// Extract handle `@user@host` a partir de um actor URL — pra a UI ter algo
+/// legível sem outro round-trip. Cobre `https://host/users/user`,
+/// `https://host/@user` e `https://host/actors/user`.
+fn hint_handle_from_actor_url(u: &str) -> Option<String> {
+    let host = host_from_url(u)?;
+    let rest = u.strip_prefix("https://").or_else(|| u.strip_prefix("http://"))?;
+    let path_start = rest.find('/')?;
+    let path = &rest[path_start..];
+    // Extrair último segmento do path
+    let seg = path.trim_end_matches('/').rsplit('/').next().unwrap_or("");
+    let seg = seg.strip_prefix('@').unwrap_or(seg);
+    if seg.is_empty() {
+        None
+    } else {
+        Some(format!("@{seg}@{host}"))
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct SocialLinkDto {
+    /// URL AP do actor remoto (opaca).
+    actor_url: String,
+    /// Handle inferido do URL — `@user@host` — pra UI. Pode não bater 100 %
+    /// com o preferredUsername quando o site usa slug ≠ username, mas serve
+    /// como âncora clicável.
+    handle_hint: Option<String>,
+    /// Timestamp do accepted_at (ou created_at pra pending).
+    since: DateTime<Utc>,
+    /// True se o Follow foi aceito pelo lado remoto.
+    accepted: bool,
+}
+
+async fn my_following_list(
+    State(state): State<AppState>,
+    caller: CallerId,
+) -> Response {
+    social_list(&state, caller.citizen.as_uuid(), "outbound").await
+}
+
+async fn my_followers_list(
+    State(state): State<AppState>,
+    caller: CallerId,
+) -> Response {
+    social_list(&state, caller.citizen.as_uuid(), "inbound").await
+}
+
+async fn social_list(state: &AppState, citizen: uuid::Uuid, direction: &str) -> Response {
+    let rows = sqlx::query_as::<_, (String, Option<DateTime<Utc>>, DateTime<Utc>)>(
+        r"SELECT remote_actor_url, accepted_at, created_at
+            FROM federation_follow
+           WHERE citizen_id = $1 AND direction = $2
+           ORDER BY COALESCE(accepted_at, created_at) DESC
+           LIMIT 500",
+    )
+    .bind(citizen)
+    .bind(direction)
+    .fetch_all(&state.db)
+    .await;
+    match rows {
+        Ok(rows) => {
+            let list: Vec<SocialLinkDto> = rows
+                .into_iter()
+                .map(|(actor_url, accepted_at, created_at)| SocialLinkDto {
+                    handle_hint: hint_handle_from_actor_url(&actor_url),
+                    since: accepted_at.unwrap_or(created_at),
+                    accepted: accepted_at.is_some(),
+                    actor_url,
+                })
+                .collect();
+            (StatusCode::OK, Json(ApiResponse::ok(list))).into_response()
+        }
+        Err(err) => {
+            tracing::error!(error = ?err, "social_list");
+            server_error()
+        }
+    }
 }
 
 /// Extract the host from `https://host[:port]/…` sem depender do crate `url`.

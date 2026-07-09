@@ -1275,6 +1275,62 @@ export const previewInvitation = (token: string) =>
     `/api/v1/invitations/${encodeURIComponent(token)}/preview`,
   );
 
+/** Seguindo/Seguidores do cidadão autenticado (0.26.16). */
+export interface SocialLinkDto {
+  actor_url: string;
+  handle_hint: string | null;
+  since: string;
+  accepted: boolean;
+}
+export const listMyFollowing = () =>
+  apiGetCredentialed<SocialLinkDto[]>('/api/v1/me/social/following');
+export const listMyFollowers = () =>
+  apiGetCredentialed<SocialLinkDto[]>('/api/v1/me/social/followers');
+
+/** Anúncios servidor-wide (0.26.17). */
+export interface AnnouncementDto {
+  id: string;
+  body: string;
+  severity: 'info' | 'warning' | 'critical';
+  starts_at: string | null;
+  ends_at: string | null;
+  published_at: string | null;
+  created_at: string;
+}
+export const listActiveAnnouncements = () =>
+  apiGetCredentialed<AnnouncementDto[]>('/api/v1/announcements/active');
+export const dismissAnnouncement = (id: string) =>
+  apiPost<{ ok: true }>(`/api/v1/announcements/${encodeURIComponent(id)}/dismiss`, {});
+
+/** Admin: CRUD de anúncios. */
+export const adminListAnnouncements = () =>
+  apiGetCredentialed<AnnouncementDto[]>('/api/v1/admin/announcements');
+export const adminCreateAnnouncement = (body: {
+  body: string;
+  severity?: 'info' | 'warning' | 'critical';
+  starts_at?: string | null;
+  ends_at?: string | null;
+  publish_now?: boolean;
+}) => apiPost<AnnouncementDto>('/api/v1/admin/announcements', body);
+export const adminUpdateAnnouncement = (id: string, patch: Record<string, unknown>) =>
+  apiPatch<{ ok: true }>(`/api/v1/admin/announcements/${encodeURIComponent(id)}`, patch);
+export const adminPublishAnnouncement = (id: string) =>
+  apiPost<{ ok: true }>(`/api/v1/admin/announcements/${encodeURIComponent(id)}/publish`, {});
+export const adminUnpublishAnnouncement = (id: string) =>
+  apiPost<{ ok: true }>(`/api/v1/admin/announcements/${encodeURIComponent(id)}/unpublish`, {});
+export async function adminDeleteAnnouncement(id: string): Promise<ApiResponse<{ ok: true }>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/admin/announcements/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { accept: 'application/json' },
+    });
+    return (await res.json()) as ApiResponse<{ ok: true }>;
+  } catch (err) {
+    return { success: false, error: { code: 'network', message: String(err) } };
+  }
+}
+
 /** Admin: bloqueios de domínio a nível de instância (Fatia 3). */
 export interface AdminDomainBlockDto {
   domain: string;
