@@ -1,0 +1,45 @@
+---
+// Layout compartilhado por todas as páginas /admin/*. Envolve com BaseLayout
+// (header + footer padrão do site) e injeta sidebar + área principal em grid.
+// O gate de admin (nega se não tem role owner|admin) segue rodando na ilha
+// que preenche o main — cada uma checa o próprio status_code.
+import BaseLayout from './BaseLayout.astro';
+import AdminSidebar from '../components/AdminSidebar.astro';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description }: Props = Astro.props;
+---
+
+<BaseLayout {title} {description} noindex>
+  <div class="admin-shell">
+    <AdminSidebar />
+    <main class="admin-main">
+      <slot />
+    </main>
+  </div>
+</BaseLayout>
+
+<style>
+  .admin-shell {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: var(--sp-6);
+    max-width: 84rem;
+    margin: 0 auto;
+    padding: var(--sp-6) var(--sp-4);
+  }
+  @media (max-width: 900px) {
+    .admin-shell {
+      grid-template-columns: 1fr;
+      gap: var(--sp-3);
+      padding: var(--sp-4) var(--sp-3);
+    }
+  }
+  .admin-main {
+    min-width: 0;
+  }
+</style>

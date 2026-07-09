@@ -1,47 +1,27 @@
 ---
-import BaseLayout from '../../layouts/BaseLayout.astro';
-import ColorBar from '../../components/illustrations/ColorBar.astro';
+import AdminLayout from '../../layouts/AdminLayout.astro';
 import AdminUsersPage from '../../components/islands/AdminUsersPage.svelte';
-
-const description =
-  'Gerenciamento completo de usuários da instância DemocraciaBR: busca, filtros, papéis e filiação.';
 ---
 
-<BaseLayout title="Usuários (admin)" {description} noindex>
-  <section class="section">
-    <div class="container">
-      <header class="head">
-        <ColorBar class="head-bar" />
-        <h1>Usuários</h1>
-        <p class="muted lede">
-          Painel completo — busca, filtros por partido/papel/tipo cívico,
-          edição inline. Acesso restrito a <code>owner</code> e
-          <code>admin</code>.
-        </p>
-      </header>
-
-      <AdminUsersPage client:load />
-    </div>
-  </section>
-</BaseLayout>
+<AdminLayout
+  title="Contas (admin)"
+  description="Gerenciamento completo de contas: busca, filtros por partido/papel/tipo cívico, edição e ações de moderação."
+>
+  <header class="head">
+    <h1>Contas</h1>
+    <p class="muted">
+      Busca, filtros por partido/papel/tipo cívico + drawer com edição e
+      ações de moderação (suspender, silenciar).
+    </p>
+  </header>
+  <AdminUsersPage client:load />
+</AdminLayout>
 
 <style>
-  .container {
-    max-width: 84rem;
-  }
   .head {
     margin-bottom: var(--sp-5);
   }
-  .head-bar {
-    margin-bottom: var(--sp-3);
-  }
   h1 {
-    margin: 0 0 var(--sp-2);
-  }
-  code {
-    background: var(--surface-2);
-    padding: 2px 6px;
-    border-radius: var(--r-sm);
-    font-size: 0.9em;
+    margin: 0 0 var(--sp-1);
   }
 </style>

@@ -1,38 +1,28 @@
 ---
-// /admin/federacao — bloqueios de domínio server-wide.
-import BaseLayout from '../../layouts/BaseLayout.astro';
-import ColorBar from '../../components/illustrations/ColorBar.astro';
+import AdminLayout from '../../layouts/AdminLayout.astro';
 import AdminFederation from '../../components/islands/AdminFederation.svelte';
-
-const description =
-  'Política de federação da instância: quais domínios remotos estão silenciados ou suspensos.';
 ---
 
-<BaseLayout title="Federação" {description} noindex>
-  <section class="section">
-    <div class="container">
-      <header class="head">
-        <ColorBar class="head-bar" />
-        <h1>Federação</h1>
-        <p class="muted lede">
-          Bloqueios de domínio aplicados pela instância inteira. Diferente do
-          bloqueio pessoal de cada cidadão (menu 3-pontinhos), este define a
-          política que vale para todos.
-        </p>
-      </header>
-      <AdminFederation client:load />
-    </div>
-  </section>
-</BaseLayout>
+<AdminLayout
+  title="Federação (admin)"
+  description="Política de federação da instância: quais domínios remotos estão silenciados ou suspensos."
+>
+  <header class="head">
+    <h1>Federação</h1>
+    <p class="muted">
+      Bloqueios de domínio aplicados pela instância inteira. Diferente do
+      bloqueio pessoal de cada cidadão (menu 3-pontinhos), este define a
+      política que vale para todos.
+    </p>
+  </header>
+  <AdminFederation client:load />
+</AdminLayout>
 
 <style>
-  .container {
-    max-width: 72rem;
-  }
   .head {
-    margin-bottom: 2rem;
+    margin-bottom: var(--sp-5);
   }
-  .lede {
-    max-width: 42rem;
+  h1 {
+    margin: 0 0 var(--sp-1);
   }
 </style>

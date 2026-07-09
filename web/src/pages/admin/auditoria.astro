@@ -1,0 +1,27 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminAuditLog from '../../components/islands/AdminAuditLog.svelte';
+---
+
+<AdminLayout
+  title="Auditoria (admin)"
+  description="Registro imutável de todas as ações da moderação e admin."
+>
+  <header class="head">
+    <h1>Auditoria</h1>
+    <p class="muted">
+      Rastro de tudo o que foi feito no painel: suspensões, silenciamentos,
+      resoluções de denúncias, bloqueios de domínio.
+    </p>
+  </header>
+  <AdminAuditLog client:load />
+</AdminLayout>
+
+<style>
+  .head {
+    margin-bottom: var(--sp-5);
+  }
+  h1 {
+    margin: 0 0 var(--sp-1);
+  }
+</style>

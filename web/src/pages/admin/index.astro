@@ -1,49 +1,30 @@
 ---
-import BaseLayout from '../../layouts/BaseLayout.astro';
-import ColorBar from '../../components/illustrations/ColorBar.astro';
-import AdminConsole from '../../components/islands/AdminConsole.svelte';
-
-const description =
-  'Console administrativo da instância DemocraciaBR: métricas, usuários, federação e moderação.';
+// /admin/ agora é só o Painel de métricas. Cada seção admin virou página
+// própria (denúncias, usuários, federação, auditoria) linkada pelo
+// AdminSidebar comum.
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminDashboard from '../../components/islands/AdminDashboard.svelte';
 ---
 
-<BaseLayout title="Administração" {description} noindex>
-  <section class="section">
-    <div class="container">
-      <header class="head">
-        <ColorBar class="head-bar" />
-        <h1>Administração</h1>
-        <p class="muted lede">
-          Painel operacional da instância. Acesso restrito a papéis
-          <code>owner</code> e <code>admin</code>.
-        </p>
-      </header>
-
-      <AdminConsole client:load />
-    </div>
-  </section>
-</BaseLayout>
+<AdminLayout
+  title="Painel"
+  description="Painel de métricas da instância DemocraciaBR."
+>
+  <header class="head">
+    <h1>Painel</h1>
+    <p class="muted">
+      Métricas operacionais da instância. Use o menu à esquerda pra ir
+      pras áreas de moderação e admin.
+    </p>
+  </header>
+  <AdminDashboard client:load />
+</AdminLayout>
 
 <style>
-  .container {
-    max-width: 72rem;
-  }
   .head {
-    margin-bottom: var(--sp-6);
-  }
-  .head-bar {
-    margin-bottom: var(--sp-3);
+    margin-bottom: var(--sp-5);
   }
   h1 {
-    margin: 0 0 var(--sp-2);
-  }
-  .lede {
-    font-size: var(--fs-lg);
-  }
-  code {
-    background: var(--surface-2);
-    padding: 2px 6px;
-    border-radius: var(--r-sm);
-    font-size: 0.9em;
+    margin: 0 0 var(--sp-1);
   }
 </style>
