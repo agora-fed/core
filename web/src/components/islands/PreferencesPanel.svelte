@@ -72,6 +72,12 @@
     prefs.default_sensitive = v;
     persist({ default_sensitive: v });
   }
+
+  function setAutoFederate(v: boolean) {
+    if (!prefs) return;
+    prefs.auto_federate_threshold = v;
+    persist({ auto_federate_threshold: v });
+  }
 </script>
 
 {#if loading}
@@ -104,6 +110,17 @@
           onchange={(e) => setSensitive((e.currentTarget as HTMLInputElement).checked)}
         />
         <span>Marcar publicações como <strong>sensíveis</strong> por padrão</span>
+      </label>
+      <label class="fld check wide">
+        <input
+          type="checkbox"
+          checked={prefs.auto_federate_threshold}
+          onchange={(e) => setAutoFederate((e.currentTarget as HTMLInputElement).checked)}
+        />
+        <span>
+          <strong>Amplificar automaticamente no fediverso</strong> quando minha
+          proposta cruzar o gatilho de consequência (requer perfil público)
+        </span>
       </label>
     </div>
   </Card>
@@ -185,6 +202,9 @@
     align-items: center;
     gap: var(--sp-2);
     font-weight: var(--fw-medium);
+  }
+  .fld.check.wide {
+    grid-column: 1 / -1;
   }
   .fld select {
     padding: var(--sp-2) var(--sp-3);

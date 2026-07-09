@@ -8,6 +8,15 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.26.24-fase-E-autofed** — auto-federação server-side (Fase E completa do plan
+  TSE-worthy): quando `ProposalThresholdCrossed` dispara, o `CivicNotifySub` publica uma
+  Note pública (`Create(Note)` ActivityPub) **em nome do autor da proposta**, com título,
+  link e `#DemocraciaBR` — antes só existia o banner com CTA manual. Gates: autor federável
+  (`is_public` + `handle`), preferência `auto_federate_threshold` ligada (migration 0516,
+  default true, opt-out na aba Preferências de `/configuracoes` + exposta em
+  `GET/PATCH /me/preferences`) e idempotência via lookup no `federation_outbox_entry`
+  (o dispatch é at-least-once). Keypair do actor gerado lazy se for o primeiro post.
+  Best-effort: falha na federação nunca derruba a notificação in-app nem o dispatch loop.
 - **0.26.0-fase-DE** — comparador de candidatos com dado (seed idempotente de 10 candidacies
   vinculadas aos 10 mandate.is_candidate=true, cobrindo as 4 elections estruturais);
   estatísticas públicas ao vivo na landing (`GET /stats/public` sem autenticação e sem PII —

@@ -253,6 +253,7 @@ struct PrefsDto {
     email_prefs: Value,
     default_visibility: String,
     default_sensitive: bool,
+    auto_federate_threshold: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -260,26 +261,30 @@ struct PatchPrefs {
     email_prefs: Option<Value>,
     default_visibility: Option<String>,
     default_sensitive: Option<bool>,
+    auto_federate_threshold: Option<bool>,
 }
 
 async fn get_prefs(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized_resp();
     };
-    let row: Result<Option<(Value, String, bool)>, _> = sqlx::query_as::<_, (Value, String, bool)>(
-        r"SELECT email_prefs, default_visibility, default_sensitive
-            FROM citizen WHERE id = $1",
-    )
-    .bind(citizen)
-    .fetch_optional(&state.db)
-    .await;
+    let row: Result<Option<(Value, String, bool, bool)>, _> =
+        sqlx::query_as::<_, (Value, String, bool, bool)>(
+            r"SELECT email_prefs, default_visibility, default_sensitive,
+                     auto_federate_threshold
+                FROM citizen WHERE id = $1",
+        )
+        .bind(citizen)
+        .fetch_optional(&state.db)
+        .await;
     match row {
-        Ok(Some((email_prefs, default_visibility, default_sensitive))) => (
+        Ok(Some((email_prefs, default_visibility, default_sensitive, auto_federate_threshold))) => (
             StatusCode::OK,
             Json(ApiResponse::ok(PrefsDto {
                 email_prefs,
                 default_visibility,
                 default_sensitive,
+                auto_federate_threshold,
             })),
         )
             .into_response(),
@@ -316,6 +321,13 @@ async fn patch_prefs(
     }
     if let Some(b) = body.default_sensitive {
         let _ = sqlx::query(r"UPDATE citizen SET default_sensitive = $2 WHERE id = $1")
+            .bind(citizen)
+            .bind(b)
+            .execute(&state.db)
+            .await;
+    }
+    if let Some(b) = body.auto_federate_threshold {
+        let _ = sqlx::query(r"UPDATE citizen SET auto_federate_threshold = $2 WHERE id = $1")
             .bind(citizen)
             .bind(b)
             .execute(&state.db)

@@ -23,6 +23,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use dsoc_app::AppState;
+use dsoc_auth::profile::ProfileService;
 use dsoc_core::events::{Event, EventEnvelope, EventTopic};
 use dsoc_core::Result;
 use dsoc_events::{dispatch_batch, EventHandler, EventQueue, SubscriberName};
@@ -317,6 +318,7 @@ fn subscriptions(state: &AppState) -> Vec<Subscription> {
                 db: state.db.clone(),
                 public_origin: std::env::var("PUBLIC_ORIGIN")
                     .unwrap_or_else(|_| "https://democracia.social.br".to_owned()),
+                profiles: ProfileService::from_state(state),
             }),
         ),
         sub(
@@ -326,6 +328,7 @@ fn subscriptions(state: &AppState) -> Vec<Subscription> {
                 db: state.db.clone(),
                 public_origin: std::env::var("PUBLIC_ORIGIN")
                     .unwrap_or_else(|_| "https://democracia.social.br".to_owned()),
+                profiles: ProfileService::from_state(state),
             }),
         ),
         // Recibo de entrega da proposta (autor + gabinete). No ProposalCreated,
@@ -513,7 +516,6 @@ async fn dispatch_loop(queue: EventQueue, subscription: Subscription, period_ms:
 /// Concurrent within a batch: each delivery is a fresh tokio task, so a slow remote does not
 /// block the rest of the batch.
 async fn federation_delivery_loop(state: AppState, period_ms: u64) {
-    use dsoc_auth::profile::ProfileService;
     let svc = ProfileService::from_state(&state);
     let mut ticker = interval(Duration::from_millis(period_ms));
     ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);

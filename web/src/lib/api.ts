@@ -1331,6 +1331,8 @@ export interface MyPreferencesDto {
   email_prefs: EmailPrefs;
   default_visibility: 'public' | 'unlisted' | 'followers' | 'direct';
   default_sensitive: boolean;
+  /** 0.26.24: Note pública automática quando minha proposta cruza o gatilho. */
+  auto_federate_threshold: boolean;
 }
 export const getMyPreferences = () =>
   apiGetCredentialed<MyPreferencesDto>('/api/v1/me/preferences');
