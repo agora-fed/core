@@ -265,6 +265,22 @@ pub async fn list_feed(
                 OR lower(substring(feed.author_actor_url FROM '^https?://([^/]+)'))
                        NOT IN (SELECT domain FROM domain_block
                                 WHERE citizen_id = $1))
+           -- Server-wide domain policy (migration 0508). 'suspend' = corte
+           -- total; 'silence' = só quem já segue continua vendo.
+           AND (feed.author_actor_url IS NULL
+                OR lower(substring(feed.author_actor_url FROM '^https?://([^/]+)'))
+                       NOT IN (SELECT domain FROM server_domain_block
+                                WHERE severity = 'suspend'))
+           AND (feed.author_actor_url IS NULL
+                OR NOT EXISTS (
+                     SELECT 1 FROM server_domain_block sb
+                      WHERE sb.severity = 'silence'
+                        AND sb.domain = lower(substring(feed.author_actor_url FROM '^https?://([^/]+)'))
+                        AND NOT EXISTS (
+                              SELECT 1 FROM federation_follow ff
+                               WHERE ff.citizen_id = $1
+                                 AND ff.direction = 'outbound'
+                                 AND ff.remote_actor_url = feed.author_actor_url)))
            AND NOT EXISTS (
                    SELECT 1 FROM content_filter cf
                     WHERE cf.citizen_id = $1

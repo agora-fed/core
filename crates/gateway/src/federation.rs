@@ -384,6 +384,25 @@ async fn inbox_post(
 
     // --- 2. Fetch the signer's Actor doc to get their publicKey ----------------------------
     let signer_actor_url = sig.key_id.split('#').next().unwrap_or(&sig.key_id).to_owned();
+    // Server-wide block (migration 0508): se o host do signer está em
+    // server_domain_block com severity='suspend', rejeitamos a atividade
+    // ANTES de qualquer fetch. Silence-only não bloqueia entrega — só
+    // esconde no feed público.
+    if let Some(host) = host_from_url(&signer_actor_url) {
+        let blocked: bool = sqlx::query_scalar(
+            r"SELECT EXISTS (
+                 SELECT 1 FROM server_domain_block
+                  WHERE severity = 'suspend' AND domain = $1)",
+        )
+        .bind(host.to_ascii_lowercase())
+        .fetch_one(&state.db)
+        .await
+        .unwrap_or(false);
+        if blocked {
+            tracing::info!(host, "inbox POST rejected: server_domain_block suspend");
+            return StatusCode::FORBIDDEN.into_response();
+        }
+    }
     let signer_actor = match fetch_remote_actor(&signer_actor_url).await {
         Ok(v) => v,
         Err(err) => {
@@ -3145,6 +3164,16 @@ fn host_from(headers: &HeaderMap) -> Option<String> {
         .get(header::HOST)
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned)
+}
+
+/// Extract the host from `https://host[:port]/…` sem depender do crate `url`.
+/// Retorna None se não for uma URL http(s) reconhecível.
+fn host_from_url(u: &str) -> Option<String> {
+    let rest = u.strip_prefix("https://").or_else(|| u.strip_prefix("http://"))?;
+    let end = rest.find('/').unwrap_or(rest.len());
+    let hostport = &rest[..end];
+    let host = hostport.split(':').next().unwrap_or("").to_ascii_lowercase();
+    if host.is_empty() { None } else { Some(host) }
 }
 
 /// Escape as 5 chars perigosos pra qualquer atributo/texto HTML.

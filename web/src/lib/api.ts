@@ -1229,6 +1229,40 @@ export const adminListAudit = (limit = 100, offset = 0) =>
     `/api/v1/admin/audit?limit=${limit}&offset=${offset}`,
   );
 
+/** Admin: bloqueios de domínio a nível de instância (Fatia 3). */
+export interface AdminDomainBlockDto {
+  domain: string;
+  severity: 'silence' | 'suspend';
+  reason: string | null;
+  created_at: string;
+  created_by_handle: string | null;
+}
+export const adminListDomainBlocks = () =>
+  apiGetCredentialed<AdminDomainBlockDto[]>(
+    '/api/v1/admin/federation/domain_blocks',
+  );
+export const adminAddDomainBlock = (domain: string, severity: 'silence' | 'suspend', reason?: string) =>
+  apiPost<{ ok: true }>('/api/v1/admin/federation/domain_blocks', {
+    domain,
+    severity,
+    reason,
+  });
+export async function adminRemoveDomainBlock(domain: string): Promise<ApiResponse<{ ok: true }>> {
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/v1/admin/federation/domain_blocks/${encodeURIComponent(domain)}`,
+      {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { accept: 'application/json' },
+      },
+    );
+    return (await res.json()) as ApiResponse<{ ok: true }>;
+  } catch (err) {
+    return { success: false, error: { code: 'network', message: String(err) } };
+  }
+}
+
 /** List de bookmarks (retorna object_uris; usa junto com getMyFeed pra hidratar). */
 export const listBookmarks = (limit = 20, offset = 0) =>
   apiGetCredentialed<{ object_uri: string; created_at: string }[]>(

@@ -35,6 +35,12 @@ pub fn routes(state: AppState) -> Router<()> {
         .route("/admin/accounts/{id}/unsilence", post(unsilence_account))
         // Audit log.
         .route("/admin/audit", get(list_audit))
+        // Federação server-wide.
+        .route("/admin/federation/domain_blocks", get(list_domain_blocks).post(add_domain_block_server))
+        .route(
+            "/admin/federation/domain_blocks/{domain}",
+            axum::routing::delete(remove_domain_block_server),
+        )
         .with_state(state)
 }
 
@@ -597,6 +603,174 @@ fn not_found_json(msg: &'static str) -> Response {
         Json(ApiResponse::<()>::fail("not_found", msg)),
     )
         .into_response()
+}
+
+// ---------------------------------------------------------------------------
+// Federação server-wide
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+struct DomainBlockDto {
+    domain: String,
+    severity: String,
+    reason: Option<String>,
+    created_at: DateTime<Utc>,
+    created_by_handle: Option<String>,
+}
+
+async fn list_domain_blocks(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(r) = require_admin(&headers, &state.db).await {
+        return r;
+    }
+    let rows = sqlx::query_as::<
+        _,
+        (String, String, Option<String>, DateTime<Utc>, Option<String>),
+    >(
+        r"SELECT b.domain,
+                 b.severity,
+                 b.reason,
+                 b.created_at,
+                 (SELECT handle FROM citizen WHERE id = b.created_by) AS created_by_handle
+            FROM server_domain_block b
+           ORDER BY b.domain",
+    )
+    .fetch_all(&state.db)
+    .await;
+    match rows {
+        Ok(rows) => {
+            let list: Vec<DomainBlockDto> = rows
+                .into_iter()
+                .map(|(domain, severity, reason, created_at, created_by_handle)| DomainBlockDto {
+                    domain,
+                    severity,
+                    reason,
+                    created_at,
+                    created_by_handle,
+                })
+                .collect();
+            (StatusCode::OK, Json(ApiResponse::ok(list))).into_response()
+        }
+        Err(err) => storage_resp(err),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct AddDomainBlockBody {
+    domain: String,
+    severity: String,
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+fn normalize_domain(raw: &str) -> Option<String> {
+    let d = raw.trim().to_ascii_lowercase();
+    let host = if let Some(rest) = d.strip_prefix("https://").or_else(|| d.strip_prefix("http://")) {
+        rest.split('/').next().unwrap_or("")
+    } else {
+        d.as_str()
+    };
+    let host = host.split(':').next().unwrap_or("");
+    if host.is_empty() || !host.contains('.') || host.len() > 253 {
+        None
+    } else {
+        Some(host.to_owned())
+    }
+}
+
+async fn add_domain_block_server(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<AddDomainBlockBody>,
+) -> Response {
+    let admin_id = match require_admin(&headers, &state.db).await {
+        Ok(id) => id,
+        Err(r) => return r,
+    };
+    let Some(domain) = normalize_domain(&body.domain) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse::<()>::fail("bad_request", "domínio inválido")),
+        )
+            .into_response();
+    };
+    if !matches!(body.severity.as_str(), "silence" | "suspend") {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse::<()>::fail("bad_request", "severity deve ser silence ou suspend")),
+        )
+            .into_response();
+    }
+    let reason = body.reason.and_then(|s| {
+        let t = s.trim().to_owned();
+        if t.is_empty() { None } else { Some(t) }
+    });
+    let res = sqlx::query(
+        r"INSERT INTO server_domain_block (id, domain, severity, reason, created_by)
+          VALUES ($1, $2, $3, $4, $5)
+          ON CONFLICT (domain)
+          DO UPDATE SET severity = EXCLUDED.severity,
+                        reason   = EXCLUDED.reason,
+                        created_by = EXCLUDED.created_by",
+    )
+    .bind(Uuid::now_v7())
+    .bind(&domain)
+    .bind(&body.severity)
+    .bind(reason.as_deref())
+    .bind(admin_id)
+    .execute(&state.db)
+    .await;
+    match res {
+        Ok(_) => {
+            let _ = audit(
+                &state.db,
+                admin_id,
+                "server_domain_block",
+                None,
+                Some(&domain),
+                None,
+                Some(serde_json::json!({ "severity": body.severity, "reason": reason })),
+            )
+            .await;
+            ok_json()
+        }
+        Err(err) => storage_resp(err),
+    }
+}
+
+async fn remove_domain_block_server(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(domain): Path<String>,
+) -> Response {
+    let admin_id = match require_admin(&headers, &state.db).await {
+        Ok(id) => id,
+        Err(r) => return r,
+    };
+    let Some(domain) = normalize_domain(&domain) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse::<()>::fail("bad_request", "domínio inválido")),
+        )
+            .into_response();
+    };
+    let _ = sqlx::query(r"DELETE FROM server_domain_block WHERE domain = $1")
+        .bind(&domain)
+        .execute(&state.db)
+        .await;
+    let _ = audit(
+        &state.db,
+        admin_id,
+        "server_domain_unblock",
+        None,
+        Some(&domain),
+        None,
+        None,
+    )
+    .await;
+    ok_json()
 }
 
 async fn audit(

@@ -389,6 +389,16 @@
           {/if}
         {/if}
       {:else if active === 'federacao'}
+        <div class="promo-card">
+          <p>
+            <strong>Bloqueios de domínio server-wide</strong> — política da
+            instância inteira: silenciar (só quem já segue continua vendo) ou
+            suspender (corte total, inbox rejeita).
+          </p>
+          <a class="btn btn-primary" href="/admin/federacao">
+            Gerenciar bloqueios de domínio →
+          </a>
+        </div>
         {#if peersLoading}
           <div class="loading"><Spinner /></div>
         {:else if peersErr}
