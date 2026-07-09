@@ -234,16 +234,33 @@ pub async fn trending_hashtags(
     limit: i64,
 ) -> Result<Vec<HashtagHit>, sqlx::Error> {
     let since = Utc::now() - Duration::hours(window_hours);
+    // 0.26.19: exclui hashtags 'banned' e injeta 'promoted' com count sintético
+    // pra elas aparecerem mesmo sem volume.
     sqlx::query_as::<_, (String, String, i64)>(
         r"
-        SELECT tag_normalized,
-               MIN(tag_original) AS tag_original,
-               COUNT(DISTINCT object_uri) AS note_count
-          FROM note_hashtag
-         WHERE created_at >= $1
-         GROUP BY tag_normalized
-         ORDER BY note_count DESC, tag_normalized
-         LIMIT $2
+        WITH real AS (
+            SELECT tag_normalized,
+                   MIN(tag_original) AS tag_original,
+                   COUNT(DISTINCT object_uri) AS note_count
+              FROM note_hashtag
+             WHERE created_at >= $1
+               AND tag_normalized NOT IN (
+                     SELECT tag FROM hashtag_moderation WHERE state = 'banned')
+             GROUP BY tag_normalized
+        ),
+        promoted AS (
+            SELECT hm.tag AS tag_normalized,
+                   hm.tag AS tag_original,
+                   COALESCE(r.note_count, 0) AS note_count
+              FROM hashtag_moderation hm
+              LEFT JOIN real r ON r.tag_normalized = hm.tag
+             WHERE hm.state = 'promoted'
+        )
+        SELECT tag_normalized, tag_original, note_count FROM real
+        UNION
+        SELECT tag_normalized, tag_original, note_count FROM promoted
+        ORDER BY note_count DESC, tag_normalized
+        LIMIT $2
         ",
     )
     .bind(since)

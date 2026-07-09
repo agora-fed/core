@@ -1353,6 +1353,89 @@ export const adminCreateRule = (text: string, ordinal = 0) =>
   apiPost<ServerRuleDto>('/api/v1/admin/rules', { text, ordinal });
 export const adminUpdateRule = (id: string, patch: { text?: string; ordinal?: number }) =>
   apiPatch<{ ok: true }>(`/api/v1/admin/rules/${encodeURIComponent(id)}`, patch);
+/** Emojis personalizados (0.26.19). */
+export interface CustomEmojiDto {
+  id: string;
+  shortcode: string;
+  url: string;
+  enabled: boolean;
+  created_at: string;
+}
+export const getServerEmojis = () =>
+  apiGet<CustomEmojiDto[]>('/api/v1/server/emojis');
+export const adminListEmojis = () =>
+  apiGetCredentialed<CustomEmojiDto[]>('/api/v1/admin/emojis');
+export async function adminUploadEmoji(file: File, shortcode: string): Promise<ApiResponse<CustomEmojiDto>> {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('shortcode', shortcode);
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/admin/emojis`, {
+      method: 'POST',
+      credentials: 'include',
+      body: form,
+    });
+    return (await res.json()) as ApiResponse<CustomEmojiDto>;
+  } catch (err) {
+    return { success: false, error: { code: 'network', message: String(err) } };
+  }
+}
+export const adminToggleEmoji = (id: string, enabled: boolean) =>
+  apiPatch<{ ok: true }>(`/api/v1/admin/emojis/${encodeURIComponent(id)}`, { enabled });
+export async function adminDeleteEmoji(id: string): Promise<ApiResponse<{ ok: true }>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/admin/emojis/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { accept: 'application/json' },
+    });
+    return (await res.json()) as ApiResponse<{ ok: true }>;
+  } catch (err) {
+    return { success: false, error: { code: 'network', message: String(err) } };
+  }
+}
+
+/** Moderação de hashtag (0.26.19). */
+export interface HashtagModDto {
+  tag: string;
+  state: 'banned' | 'promoted';
+  reason: string | null;
+  created_at: string;
+}
+export const adminListHashtags = () =>
+  apiGetCredentialed<HashtagModDto[]>('/api/v1/admin/hashtags/moderation');
+export const adminUpsertHashtag = (tag: string, state: 'banned' | 'promoted', reason?: string) =>
+  apiPost<{ ok: true }>('/api/v1/admin/hashtags/moderation', { tag, state, reason });
+export async function adminDeleteHashtag(tag: string): Promise<ApiResponse<{ ok: true }>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/admin/hashtags/moderation/${encodeURIComponent(tag)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { accept: 'application/json' },
+    });
+    return (await res.json()) as ApiResponse<{ ok: true }>;
+  } catch (err) {
+    return { success: false, error: { code: 'network', message: String(err) } };
+  }
+}
+
+/** Auto-delete de publicações antigas (0.26.19). */
+export const getAutoDelete = () =>
+  apiGetCredentialed<{ days: number | null }>('/api/v1/me/preferences/auto_delete');
+export async function putAutoDelete(days: number | null): Promise<ApiResponse<{ ok: true }>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/me/preferences/auto_delete`, {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ days }),
+    });
+    return (await res.json()) as ApiResponse<{ ok: true }>;
+  } catch (err) {
+    return { success: false, error: { code: 'network', message: String(err) } };
+  }
+}
+
 export async function adminDeleteRule(id: string): Promise<ApiResponse<{ ok: true }>> {
   try {
     const res = await fetch(`${API_BASE}/api/v1/admin/rules/${encodeURIComponent(id)}`, {

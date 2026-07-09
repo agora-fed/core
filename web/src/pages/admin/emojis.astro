@@ -1,0 +1,24 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminEmojis from '../../components/islands/AdminEmojis.svelte';
+---
+
+<AdminLayout
+  title="Emojis (admin)"
+  description="Emojis personalizados da instância. Suba PNG/GIF e use com :shortcode: no compose."
+>
+  <header class="head">
+    <h1>Emojis personalizados</h1>
+    <p class="muted">
+      Suba PNG/GIF até 512 KB. Cada emoji é normalizado pra 128×128 e
+      recebe um <code>:shortcode:</code> pra usar em publicações.
+    </p>
+  </header>
+  <AdminEmojis client:load />
+</AdminLayout>
+
+<style>
+  .head { margin-bottom: var(--sp-5); }
+  h1 { margin: 0 0 var(--sp-1); }
+  code { background: var(--surface-2); padding: 2px 6px; border-radius: 4px; }
+</style>

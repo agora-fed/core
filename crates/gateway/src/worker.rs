@@ -391,6 +391,10 @@ pub fn spawn(state: AppState) {
         .unwrap_or(DEFAULT_SIGNUP_CLEANUP_DAYS);
     tokio::spawn(signup_cleanup_loop(state.clone(), signup_cleanup_ms, signup_cleanup_days));
 
+    // 0.26.19: apaga notas próprias com idade > auto_delete_notes_older_than_days.
+    // 1 tick por hora — barato, indexed. Não bloqueia outros loops.
+    tokio::spawn(auto_delete_notes_loop(state.clone()));
+
     tracing::info!(
         subscriptions = count,
         dispatch_ms,
@@ -399,6 +403,35 @@ pub fn spawn(state: AppState) {
         signup_cleanup_ms,
         "event worker started: consequence loop is live"
     );
+}
+
+/// Percorre todas as contas com preferência `auto_delete_notes_older_than_days`
+/// setada e marca `deleted_at = now()` nas notas próprias que passam do prazo.
+/// Idempotente; uma nota já marcada como deleted não é remexida.
+async fn auto_delete_notes_loop(state: AppState) {
+    let mut ticker = interval(Duration::from_secs(60 * 60)); // 1h
+    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        ticker.tick().await;
+        let res = sqlx::query(
+            r"UPDATE federation_outbox_entry oe
+                 SET deleted_at = now()
+                FROM citizen c
+               WHERE c.id = oe.citizen_id
+                 AND c.auto_delete_notes_older_than_days IS NOT NULL
+                 AND oe.deleted_at IS NULL
+                 AND oe.created_at < now() - make_interval(days => c.auto_delete_notes_older_than_days)",
+        )
+        .execute(&state.db)
+        .await;
+        match res {
+            Ok(r) if r.rows_affected() > 0 => {
+                tracing::info!(deleted = r.rows_affected(), "auto_delete_notes tick");
+            }
+            Ok(_) => {}
+            Err(err) => tracing::warn!(error = ?err, "auto_delete_notes falhou"),
+        }
+    }
 }
 
 /// Loop de cleanup do `auth_pending_signup` + `auth_login_attempt`. Faz

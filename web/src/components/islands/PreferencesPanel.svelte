@@ -5,6 +5,8 @@
   import {
     getMyPreferences,
     patchMyPreferences,
+    getAutoDelete,
+    putAutoDelete,
     type MyPreferencesDto,
     type EmailPrefs,
   } from '../../lib/api';
@@ -15,16 +17,31 @@
   let error = $state<string | null>(null);
   let prefs = $state<MyPreferencesDto | null>(null);
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  let autoDeleteDays = $state<string>(''); // string pra dropdown
 
   onMount(async () => {
-    const res = await getMyPreferences();
+    const [res, ad] = await Promise.all([getMyPreferences(), getAutoDelete()]);
     loading = false;
     if (res.success && res.data) {
       prefs = res.data;
     } else {
       error = res.error?.message ?? 'Falha ao carregar preferências.';
     }
+    if (ad.success && ad.data) {
+      autoDeleteDays = ad.data.days == null ? '' : String(ad.data.days);
+    }
   });
+
+  async function onAutoDelete(v: string) {
+    autoDeleteDays = v;
+    const days = v === '' ? null : Number(v);
+    const res = await putAutoDelete(days);
+    if (res.success) {
+      toast.success(days == null ? 'Auto-exclusão desligada.' : `Publicações mais antigas que ${days} dias serão apagadas.`);
+    } else {
+      toast.error(res.error?.message ?? 'Falha ao salvar.');
+    }
+  }
 
   async function persist(patch: Partial<MyPreferencesDto>) {
     if (saveTimer) clearTimeout(saveTimer);
@@ -116,6 +133,25 @@
         </label>
       {/each}
     </div>
+  </Card>
+
+  <Card>
+    <h3 class="sub">Exclusão automatizada de publicações</h3>
+    <p class="muted small">
+      Um worker apaga suas publicações públicas antigas periodicamente.
+      Útil pra manter o feed enxuto. Não afeta favoritos nem seguidores.
+    </p>
+    <label class="fld">
+      <span>Apagar publicações mais antigas que</span>
+      <select value={autoDeleteDays} onchange={(e) => onAutoDelete((e.currentTarget as HTMLSelectElement).value)}>
+        <option value="">Nunca (manter tudo)</option>
+        <option value="7">1 semana</option>
+        <option value="30">30 dias</option>
+        <option value="90">3 meses</option>
+        <option value="180">6 meses</option>
+        <option value="365">1 ano</option>
+      </select>
+    </label>
   </Card>
 {/if}
 
