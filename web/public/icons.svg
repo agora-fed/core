@@ -269,4 +269,16 @@
     <path d="M10 14a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1 1" />
     <path d="M14 10a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1-1" />
   </symbol>
+  <symbol id="i-flag" viewBox="0 0 24 24">
+    <path d="M4 21V4h12l-2 4 2 4H4" />
+    <path d="M4 4v17" />
+  </symbol>
+  <symbol id="i-block" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="9" />
+    <path d="M5.6 5.6l12.8 12.8" />
+  </symbol>
+  <symbol id="i-volume-off" viewBox="0 0 24 24">
+    <path d="M11 5 6 9H2v6h4l5 4V5z" />
+    <path d="M23 9l-6 6M17 9l6 6" />
+  </symbol>
 </svg>

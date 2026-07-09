@@ -246,6 +246,10 @@ pub async fn list_feed(
                 OR feed.author_actor_url NOT IN (
                        SELECT target_actor_url FROM actor_block
                         WHERE citizen_id = $1))
+           AND (feed.author_actor_url IS NULL
+                OR lower(substring(feed.author_actor_url FROM '^https?://([^/]+)'))
+                       NOT IN (SELECT domain FROM domain_block
+                                WHERE citizen_id = $1))
            AND NOT EXISTS (
                    SELECT 1 FROM content_filter cf
                     WHERE cf.citizen_id = $1

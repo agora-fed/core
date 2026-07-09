@@ -1098,6 +1098,81 @@ export const getBookmarkStatus = (object_uri: string) =>
     `/api/v1/me/bookmarks/status?object_uri=${encodeURIComponent(object_uri)}`,
   );
 
+/** Mute/Block por URL do actor (funciona pra locais e remotos). */
+export const muteActorUrl = (actor_url: string) =>
+  apiPost<{ ok: true }>('/api/v1/me/mutes/url', { actor_url });
+export async function unmuteActorUrl(actor_url: string): Promise<ApiResponse<{ ok: true }>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/me/mutes/url`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ actor_url }),
+    });
+    return (await res.json()) as ApiResponse<{ ok: true }>;
+  } catch (err) {
+    return { success: false, error: { code: 'network', message: String(err) } };
+  }
+}
+export const getMuteUrlStatus = (actor_url: string) =>
+  apiGetCredentialed<{ muted: boolean }>(
+    `/api/v1/me/mutes/url/status?actor_url=${encodeURIComponent(actor_url)}`,
+  );
+
+export const blockActorUrl = (actor_url: string) =>
+  apiPost<{ ok: true }>('/api/v1/me/blocks/url', { actor_url });
+export async function unblockActorUrl(actor_url: string): Promise<ApiResponse<{ ok: true }>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/me/blocks/url`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ actor_url }),
+    });
+    return (await res.json()) as ApiResponse<{ ok: true }>;
+  } catch (err) {
+    return { success: false, error: { code: 'network', message: String(err) } };
+  }
+}
+export const getBlockUrlStatus = (actor_url: string) =>
+  apiGetCredentialed<{ blocked: boolean }>(
+    `/api/v1/me/blocks/url/status?actor_url=${encodeURIComponent(actor_url)}`,
+  );
+
+/** Categorias: spam | violation | other (vocabulário Mastodon). */
+export const reportNote = (body: {
+  object_uri: string;
+  author_actor_url: string;
+  category: 'spam' | 'violation' | 'other';
+  reason?: string;
+}) => apiPost<{ ok: true }>('/api/v1/me/reports', body);
+
+export const blockDomain = (domain: string) =>
+  apiPost<{ ok: true; domain: string }>('/api/v1/me/domain_blocks', { domain });
+export async function unblockDomain(domain: string): Promise<ApiResponse<{ ok: true }>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/me/domain_blocks`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ domain }),
+    });
+    return (await res.json()) as ApiResponse<{ ok: true }>;
+  } catch (err) {
+    return { success: false, error: { code: 'network', message: String(err) } };
+  }
+}
+export const getDomainBlockStatus = (domain: string) =>
+  apiGetCredentialed<{ blocked: boolean; domain: string }>(
+    `/api/v1/me/domain_blocks/status?domain=${encodeURIComponent(domain)}`,
+  );
+
+/** List de bookmarks (retorna object_uris; usa junto com getMyFeed pra hidratar). */
+export const listBookmarks = (limit = 20, offset = 0) =>
+  apiGetCredentialed<{ object_uri: string; created_at: string }[]>(
+    `/api/v1/bookmarks?limit=${limit}&offset=${offset}`,
+  );
+
 /** Options passed to `postNote` for 0.18.0's Mastodon-parity fields. */
 export interface PostNoteOptions {
   in_reply_to_uri?: string;

@@ -10,6 +10,7 @@
   //     envia in_reply_to_uri; o autor pode opcionalmente preservar/limpar
   //     um "@handle " pré-pendurado no texto;
   //   - contador visual usa Chip token quando perto do limite.
+  import { onMount, onDestroy } from 'svelte';
   import {
     postNote,
     uploadNoteMedia,
@@ -66,6 +67,28 @@
   let content = $state(
     edit ? edit.content : replyTo ? `@${replyTo.handle} ` : '',
   );
+
+  // O menu 3-pontinhos dos posts dispara `dsoc:compose-mention` com o handle
+  // do autor. Nós prefixamos o texto e movemos o cursor pro fim.
+  function onComposeMention(e: Event) {
+    if (variant !== 'feed' && variant !== 'settings') return;
+    const detail = (e as CustomEvent).detail as { handle?: string } | undefined;
+    if (!detail?.handle) return;
+    const mention = `@${detail.handle} `;
+    if (!content.includes(mention)) {
+      content = mention + content;
+    }
+    queueMicrotask(() => {
+      taRef?.focus();
+      taRef?.setSelectionRange(content.length, content.length);
+    });
+  }
+  onMount(() => {
+    window.addEventListener('dsoc:compose-mention', onComposeMention);
+  });
+  onDestroy(() => {
+    window.removeEventListener('dsoc:compose-mention', onComposeMention);
+  });
   let cwOpen = $state(Boolean(edit?.spoiler_text));
   let spoilerText = $state(edit?.spoiler_text ?? '');
   let busy = $state(false);

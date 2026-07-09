@@ -1,0 +1,31 @@
+---
+// Página /salvos — lista dos bookmarks do cidadão. Ilha CSR (BookmarksList)
+// puxa GET /api/v1/bookmarks e hidrata cards no mesmo estilo do Feed.
+import AppShellLayout from '../layouts/AppShellLayout.astro';
+import ColorBar from '../components/illustrations/ColorBar.astro';
+import BookmarksList from '../components/islands/BookmarksList.svelte';
+
+const description = 'Publicações que você marcou pra ler depois.';
+---
+
+<AppShellLayout title="Salvos" {description} noindex>
+  <header class="page-head">
+    <ColorBar class="head-bar" />
+    <h1>Salvos</h1>
+    <p class="muted lede">Publicações que você guardou pra ler depois.</p>
+  </header>
+  <BookmarksList client:load />
+</AppShellLayout>
+
+<style>
+  .page-head {
+    max-width: 46rem;
+    margin-bottom: 2rem;
+  }
+  .head-bar {
+    margin-bottom: 0.9rem;
+  }
+  .lede {
+    font-size: 1.05rem;
+  }
+</style>

@@ -38,6 +38,16 @@ pub fn routes(state: AppState) -> Router<()> {
         // Bookmark de URIs cruas (notas remotas do outbox proxy, sem UUID local).
         .route("/me/bookmarks", post(bookmark_uri).delete(unbookmark_uri))
         .route("/me/bookmarks/status", get(bookmark_status_of))
+        // Mute/Block por actor_url (cobre locais + remotos sem citizen_id).
+        .route("/me/mutes/url", post(mute_url).delete(unmute_url))
+        .route("/me/mutes/url/status", get(mute_url_status))
+        .route("/me/blocks/url", post(block_url).delete(unblock_url))
+        .route("/me/blocks/url/status", get(block_url_status))
+        // Denúncia de nota.
+        .route("/me/reports", post(create_note_report))
+        // Bloqueio de domínio inteiro.
+        .route("/me/domain_blocks", post(add_domain_block).delete(remove_domain_block))
+        .route("/me/domain_blocks/status", get(domain_block_status))
         // Mutes
         .route("/mutes", get(list_mutes))
         .route("/accounts/{citizen_id}/mute", post(mute_account))
@@ -1276,4 +1286,308 @@ async fn list_timeline(
             server_error()
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Mute/Block/Report/Domain-block por actor_url ou host
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+struct ActorUrlBody {
+    actor_url: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ActorUrlQuery {
+    actor_url: String,
+}
+
+async fn mute_url(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<ActorUrlBody>,
+) -> Response {
+    let Some(citizen) = caller_citizen(&headers) else {
+        return unauthorized();
+    };
+    let actor_url = body.actor_url.trim();
+    if actor_url.is_empty() {
+        return bad_request("actor_url vazio");
+    }
+    let res = sqlx::query(
+        r"INSERT INTO actor_mute (id, citizen_id, target_actor_url, hide_notifications)
+          VALUES ($1, $2, $3, true)
+          ON CONFLICT (citizen_id, target_actor_url) DO NOTHING",
+    )
+    .bind(Uuid::now_v7())
+    .bind(citizen)
+    .bind(actor_url)
+    .execute(&state.db)
+    .await;
+    match res {
+        Ok(_) => (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "ok": true })))).into_response(),
+        Err(err) => {
+            tracing::error!(?err, "mute_url");
+            server_error()
+        }
+    }
+}
+
+async fn unmute_url(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<ActorUrlBody>,
+) -> Response {
+    let Some(citizen) = caller_citizen(&headers) else {
+        return unauthorized();
+    };
+    let _ = sqlx::query(
+        r"DELETE FROM actor_mute WHERE citizen_id = $1 AND target_actor_url = $2",
+    )
+    .bind(citizen)
+    .bind(body.actor_url.trim())
+    .execute(&state.db)
+    .await;
+    (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "ok": true })))).into_response()
+}
+
+async fn mute_url_status(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<ActorUrlQuery>,
+) -> Response {
+    let Some(citizen) = caller_citizen(&headers) else {
+        return unauthorized();
+    };
+    let n: i64 = sqlx::query_scalar(
+        r"SELECT count(*) FROM actor_mute WHERE citizen_id = $1 AND target_actor_url = $2",
+    )
+    .bind(citizen)
+    .bind(q.actor_url.trim())
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(0);
+    (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "muted": n > 0 })))).into_response()
+}
+
+async fn block_url(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<ActorUrlBody>,
+) -> Response {
+    let Some(citizen) = caller_citizen(&headers) else {
+        return unauthorized();
+    };
+    let actor_url = body.actor_url.trim();
+    if actor_url.is_empty() {
+        return bad_request("actor_url vazio");
+    }
+    let res = sqlx::query(
+        r"INSERT INTO actor_block (id, citizen_id, target_actor_url)
+          VALUES ($1, $2, $3)
+          ON CONFLICT (citizen_id, target_actor_url) DO NOTHING",
+    )
+    .bind(Uuid::now_v7())
+    .bind(citizen)
+    .bind(actor_url)
+    .execute(&state.db)
+    .await;
+    match res {
+        Ok(_) => (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "ok": true })))).into_response(),
+        Err(err) => {
+            tracing::error!(?err, "block_url");
+            server_error()
+        }
+    }
+}
+
+async fn unblock_url(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<ActorUrlBody>,
+) -> Response {
+    let Some(citizen) = caller_citizen(&headers) else {
+        return unauthorized();
+    };
+    let _ = sqlx::query(
+        r"DELETE FROM actor_block WHERE citizen_id = $1 AND target_actor_url = $2",
+    )
+    .bind(citizen)
+    .bind(body.actor_url.trim())
+    .execute(&state.db)
+    .await;
+    (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "ok": true })))).into_response()
+}
+
+async fn block_url_status(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<ActorUrlQuery>,
+) -> Response {
+    let Some(citizen) = caller_citizen(&headers) else {
+        return unauthorized();
+    };
+    let n: i64 = sqlx::query_scalar(
+        r"SELECT count(*) FROM actor_block WHERE citizen_id = $1 AND target_actor_url = $2",
+    )
+    .bind(citizen)
+    .bind(q.actor_url.trim())
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(0);
+    (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "blocked": n > 0 })))).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+struct ReportBody {
+    object_uri: String,
+    author_actor_url: String,
+    /// spam | violation | other
+    category: String,
+    reason: Option<String>,
+}
+
+async fn create_note_report(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<ReportBody>,
+) -> Response {
+    let Some(citizen) = caller_citizen(&headers) else {
+        return unauthorized();
+    };
+    if !matches!(body.category.as_str(), "spam" | "violation" | "other") {
+        return bad_request("category inválida");
+    }
+    if body.object_uri.trim().is_empty() || body.author_actor_url.trim().is_empty() {
+        return bad_request("object_uri/author_actor_url obrigatórios");
+    }
+    let reason = body.reason.as_deref().unwrap_or("").trim().to_owned();
+    let reason = if reason.is_empty() || reason.len() > 2000 {
+        if reason.len() > 2000 {
+            return bad_request("motivo até 2000 chars");
+        }
+        None
+    } else {
+        Some(reason)
+    };
+    let res = sqlx::query(
+        r"INSERT INTO note_report
+            (id, reporter_id, object_uri, author_actor_url, category, reason)
+          VALUES ($1, $2, $3, $4, $5, $6)
+          ON CONFLICT (reporter_id, object_uri) DO NOTHING",
+    )
+    .bind(Uuid::now_v7())
+    .bind(citizen)
+    .bind(body.object_uri.trim())
+    .bind(body.author_actor_url.trim())
+    .bind(&body.category)
+    .bind(reason.as_deref())
+    .execute(&state.db)
+    .await;
+    match res {
+        Ok(_) => (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "ok": true })))).into_response(),
+        Err(err) => {
+            tracing::error!(?err, "create_note_report");
+            server_error()
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct DomainBody {
+    domain: String,
+}
+
+fn normalize_domain(raw: &str) -> Option<String> {
+    let d = raw.trim().to_ascii_lowercase();
+    // Aceita "host" ou "https://host"; extraímos só o host.
+    let host = if let Some(rest) = d.strip_prefix("https://").or_else(|| d.strip_prefix("http://")) {
+        rest.split('/').next().unwrap_or("")
+    } else {
+        d.as_str()
+    };
+    let host = host.split(':').next().unwrap_or("");
+    if host.is_empty() || !host.contains('.') || host.len() > 253 {
+        None
+    } else {
+        Some(host.to_owned())
+    }
+}
+
+async fn add_domain_block(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DomainBody>,
+) -> Response {
+    let Some(citizen) = caller_citizen(&headers) else {
+        return unauthorized();
+    };
+    let Some(domain) = normalize_domain(&body.domain) else {
+        return bad_request("domínio inválido");
+    };
+    let res = sqlx::query(
+        r"INSERT INTO domain_block (id, citizen_id, domain)
+          VALUES ($1, $2, $3)
+          ON CONFLICT (citizen_id, domain) DO NOTHING",
+    )
+    .bind(Uuid::now_v7())
+    .bind(citizen)
+    .bind(&domain)
+    .execute(&state.db)
+    .await;
+    match res {
+        Ok(_) => (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "ok": true, "domain": domain })))).into_response(),
+        Err(err) => {
+            tracing::error!(?err, "add_domain_block");
+            server_error()
+        }
+    }
+}
+
+async fn remove_domain_block(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DomainBody>,
+) -> Response {
+    let Some(citizen) = caller_citizen(&headers) else {
+        return unauthorized();
+    };
+    let Some(domain) = normalize_domain(&body.domain) else {
+        return bad_request("domínio inválido");
+    };
+    let _ = sqlx::query(
+        r"DELETE FROM domain_block WHERE citizen_id = $1 AND domain = $2",
+    )
+    .bind(citizen)
+    .bind(&domain)
+    .execute(&state.db)
+    .await;
+    (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "ok": true })))).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+struct DomainQuery {
+    domain: String,
+}
+
+async fn domain_block_status(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<DomainQuery>,
+) -> Response {
+    let Some(citizen) = caller_citizen(&headers) else {
+        return unauthorized();
+    };
+    let Some(domain) = normalize_domain(&q.domain) else {
+        return bad_request("domínio inválido");
+    };
+    let n: i64 = sqlx::query_scalar(
+        r"SELECT count(*) FROM domain_block WHERE citizen_id = $1 AND domain = $2",
+    )
+    .bind(citizen)
+    .bind(&domain)
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(0);
+    (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "blocked": n > 0, "domain": domain })))).into_response()
 }

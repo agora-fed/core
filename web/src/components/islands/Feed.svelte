@@ -18,6 +18,10 @@
     clearLocalSession,
     getFollowSuggestions,
     followRemoteActor,
+    muteActorUrl,
+    blockActorUrl,
+    blockDomain,
+    reportNote,
     type MentionHit,
   } from '../../lib/api';
   import type { FeedItemDto } from '../../lib/types';
@@ -67,6 +71,144 @@
   let observer: IntersectionObserver | null = null;
   let followBusy = $state<Set<string>>(new Set());
   let followed = $state<Set<string>>(new Set());
+  // Modal de denúncia — object_uri sendo denunciada + campos.
+  let reportOpen = $state(false);
+  let reportItem = $state<FeedItemDto | null>(null);
+  let reportCategory = $state<'spam' | 'violation' | 'other'>('spam');
+  let reportReason = $state('');
+  let reportBusy = $state(false);
+  // Set de author_actor_url silenciados/bloqueados (só o feedback UI).
+  let mutedAuthors = $state<Set<string>>(new Set());
+  let blockedAuthors = $state<Set<string>>(new Set());
+
+  function authorActorUrlOf(item: FeedItemDto): string | null {
+    // Para remotos, o handle vem com @user@host — reconstruímos o URL AP a
+    // partir do próprio object_uri (mesma origem que ele).
+    if (item.is_remote) {
+      try {
+        const u = new URL(item.object_uri);
+        // Mastodon serve o actor em /users/<handle> ou /@handle. Como só
+        // temos handle "@u@h", extraímos user e host, e usamos o host da URL.
+        const parts = item.author_handle.replace(/^@/, '').split('@');
+        const user = parts[0];
+        return `${u.protocol}//${u.host}/users/${user}`;
+      } catch {
+        return null;
+      }
+    }
+    // Local: montamos com o origin atual.
+    if (typeof window !== 'undefined') {
+      return `${window.location.origin}/actors/${item.author_handle.replace(/^@/, '')}`;
+    }
+    return null;
+  }
+
+  function domainOf(item: FeedItemDto): string | null {
+    try {
+      return new URL(item.object_uri).host;
+    } catch {
+      return null;
+    }
+  }
+
+  async function onCopyLink(item: FeedItemDto) {
+    try {
+      await navigator.clipboard.writeText(item.object_uri);
+      toast.success('Link copiado.');
+    } catch {
+      toast.error('Não consegui copiar. Copie manualmente: ' + item.object_uri);
+    }
+  }
+
+  function onOpenOriginal(item: FeedItemDto) {
+    window.open(item.object_uri, '_blank', 'noopener,noreferrer');
+  }
+
+  async function onMuteAuthor(item: FeedItemDto) {
+    const url = authorActorUrlOf(item);
+    if (!url) {
+      toast.error('Não consegui identificar o autor.');
+      return;
+    }
+    const res = await muteActorUrl(url);
+    if (res.success) {
+      mutedAuthors = new Set(mutedAuthors).add(url);
+      toast.success(`Silenciado ${item.author_handle}.`);
+      items = items.filter((i) => authorActorUrlOf(i) !== url);
+    } else {
+      toast.error(res.error?.message ?? 'Falha ao silenciar.');
+    }
+  }
+
+  async function onBlockAuthor(item: FeedItemDto) {
+    const url = authorActorUrlOf(item);
+    if (!url) {
+      toast.error('Não consegui identificar o autor.');
+      return;
+    }
+    const res = await blockActorUrl(url);
+    if (res.success) {
+      blockedAuthors = new Set(blockedAuthors).add(url);
+      toast.success(`Bloqueado ${item.author_handle}.`);
+      items = items.filter((i) => authorActorUrlOf(i) !== url);
+    } else {
+      toast.error(res.error?.message ?? 'Falha ao bloquear.');
+    }
+  }
+
+  async function onBlockDomainOf(item: FeedItemDto) {
+    const host = domainOf(item);
+    if (!host) {
+      toast.error('Sem domínio identificável.');
+      return;
+    }
+    const res = await blockDomain(host);
+    if (res.success) {
+      toast.success(`Domínio ${host} bloqueado.`);
+      items = items.filter((i) => domainOf(i) !== host);
+    } else {
+      toast.error(res.error?.message ?? 'Falha ao bloquear domínio.');
+    }
+  }
+
+  function askReport(item: FeedItemDto) {
+    reportItem = item;
+    reportCategory = 'spam';
+    reportReason = '';
+    reportOpen = true;
+  }
+
+  async function submitReport() {
+    if (!reportItem || reportBusy) return;
+    const authorUrl = authorActorUrlOf(reportItem);
+    if (!authorUrl) {
+      toast.error('Não consegui identificar o autor.');
+      return;
+    }
+    reportBusy = true;
+    const res = await reportNote({
+      object_uri: reportItem.object_uri,
+      author_actor_url: authorUrl,
+      category: reportCategory,
+      reason: reportReason.trim() || undefined,
+    });
+    reportBusy = false;
+    if (res.success) {
+      toast.success('Denúncia enviada à moderação.');
+      reportOpen = false;
+      reportItem = null;
+    } else {
+      toast.error(res.error?.message ?? 'Falha ao enviar denúncia.');
+    }
+  }
+
+  function onMention(item: FeedItemDto) {
+    // Dispara evento pro NoteComposer no topo consumir e prefixar o texto.
+    const detail = { handle: item.author_handle.replace(/^@/, '') };
+    window.dispatchEvent(new CustomEvent('dsoc:compose-mention', { detail }));
+    // Rola pra o topo pra o composer ficar visível.
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
   function askDelete(item: FeedItemDto) {
     deletingTo = item;
@@ -456,25 +598,42 @@
                   </span>
                 {/if}
               </time>
-              {#if isMine(item)}
-                <Menu align="right" label="Ações da publicação">
-                  {#snippet trigger({ toggle })}
-                    <button
-                      type="button"
-                      class="more"
-                      onclick={toggle}
-                      aria-label="Mais ações"
-                    >
-                      <Icon name="more" size={16} />
+              <Menu align="right" label="Ações da publicação">
+                {#snippet trigger({ toggle })}
+                  <button
+                    type="button"
+                    class="more"
+                    onclick={toggle}
+                    aria-label="Mais ações"
+                  >
+                    <Icon name="more" size={16} />
+                  </button>
+                {/snippet}
+                {#snippet items()}
+                  <button type="button" onclick={() => onCopyLink(item)}>
+                    <Icon name="link" size={14} />
+                    Copiar link
+                  </button>
+                  {#if item.is_remote}
+                    <button type="button" onclick={() => onOpenOriginal(item)}>
+                      <Icon name="external" size={14} />
+                      Abrir a página original
                     </button>
-                  {/snippet}
-                  {#snippet items()}
-                    <button
-                      type="button"
-                      onclick={() => {
-                        editingTo = item.object_uri;
-                      }}
-                    >
+                  {/if}
+                  <button type="button" onclick={() => onMention(item)}>
+                    <Icon name="at" size={14} />
+                    Mencionar {item.author_handle}
+                  </button>
+                  <button type="button" onclick={() => onBookmark(item)}>
+                    <Icon
+                      name={bookmarked.has(item.object_uri) ? 'bookmark-fill' : 'bookmark'}
+                      size={14}
+                    />
+                    {bookmarked.has(item.object_uri) ? 'Remover dos salvos' : 'Salvar'}
+                  </button>
+                  {#if isMine(item)}
+                    <hr class="menu-sep" />
+                    <button type="button" onclick={() => { editingTo = item.object_uri; }}>
                       <Icon name="edit" size={14} />
                       Editar
                     </button>
@@ -482,9 +641,29 @@
                       <Icon name="trash" size={14} />
                       Apagar
                     </button>
-                  {/snippet}
-                </Menu>
-              {/if}
+                  {:else}
+                    <hr class="menu-sep" />
+                    <button type="button" onclick={() => onMuteAuthor(item)}>
+                      <Icon name="volume-off" size={14} />
+                      Silenciar {item.author_handle}
+                    </button>
+                    <button type="button" onclick={() => onBlockAuthor(item)}>
+                      <Icon name="block" size={14} />
+                      Bloquear {item.author_handle}
+                    </button>
+                    <button type="button" class="danger" onclick={() => askReport(item)}>
+                      <Icon name="flag" size={14} />
+                      Denunciar publicação
+                    </button>
+                    {#if item.is_remote}
+                      <button type="button" class="danger" onclick={() => onBlockDomainOf(item)}>
+                        <Icon name="block" size={14} />
+                        Bloquear domínio {domainOf(item)}
+                      </button>
+                    {/if}
+                  {/if}
+                {/snippet}
+              </Menu>
             </header>
 
             {#if item.in_reply_to_uri}
@@ -675,9 +854,84 @@
       </Button>
     {/snippet}
   </Modal>
+
+  <Modal
+    bind:open={reportOpen}
+    title="Denunciar esta publicação"
+    onclose={() => (reportOpen = false)}
+  >
+    <div class="report-form">
+      <label class="rf-lbl">
+        Motivo
+        <select bind:value={reportCategory} class="rf-sel">
+          <option value="spam">Spam</option>
+          <option value="violation">Violação das regras da comunidade</option>
+          <option value="other">Outro</option>
+        </select>
+      </label>
+      <label class="rf-lbl">
+        Detalhes (opcional, até 2000 caracteres)
+        <textarea
+          bind:value={reportReason}
+          maxlength={2000}
+          rows="4"
+          placeholder="Descreva o que aconteceu para a moderação humana avaliar."
+          class="rf-ta"
+        ></textarea>
+      </label>
+      <p class="muted rf-hint">
+        A denúncia vai pra fila de moderação da instância. A conta denunciada
+        não é notificada. Uma denúncia por publicação por cidadão.
+      </p>
+    </div>
+    {#snippet footer()}
+      <Button variant="ghost" onclick={() => (reportOpen = false)}>Cancelar</Button>
+      <Button variant="danger" onclick={submitReport} loading={reportBusy}>
+        Enviar denúncia
+      </Button>
+    {/snippet}
+  </Modal>
 {/if}
 
 <style>
+  .menu-sep {
+    border: 0;
+    border-top: 1px solid var(--border-subtle);
+    margin: var(--sp-1) 0;
+  }
+  :global(.menu > button.danger) {
+    color: var(--danger, #b91c1c);
+  }
+  .report-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+  }
+  .rf-lbl {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semibold);
+  }
+  .rf-sel,
+  .rf-ta {
+    padding: var(--sp-2) var(--sp-3);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-sm);
+    background: var(--surface-1);
+    color: var(--text-1);
+    font: inherit;
+    font-size: var(--fs-sm);
+  }
+  .rf-ta {
+    resize: vertical;
+    min-height: 90px;
+  }
+  .rf-hint {
+    font-size: var(--fs-xs);
+    line-height: 1.5;
+  }
   .gate {
     text-align: center;
     padding: var(--sp-10) var(--sp-6);
