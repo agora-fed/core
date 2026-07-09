@@ -400,19 +400,36 @@ async fn set_platform_role(
             return storage_resp(err);
         }
     } else if matches!(body.role.as_str(), "owner" | "admin" | "auditor") {
-        // Substitui qualquer role antigo por este novo.
+        // Substitui qualquer role antigo por este novo. Duas queries em
+        // uma tx — sqlx prepared statement não aceita `DELETE ...; INSERT`.
+        let mut tx = match state.db.begin().await {
+            Ok(t) => t,
+            Err(err) => return storage_resp(err),
+        };
         if let Err(err) = sqlx::query(
-            r"DELETE FROM admin_role_binding WHERE citizen_id = $1 AND org_id = $2;
-              INSERT INTO admin_role_binding (id, org_id, citizen_id, role, created_at)
-              VALUES ($3, $2, $1, $4, now())",
+            r"DELETE FROM admin_role_binding WHERE citizen_id = $1 AND org_id = $2",
         )
         .bind(citizen_id)
         .bind(org_id)
-        .bind(Uuid::now_v7())
-        .bind(&body.role)
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await
         {
+            return storage_resp(err);
+        }
+        if let Err(err) = sqlx::query(
+            r"INSERT INTO admin_role_binding (id, org_id, citizen_id, role, created_at)
+              VALUES ($1, $2, $3, $4, now())",
+        )
+        .bind(Uuid::now_v7())
+        .bind(org_id)
+        .bind(citizen_id)
+        .bind(&body.role)
+        .execute(&mut *tx)
+        .await
+        {
+            return storage_resp(err);
+        }
+        if let Err(err) = tx.commit().await {
             return storage_resp(err);
         }
     } else {
@@ -493,19 +510,36 @@ async fn set_party_role(
         };
         // Substitui qualquer papel antigo do cidadão nessa org pra evitar
         // duplicidade (poderíamos permitir vários partidos por cidadão, mas
-        // a UI trata como 1:1).
+        // a UI trata como 1:1). Duas queries em uma tx — sqlx prepared
+        // statement não aceita `DELETE ...; INSERT`.
+        let mut tx = match state.db.begin().await {
+            Ok(t) => t,
+            Err(err) => return storage_resp(err),
+        };
         if let Err(err) = sqlx::query(
-            r"DELETE FROM party_administrator WHERE citizen_id = $1 AND org_id = $2;
-              INSERT INTO party_administrator (org_id, party_sigla, citizen_id, role, created_at)
-              VALUES ($2, $3, $1, $4, now())",
+            r"DELETE FROM party_administrator WHERE citizen_id = $1 AND org_id = $2",
         )
         .bind(citizen_id)
         .bind(org_id)
-        .bind(party)
-        .bind(&body.role)
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await
         {
+            return storage_resp(err);
+        }
+        if let Err(err) = sqlx::query(
+            r"INSERT INTO party_administrator (org_id, party_sigla, citizen_id, role, created_at)
+              VALUES ($1, $2, $3, $4, now())",
+        )
+        .bind(org_id)
+        .bind(party)
+        .bind(citizen_id)
+        .bind(&body.role)
+        .execute(&mut *tx)
+        .await
+        {
+            return storage_resp(err);
+        }
+        if let Err(err) = tx.commit().await {
             return storage_resp(err);
         }
     } else {
