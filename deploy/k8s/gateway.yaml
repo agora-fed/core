@@ -39,13 +39,27 @@ spec:
       dnsPolicy: Default
       containers:
       - name: gateway
-        image: dsoc-gateway:0.16.1
+        image: dsoc-gateway:0.27.0-embeddings
         imagePullPolicy: Never        # image imported into containerd (k8s.io ns) on this node
         envFrom: [ { secretRef: { name: dsoc-gateway-secrets } } ]
         env:
         - { name: GATEWAY_PORT, value: "8080" }
         - { name: RUST_LOG, value: "info" }
+        # Real semantic clustering (0.27.0): multilingual-e5-small served from a
+        # hostPath volume (artifacts scp'd to /opt/dsoc/model on the VM — the VM
+        # has IPv6-only egress and cannot pull from HF). Unset CONSENSUS_EMBEDDER
+        # (or set to `stub`) to fall back to deterministic feature hashing.
+        - { name: CONSENSUS_EMBEDDER, value: "model" }
+        - { name: CONSENSUS_MODEL_DIR, value: "/srv/model" }
+        - { name: CONSENSUS_QUERY_PREFIX, value: "query: " }   # E5-family requirement
         ports: [ { containerPort: 8080 } ]
         readinessProbe: { httpGet: { path: /health, port: 8080 }, initialDelaySeconds: 3, periodSeconds: 10 }
         livenessProbe:  { httpGet: { path: /health, port: 8080 }, initialDelaySeconds: 10, periodSeconds: 20 }
-        resources: { requests: { cpu: "50m", memory: "64Mi" }, limits: { memory: "256Mi" } }
+        # Memory: the f32 e5-small weights are ~450 MB in RAM (+ inference peaks);
+        # 1.5 Gi keeps a wide margin without starving Postgres on the 8 GB host.
+        resources: { requests: { cpu: "50m", memory: "512Mi" }, limits: { memory: "1536Mi" } }
+        volumeMounts:
+        - { name: consensus-model, mountPath: /srv/model, readOnly: true }
+      volumes:
+      - name: consensus-model
+        hostPath: { path: /opt/dsoc/model, type: DirectoryOrCreate }

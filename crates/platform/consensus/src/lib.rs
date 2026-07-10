@@ -16,11 +16,15 @@
 pub mod domain;
 pub mod events;
 pub mod http;
+#[cfg(feature = "model-embedder")]
+pub mod model_embedder;
 pub mod queries;
 pub mod service;
 
 pub use domain::{cosine_distance, Decision, Embedder, Placement, StubEmbedder, DEFAULT_THRESHOLD};
 pub use http::routes;
+#[cfg(feature = "model-embedder")]
+pub use model_embedder::ModelEmbedder;
 pub use service::ClusterService;
 
 /// Compile-time marker proving the crate name is wired into the workspace.

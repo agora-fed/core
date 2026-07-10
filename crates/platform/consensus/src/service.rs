@@ -18,6 +18,50 @@ use crate::domain::{
 use crate::events;
 use crate::queries::{self, ClusterRow};
 
+/// Resolve the process-wide embedder from `CONSENSUS_EMBEDDER` (+ its default
+/// threshold). The model branch caches the loaded instance in a `OnceLock`:
+/// `from_state` is called once per worker subscription and per router, and the
+/// artifacts are hundreds of MB — one load per process, ever.
+fn embedder_from_env() -> (Arc<dyn Embedder>, f64) {
+    let choice = std::env::var("CONSENSUS_EMBEDDER").unwrap_or_else(|_| "stub".to_owned());
+    if !choice.eq_ignore_ascii_case("model") {
+        return (Arc::new(StubEmbedder), DEFAULT_THRESHOLD);
+    }
+    #[cfg(feature = "model-embedder")]
+    {
+        use std::sync::OnceLock;
+        static MODEL: OnceLock<Option<Arc<crate::model_embedder::ModelEmbedder>>> = OnceLock::new();
+        let cached = MODEL.get_or_init(|| {
+            let dir =
+                std::env::var("CONSENSUS_MODEL_DIR").unwrap_or_else(|_| "/srv/model".to_owned());
+            match crate::model_embedder::ModelEmbedder::load(std::path::Path::new(&dir)) {
+                Ok(m) => Some(Arc::new(m)),
+                Err(err) => {
+                    tracing::error!(
+                        dir,
+                        error = %err,
+                        "CONSENSUS_EMBEDDER=model but the model failed to load; \
+                         FALLING BACK TO THE STUB — clustering is NOT semantic"
+                    );
+                    None
+                }
+            }
+        });
+        if let Some(model) = cached {
+            return (
+                model.clone(),
+                crate::model_embedder::MODEL_DEFAULT_THRESHOLD,
+            );
+        }
+    }
+    #[cfg(not(feature = "model-embedder"))]
+    tracing::error!(
+        "CONSENSUS_EMBEDDER=model but this binary was compiled without the \
+         `model-embedder` feature; FALLING BACK TO THE STUB"
+    );
+    (Arc::new(StubEmbedder), DEFAULT_THRESHOLD)
+}
+
 /// Semantic clustering service for proposals.
 #[derive(Clone)]
 pub struct ClusterService {
@@ -48,17 +92,30 @@ impl ClusterService {
         }
     }
 
-    /// Build a service from the shared application state, using the deterministic stub embedder and
-    /// the default threshold. The stub stands in for a local embedding model (PLAN.md open
-    /// question); swapping it later does not touch clustering logic.
+    /// Build a service from the shared application state. The embedder and the
+    /// merge threshold come from the environment:
+    ///
+    /// - `CONSENSUS_EMBEDDER` — `stub` (default; deterministic feature hashing)
+    ///   or `model` (real local semantics via the `model-embedder` feature).
+    /// - `CONSENSUS_MODEL_DIR` — artifacts directory for `model`.
+    /// - `CONSENSUS_THRESHOLD` — cosine-distance override; defaults to
+    ///   [`DEFAULT_THRESHOLD`] for the stub and to the calibrated
+    ///   `model_embedder::MODEL_DEFAULT_THRESHOLD` for the model (E5-family
+    ///   distances are compressed; see the calibration test).
+    ///
+    /// The model loads ONCE per process (it is hundreds of MB); every
+    /// subsequent `from_state` reuses the cached instance. A requested-but-
+    /// unloadable model falls back to the stub LOUDLY — the consequence loop
+    /// must keep running even if someone fat-fingers the model path.
     #[must_use]
     pub fn from_state(state: &dsoc_app::AppState) -> Self {
-        Self::new(
-            state.db.clone(),
-            state.clock.clone(),
-            Arc::new(StubEmbedder),
-            DEFAULT_THRESHOLD,
-        )
+        let (embedder, default_threshold) = embedder_from_env();
+        let threshold = std::env::var("CONSENSUS_THRESHOLD")
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok())
+            .filter(|t| (0.0..=1.0).contains(t))
+            .unwrap_or(default_threshold);
+        Self::new(state.db.clone(), state.clock.clone(), embedder, threshold)
     }
 
     /// Embed `text`, then either merge `proposal` into its nearest cluster (within the cosine

@@ -23,7 +23,9 @@ dsoc-api-contract = { path = "../api-contract" }
 dsoc-auth = { path = "../platform/auth" }
 dsoc-notify = { path = "../platform/notify" }
 dsoc-events = { path = "../platform/events" }
-dsoc-consensus = { path = "../platform/consensus" }
+# `model-embedder`: the production binary ships with real local semantics
+# compiled in; runtime activation stays behind CONSENSUS_EMBEDDER=model.
+dsoc-consensus = { path = "../platform/consensus", features = ["model-embedder"] }
 dsoc-moderation = { path = "../platform/moderation" }
 dsoc-admin = { path = "../platform/admin" }
 dsoc-storage = { path = "../platform/storage" }

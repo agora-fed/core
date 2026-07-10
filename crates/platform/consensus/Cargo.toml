@@ -10,11 +10,21 @@ description = "Semantic clustering & dedupe via pgvector."
 [lints]
 workspace = true
 
+[features]
+# Real semantic embeddings via a local BERT-family model (candle, pure Rust, CPU).
+# Off by default so light dev builds skip the ML dependency tree; the gateway
+# release build enables it. Runtime selection stays behind CONSENSUS_EMBEDDER.
+model-embedder = ["dep:candle-core", "dep:candle-nn", "dep:candle-transformers", "dep:tokenizers"]
+
 [dependencies]
 dsoc-core = { path = "../../core" }
 dsoc-db = { path = "../../db" }
 dsoc-api-contract = { path = "../../api-contract" }
 dsoc-app = { path = "../../app" }
+candle-core = { workspace = true, optional = true }
+candle-nn = { workspace = true, optional = true }
+candle-transformers = { workspace = true, optional = true }
+tokenizers = { workspace = true, optional = true }
 pgvector = { workspace = true }
 tokio = { workspace = true }
 axum = { workspace = true }

@@ -47,6 +47,12 @@ base64 = "0.22"
 # --- RSA + HTTP Signatures for ActivityPub federation (ADR-0010 W2) ---
 rsa = { version = "0.9", features = ["sha2"] }
 rand = "0.8"
+# --- local embedding inference (consensus `model-embedder` feature; PLAN.md principle 11:
+# sovereign models only — pure-Rust CPU inference, no external service, no C runtime) ---
+candle-core = "0.11"
+candle-nn = "0.11"
+candle-transformers = "0.11"
+tokenizers = "0.23"
 # --- object storage (S3-compatible; MinIO is the sovereign default per ADR-0010) ---
 # `default-https-client` (hyper 1 + rustls 0.23) replaces the deprecated `rustls`
 # feature, whose legacy hyper 0.14 chain pinned rustls-webpki 0.101 (3 RUSTSEC

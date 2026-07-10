@@ -8,6 +8,22 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.27.0-embeddings** — consenso semântico REAL (item nº 1 do plano estratégico): novo
+  `ModelEmbedder` (`crates/platform/consensus/src/model_embedder.rs`, feature
+  `model-embedder`) roda `intfloat/multilingual-e5-small` (384 dims — bate com o
+  `vector(384)` da 0130) localmente via candle (Rust puro, CPU, zero rede na inferência —
+  princípio 11 do PLAN). Prefixo `"query: "` simétrico, mean pooling sobre a attention
+  mask, L2-norm. Seleção por env: `CONSENSUS_EMBEDDER=stub|model` (default stub),
+  `CONSENSUS_MODEL_DIR` (default `/srv/model`), `CONSENSUS_QUERY_PREFIX` (`"query: "` para
+  a família E5), `CONSENSUS_THRESHOLD` (default 0.15 stub / **0.10 model**, calibrado em
+  pares pt-BR reais — paráfrases medem 0.079–0.089, pedidos distintos ≥0.134; limitações
+  conhecidas documentadas no teste: sigla UBS≙posto fica de fora a 0.111, par
+  mesmo-local-outra-obra falso-positiva a 0.078 → V2 rastreada em issue).
+  Modelo carrega UMA vez por processo (OnceLock); falha de load ou de
+  inferência degrada ruidosamente para o stub — o loop de consequência nunca trava.
+  Deploy: artefatos em `/opt/dsoc/model` na VM (hostPath → `/srv/model`; a VM não alcança
+  o HF por ser IPv6-only), limite de memória do pod 256Mi → 1536Mi. Antes: "creche no
+  bairro" e "vaga em berçário" nunca clusterizavam (FNV hashing); agora clusterizam.
 - **0.26.24-fase-E-autofed** — auto-federação server-side (Fase E completa do plan
   TSE-worthy): quando `ProposalThresholdCrossed` dispara, o `CivicNotifySub` publica uma
   Note pública (`Create(Note)` ActivityPub) **em nome do autor da proposta**, com título,
