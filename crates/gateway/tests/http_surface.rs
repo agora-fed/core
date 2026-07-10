@@ -36,7 +36,13 @@ async fn state() -> AppState {
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let bus = Arc::new(dsoc_events::PgEventBus::new(db.clone()));
     let authz = dsoc_auth::authorization(db.clone(), clock.clone(), bus.clone());
-    AppState { db, bus, authz, clock, storage: None }
+    AppState {
+        db,
+        bus,
+        authz,
+        clock,
+        storage: None,
+    }
 }
 
 async fn app() -> (Router, AppState) {
@@ -124,7 +130,9 @@ fn json_req(method: &str, uri: &str, cookie: Option<&str>, body: &str) -> Reques
 }
 
 async fn body_json(resp: axum::response::Response) -> serde_json::Value {
-    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null)
 }
 
@@ -198,7 +206,12 @@ async fn admin_rules_crud_requires_admin_role() {
     // Anonymous → 401.
     let resp = app
         .clone()
-        .oneshot(json_req("POST", "/api/v1/admin/rules", None, r#"{"text":"x"}"#))
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/admin/rules",
+            None,
+            r#"{"text":"x"}"#,
+        ))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
@@ -348,7 +361,10 @@ async fn public_stats_expose_no_pii() {
     let body = body_json(resp).await;
     assert_eq!(body["success"], serde_json::Value::Bool(true));
     let rendered = body.to_string();
-    assert!(!rendered.contains("@"), "public stats must not leak e-mails");
+    assert!(
+        !rendered.contains("@"),
+        "public stats must not leak e-mails"
+    );
 }
 
 #[tokio::test]
@@ -359,7 +375,11 @@ async fn elections_2026_are_seeded_and_public() {
     let body = body_json(resp).await;
     let list = body["data"].as_array().expect("elections array");
     // Migration 0505 seeds the 4 structural 2026 rows (fed/est × R1/R2).
-    assert!(list.len() >= 4, "expected the 0505 seed, got {}", list.len());
+    assert!(
+        list.len() >= 4,
+        "expected the 0505 seed, got {}",
+        list.len()
+    );
 }
 
 #[tokio::test]
@@ -412,7 +432,10 @@ async fn preferences_roundtrip_with_auto_federate_opt_out() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body = body_json(resp).await;
-    assert_eq!(body["data"]["auto_federate_threshold"], serde_json::Value::Bool(true));
+    assert_eq!(
+        body["data"]["auto_federate_threshold"],
+        serde_json::Value::Bool(true)
+    );
     assert_eq!(body["data"]["default_visibility"], "public");
 
     // Opt out; the column must flip and the GET must reflect it.
@@ -439,8 +462,14 @@ async fn preferences_roundtrip_with_auto_federate_opt_out() {
         .await
         .unwrap();
     let body = body_json(resp).await;
-    assert_eq!(body["data"]["auto_federate_threshold"], serde_json::Value::Bool(false));
-    assert_eq!(body["data"]["default_sensitive"], serde_json::Value::Bool(true));
+    assert_eq!(
+        body["data"]["auto_federate_threshold"],
+        serde_json::Value::Bool(false)
+    );
+    assert_eq!(
+        body["data"]["default_sensitive"],
+        serde_json::Value::Bool(true)
+    );
 }
 
 #[tokio::test]
