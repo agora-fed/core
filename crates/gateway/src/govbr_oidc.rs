@@ -378,7 +378,7 @@ async fn upsert_citizen_and_session(
     claims: &IdClaims,
 ) -> Result<SessionOut, sqlx::Error> {
     // Assume single-org (11111...1). Uma fatia próxima aceita org por env.
-    let org_id: Uuid = "11111111-1111-1111-1111-111111111111".parse().unwrap();
+    let org_id: Uuid = uuid::uuid!("11111111-1111-1111-1111-111111111111");
     let now = chrono::Utc::now();
     let ttl_secs: i64 = 30 * 24 * 3600;
     let expires_at = now + chrono::Duration::seconds(ttl_secs);

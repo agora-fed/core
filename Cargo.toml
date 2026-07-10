@@ -48,8 +48,11 @@ base64 = "0.22"
 rsa = { version = "0.9", features = ["sha2"] }
 rand = "0.8"
 # --- object storage (S3-compatible; MinIO is the sovereign default per ADR-0010) ---
-aws-config = { version = "1.5", default-features = false, features = ["rustls", "behavior-version-latest", "rt-tokio"] }
-aws-sdk-s3 = { version = "1", default-features = false, features = ["rustls", "behavior-version-latest", "rt-tokio"] }
+# `default-https-client` (hyper 1 + rustls 0.23) replaces the deprecated `rustls`
+# feature, whose legacy hyper 0.14 chain pinned rustls-webpki 0.101 (3 RUSTSEC
+# advisories: 2026-0098/0099/0104 — cert name-constraint bypass + CRL panic).
+aws-config = { version = "1.8", default-features = false, features = ["default-https-client", "behavior-version-latest", "rt-tokio"] }
+aws-sdk-s3 = { version = "1", default-features = false, features = ["default-https-client", "behavior-version-latest", "rt-tokio"] }
 aws-credential-types = "1"
 # --- ids / time / errors / logging ---
 uuid = { version = "1", features = ["v7", "serde"] }

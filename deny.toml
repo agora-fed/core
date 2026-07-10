@@ -10,7 +10,9 @@ yanked = "deny"
 multiple-versions = "warn"
 [licenses]
 # AGPL project: permit permissive deps; deny copyleft-incompatible / unknown.
-allow = ["AGPL-3.0-or-later", "Apache-2.0", "MIT", "BSD-3-Clause", "BSD-2-Clause", "ISC", "Unicode-3.0", "Zlib", "0BSD", "CDLA-Permissive-2.0"]
+# MPL-2.0: file-level weak copyleft (ece — RFC 8291 Web Push encryption); we do not
+# modify its files, so aggregation with AGPL-3.0 is compatible per MPL §3.3.
+allow = ["AGPL-3.0-or-later", "Apache-2.0", "MIT", "BSD-3-Clause", "BSD-2-Clause", "ISC", "Unicode-3.0", "Zlib", "0BSD", "CDLA-Permissive-2.0", "MPL-2.0"]
 confidence-threshold = 0.9
 [sources]
 unknown-registry = "deny"

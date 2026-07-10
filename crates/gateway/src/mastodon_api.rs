@@ -510,7 +510,7 @@ async fn get_timeline_public(
 // ---------------------------------------------------------------------------
 
 fn default_org_uuid() -> Uuid {
-    Uuid::parse_str("11111111-1111-1111-1111-111111111111").expect("static uuid")
+    uuid::uuid!("11111111-1111-1111-1111-111111111111")
 }
 
 fn normalize_scope(s: Option<&str>) -> String {

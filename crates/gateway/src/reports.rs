@@ -526,7 +526,7 @@ fn reporting_year_for(now: chrono::DateTime<chrono::Utc>) -> i32 {
     // Câmara publishes expenses with a lag — use N-1 uniformly. If the
     // current month is late in the year and N-1 is stable, this is safe.
     // (A future refinement: switch to current year once we're past March.)
-    let year = now.date_naive().and_hms_opt(0, 0, 0).unwrap().year();
+    let year = now.date_naive().year();
     year - 1
 }
 

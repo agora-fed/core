@@ -23,7 +23,7 @@
 use axum::extract::{Json, Multipart, Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, patch, post, put};
+use axum::routing::{delete, get, patch};
 use axum::Router;
 use chrono::{DateTime, Utc};
 use dsoc_api_contract::ApiResponse;
