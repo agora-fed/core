@@ -1,7 +1,8 @@
 # democracia-social — Wiki
 
 Sovereign Participatory Democracy Platform (codename **PINDORAMA**). Stewardship: PopSolutions
-Cooperativa de Tecnologia.
+Cooperativa de Tecnologia. **Live in production:** <https://democracia.social.br> — ~70k real
+mandates indexed, ActivityPub-federated, Mastodon-app compatible.
 
 > **Thesis:** participation without consequence is theater. We convert citizen demand into
 > visible, time-bound, public accountability.
@@ -14,9 +15,15 @@ Cooperativa de Tecnologia.
 
 ## Engineering
 - [PLAN.md](../../PLAN.md) — north star
+- [Project structure](../PROJECT-STRUCTURE.md) — annotated repository tree
 - [Architecture](../ARCHITECTURE.md) · [Parallelization](../PARALLELIZATION.md)
 - [Testing](../TESTING.md) · [CI/CD](../CICD.md) · [Deployment](../ops/DEPLOYMENT.md)
 - [Decisions (ADRs)](../decisions/)
+
+## Product
+- [Plano estratégico 2026](../PLANO-ESTRATEGICO-2026.md) (pt-BR) — diagnóstico, melhorias
+  rankeadas e sequência para o ciclo eleitoral
+- [Roadmap](../ROADMAP.md) · [Changelog](../../CHANGELOG.md)
 
 ## Governance
 - [Social Contract](../../LICENSE-SOCIAL-CONTRACT.md)
