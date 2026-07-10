@@ -347,3 +347,52 @@ pub async fn cluster_of_proposal(
     .fetch_optional(executor)
     .await
 }
+
+/// Remove o edge de membership de uma proposta apagada; devolve o cluster
+/// afetado (se havia) pra o caller recomputar ou dissolver.
+pub async fn delete_member(
+    executor: impl sqlx::PgExecutor<'_>,
+    proposal_id: Uuid,
+) -> Result<Option<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"DELETE FROM consensus_cluster_member
+           WHERE proposal_id = $1
+           RETURNING cluster_id AS "cluster_id!: Uuid""#,
+        proposal_id,
+    )
+    .fetch_optional(executor)
+    .await
+}
+
+/// Remove a embedding órfã (proposta apagada — purge de demo/LGPD art. 18).
+pub async fn delete_embedding(
+    executor: impl sqlx::PgExecutor<'_>,
+    proposal_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"DELETE FROM consensus_embedding WHERE proposal_id = $1"#,
+        proposal_id,
+    )
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
+/// Dissolve o cluster se ficou sem membros (senão o recompute do centroide
+/// tentaria gravar `avg()` de zero rows = NULL numa coluna NOT NULL).
+/// `true` = cluster removido.
+pub async fn delete_cluster_if_empty(
+    executor: impl sqlx::PgExecutor<'_>,
+    cluster_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let res = sqlx::query!(
+        r#"DELETE FROM consensus_cluster c
+           WHERE c.id = $1
+             AND NOT EXISTS (SELECT 1 FROM consensus_cluster_member m
+                              WHERE m.cluster_id = $1)"#,
+        cluster_id,
+    )
+    .execute(executor)
+    .await?;
+    Ok(res.rows_affected() > 0)
+}

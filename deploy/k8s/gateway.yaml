@@ -56,6 +56,11 @@ spec:
         # and antagonists never share a cluster. mDeBERTa-xnli artifacts.
         - { name: CONSENSUS_NLI_DIR, value: "/srv/model-nli" }
         ports: [ { containerPort: 8080 } ]
+        # Boot frio carrega e5-small + mDeBERTa do hostPath ANTES do listener
+        # (~85 s medidos em 2026-07-10, quando a liveness matou o pod no meio
+        # do boot). O startupProbe dá até 5 min pra subir; liveness/readiness
+        # só valem depois que ele passa.
+        startupProbe:   { httpGet: { path: /health, port: 8080 }, periodSeconds: 5, failureThreshold: 60 }
         readinessProbe: { httpGet: { path: /health, port: 8080 }, initialDelaySeconds: 3, periodSeconds: 10 }
         livenessProbe:  { httpGet: { path: /health, port: 8080 }, initialDelaySeconds: 10, periodSeconds: 20 }
         # Memory: e5-small ~450 MB + mDeBERTa-xnli ~1.1 GB (f16 on disk, f32 in

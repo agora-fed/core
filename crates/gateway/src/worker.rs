@@ -458,6 +458,20 @@ async fn reembed_backlog_loop(state: AppState) {
         for proposal in batch {
             let row = match proposals.get(proposal).await {
                 Ok(row) => row,
+                Err(dsoc_core::Error::NotFound(_)) => {
+                    // Proposta apagada (purge/LGPD) — a embedding é órfã e
+                    // sairia do backlog só via purge, senão retry eterno.
+                    match consensus.purge_orphan(proposal).await {
+                        Ok(()) => tracing::info!(
+                            %proposal,
+                            "re-embed: purged orphan embedding (proposal was deleted)"
+                        ),
+                        Err(err) => {
+                            tracing::error!(%proposal, ?err, "re-embed: orphan purge failed");
+                        }
+                    }
+                    continue;
+                }
                 Err(err) => {
                     tracing::warn!(%proposal, ?err, "re-embed: proposal fetch failed; will retry");
                     continue;

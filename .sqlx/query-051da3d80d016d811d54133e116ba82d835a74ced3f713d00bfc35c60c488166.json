@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM consensus_cluster c\n           WHERE c.id = $1\n             AND NOT EXISTS (SELECT 1 FROM consensus_cluster_member m\n                              WHERE m.cluster_id = $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "051da3d80d016d811d54133e116ba82d835a74ced3f713d00bfc35c60c488166"
+}

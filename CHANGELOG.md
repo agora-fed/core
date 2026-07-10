@@ -7,6 +7,15 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 
 ## [Unreleased]
 
+### Fixed
+- **0.28.5-reembed-fix** — dois achados do smoke da 0.28.4 em produção: (1) o boot
+  frio carrega os dois modelos (~85 s) antes do listener e a **liveness probe matava
+  o pod no meio do boot** (exit 137) — o manifest ganha `startupProbe` (até 5 min);
+  (2) embedding de proposta **apagada** (purge de demo/LGPD art. 18) ficava em retry
+  eterno no backlog do re-embed — agora NotFound purga a órfã (edge + embedding +
+  centroide recomputado, ou cluster dissolvido se vazio). Manifest também passa a
+  pinar a imagem corrente.
+
 ### Added
 - **0.28.4-reembed** — fatia 2a do re-cluster: worker ganha o loop
   `reembed_backlog_loop` (`WORKER_REEMBED_MS`, default 60s; lotes de 8) que drena as

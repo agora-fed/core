@@ -393,6 +393,37 @@ impl ClusterService {
         Ok(cluster.map(ClusterId::from_uuid))
     }
 
+    /// Purga a embedding de uma proposta que não existe mais (apagada por
+    /// purge de demo ou LGPD art. 18): remove o edge de membership e a
+    /// embedding, e recomputa o centroide do cluster — ou dissolve o
+    /// cluster se ficou vazio. Chamado pelo composition root quando o
+    /// fetch do texto retorna NotFound durante o re-embed (fatia 2a);
+    /// sem isso a órfã fica em retry eterno no backlog.
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on a persistence failure.
+    pub async fn purge_orphan(&self, proposal: ProposalId) -> Result<()> {
+        let mut tx = self.db.begin().await.map_err(map_sqlx)?;
+        let cluster = queries::delete_member(&mut *tx, proposal.as_uuid())
+            .await
+            .map_err(map_sqlx)?;
+        queries::delete_embedding(&mut *tx, proposal.as_uuid())
+            .await
+            .map_err(map_sqlx)?;
+        if let Some(cluster) = cluster {
+            let dissolved = queries::delete_cluster_if_empty(&mut *tx, cluster)
+                .await
+                .map_err(map_sqlx)?;
+            if !dissolved {
+                queries::recompute_centroid(&mut *tx, cluster)
+                    .await
+                    .map_err(map_sqlx)?;
+            }
+        }
+        tx.commit().await.map_err(map_sqlx)?;
+        Ok(())
+    }
+
     /// Fetch a single cluster.
     ///
     /// # Errors
