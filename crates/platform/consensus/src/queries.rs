@@ -41,19 +41,47 @@ pub async fn insert_embedding(
     id: Uuid,
     proposal_id: Uuid,
     embedding_literal: &str,
+    direction_signature: &[String],
     created_at: DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        r#"INSERT INTO consensus_embedding (id, proposal_id, embedding, created_at)
-           VALUES ($1, $2, $3::text::vector, $4)"#,
+        r#"INSERT INTO consensus_embedding
+               (id, proposal_id, embedding, direction_signature, created_at)
+           VALUES ($1, $2, $3::text::vector, $4, $5)"#,
         id,
         proposal_id,
         embedding_literal,
+        direction_signature,
         created_at,
     )
     .execute(executor)
     .await?;
     Ok(())
+}
+
+/// Direction signatures of a cluster's members (stance-veto input). Capped:
+/// the veto needs a sample, not the census — 50 members of one civic ask are
+/// plenty to expose an antagonistic direction.
+///
+/// # Errors
+/// Propagates the underlying `sqlx::Error`.
+pub async fn member_signatures(
+    executor: impl sqlx::PgExecutor<'_>,
+    cluster_id: Uuid,
+    limit: i64,
+) -> Result<Vec<Vec<String>>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT e.direction_signature AS "direction_signature!: Vec<String>"
+           FROM consensus_embedding e
+           JOIN consensus_cluster_member m ON m.proposal_id = e.proposal_id
+           WHERE m.cluster_id = $1
+           LIMIT $2"#,
+        cluster_id,
+        limit,
+    )
+    .fetch_all(executor)
+    .await?;
+    Ok(rows.into_iter().map(|r| r.direction_signature).collect())
 }
 
 /// Find the nearest cluster (exact cosine search) for `org_id`, or `None` if the org has none.

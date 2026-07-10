@@ -20,12 +20,14 @@ pub mod http;
 pub mod model_embedder;
 pub mod queries;
 pub mod service;
+pub mod stance;
 
 pub use domain::{cosine_distance, Decision, Embedder, Placement, StubEmbedder, DEFAULT_THRESHOLD};
 pub use http::routes;
 #[cfg(feature = "model-embedder")]
 pub use model_embedder::ModelEmbedder;
 pub use service::ClusterService;
+pub use stance::{direction_signature, directions_conflict};
 
 /// Compile-time marker proving the crate name is wired into the workspace.
 pub const CRATE_NAME: &str = "dsoc-consensus";

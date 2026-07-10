@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO consensus_embedding\n               (id, proposal_id, embedding, direction_signature, created_at)\n           VALUES ($1, $2, $3::text::vector, $4, $5)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "TextArray",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "76801cff92e6d79c2ee0165bb17522ba7d7378c57a30232a10119c9122d3fcc4"
+}

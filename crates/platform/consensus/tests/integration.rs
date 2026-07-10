@@ -384,3 +384,46 @@ async fn missing_cluster_is_not_found() {
         .expect_err("absent cluster must be NotFound");
     assert_eq!(err.code(), "not_found");
 }
+
+#[tokio::test]
+async fn antagonistic_texts_do_not_merge_despite_near_identical_embedding() {
+    // "aumentar X" vs "não aumentar X" differ by ONE token, so the (stub or
+    // real) embedder places them well under the merge threshold — without the
+    // stance veto they would share a cluster and the consensus signal would
+    // assert a self-contradictory demand. The veto must force a second cluster.
+    let db = pool().await;
+    let svc = service(db.clone());
+    let org = seed_org(&db).await;
+
+    let first = svc
+        .ingest(
+            org,
+            ProposalId::new(),
+            "aumentar o orçamento da saúde do município imediatamente",
+        )
+        .await
+        .expect("ingest pro-increase proposal");
+    assert!(matches!(first, dsoc_consensus::Placement::Formed { .. }));
+
+    let second = svc
+        .ingest(
+            org,
+            ProposalId::new(),
+            "não aumentar o orçamento da saúde do município imediatamente",
+        )
+        .await
+        .expect("ingest anti-increase proposal");
+    assert!(
+        matches!(second, dsoc_consensus::Placement::Formed { .. }),
+        "antagonistic proposal must form its OWN cluster, got {second:?}"
+    );
+
+    // Two formations, zero merges — the veto is visible in the event stream.
+    assert_eq!(
+        outbox_event_types(&db, org).await,
+        vec![
+            "consensus.cluster.formed".to_string(),
+            "consensus.cluster.formed".to_string(),
+        ]
+    );
+}

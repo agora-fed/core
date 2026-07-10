@@ -133,13 +133,21 @@ impl ClusterService {
         domain::validate_text(text)?;
         let embedding = self.embedder.embed(text);
         let literal = domain::to_pgvector_literal(&embedding);
+        let signature = crate::stance::direction_signature(text);
         let now = self.clock.now();
 
         let mut tx = self.db.begin().await.map_err(map_sqlx)?;
 
-        queries::insert_embedding(&mut *tx, Uuid::now_v7(), proposal.as_uuid(), &literal, now)
-            .await
-            .map_err(map_sqlx)?;
+        queries::insert_embedding(
+            &mut *tx,
+            Uuid::now_v7(),
+            proposal.as_uuid(),
+            &literal,
+            &signature,
+            now,
+        )
+        .await
+        .map_err(map_sqlx)?;
 
         let nearest = queries::nearest_cluster(&mut *tx, org.as_uuid(), &literal)
             .await
@@ -149,7 +157,30 @@ impl ClusterService {
                 distance: row.distance,
             });
 
-        let placement = match Decision::decide(nearest, self.threshold) {
+        let mut decision = Decision::decide(nearest, self.threshold);
+        // Stance veto: the embedding finds "same topic"; only direction tells
+        // "privatizar o SUS" apart from "proibir a privatização do SUS"
+        // (measured cosine 0.015 — see stance.rs). An antagonistic direction
+        // in the candidate cluster forces a NEW cluster instead of a merge.
+        if let Decision::Merge { cluster, distance } = decision {
+            let members = queries::member_signatures(&mut *tx, cluster.as_uuid(), 50)
+                .await
+                .map_err(map_sqlx)?;
+            if members
+                .iter()
+                .any(|m| crate::stance::directions_conflict(&signature, m))
+            {
+                tracing::info!(
+                    proposal = %proposal,
+                    vetoed_cluster = %cluster,
+                    distance,
+                    "stance veto: antagonistic policy direction — forming a new cluster"
+                );
+                decision = Decision::Form;
+            }
+        }
+
+        let placement = match decision {
             Decision::Merge { cluster, distance } => {
                 queries::insert_member(
                     &mut *tx,

@@ -8,6 +8,24 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.27.1-stance-guard** — veto de direção ideológica no clustering. Medição em pares
+  cívicos pt-BR expôs o limite estrutural de QUALQUER sentence-embedder: "privatizar os
+  postos do SUS" vs "proibir a privatização dos postos do SUS" medem cosseno 0.015 —
+  abaixo de toda paráfrase legítima (0.072–0.089); "cortar orçamento da saúde" vs
+  "aumentar orçamento da saúde" medem 0.046. Nenhum threshold separa posição política:
+  embedding codifica TÓPICO, não direção — e mesclar antagônicos envenenaria o sinal (o
+  SLA dispararia por uma demanda autocontraditória que o mandato poderia desqualificar).
+  Novo `crates/platform/consensus/src/stance.rs`: léxico auditável e precision-first de
+  eixos de política (scale±, public±, permit±, open±, staff±) + negadores que flipam o
+  eixo seguinte ("proibir a privatização" ⇒ `public+`); cada proposta ganha uma
+  `direction_signature` (migration 0517, coluna própria da crate) gravada no ingest; no
+  candidato a merge, assinatura antagônica a qualquer membro do cluster VETA a mescla e
+  forma cluster novo (log auditável `stance veto`). Defesa em camadas validada por teste:
+  o par "vender o SUS" vs "valorizar radiologistas do SUS" é barrado pelo threshold
+  (0.107 > 0.10); negação e direção orçamentária são barrados pelo veto. Falso-veto é o
+  erro barato: cluster dividido mantém as duas demandas vivas; mescla errada corrompe
+  ambas. Teste end-to-end no CI (stub): "aumentar X" vs "não aumentar X" formam clusters
+  separados.
 - **0.27.0-embeddings** — consenso semântico REAL (item nº 1 do plano estratégico): novo
   `ModelEmbedder` (`crates/platform/consensus/src/model_embedder.rs`, feature
   `model-embedder`) roda `intfloat/multilingual-e5-small` (384 dims — bate com o

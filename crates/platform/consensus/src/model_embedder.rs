@@ -250,4 +250,96 @@ mod tests {
             );
         }
     }
+
+    /// The hardest class for ANY topic-oriented embedder: proposals that share
+    /// the moral goal ("mais saúde") but are IDEOLOGICALLY ANTAGONISTIC in the
+    /// means — merging them poisons the consensus signal (the SLA would fire
+    /// for a self-contradictory demand a politician can rightly dismiss).
+    /// Includes direct-negation pairs, where embedders are notoriously weak.
+    /// Prints the full matrix (calibration data); gates assert the deployed
+    /// threshold does not merge them.
+    #[test]
+    fn antagonistic_asks_must_not_merge() {
+        let Ok(dir) = std::env::var("CONSENSUS_MODEL_DIR") else {
+            eprintln!("CONSENSUS_MODEL_DIR unset; skipping model semantics test");
+            return;
+        };
+        let embedder = ModelEmbedder::load(Path::new(&dir)).expect("load model");
+        let d = |x: &str, y: &str| cosine_distance(&embedder.embed(x), &embedder.embed(y));
+
+        // Same moral goal (health), opposite means: privatize vs strengthen
+        // the public system.
+        let ideological = d(
+            "Quero mais saúde para o brasileiro vendendo o SUS para empresas competentes",
+            "Precisamos subir os salários dos radiologistas que operam as máquinas de raio-x nos postos de saúde",
+        );
+        // Direct negation — near-identical tokens, inverted policy.
+        let negation = d(
+            "Privatizar a gestão dos postos de saúde do SUS",
+            "Proibir a privatização dos postos de saúde do SUS",
+        );
+        // Antagonistic budget direction, same area.
+        let budget = d(
+            "Reduzir o orçamento da saúde pública para cortar impostos",
+            "Aumentar o orçamento da saúde pública mesmo que os impostos subam",
+        );
+        // Control: same stance in different words — this one SHOULD merge.
+        let control = d(
+            "Contratar mais médicos para os postos de saúde",
+            "Precisamos de mais profissionais de medicina nas unidades de saúde do bairro",
+        );
+
+        eprintln!(
+            "antagonistic: ideological={ideological:.4} negation={negation:.4} budget={budget:.4} | control-paraphrase={control:.4}"
+        );
+
+        // LAYERED defense: a pair is protected when the embedding keeps it
+        // above the threshold OR the stance guard (stance.rs) vetoes the
+        // merge. Measured 2026-07-10: negation (0.015) and budget (0.046)
+        // pairs fall UNDER every sane threshold — only the veto stops them;
+        // the ideological pair (0.107) is stopped by the threshold itself.
+        let sig = |t: &str| crate::stance::direction_signature(t);
+        let protected = |dist: f64, x: &str, y: &str| {
+            dist > MODEL_DEFAULT_THRESHOLD || crate::stance::directions_conflict(&sig(x), &sig(y))
+        };
+
+        assert!(
+            protected(
+                ideological,
+                "Quero mais saúde para o brasileiro vendendo o SUS para empresas competentes",
+                "Precisamos subir os salários dos radiologistas que operam as máquinas de raio-x nos postos de saúde",
+            ),
+            "ideological pair unprotected ({ideological:.3})"
+        );
+        assert!(
+            protected(
+                negation,
+                "Privatizar a gestão dos postos de saúde do SUS",
+                "Proibir a privatização dos postos de saúde do SUS",
+            ),
+            "negation pair unprotected ({negation:.3}) — consensus signal poisoned"
+        );
+        assert!(
+            protected(
+                budget,
+                "Reduzir o orçamento da saúde pública para cortar impostos",
+                "Aumentar o orçamento da saúde pública mesmo que os impostos subam",
+            ),
+            "budget pair unprotected ({budget:.3}) — consensus signal poisoned"
+        );
+        // Control: merges by distance AND the guard must not veto it.
+        assert!(
+            control < MODEL_DEFAULT_THRESHOLD,
+            "control paraphrase should merge: {control:.3} >= {MODEL_DEFAULT_THRESHOLD}"
+        );
+        assert!(
+            !crate::stance::directions_conflict(
+                &sig("Contratar mais médicos para os postos de saúde"),
+                &sig(
+                    "Precisamos de mais profissionais de medicina nas unidades de saúde do bairro"
+                ),
+            ),
+            "stance guard must not veto the control paraphrase"
+        );
+    }
 }
