@@ -152,10 +152,7 @@ impl PasswordResetService {
         .await
         .map_err(map_sqlx)?;
 
-        let url = format!(
-            "{}/redefinir-senha?token={}",
-            self.public_origin, token
-        );
+        let url = format!("{}/redefinir-senha?token={}", self.public_origin, token);
         self.deliver_email(&normalized, &url).await;
         Ok(())
     }
@@ -321,7 +318,9 @@ mod tests {
         let b = generate_token();
         assert_ne!(a, b);
         assert_eq!(a.len(), 43); // 256 bits in base64url no-pad
-        assert!(a.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+        assert!(a
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
     }
 
     #[test]
@@ -330,5 +329,4 @@ mod tests {
         assert_ne!(sha256("abc"), sha256("abd"));
         assert_eq!(sha256("").len(), 32);
     }
-
 }

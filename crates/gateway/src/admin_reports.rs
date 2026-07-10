@@ -36,7 +36,10 @@ pub fn routes(state: AppState) -> Router<()> {
         // Audit log.
         .route("/admin/audit", get(list_audit))
         // Federação server-wide.
-        .route("/admin/federation/domain_blocks", get(list_domain_blocks).post(add_domain_block_server))
+        .route(
+            "/admin/federation/domain_blocks",
+            get(list_domain_blocks).post(add_domain_block_server),
+        )
         .route(
             "/admin/federation/domain_blocks/{domain}",
             axum::routing::delete(remove_domain_block_server),
@@ -73,14 +76,20 @@ async fn require_admin(headers: &HeaderMap, db: &PgPool) -> Result<Uuid, Respons
 fn unauthorized_resp() -> Response {
     (
         StatusCode::UNAUTHORIZED,
-        Json(ApiResponse::<()>::fail("unauthorized", "Autenticação necessária.")),
+        Json(ApiResponse::<()>::fail(
+            "unauthorized",
+            "Autenticação necessária.",
+        )),
     )
         .into_response()
 }
 fn forbidden_resp() -> Response {
     (
         StatusCode::FORBIDDEN,
-        Json(ApiResponse::<()>::fail("forbidden", "Acesso restrito a admins.")),
+        Json(ApiResponse::<()>::fail(
+            "forbidden",
+            "Acesso restrito a admins.",
+        )),
     )
         .into_response()
 }
@@ -107,8 +116,12 @@ struct ListQuery {
     #[serde(default)]
     offset: i64,
 }
-fn default_status() -> String { "pending".to_string() }
-fn default_limit() -> i64 { 30 }
+fn default_status() -> String {
+    "pending".to_string()
+}
+fn default_limit() -> i64 {
+    30
+}
 
 #[derive(Debug, Serialize)]
 struct ReportDto {
@@ -238,7 +251,9 @@ async fn resolve_report(
         Ok(id) => id,
         Err(r) => return r,
     };
-    let notes = body.and_then(|Json(b)| b.notes).map(|s| s.trim().to_owned());
+    let notes = body
+        .and_then(|Json(b)| b.notes)
+        .map(|s| s.trim().to_owned());
     let notes = notes.filter(|s| !s.is_empty());
     let res = sqlx::query(
         r"UPDATE note_report
@@ -255,7 +270,10 @@ async fn resolve_report(
     match res {
         Ok(r) if r.rows_affected() == 0 => (
             StatusCode::NOT_FOUND,
-            Json(ApiResponse::<()>::fail("not_found", "Denúncia não encontrada ou já resolvida.")),
+            Json(ApiResponse::<()>::fail(
+                "not_found",
+                "Denúncia não encontrada ou já resolvida.",
+            )),
         )
             .into_response(),
         Ok(_) => {
@@ -347,7 +365,11 @@ async fn suspend_account(
     };
     let reason = body.and_then(|Json(b)| b.reason).and_then(|s| {
         let t = s.trim().to_owned();
-        if t.is_empty() { None } else { Some(t) }
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
     });
     let res = sqlx::query(
         r"UPDATE citizen
@@ -374,7 +396,9 @@ async fn suspend_account(
                 Some(id),
                 None,
                 None,
-                reason.as_deref().map(|s| serde_json::json!({ "reason": s })),
+                reason
+                    .as_deref()
+                    .map(|s| serde_json::json!({ "reason": s })),
             )
             .await;
             crate::webhooks::dispatch_event(
@@ -408,7 +432,16 @@ async fn unsuspend_account(
     .await;
     match res {
         Ok(_) => {
-            let _ = audit(&state.db, admin_id, "account_unsuspend", Some(id), None, None, None).await;
+            let _ = audit(
+                &state.db,
+                admin_id,
+                "account_unsuspend",
+                Some(id),
+                None,
+                None,
+                None,
+            )
+            .await;
             ok_json()
         }
         Err(err) => storage_resp(err),
@@ -427,7 +460,11 @@ async fn silence_account(
     };
     let reason = body.and_then(|Json(b)| b.reason).and_then(|s| {
         let t = s.trim().to_owned();
-        if t.is_empty() { None } else { Some(t) }
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
     });
     let res = sqlx::query(
         r"UPDATE citizen
@@ -449,7 +486,9 @@ async fn silence_account(
                 Some(id),
                 None,
                 None,
-                reason.as_deref().map(|s| serde_json::json!({ "reason": s })),
+                reason
+                    .as_deref()
+                    .map(|s| serde_json::json!({ "reason": s })),
             )
             .await;
             ok_json()
@@ -478,7 +517,16 @@ async fn unsilence_account(
     .await;
     match res {
         Ok(_) => {
-            let _ = audit(&state.db, admin_id, "account_unsilence", Some(id), None, None, None).await;
+            let _ = audit(
+                &state.db,
+                admin_id,
+                "account_unsilence",
+                Some(id),
+                None,
+                None,
+                None,
+            )
+            .await;
             ok_json()
         }
         Err(err) => storage_resp(err),
@@ -623,16 +671,19 @@ struct DomainBlockDto {
     created_by_handle: Option<String>,
 }
 
-async fn list_domain_blocks(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Response {
+async fn list_domain_blocks(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if let Err(r) = require_admin(&headers, &state.db).await {
         return r;
     }
     let rows = sqlx::query_as::<
         _,
-        (String, String, Option<String>, DateTime<Utc>, Option<String>),
+        (
+            String,
+            String,
+            Option<String>,
+            DateTime<Utc>,
+            Option<String>,
+        ),
     >(
         r"SELECT b.domain,
                  b.severity,
@@ -648,13 +699,15 @@ async fn list_domain_blocks(
         Ok(rows) => {
             let list: Vec<DomainBlockDto> = rows
                 .into_iter()
-                .map(|(domain, severity, reason, created_at, created_by_handle)| DomainBlockDto {
-                    domain,
-                    severity,
-                    reason,
-                    created_at,
-                    created_by_handle,
-                })
+                .map(
+                    |(domain, severity, reason, created_at, created_by_handle)| DomainBlockDto {
+                        domain,
+                        severity,
+                        reason,
+                        created_at,
+                        created_by_handle,
+                    },
+                )
                 .collect();
             (StatusCode::OK, Json(ApiResponse::ok(list))).into_response()
         }
@@ -672,7 +725,10 @@ struct AddDomainBlockBody {
 
 fn normalize_domain(raw: &str) -> Option<String> {
     let d = raw.trim().to_ascii_lowercase();
-    let host = if let Some(rest) = d.strip_prefix("https://").or_else(|| d.strip_prefix("http://")) {
+    let host = if let Some(rest) = d
+        .strip_prefix("https://")
+        .or_else(|| d.strip_prefix("http://"))
+    {
         rest.split('/').next().unwrap_or("")
     } else {
         d.as_str()
@@ -704,13 +760,20 @@ async fn add_domain_block_server(
     if !matches!(body.severity.as_str(), "silence" | "suspend") {
         return (
             StatusCode::BAD_REQUEST,
-            Json(ApiResponse::<()>::fail("bad_request", "severity deve ser silence ou suspend")),
+            Json(ApiResponse::<()>::fail(
+                "bad_request",
+                "severity deve ser silence ou suspend",
+            )),
         )
             .into_response();
     }
     let reason = body.reason.and_then(|s| {
         let t = s.trim().to_owned();
-        if t.is_empty() { None } else { Some(t) }
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
     });
     let res = sqlx::query(
         r"INSERT INTO server_domain_block (id, domain, severity, reason, created_by)

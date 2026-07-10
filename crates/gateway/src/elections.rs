@@ -17,8 +17,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use chrono::{DateTime, NaiveDate, Utc};
-use dsoc_app::AppState;
 use dsoc_api_contract::ApiResponse;
+use dsoc_app::AppState;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -45,7 +45,10 @@ fn server_error() -> Response {
 fn not_found() -> Response {
     (
         StatusCode::NOT_FOUND,
-        Json(ApiResponse::<()>::fail("http_404", "Candidatura não encontrada.")),
+        Json(ApiResponse::<()>::fail(
+            "http_404",
+            "Candidatura não encontrada.",
+        )),
     )
         .into_response()
 }
@@ -105,17 +108,16 @@ struct CandidacyFilters {
 // ---------------------------------------------------------------------------
 
 async fn list_elections(State(state): State<AppState>) -> Response {
-    let rows: Result<Vec<(
-        Uuid, i32, i32, String, NaiveDate, Option<NaiveDate>, i64,
-    )>, _> = sqlx::query_as(
-        r"SELECT e.id, e.year, e.round, e.sphere, e.election_day,
+    let rows: Result<Vec<(Uuid, i32, i32, String, NaiveDate, Option<NaiveDate>, i64)>, _> =
+        sqlx::query_as(
+            r"SELECT e.id, e.year, e.round, e.sphere, e.election_day,
                  e.registration_deadline,
                  (SELECT count(*) FROM candidacy c WHERE c.election_id = e.id) AS candidacy_count
             FROM election e
            ORDER BY e.year DESC, e.round ASC, e.sphere",
-    )
-    .fetch_all(&state.db)
-    .await;
+        )
+        .fetch_all(&state.db)
+        .await;
     match rows {
         Ok(rows) => (
             StatusCode::OK,
@@ -152,16 +154,29 @@ async fn list_candidacies(
 ) -> Response {
     let limit = f.limit.unwrap_or(50).clamp(1, 500);
     let offset = f.offset.unwrap_or(0).max(0);
-    let name_pat = f
-        .q
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(|s| format!("%{s}%"));
-    let rows: Result<Vec<(
-        Uuid, Uuid, Option<Uuid>, String, Option<String>, String, String, String,
-        Option<String>, Option<String>, Option<i32>, Option<String>, DateTime<Utc>,
-    )>, _> = sqlx::query_as(
+    let name_pat =
+        f.q.as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| format!("%{s}%"));
+    let rows: Result<
+        Vec<(
+            Uuid,
+            Uuid,
+            Option<Uuid>,
+            String,
+            Option<String>,
+            String,
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<i32>,
+            Option<String>,
+            DateTime<Utc>,
+        )>,
+        _,
+    > = sqlx::query_as(
         r"SELECT id, election_id, mandate_id, candidate_name, candidate_gender,
                  party_sigla, office, number,
                  sphere_uf, sphere_municipio, result_rank, status, created_at
@@ -221,10 +236,24 @@ async fn list_candidacies(
 // ---------------------------------------------------------------------------
 
 async fn get_candidacy(State(state): State<AppState>, Path(id): Path<Uuid>) -> Response {
-    let row: Result<Option<(
-        Uuid, Uuid, Option<Uuid>, String, Option<String>, String, String, String,
-        Option<String>, Option<String>, Option<i32>, Option<String>, DateTime<Utc>,
-    )>, _> = sqlx::query_as(
+    let row: Result<
+        Option<(
+            Uuid,
+            Uuid,
+            Option<Uuid>,
+            String,
+            Option<String>,
+            String,
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<i32>,
+            Option<String>,
+            DateTime<Utc>,
+        )>,
+        _,
+    > = sqlx::query_as(
         r"SELECT id, election_id, mandate_id, candidate_name, candidate_gender,
                  party_sigla, office, number,
                  sphere_uf, sphere_municipio, result_rank, status, created_at

@@ -13,8 +13,8 @@
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey};
 use rsa::pkcs1v15::SigningKey;
+use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey};
 use rsa::sha2::Sha256;
 use rsa::signature::{SignatureEncoding, Signer};
 use rsa::{Pkcs1v15Sign, RsaPrivateKey, RsaPublicKey};
@@ -121,7 +121,10 @@ mod tests {
         let kp = generate_actor_keypair().unwrap();
         let headers = vec![
             ("Host".to_owned(), "example.test".to_owned()),
-            ("Date".to_owned(), "Tue, 25 Jun 2026 12:00:00 GMT".to_owned()),
+            (
+                "Date".to_owned(),
+                "Tue, 25 Jun 2026 12:00:00 GMT".to_owned(),
+            ),
         ];
         let ss = build_signing_string(
             "POST",

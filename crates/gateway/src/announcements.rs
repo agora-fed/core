@@ -14,7 +14,7 @@
 use axum::extract::{Json, Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, patch, post};
+use axum::routing::{get, patch, post};
 use axum::Router;
 use chrono::{DateTime, Utc};
 use dsoc_api_contract::ApiResponse;
@@ -64,14 +64,20 @@ async fn require_admin(headers: &HeaderMap, db: &PgPool) -> Result<Uuid, Respons
 fn unauthorized_resp() -> Response {
     (
         StatusCode::UNAUTHORIZED,
-        Json(ApiResponse::<()>::fail("unauthorized", "Autenticação necessária.")),
+        Json(ApiResponse::<()>::fail(
+            "unauthorized",
+            "Autenticação necessária.",
+        )),
     )
         .into_response()
 }
 fn forbidden_resp() -> Response {
     (
         StatusCode::FORBIDDEN,
-        Json(ApiResponse::<()>::fail("forbidden", "Acesso restrito a admins.")),
+        Json(ApiResponse::<()>::fail(
+            "forbidden",
+            "Acesso restrito a admins.",
+        )),
     )
         .into_response()
 }
@@ -116,7 +122,9 @@ struct CreateBody {
     #[serde(default)]
     publish_now: bool,
 }
-fn default_severity() -> String { "info".to_string() }
+fn default_severity() -> String {
+    "info".to_string()
+}
 
 #[derive(Debug, Deserialize)]
 struct UpdateBody {
@@ -217,11 +225,18 @@ async fn admin_create(
     if body_txt.is_empty() || body_txt.len() > 4000 {
         return (
             StatusCode::BAD_REQUEST,
-            Json(ApiResponse::<()>::fail("bad_request", "texto entre 1 e 4000 chars")),
+            Json(ApiResponse::<()>::fail(
+                "bad_request",
+                "texto entre 1 e 4000 chars",
+            )),
         )
             .into_response();
     }
-    let published_at = if body.publish_now { Some(Utc::now()) } else { None };
+    let published_at = if body.publish_now {
+        Some(Utc::now())
+    } else {
+        None
+    };
     let id = Uuid::now_v7();
     let res: Result<AnnouncementDto, _> = sqlx::query_as::<_, AnnouncementDto>(
         r"INSERT INTO server_announcement

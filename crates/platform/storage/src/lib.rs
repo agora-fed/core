@@ -106,9 +106,7 @@ impl Storage for S3Storage {
             .await
             .map_err(|e| {
                 tracing::error!(error = ?e, key, "storage put failed");
-                Error::Storage(Box::new(std::io::Error::other(format!(
-                    "storage put: {e}"
-                ))))
+                Error::Storage(Box::new(std::io::Error::other(format!("storage put: {e}"))))
             })?;
         Ok(())
     }
@@ -138,13 +136,6 @@ mod tests {
     #[tokio::test]
     async fn constructor_does_not_panic_on_known_good_input() {
         // Exercises the SDK config wiring (sleep impl, HTTP connector) the runtime path needs.
-        let _ = S3Storage::new(
-            "http://[::1]:9000",
-            "us-east-1",
-            "k",
-            "s",
-            "dsoc-media",
-        )
-        .await;
+        let _ = S3Storage::new("http://[::1]:9000", "us-east-1", "k", "s", "dsoc-media").await;
     }
 }

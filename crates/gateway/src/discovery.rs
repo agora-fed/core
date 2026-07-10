@@ -106,9 +106,8 @@ pub async fn mentions_matching(
     }
     let pattern = format!("%{}%", cleaned.to_lowercase());
     let handle_prefix = format!("{}%", cleaned.to_lowercase());
-    let rows: Vec<(String, Option<String>, Option<String>, Option<String>)> =
-        sqlx::query_as(
-            r"
+    let rows: Vec<(String, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
+        r"
         SELECT c.handle,
                c.display_name,
                c.bio,
@@ -124,13 +123,13 @@ pub async fn mentions_matching(
              c.display_name
          LIMIT $4
         ",
-        )
-        .bind(&pattern)
-        .bind(&handle_prefix)
-        .bind(media_base_url.trim_end_matches('/'))
-        .bind(limit)
-        .fetch_all(db)
-        .await?;
+    )
+    .bind(&pattern)
+    .bind(&handle_prefix)
+    .bind(media_base_url.trim_end_matches('/'))
+    .bind(limit)
+    .fetch_all(db)
+    .await?;
     let origin = public_origin.trim_end_matches('/').to_owned();
     Ok(rows
         .into_iter()
@@ -285,9 +284,8 @@ pub async fn directory(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<MentionHit>, sqlx::Error> {
-    let rows: Vec<(String, Option<String>, Option<String>, Option<String>)> =
-        sqlx::query_as(
-            r"
+    let rows: Vec<(String, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
+        r"
         SELECT c.handle,
                c.display_name,
                c.bio,
@@ -303,12 +301,12 @@ pub async fn directory(
              c.created_at DESC
          LIMIT $2 OFFSET $3
         ",
-        )
-        .bind(media_base_url.trim_end_matches('/'))
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(db)
-        .await?;
+    )
+    .bind(media_base_url.trim_end_matches('/'))
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(db)
+    .await?;
     let origin = public_origin.trim_end_matches('/').to_owned();
     Ok(rows
         .into_iter()
@@ -331,9 +329,8 @@ pub async fn follow_suggestions(
 ) -> Result<Vec<MentionHit>, sqlx::Error> {
     // Public local citizens the caller does not already follow, ordered by
     // recent outbox activity (most-recent Note wins). Excludes self.
-    let rows: Vec<(String, Option<String>, Option<String>, Option<String>)> =
-        sqlx::query_as(
-            r"
+    let rows: Vec<(String, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
+        r"
         SELECT c.handle,
                c.display_name,
                c.bio,
@@ -358,13 +355,13 @@ pub async fn follow_suggestions(
          ORDER BY COALESCE(latest.last_note, c.created_at) DESC
          LIMIT $4
         ",
-        )
-        .bind(caller_id)
-        .bind(media_base_url.trim_end_matches('/'))
-        .bind(public_origin.trim_end_matches('/'))
-        .bind(limit)
-        .fetch_all(db)
-        .await?;
+    )
+    .bind(caller_id)
+    .bind(media_base_url.trim_end_matches('/'))
+    .bind(public_origin.trim_end_matches('/'))
+    .bind(limit)
+    .fetch_all(db)
+    .await?;
     let origin = public_origin.trim_end_matches('/').to_owned();
     Ok(rows
         .into_iter()

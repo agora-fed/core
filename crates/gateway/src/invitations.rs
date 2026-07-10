@@ -22,7 +22,10 @@ use uuid::Uuid;
 
 pub fn routes(state: AppState) -> Router<()> {
     Router::new()
-        .route("/invitations", post(create_invitation).get(list_my_invitations))
+        .route(
+            "/invitations",
+            post(create_invitation).get(list_my_invitations),
+        )
         .route("/invitations/{id}", delete(delete_invitation))
         .route("/invitations/{token}/preview", get(preview_invitation))
         // 0.26.20: pós-signup associa o cidadão logado ao convite que ele usou.
@@ -54,18 +57,19 @@ async fn associate_invitation(
     if let Some(Some(_)) = already {
         return (
             StatusCode::OK,
-            Json(ApiResponse::ok(serde_json::json!({ "ok": true, "already": true }))),
+            Json(ApiResponse::ok(
+                serde_json::json!({ "ok": true, "already": true }),
+            )),
         )
             .into_response();
     }
     // Pega o e-mail do cidadão pra validar target_email do convite.
-    let email: Option<String> = sqlx::query_scalar(
-        r"SELECT email FROM auth_credential WHERE citizen_id = $1",
-    )
-    .bind(citizen)
-    .fetch_optional(&state.db)
-    .await
-    .unwrap_or(None);
+    let email: Option<String> =
+        sqlx::query_scalar(r"SELECT email FROM auth_credential WHERE citizen_id = $1")
+            .bind(citizen)
+            .fetch_optional(&state.db)
+            .await
+            .unwrap_or(None);
     let email = email.unwrap_or_default();
     let token = body.token.trim();
     if token.is_empty() {
@@ -76,22 +80,24 @@ async fn associate_invitation(
         Ok(None) => {
             return (
                 StatusCode::OK,
-                Json(ApiResponse::ok(serde_json::json!({ "ok": false, "reason": "invalid" }))),
+                Json(ApiResponse::ok(
+                    serde_json::json!({ "ok": false, "reason": "invalid" }),
+                )),
             )
                 .into_response();
         }
         Err(err) => return server_error(err),
     };
-    let _ = sqlx::query(
-        r"UPDATE citizen SET invited_via_invitation_id = $2 WHERE id = $1",
-    )
-    .bind(citizen)
-    .bind(invited_via)
-    .execute(&state.db)
-    .await;
+    let _ = sqlx::query(r"UPDATE citizen SET invited_via_invitation_id = $2 WHERE id = $1")
+        .bind(citizen)
+        .bind(invited_via)
+        .execute(&state.db)
+        .await;
     (
         StatusCode::OK,
-        Json(ApiResponse::ok(serde_json::json!({ "ok": true, "invited_via": invited_via }))),
+        Json(ApiResponse::ok(
+            serde_json::json!({ "ok": true, "invited_via": invited_via }),
+        )),
     )
         .into_response()
 }
@@ -106,7 +112,10 @@ fn caller_citizen(headers: &HeaderMap) -> Option<Uuid> {
 fn unauthorized() -> Response {
     (
         StatusCode::UNAUTHORIZED,
-        Json(ApiResponse::<()>::fail("unauthorized", "Autenticação necessária.")),
+        Json(ApiResponse::<()>::fail(
+            "unauthorized",
+            "Autenticação necessária.",
+        )),
     )
         .into_response()
 }
@@ -133,8 +142,7 @@ fn generate_token() -> String {
     let mut buf = [0u8; 18];
     OsRng.fill_bytes(&mut buf);
     // base64url sem padding, direto do byte buf.
-    const ALPHA: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const ALPHA: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let mut out = String::with_capacity(24);
     // 18 bytes = 24 chars base64. Iteramos 3 em 3.
     for chunk in buf.chunks(3) {
@@ -165,8 +173,12 @@ struct CreateInvitationBody {
     #[serde(default = "default_expires")]
     expires_in_hours: i64,
 }
-fn one() -> i32 { 1 }
-fn default_expires() -> i64 { 168 } // 7 dias
+fn one() -> i32 {
+    1
+}
+fn default_expires() -> i64 {
+    168
+} // 7 dias
 
 #[derive(Debug, Serialize)]
 struct InvitationDto {
@@ -204,12 +216,14 @@ async fn create_invitation(
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized();
     };
-    let body = body.map(|Json(b)| b).unwrap_or_else(|| CreateInvitationBody {
-        target_email: None,
-        notes: None,
-        max_uses: 1,
-        expires_in_hours: 168,
-    });
+    let body = body
+        .map(|Json(b)| b)
+        .unwrap_or_else(|| CreateInvitationBody {
+            target_email: None,
+            notes: None,
+            max_uses: 1,
+            expires_in_hours: 168,
+        });
     let max_uses = body.max_uses.clamp(1, 1000);
     let expires_hours = body.expires_in_hours.clamp(1, 24 * 90);
     let expires_at = Some(Utc::now() + Duration::hours(expires_hours));
@@ -217,10 +231,25 @@ async fn create_invitation(
         .target_email
         .map(|s| s.trim().to_ascii_lowercase())
         .filter(|s| !s.is_empty() && s.contains('@'));
-    let notes = body.notes.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
+    let notes = body
+        .notes
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty());
     let token = generate_token();
     let id = Uuid::now_v7();
-    let res: Result<(Uuid, String, Option<String>, Option<String>, i32, i32, DateTime<Utc>, Option<DateTime<Utc>>), _> = sqlx::query_as(
+    let res: Result<
+        (
+            Uuid,
+            String,
+            Option<String>,
+            Option<String>,
+            i32,
+            i32,
+            DateTime<Utc>,
+            Option<DateTime<Utc>>,
+        ),
+        _,
+    > = sqlx::query_as(
         r"INSERT INTO invitation
             (id, invited_by_citizen_id, token, target_email, notes, uses_left, max_uses, expires_at)
           VALUES ($1, $2, $3, $4, $5, $6, $6, $7)
@@ -255,10 +284,7 @@ async fn create_invitation(
     }
 }
 
-async fn list_my_invitations(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Response {
+async fn list_my_invitations(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized();
     };
@@ -292,7 +318,18 @@ async fn list_my_invitations(
             let list: Vec<InvitationDto> = rows
                 .into_iter()
                 .map(
-                    |(id, token, target_email, notes, uses_left, max_uses, created_at, expires_at, first_used_at, last_used_at)| InvitationDto {
+                    |(
+                        id,
+                        token,
+                        target_email,
+                        notes,
+                        uses_left,
+                        max_uses,
+                        created_at,
+                        expires_at,
+                        first_used_at,
+                        last_used_at,
+                    )| InvitationDto {
                         id,
                         token,
                         target_email,
@@ -339,10 +376,7 @@ async fn delete_invitation(
     }
 }
 
-async fn preview_invitation(
-    State(state): State<AppState>,
-    Path(token): Path<String>,
-) -> Response {
+async fn preview_invitation(State(state): State<AppState>, Path(token): Path<String>) -> Response {
     let row = sqlx::query_as::<
         _,
         (
@@ -367,7 +401,7 @@ async fn preview_invitation(
     .await;
     let dto = match row {
         Ok(Some((target_email, uses_left, expires_at, handle, display_name))) => {
-            let expired = expires_at.map_or(false, |d| d < Utc::now());
+            let expired = expires_at.is_some_and(|d| d < Utc::now());
             let exhausted = uses_left.unwrap_or(0) <= 0;
             let (valid, reason) = if expired {
                 (false, Some("expired".to_string()))

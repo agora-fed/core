@@ -17,6 +17,13 @@
 
 BEGIN;
 
+-- Self-containment guard: the default org this seed points at was historically
+-- created by hand, which made the migration chain unreproducible on a fresh
+-- database (CI). Idempotent — existing prod/dev rows are untouched.
+INSERT INTO org (id, slug, name, created_at)
+VALUES ('11111111-1111-1111-1111-111111111111'::uuid, 'brasil', 'DemocraciaBR', now())
+ON CONFLICT (id) DO NOTHING;
+
 INSERT INTO election (id, org_id, year, round, sphere,
                       election_day, registration_deadline, created_at)
 VALUES

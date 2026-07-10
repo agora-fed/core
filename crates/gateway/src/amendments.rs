@@ -15,8 +15,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
-use dsoc_app::AppState;
 use dsoc_api_contract::ApiResponse;
+use dsoc_app::AppState;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -36,14 +36,8 @@ pub fn routes(state: AppState) -> Router<()> {
             "/amendments/{amendment_id}/publish",
             post(publish_amendment),
         )
-        .route(
-            "/amendments/{amendment_id}/accept",
-            post(accept_amendment),
-        )
-        .route(
-            "/amendments/{amendment_id}/reject",
-            post(reject_amendment),
-        )
+        .route("/amendments/{amendment_id}/accept", post(accept_amendment))
+        .route("/amendments/{amendment_id}/reject", post(reject_amendment))
         .with_state(state)
 }
 
@@ -63,14 +57,20 @@ fn caller_citizen(headers: &HeaderMap) -> Option<Uuid> {
 fn unauthorized() -> Response {
     (
         StatusCode::UNAUTHORIZED,
-        Json(ApiResponse::<()>::fail("http_401", "Autenticação necessária.")),
+        Json(ApiResponse::<()>::fail(
+            "http_401",
+            "Autenticação necessária.",
+        )),
     )
         .into_response()
 }
 fn not_found() -> Response {
     (
         StatusCode::NOT_FOUND,
-        Json(ApiResponse::<()>::fail("http_404", "Emenda não encontrada.")),
+        Json(ApiResponse::<()>::fail(
+            "http_404",
+            "Emenda não encontrada.",
+        )),
     )
         .into_response()
 }
@@ -135,15 +135,24 @@ struct PatchAmendmentBody {
 // Read
 // ---------------------------------------------------------------------------
 
-async fn list_amendments(
-    State(state): State<AppState>,
-    Path(proposal_id): Path<Uuid>,
-) -> Response {
-    let rows: Result<Vec<(
-        Uuid, Uuid, Uuid, Option<String>, Option<String>,
-        String, Option<String>, String, i64,
-        DateTime<Utc>, Option<DateTime<Utc>>, Option<DateTime<Utc>>,
-    )>, _> = sqlx::query_as(
+async fn list_amendments(State(state): State<AppState>, Path(proposal_id): Path<Uuid>) -> Response {
+    let rows: Result<
+        Vec<(
+            Uuid,
+            Uuid,
+            Uuid,
+            Option<String>,
+            Option<String>,
+            String,
+            Option<String>,
+            String,
+            i64,
+            DateTime<Utc>,
+            Option<DateTime<Utc>>,
+            Option<DateTime<Utc>>,
+        )>,
+        _,
+    > = sqlx::query_as(
         r"SELECT a.id, a.proposal_id, a.author_id,
                  c.handle, c.display_name,
                  a.body, a.rationale, a.status, a.support_count,
@@ -160,7 +169,9 @@ async fn list_amendments(
     match rows {
         Ok(rows) => (
             StatusCode::OK,
-            Json(ApiResponse::ok(rows.into_iter().map(dto).collect::<Vec<_>>())),
+            Json(ApiResponse::ok(
+                rows.into_iter().map(dto).collect::<Vec<_>>(),
+            )),
         )
             .into_response(),
         Err(err) => {
@@ -170,10 +181,7 @@ async fn list_amendments(
     }
 }
 
-async fn get_amendment(
-    State(state): State<AppState>,
-    Path(amendment_id): Path<Uuid>,
-) -> Response {
+async fn get_amendment(State(state): State<AppState>, Path(amendment_id): Path<Uuid>) -> Response {
     let row = fetch_amendment(&state.db, amendment_id).await;
     match row {
         Ok(Some(row)) => (StatusCode::OK, Json(ApiResponse::ok(dto(row)))).into_response(),
@@ -186,15 +194,21 @@ async fn get_amendment(
 }
 
 type AmendmentRow = (
-    Uuid, Uuid, Uuid, Option<String>, Option<String>,
-    String, Option<String>, String, i64,
-    DateTime<Utc>, Option<DateTime<Utc>>, Option<DateTime<Utc>>,
+    Uuid,
+    Uuid,
+    Uuid,
+    Option<String>,
+    Option<String>,
+    String,
+    Option<String>,
+    String,
+    i64,
+    DateTime<Utc>,
+    Option<DateTime<Utc>>,
+    Option<DateTime<Utc>>,
 );
 
-async fn fetch_amendment(
-    db: &sqlx::PgPool,
-    id: Uuid,
-) -> Result<Option<AmendmentRow>, sqlx::Error> {
+async fn fetch_amendment(db: &sqlx::PgPool, id: Uuid) -> Result<Option<AmendmentRow>, sqlx::Error> {
     sqlx::query_as(
         r"SELECT a.id, a.proposal_id, a.author_id,
                  c.handle, c.display_name,
@@ -440,10 +454,7 @@ async fn accept_amendment(
         return unauthorized();
     };
     // Fetch amendment + parent proposal in one shot.
-    let joined: Result<
-        Option<(Uuid, Uuid, Uuid, String, String, Uuid)>,
-        _,
-    > = sqlx::query_as(
+    let joined: Result<Option<(Uuid, Uuid, Uuid, String, String, Uuid)>, _> = sqlx::query_as(
         r"SELECT a.id, a.proposal_id, a.author_id, a.body, a.status,
                  p.mandate_id
             FROM proposal_amendment a
@@ -453,15 +464,14 @@ async fn accept_amendment(
     .bind(amendment_id)
     .fetch_optional(&state.db)
     .await;
-    let (amendment_id, proposal_id, _amendment_author, new_body, status, _mandate) =
-        match joined {
-            Ok(Some(r)) => r,
-            Ok(None) => return not_found(),
-            Err(err) => {
-                tracing::error!(?err, "accept fetch join");
-                return server_error();
-            }
-        };
+    let (amendment_id, proposal_id, _amendment_author, new_body, status, _mandate) = match joined {
+        Ok(Some(r)) => r,
+        Ok(None) => return not_found(),
+        Err(err) => {
+            tracing::error!(?err, "accept fetch join");
+            return server_error();
+        }
+    };
     if status != "open" {
         return bad("Só emendas em votação podem ser aceitas.");
     }
@@ -497,24 +507,21 @@ async fn accept_amendment(
         }
     };
     // 1. Update proposal.body.
-    if let Err(err) = sqlx::query(
-        r"UPDATE proposal SET body = $2 WHERE id = $1",
-    )
-    .bind(proposal_id)
-    .bind(&new_body)
-    .execute(&mut *tx)
-    .await
+    if let Err(err) = sqlx::query(r"UPDATE proposal SET body = $2 WHERE id = $1")
+        .bind(proposal_id)
+        .bind(&new_body)
+        .execute(&mut *tx)
+        .await
     {
         tracing::error!(?err, "accept proposal update");
         return server_error();
     }
     // 2. Fetch current title to snapshot in revision.
-    let title: Result<Option<(String,)>, _> = sqlx::query_as(
-        r"SELECT title FROM proposal WHERE id = $1",
-    )
-    .bind(proposal_id)
-    .fetch_optional(&mut *tx)
-    .await;
+    let title: Result<Option<(String,)>, _> =
+        sqlx::query_as(r"SELECT title FROM proposal WHERE id = $1")
+            .bind(proposal_id)
+            .fetch_optional(&mut *tx)
+            .await;
     let title = match title {
         Ok(Some((t,))) => t,
         _ => "".to_owned(),
@@ -604,4 +611,3 @@ async fn reject_amendment(
     }
     get_amendment(State(state), Path(amendment_id)).await
 }
-

@@ -23,8 +23,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use chrono::{DateTime, Duration, Utc};
-use dsoc_app::AppState;
 use dsoc_api_contract::ApiResponse;
+use dsoc_app::AppState;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -46,7 +46,10 @@ pub fn routes(state: AppState) -> Router<()> {
         // Denúncia de nota.
         .route("/me/reports", post(create_note_report))
         // Bloqueio de domínio inteiro.
-        .route("/me/domain_blocks", post(add_domain_block).delete(remove_domain_block))
+        .route(
+            "/me/domain_blocks",
+            post(add_domain_block).delete(remove_domain_block),
+        )
         .route("/me/domain_blocks/status", get(domain_block_status))
         // Mutes
         .route("/mutes", get(list_mutes))
@@ -61,10 +64,7 @@ pub fn routes(state: AppState) -> Router<()> {
         .route("/filters/{id}", delete(delete_filter))
         // Lists
         .route("/lists", get(list_lists).post(create_list))
-        .route(
-            "/lists/{id}",
-            put(update_list).delete(delete_list),
-        )
+        .route("/lists/{id}", put(update_list).delete(delete_list))
         .route(
             "/lists/{id}/accounts",
             get(list_list_accounts)
@@ -82,7 +82,10 @@ pub fn routes(state: AppState) -> Router<()> {
 fn unauthorized() -> Response {
     (
         StatusCode::UNAUTHORIZED,
-        Json(ApiResponse::<()>::fail("http_401", "Autenticação necessária.")),
+        Json(ApiResponse::<()>::fail(
+            "http_401",
+            "Autenticação necessária.",
+        )),
     )
         .into_response()
 }
@@ -203,7 +206,10 @@ async fn list_bookmarks(
         Ok(rows) => {
             let list: Vec<BookmarkDto> = rows
                 .into_iter()
-                .map(|(object_uri, created_at)| BookmarkDto { object_uri, created_at })
+                .map(|(object_uri, created_at)| BookmarkDto {
+                    object_uri,
+                    created_at,
+                })
                 .collect();
             (StatusCode::OK, Json(ApiResponse::ok(list))).into_response()
         }
@@ -288,13 +294,11 @@ async fn unbookmark_status(
             }
         }
     };
-    let res = sqlx::query(
-        r"DELETE FROM note_bookmark WHERE citizen_id = $1 AND object_uri = $2",
-    )
-    .bind(citizen)
-    .bind(&object_uri)
-    .execute(&state.db)
-    .await;
+    let res = sqlx::query(r"DELETE FROM note_bookmark WHERE citizen_id = $1 AND object_uri = $2")
+        .bind(citizen)
+        .bind(&object_uri)
+        .execute(&state.db)
+        .await;
     match res {
         Ok(_) => (
             StatusCode::OK,
@@ -357,13 +361,11 @@ async fn unbookmark_uri(
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized();
     };
-    let res = sqlx::query(
-        r"DELETE FROM note_bookmark WHERE citizen_id = $1 AND object_uri = $2",
-    )
-    .bind(citizen)
-    .bind(body.object_uri.trim())
-    .execute(&state.db)
-    .await;
+    let res = sqlx::query(r"DELETE FROM note_bookmark WHERE citizen_id = $1 AND object_uri = $2")
+        .bind(citizen)
+        .bind(body.object_uri.trim())
+        .execute(&state.db)
+        .await;
     match res {
         Ok(_) => (
             StatusCode::OK,
@@ -454,11 +456,13 @@ async fn list_mutes(
         Ok(rows) => {
             let list: Vec<MuteDto> = rows
                 .into_iter()
-                .map(|(target_actor_url, hide_notifications, created_at)| MuteDto {
-                    target_actor_url,
-                    hide_notifications,
-                    created_at,
-                })
+                .map(
+                    |(target_actor_url, hide_notifications, created_at)| MuteDto {
+                        target_actor_url,
+                        hide_notifications,
+                        created_at,
+                    },
+                )
                 .collect();
             (StatusCode::OK, Json(ApiResponse::ok(list))).into_response()
         }
@@ -474,7 +478,9 @@ struct MuteBody {
     #[serde(default = "default_true")]
     notifications: bool,
 }
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 async fn mute_account(
     State(state): State<AppState>,
@@ -485,7 +491,7 @@ async fn mute_account(
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized();
     };
-    let hide_notifications = body.map_or(true, |Json(b)| b.notifications);
+    let hide_notifications = body.is_none_or(|Json(b)| b.notifications);
     let target_actor_url = match actor_url_for_citizen(&state.db, target_id).await {
         Ok(Some(url)) => url,
         Ok(None) => return not_found("Conta alvo não encontrada."),
@@ -542,13 +548,12 @@ async fn unmute_account(
             return server_error();
         }
     };
-    let res = sqlx::query(
-        r"DELETE FROM actor_mute WHERE citizen_id = $1 AND target_actor_url = $2",
-    )
-    .bind(citizen)
-    .bind(&target_actor_url)
-    .execute(&state.db)
-    .await;
+    let res =
+        sqlx::query(r"DELETE FROM actor_mute WHERE citizen_id = $1 AND target_actor_url = $2")
+            .bind(citizen)
+            .bind(&target_actor_url)
+            .execute(&state.db)
+            .await;
     match res {
         Ok(_) => (
             StatusCode::OK,
@@ -710,13 +715,12 @@ async fn unblock_account(
             return server_error();
         }
     };
-    let res = sqlx::query(
-        r"DELETE FROM actor_block WHERE citizen_id = $1 AND target_actor_url = $2",
-    )
-    .bind(citizen)
-    .bind(&target_actor_url)
-    .execute(&state.db)
-    .await;
+    let res =
+        sqlx::query(r"DELETE FROM actor_block WHERE citizen_id = $1 AND target_actor_url = $2")
+            .bind(citizen)
+            .bind(&target_actor_url)
+            .execute(&state.db)
+            .await;
     match res {
         Ok(_) => (
             StatusCode::OK,
@@ -743,15 +747,18 @@ struct FilterDto {
     created_at: DateTime<Utc>,
 }
 
-async fn list_filters(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Response {
+async fn list_filters(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized();
     };
     let rows: Result<
-        Vec<(Uuid, String, Vec<String>, Option<DateTime<Utc>>, DateTime<Utc>)>,
+        Vec<(
+            Uuid,
+            String,
+            Vec<String>,
+            Option<DateTime<Utc>>,
+            DateTime<Utc>,
+        )>,
         _,
     > = sqlx::query_as(
         r"SELECT id, phrase, context, expires_at, created_at
@@ -813,19 +820,27 @@ async fn create_filter(
         .filter(|s| *s > 0)
         .and_then(|secs| Duration::try_seconds(secs).map(|d| Utc::now() + d));
     let id = Uuid::now_v7();
-    let res: Result<(Uuid, String, Vec<String>, Option<DateTime<Utc>>, DateTime<Utc>), _> =
-        sqlx::query_as(
-            r"INSERT INTO content_filter (id, citizen_id, phrase, context, expires_at)
+    let res: Result<
+        (
+            Uuid,
+            String,
+            Vec<String>,
+            Option<DateTime<Utc>>,
+            DateTime<Utc>,
+        ),
+        _,
+    > = sqlx::query_as(
+        r"INSERT INTO content_filter (id, citizen_id, phrase, context, expires_at)
               VALUES ($1, $2, $3, $4, $5)
               RETURNING id, phrase, context, expires_at, created_at",
-        )
-        .bind(id)
-        .bind(citizen)
-        .bind(&phrase)
-        .bind(&context)
-        .bind(expires_at)
-        .fetch_one(&state.db)
-        .await;
+    )
+    .bind(id)
+    .bind(citizen)
+    .bind(&phrase)
+    .bind(&context)
+    .bind(expires_at)
+    .fetch_one(&state.db)
+    .await;
     match res {
         Ok((id, phrase, context, expires_at, created_at)) => (
             StatusCode::OK,
@@ -853,13 +868,11 @@ async fn delete_filter(
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized();
     };
-    let res = sqlx::query(
-        r"DELETE FROM content_filter WHERE id = $1 AND citizen_id = $2",
-    )
-    .bind(filter_id)
-    .bind(citizen)
-    .execute(&state.db)
-    .await;
+    let res = sqlx::query(r"DELETE FROM content_filter WHERE id = $1 AND citizen_id = $2")
+        .bind(filter_id)
+        .bind(citizen)
+        .execute(&state.db)
+        .await;
     match res {
         Ok(r) if r.rows_affected() == 0 => not_found("Filtro não encontrado."),
         Ok(_) => (
@@ -893,10 +906,7 @@ struct ListRowDto {
     replies_policy: String,
 }
 
-async fn list_lists(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Response {
+async fn list_lists(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized();
     };
@@ -971,7 +981,11 @@ async fn create_list(
     match res {
         Ok((id, title, replies_policy)) => (
             StatusCode::OK,
-            Json(ApiResponse::ok(ListRowDto { id, title, replies_policy })),
+            Json(ApiResponse::ok(ListRowDto {
+                id,
+                title,
+                replies_policy,
+            })),
         )
             .into_response(),
         Err(err) => {
@@ -1013,7 +1027,11 @@ async fn update_list(
     match res {
         Ok(Some((id, title, replies_policy))) => (
             StatusCode::OK,
-            Json(ApiResponse::ok(ListRowDto { id, title, replies_policy })),
+            Json(ApiResponse::ok(ListRowDto {
+                id,
+                title,
+                replies_policy,
+            })),
         )
             .into_response(),
         Ok(None) => not_found("Lista não encontrada."),
@@ -1032,13 +1050,11 @@ async fn delete_list(
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized();
     };
-    let res = sqlx::query(
-        r"DELETE FROM actor_list WHERE id = $1 AND citizen_id = $2",
-    )
-    .bind(list_id)
-    .bind(citizen)
-    .execute(&state.db)
-    .await;
+    let res = sqlx::query(r"DELETE FROM actor_list WHERE id = $1 AND citizen_id = $2")
+        .bind(list_id)
+        .bind(citizen)
+        .execute(&state.db)
+        .await;
     match res {
         Ok(r) if r.rows_affected() == 0 => not_found("Lista não encontrada."),
         Ok(_) => (
@@ -1055,18 +1071,13 @@ async fn delete_list(
 
 /// Verify the list belongs to the caller. Returns `Ok(true)` when it does,
 /// `Ok(false)` when it doesn't (caller should return 404), or an error.
-async fn owns_list(
-    db: &PgPool,
-    list_id: Uuid,
-    citizen: Uuid,
-) -> Result<bool, sqlx::Error> {
-    let row: Option<(i32,)> = sqlx::query_as(
-        r"SELECT 1 FROM actor_list WHERE id = $1 AND citizen_id = $2 LIMIT 1",
-    )
-    .bind(list_id)
-    .bind(citizen)
-    .fetch_optional(db)
-    .await?;
+async fn owns_list(db: &PgPool, list_id: Uuid, citizen: Uuid) -> Result<bool, sqlx::Error> {
+    let row: Option<(i32,)> =
+        sqlx::query_as(r"SELECT 1 FROM actor_list WHERE id = $1 AND citizen_id = $2 LIMIT 1")
+            .bind(list_id)
+            .bind(citizen)
+            .fetch_optional(db)
+            .await?;
     Ok(row.is_some())
 }
 
@@ -1247,11 +1258,9 @@ async fn list_timeline(
     }
     let limit = page.limit(20, 50);
     let offset = page.offset();
-    let rows: Result<
-        Vec<(String, String, String, DateTime<Utc>, Option<String>)>,
-        _,
-    > = sqlx::query_as(
-        r"SELECT t.object_uri, t.actor_url, t.content_html, t.published_at, t.actor_display_name
+    let rows: Result<Vec<(String, String, String, DateTime<Utc>, Option<String>)>, _> =
+        sqlx::query_as(
+            r"SELECT t.object_uri, t.actor_url, t.content_html, t.published_at, t.actor_display_name
             FROM federation_timeline_entry t
            WHERE t.actor_url IN (
                  SELECT target_actor_url FROM actor_list_member WHERE list_id = $1
@@ -1259,25 +1268,27 @@ async fn list_timeline(
              AND t.deleted_at IS NULL
            ORDER BY t.published_at DESC
            LIMIT $2 OFFSET $3",
-    )
-    .bind(list_id)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(&state.db)
-    .await;
+        )
+        .bind(list_id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&state.db)
+        .await;
     match rows {
         Ok(rows) => {
             let list: Vec<ListTimelineItemDto> = rows
                 .into_iter()
-                .map(|(object_uri, actor_url, content, published_at, actor_display_name)| {
-                    ListTimelineItemDto {
-                        object_uri,
-                        actor_url,
-                        content,
-                        published_at,
-                        actor_display_name,
-                    }
-                })
+                .map(
+                    |(object_uri, actor_url, content, published_at, actor_display_name)| {
+                        ListTimelineItemDto {
+                            object_uri,
+                            actor_url,
+                            content,
+                            published_at,
+                            actor_display_name,
+                        }
+                    },
+                )
                 .collect();
             (StatusCode::OK, Json(ApiResponse::ok(list))).into_response()
         }
@@ -1325,7 +1336,11 @@ async fn mute_url(
     .execute(&state.db)
     .await;
     match res {
-        Ok(_) => (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "ok": true })))).into_response(),
+        Ok(_) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(serde_json::json!({ "ok": true }))),
+        )
+            .into_response(),
         Err(err) => {
             tracing::error!(?err, "mute_url");
             server_error()
@@ -1341,14 +1356,16 @@ async fn unmute_url(
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized();
     };
-    let _ = sqlx::query(
-        r"DELETE FROM actor_mute WHERE citizen_id = $1 AND target_actor_url = $2",
+    let _ = sqlx::query(r"DELETE FROM actor_mute WHERE citizen_id = $1 AND target_actor_url = $2")
+        .bind(citizen)
+        .bind(body.actor_url.trim())
+        .execute(&state.db)
+        .await;
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(serde_json::json!({ "ok": true }))),
     )
-    .bind(citizen)
-    .bind(body.actor_url.trim())
-    .execute(&state.db)
-    .await;
-    (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "ok": true })))).into_response()
+        .into_response()
 }
 
 async fn mute_url_status(
@@ -1367,7 +1384,11 @@ async fn mute_url_status(
     .fetch_one(&state.db)
     .await
     .unwrap_or(0);
-    (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "muted": n > 0 })))).into_response()
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(serde_json::json!({ "muted": n > 0 }))),
+    )
+        .into_response()
 }
 
 async fn block_url(
@@ -1393,7 +1414,11 @@ async fn block_url(
     .execute(&state.db)
     .await;
     match res {
-        Ok(_) => (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "ok": true })))).into_response(),
+        Ok(_) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(serde_json::json!({ "ok": true }))),
+        )
+            .into_response(),
         Err(err) => {
             tracing::error!(?err, "block_url");
             server_error()
@@ -1409,14 +1434,16 @@ async fn unblock_url(
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized();
     };
-    let _ = sqlx::query(
-        r"DELETE FROM actor_block WHERE citizen_id = $1 AND target_actor_url = $2",
+    let _ = sqlx::query(r"DELETE FROM actor_block WHERE citizen_id = $1 AND target_actor_url = $2")
+        .bind(citizen)
+        .bind(body.actor_url.trim())
+        .execute(&state.db)
+        .await;
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(serde_json::json!({ "ok": true }))),
     )
-    .bind(citizen)
-    .bind(body.actor_url.trim())
-    .execute(&state.db)
-    .await;
-    (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "ok": true })))).into_response()
+        .into_response()
 }
 
 async fn block_url_status(
@@ -1435,7 +1462,11 @@ async fn block_url_status(
     .fetch_one(&state.db)
     .await
     .unwrap_or(0);
-    (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "blocked": n > 0 })))).into_response()
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(serde_json::json!({ "blocked": n > 0 }))),
+    )
+        .into_response()
 }
 
 #[derive(Debug, Deserialize)]
@@ -1496,7 +1527,11 @@ async fn create_note_report(
                     "category": body.category,
                 }),
             );
-            (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "ok": true })))).into_response()
+            (
+                StatusCode::OK,
+                Json(ApiResponse::ok(serde_json::json!({ "ok": true }))),
+            )
+                .into_response()
         }
         Err(err) => {
             tracing::error!(?err, "create_note_report");
@@ -1513,7 +1548,10 @@ struct DomainBody {
 fn normalize_domain(raw: &str) -> Option<String> {
     let d = raw.trim().to_ascii_lowercase();
     // Aceita "host" ou "https://host"; extraímos só o host.
-    let host = if let Some(rest) = d.strip_prefix("https://").or_else(|| d.strip_prefix("http://")) {
+    let host = if let Some(rest) = d
+        .strip_prefix("https://")
+        .or_else(|| d.strip_prefix("http://"))
+    {
         rest.split('/').next().unwrap_or("")
     } else {
         d.as_str()
@@ -1548,7 +1586,13 @@ async fn add_domain_block(
     .execute(&state.db)
     .await;
     match res {
-        Ok(_) => (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "ok": true, "domain": domain })))).into_response(),
+        Ok(_) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(
+                serde_json::json!({ "ok": true, "domain": domain }),
+            )),
+        )
+            .into_response(),
         Err(err) => {
             tracing::error!(?err, "add_domain_block");
             server_error()
@@ -1567,14 +1611,16 @@ async fn remove_domain_block(
     let Some(domain) = normalize_domain(&body.domain) else {
         return bad_request("domínio inválido");
     };
-    let _ = sqlx::query(
-        r"DELETE FROM domain_block WHERE citizen_id = $1 AND domain = $2",
+    let _ = sqlx::query(r"DELETE FROM domain_block WHERE citizen_id = $1 AND domain = $2")
+        .bind(citizen)
+        .bind(&domain)
+        .execute(&state.db)
+        .await;
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(serde_json::json!({ "ok": true }))),
     )
-    .bind(citizen)
-    .bind(&domain)
-    .execute(&state.db)
-    .await;
-    (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "ok": true })))).into_response()
+        .into_response()
 }
 
 #[derive(Debug, Deserialize)]
@@ -1601,5 +1647,11 @@ async fn domain_block_status(
     .fetch_one(&state.db)
     .await
     .unwrap_or(0);
-    (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "blocked": n > 0, "domain": domain })))).into_response()
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(
+            serde_json::json!({ "blocked": n > 0, "domain": domain }),
+        )),
+    )
+        .into_response()
 }

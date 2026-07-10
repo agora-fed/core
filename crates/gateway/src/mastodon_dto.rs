@@ -93,7 +93,11 @@ impl Account {
             b.host.trim_end_matches('/'),
             b.handle
         );
-        let actor_url = format!("https://{}/actors/{}", b.host.trim_end_matches('/'), b.handle);
+        let actor_url = format!(
+            "https://{}/actors/{}",
+            b.host.trim_end_matches('/'),
+            b.handle
+        );
         Self {
             id: b.citizen_id_str,
             username: b.handle.to_owned(),
@@ -333,11 +337,7 @@ impl Status {
             sensitive: item.sensitive,
             spoiler_text: item.spoiler_text.clone().unwrap_or_default(),
             visibility: "public".into(),
-            media_attachments: item
-                .attachments
-                .iter()
-                .map(MastodonMedia::from)
-                .collect(),
+            media_attachments: item.attachments.iter().map(MastodonMedia::from).collect(),
             mentions: Vec::new(),
             tags: Vec::new(),
             card: None,
@@ -366,11 +366,7 @@ pub struct MastodonNotification {
 
 impl MastodonNotification {
     #[must_use]
-    pub fn from_dto(
-        n: &NotificationDto,
-        account: Account,
-        status: Option<Status>,
-    ) -> Self {
+    pub fn from_dto(n: &NotificationDto, account: Account, status: Option<Status>) -> Self {
         Self {
             id: n.id.to_string(),
             // Mastodon uses "favourite" and "reblog" — we already emit those
@@ -411,12 +407,7 @@ impl Instance {
     /// Build a static-ish description of the platform. Stats are supplied by
     /// the caller (short DB counts) so this can stay pure.
     #[must_use]
-    pub fn build(
-        host: &str,
-        user_count: i64,
-        status_count: i64,
-        contact: Option<Account>,
-    ) -> Self {
+    pub fn build(host: &str, user_count: i64, status_count: i64, contact: Option<Account>) -> Self {
         let host = host.trim_end_matches('/');
         Self {
             uri: host.to_owned(),

@@ -6,11 +6,11 @@
 //! municipios which actually have a mandate cadastrado.
 //!
 //! * `GET /api/v1/politicos/browse?sphere=&uf=&municipio=&q=&limit=&offset=`
-//!    Returns a page of mandates. The frontend enforces "you MUST pick sphere
-//!    (and UF/municipio when applicable) before we query" so the payload stays
-//!    small (default cap 200 rows / call).
+//!   Returns a page of mandates. The frontend enforces "you MUST pick sphere
+//!   (and UF/municipio when applicable) before we query" so the payload stays
+//!   small (default cap 200 rows / call).
 //! * `GET /api/v1/politicos/municipios?uf=X` — distinct list of municipios
-//!    inside a UF that have at least one municipal mandate.
+//!   inside a UF that have at least one municipal mandate.
 //!
 //! Runtime-checked sqlx (same pattern as `admin_ext.rs`).
 
@@ -19,8 +19,8 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
-use dsoc_app::AppState;
 use dsoc_api_contract::ApiResponse;
+use dsoc_app::AppState;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -127,12 +127,11 @@ async fn browse(State(state): State<AppState>, Query(p): Query<BrowseParams>) ->
     // Rule 2 — for municipal, both UF and município are mandatory (there
     // are ~5.5k municípios; without a municipio the response can be 500+
     // rows in some capitals but still bounded).
-    let uf_clean = p
-        .uf
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty() && s.len() == 2)
-        .map(str::to_ascii_uppercase);
+    let uf_clean =
+        p.uf.as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && s.len() == 2)
+            .map(str::to_ascii_uppercase);
     let municipio_clean = p
         .municipio
         .as_deref()
@@ -144,9 +143,7 @@ async fn browse(State(state): State<AppState>, Query(p): Query<BrowseParams>) ->
             return bad_request("Escolha um estado para ver políticos municipais.");
         }
         if municipio_clean.is_none() {
-            return bad_request(
-                "Escolha um município para ver políticos municipais.",
-            );
+            return bad_request("Escolha um município para ver políticos municipais.");
         }
     }
     let party_clean = p
@@ -161,12 +158,11 @@ async fn browse(State(state): State<AppState>, Query(p): Query<BrowseParams>) ->
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_owned);
-    let q_pat = p
-        .q
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(|s| format!("%{s}%"));
+    let q_pat =
+        p.q.as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| format!("%{s}%"));
     let limit = p.limit.unwrap_or(200).clamp(1, 500);
     let offset = p.offset.unwrap_or(0).max(0);
 
@@ -260,7 +256,19 @@ async fn browse(State(state): State<AppState>, Query(p): Query<BrowseParams>) ->
     let items: Vec<BrowseRow> = rows
         .into_iter()
         .map(
-            |(id, display_name, office, party, uf, municipio, house, sphere, avatar_key, is_candidate, has_verified_operator)| {
+            |(
+                id,
+                display_name,
+                office,
+                party,
+                uf,
+                municipio,
+                house,
+                sphere,
+                avatar_key,
+                is_candidate,
+                has_verified_operator,
+            )| {
                 BrowseRow {
                     id,
                     display_name,
@@ -304,10 +312,7 @@ struct MunicipioRow {
     count: i64,
 }
 
-async fn municipios(
-    State(state): State<AppState>,
-    Query(p): Query<MunicipiosParams>,
-) -> Response {
+async fn municipios(State(state): State<AppState>, Query(p): Query<MunicipiosParams>) -> Response {
     let uf = match p.uf.as_deref().map(str::trim).filter(|s| s.len() == 2) {
         Some(s) => s.to_ascii_uppercase(),
         None => return bad_request("Informe o parâmetro `uf` (UF de 2 letras)."),

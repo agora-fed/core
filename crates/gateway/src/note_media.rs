@@ -98,10 +98,9 @@ pub async fn upload_image(
     let storage = storage.ok_or(UploadError::StorageUnwired)?;
     // Decode + resize on the blocking pool: this is CPU-bound and we do not
     // want to stall the tokio reactor on a big JPEG.
-    let processed =
-        tokio::task::spawn_blocking(move || decode_and_shrink(&raw))
-            .await
-            .map_err(|_| UploadError::Runtime)??;
+    let processed = tokio::task::spawn_blocking(move || decode_and_shrink(&raw))
+        .await
+        .map_err(|_| UploadError::Runtime)??;
     // key: notes/YYYY/MM/{uuid}.png
     let id = Uuid::now_v7();
     let now = Utc::now();
@@ -225,11 +224,7 @@ pub async fn update_outbox_payload_with_attachments(
 
 /// Update the alt_text on a media row. Best-effort — trims + caps at 1500
 /// chars; a missing id is not an error. Runs from the note publish path.
-pub async fn update_alt_text(
-    db: &PgPool,
-    media_id: Uuid,
-    alt: &str,
-) -> Result<(), sqlx::Error> {
+pub async fn update_alt_text(db: &PgPool, media_id: Uuid, alt: &str) -> Result<(), sqlx::Error> {
     let trimmed: String = alt.trim().chars().take(1500).collect();
     sqlx::query(r"UPDATE media_attachment SET alt_text = $2 WHERE id = $1")
         .bind(media_id)
@@ -437,14 +432,9 @@ impl UploadError {
     #[must_use]
     pub fn user_message(&self) -> String {
         match self {
-            Self::TooLarge => format!(
-                "arquivo maior que {} MB",
-                MAX_UPLOAD_BYTES / (1024 * 1024)
-            ),
+            Self::TooLarge => format!("arquivo maior que {} MB", MAX_UPLOAD_BYTES / (1024 * 1024)),
             Self::NotAnImage => "envie uma imagem PNG, JPEG ou WebP".into(),
-            Self::StorageUnwired => {
-                "armazenamento não configurado no servidor".into()
-            }
+            Self::StorageUnwired => "armazenamento não configurado no servidor".into(),
             Self::Storage(_) => "não foi possível salvar o arquivo agora".into(),
             Self::Db(_) => "erro ao registrar a mídia".into(),
             Self::Runtime => "erro interno ao processar a imagem".into(),
@@ -467,12 +457,16 @@ fn decode_and_shrink(raw: &[u8]) -> Result<Processed, UploadError> {
     ) {
         return Err(UploadError::NotAnImage);
     }
-    let img = image::load_from_memory_with_format(raw, format)
-        .map_err(|_| UploadError::NotAnImage)?;
+    let img =
+        image::load_from_memory_with_format(raw, format).map_err(|_| UploadError::NotAnImage)?;
     // Keep aspect: only shrink if either dimension exceeds MAX_DIMENSION.
     let (w, h) = (img.width(), img.height());
     let shrunk = if w > MAX_DIMENSION || h > MAX_DIMENSION {
-        img.resize(MAX_DIMENSION, MAX_DIMENSION, image::imageops::FilterType::Lanczos3)
+        img.resize(
+            MAX_DIMENSION,
+            MAX_DIMENSION,
+            image::imageops::FilterType::Lanczos3,
+        )
     } else {
         img
     };
@@ -499,7 +493,8 @@ mod tests {
         let img: ImageBuffer<Rgba<u8>, _> =
             ImageBuffer::from_fn(w, h, |_, _| Rgba([20, 180, 90, 255]));
         let mut out = Vec::new();
-        img.write_to(&mut Cursor::new(&mut out), ImageFormat::Png).unwrap();
+        img.write_to(&mut Cursor::new(&mut out), ImageFormat::Png)
+            .unwrap();
         out
     }
 

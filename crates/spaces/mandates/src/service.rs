@@ -500,7 +500,9 @@ impl MandateRegistry {
         let pair = queries::find_mandate_by_operator(&self.db, org.as_uuid(), citizen.as_uuid())
             .await
             .map_err(map_sqlx)?;
-        let Some((row, level)) = pair else { return Ok(None) };
+        let Some((row, level)) = pair else {
+            return Ok(None);
+        };
         let has_invitation = queries::mandate_has_invitation(&self.db, row.id)
             .await
             .map_err(map_sqlx)?;

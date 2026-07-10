@@ -16,6 +16,7 @@
 //! Auto-delete:
 //! - `GET  /api/v1/me/preferences/auto_delete` → { days | null }.
 //! - `PUT  /api/v1/me/preferences/auto_delete` → { days }.
+//!
 //! (o worker de exclusão é chamado em worker.rs; nesta fatia só
 //! persistimos a preferência.)
 
@@ -36,12 +37,18 @@ use uuid::Uuid;
 pub fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/server/emojis", get(public_emojis))
-        .route("/admin/emojis", get(admin_list_emojis).post(admin_upload_emoji))
+        .route(
+            "/admin/emojis",
+            get(admin_list_emojis).post(admin_upload_emoji),
+        )
         .route(
             "/admin/emojis/{id}",
             patch(admin_toggle_emoji).delete(admin_delete_emoji),
         )
-        .route("/admin/hashtags/moderation", get(admin_list_hashtags).post(admin_upsert_hashtag))
+        .route(
+            "/admin/hashtags/moderation",
+            get(admin_list_hashtags).post(admin_upsert_hashtag),
+        )
         .route(
             "/admin/hashtags/moderation/{tag}",
             delete(admin_delete_hashtag),
@@ -79,14 +86,20 @@ async fn require_admin(headers: &HeaderMap, db: &PgPool) -> Result<Uuid, Respons
 fn unauthorized_resp() -> Response {
     (
         StatusCode::UNAUTHORIZED,
-        Json(ApiResponse::<()>::fail("unauthorized", "Autenticação necessária.")),
+        Json(ApiResponse::<()>::fail(
+            "unauthorized",
+            "Autenticação necessária.",
+        )),
     )
         .into_response()
 }
 fn forbidden_resp() -> Response {
     (
         StatusCode::FORBIDDEN,
-        Json(ApiResponse::<()>::fail("forbidden", "Acesso restrito a admins.")),
+        Json(ApiResponse::<()>::fail(
+            "forbidden",
+            "Acesso restrito a admins.",
+        )),
     )
         .into_response()
 }
@@ -192,10 +205,18 @@ async fn admin_upload_emoji(
     let Some(raw) = file else {
         return bad("envie o arquivo no campo `file`");
     };
-    let Some(sc) = shortcode.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty()) else {
+    let Some(sc) = shortcode
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+    else {
         return bad("envie shortcode");
     };
-    if !sc.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') || sc.len() < 2 || sc.len() > 32 {
+    if !sc
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        || sc.len() < 2
+        || sc.len() > 32
+    {
         return bad("shortcode inválido (2-32 chars: A-Z a-z 0-9 _ -)");
     }
     if raw.len() > MAX_EMOJI_BYTES {
@@ -238,9 +259,7 @@ async fn admin_upload_emoji(
             }))),
         )
             .into_response(),
-        Err(err) if err.to_string().contains("unique") => {
-            bad("shortcode já existe")
-        }
+        Err(err) if err.to_string().contains("unique") => bad("shortcode já existe"),
         Err(err) => storage_err(err),
     }
 }
@@ -253,9 +272,12 @@ fn process_emoji(raw: &[u8]) -> Result<Vec<u8>, &'static str> {
     ) {
         return Err("formato não suportado (PNG, JPG, WebP, GIF)");
     }
-    let img =
-        image::load_from_memory_with_format(raw, format).map_err(|_| "imagem inválida")?;
-    let shrunk = img.resize(EMOJI_SIZE, EMOJI_SIZE, image::imageops::FilterType::Lanczos3);
+    let img = image::load_from_memory_with_format(raw, format).map_err(|_| "imagem inválida")?;
+    let shrunk = img.resize(
+        EMOJI_SIZE,
+        EMOJI_SIZE,
+        image::imageops::FilterType::Lanczos3,
+    );
     let mut buf: Vec<u8> = Vec::with_capacity(64 * 1024);
     shrunk
         .write_to(&mut Cursor::new(&mut buf), ImageFormat::Png)
@@ -347,17 +369,17 @@ async fn admin_upsert_hashtag(
     if !matches!(body.state.as_str(), "banned" | "promoted") {
         return bad("state deve ser banned ou promoted");
     }
-    let tag = body
-        .tag
-        .trim()
-        .trim_start_matches('#')
-        .to_ascii_lowercase();
+    let tag = body.tag.trim().trim_start_matches('#').to_ascii_lowercase();
     if tag.is_empty() || tag.len() > 60 {
         return bad("tag inválida");
     }
     let reason = body.reason.and_then(|s| {
         let t = s.trim().to_owned();
-        if t.is_empty() { None } else { Some(t) }
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
     });
     let res = sqlx::query(
         r"INSERT INTO hashtag_moderation (tag, state, reason)
@@ -404,14 +426,13 @@ async fn get_auto_delete(State(state): State<AppState>, headers: HeaderMap) -> R
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized_resp();
     };
-    let days: Option<i32> = sqlx::query_scalar(
-        r"SELECT auto_delete_notes_older_than_days FROM citizen WHERE id = $1",
-    )
-    .bind(citizen)
-    .fetch_optional(&state.db)
-    .await
-    .unwrap_or(None)
-    .flatten();
+    let days: Option<i32> =
+        sqlx::query_scalar(r"SELECT auto_delete_notes_older_than_days FROM citizen WHERE id = $1")
+            .bind(citizen)
+            .fetch_optional(&state.db)
+            .await
+            .unwrap_or(None)
+            .flatten();
     (
         StatusCode::OK,
         Json(ApiResponse::ok(AutoDeleteDto { days })),
@@ -432,12 +453,10 @@ async fn put_auto_delete(
             return bad("days entre 7 e 3650");
         }
     }
-    let _ = sqlx::query(
-        r"UPDATE citizen SET auto_delete_notes_older_than_days = $2 WHERE id = $1",
-    )
-    .bind(citizen)
-    .bind(body.days)
-    .execute(&state.db)
-    .await;
+    let _ = sqlx::query(r"UPDATE citizen SET auto_delete_notes_older_than_days = $2 WHERE id = $1")
+        .bind(citizen)
+        .bind(body.days)
+        .execute(&state.db)
+        .await;
     ok_json()
 }

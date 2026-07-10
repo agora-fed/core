@@ -73,14 +73,20 @@ async fn require_admin(headers: &HeaderMap, db: &PgPool) -> Result<Uuid, Respons
 fn unauthorized_resp() -> Response {
     (
         StatusCode::UNAUTHORIZED,
-        Json(ApiResponse::<()>::fail("unauthorized", "Autenticação necessária.")),
+        Json(ApiResponse::<()>::fail(
+            "unauthorized",
+            "Autenticação necessária.",
+        )),
     )
         .into_response()
 }
 fn forbidden_resp() -> Response {
     (
         StatusCode::FORBIDDEN,
-        Json(ApiResponse::<()>::fail("forbidden", "Acesso restrito a admins.")),
+        Json(ApiResponse::<()>::fail(
+            "forbidden",
+            "Acesso restrito a admins.",
+        )),
     )
         .into_response()
 }
@@ -134,7 +140,11 @@ async fn list_email_domains(State(state): State<AppState>, headers: HeaderMap) -
 }
 
 #[derive(Debug, Deserialize)]
-struct DomainBody { domain: String, #[serde(default)] reason: Option<String> }
+struct DomainBody {
+    domain: String,
+    #[serde(default)]
+    reason: Option<String>,
+}
 
 async fn add_email_domain(
     State(state): State<AppState>,
@@ -151,7 +161,11 @@ async fn add_email_domain(
     }
     let reason = body.reason.and_then(|s| {
         let t = s.trim().to_owned();
-        if t.is_empty() { None } else { Some(t) }
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
     });
     let res = sqlx::query(
         r"INSERT INTO email_domain_block (id, domain, reason, created_by)
@@ -247,7 +261,11 @@ async fn add_ip_rule(
     }
     let reason = body.reason.and_then(|s| {
         let t = s.trim().to_owned();
-        if t.is_empty() { None } else { Some(t) }
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
     });
     let res = sqlx::query(
         r"INSERT INTO ip_rule (id, cidr, scope, state, reason, created_by)

@@ -97,7 +97,10 @@ pub fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/admin/email-templates", get(list))
         .route("/admin/email-templates/{key}", patch(update))
-        .route("/admin/email-templates/{key}/preview", axum::routing::post(preview))
+        .route(
+            "/admin/email-templates/{key}/preview",
+            axum::routing::post(preview),
+        )
         // GET /me/admin-status — usado pelo AuthMenu no front pra saber se
         // mostra o link "Administração" no dropdown do perfil. Anônimo → 200
         // com `{is_admin: false}` (não vaza sinal). Não é aqui só porque o
@@ -159,7 +162,10 @@ async fn require_admin(headers: &HeaderMap, db: &PgPool) -> std::result::Result<
         .ok_or_else(|| {
             (
                 StatusCode::UNAUTHORIZED,
-                Json(ApiResponse::<()>::fail("unauthorized", "Autenticação necessária.")),
+                Json(ApiResponse::<()>::fail(
+                    "unauthorized",
+                    "Autenticação necessária.",
+                )),
             )
                 .into_response()
         })?;
@@ -178,7 +184,10 @@ async fn require_admin(headers: &HeaderMap, db: &PgPool) -> std::result::Result<
     if !matches!(is_admin, Some(true)) {
         return Err((
             StatusCode::FORBIDDEN,
-            Json(ApiResponse::<()>::fail("forbidden", "Acesso restrito a admins.")),
+            Json(ApiResponse::<()>::fail(
+                "forbidden",
+                "Acesso restrito a admins.",
+            )),
         )
             .into_response());
     }
@@ -306,9 +315,10 @@ async fn preview(
         return resp;
     }
     // Se a UI passou subject/body draft, renderiza isso. Senão, lê do DB.
-    let (subject_tpl, body_tpl) = if body.subject.is_some() || body.body.is_some() {
-        // Precisamos dos defaults pra saber o que renderizar quando o campo é None.
-        match sqlx::query_as::<_, TemplateRow>(
+    let (subject_tpl, body_tpl) =
+        if body.subject.is_some() || body.body.is_some() {
+            // Precisamos dos defaults pra saber o que renderizar quando o campo é None.
+            match sqlx::query_as::<_, TemplateRow>(
             "SELECT key, label, subject, body, default_subject, default_body, variables, updated_at
                FROM email_template WHERE key = $1",
         )
@@ -328,8 +338,8 @@ async fn preview(
                     .into_response();
             }
         }
-    } else {
-        match sqlx::query_as::<_, TemplateRow>(
+        } else {
+            match sqlx::query_as::<_, TemplateRow>(
             "SELECT key, label, subject, body, default_subject, default_body, variables, updated_at
                FROM email_template WHERE key = $1",
         )
@@ -349,7 +359,7 @@ async fn preview(
                     .into_response();
             }
         }
-    };
+        };
     let ctx: HashMap<&str, String> = body
         .context
         .iter()

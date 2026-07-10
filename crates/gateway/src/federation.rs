@@ -19,13 +19,14 @@
 
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
 use axum::body::Bytes;
 use axum::extract::{Json as AxumJson, Path, Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use chrono::{DateTime, Utc};
+use dsoc_api_contract::ApiResponse;
 use dsoc_app::{AppState, CallerId};
 use dsoc_auth::profile::ProfileService;
 use dsoc_core::ids::{CitizenId, OrgId};
@@ -34,7 +35,6 @@ use dsoc_federation::{
     actor_id, build_signing_string, sign_with_pem, signature_header_value, Actor, ActorRole,
     RsaSha256Verifier,
 };
-use dsoc_api_contract::ApiResponse;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -63,7 +63,10 @@ pub fn public_routes(state: AppState) -> Router<()> {
         .route("/.well-known/webfinger", get(webfinger_handler))
         .route("/actors/{handle}", get(actor_handler))
         .route("/actors/{handle}/objects/{id}", get(object_handler))
-        .route("/actors/{handle}/inbox", post(inbox_post).get(inbox_get_stub))
+        .route(
+            "/actors/{handle}/inbox",
+            post(inbox_post).get(inbox_get_stub),
+        )
         .route("/actors/{handle}/outbox", get(outbox_get_populated))
         .route("/actors/{handle}/followers", get(followers_get))
         .route("/actors/{handle}/following", get(following_get))
@@ -84,7 +87,12 @@ pub fn client_routes(state: AppState) -> Router<()> {
         .route("/me/social/following", get(my_following_list))
         .route("/me/social/followers", get(my_followers_list))
         .route("/me/bulk_follow", post(bulk_follow))
-        .route("/me/notes", post(post_my_note).delete(delete_my_note).patch(patch_my_note))
+        .route(
+            "/me/notes",
+            post(post_my_note)
+                .delete(delete_my_note)
+                .patch(patch_my_note),
+        )
         .route("/me/feed", get(get_my_feed))
         .route("/me/like", post(toggle_like))
         .route("/me/boost", post(toggle_boost))
@@ -189,17 +197,11 @@ async fn object_handler(
         };
     }
     // Browser: HTML com OG tags + redirect pra /publicacao/?uri=<object_url>.
-    let content_html = note
-        .get("content")
-        .and_then(Value::as_str)
-        .unwrap_or("");
+    let content_html = note.get("content").and_then(Value::as_str).unwrap_or("");
     let plain = strip_html(content_html);
     let title = truncate_chars(&plain, 80);
     let desc = truncate_chars(&plain, 200);
-    let published = note
-        .get("published")
-        .and_then(Value::as_str)
-        .unwrap_or("");
+    let published = note.get("published").and_then(Value::as_str).unwrap_or("");
     // Avatar do autor pra og:image (opcional; a card ainda aparece sem).
     let svc = ProfileService::from_state(&state);
     let org = OrgId::from_uuid(DEFAULT_ORG_UUID);
@@ -209,10 +211,7 @@ async fn object_handler(
         .ok()
         .and_then(|p| p.avatar_url)
         .map(|u| absolutize(&host, &u));
-    let publicacao_url = format!(
-        "/publicacao/?uri={}",
-        urlencode(&object_url)
-    );
+    let publicacao_url = format!("/publicacao/?uri={}", urlencode(&object_url));
     let og_title = escape_html(&format!("@{handle} · {title}"));
     let og_desc = escape_html(&desc);
     let canon = escape_html(&object_url);
@@ -286,8 +285,7 @@ async fn actor_handler(
         .get(header::ACCEPT)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|accept| {
-            accept.contains("application/activity+json")
-                || accept.contains("application/ld+json")
+            accept.contains("application/activity+json") || accept.contains("application/ld+json")
         });
     if !wants_activitypub {
         let location = format!("/perfil/?u={handle}");
@@ -324,17 +322,12 @@ async fn actor_handler(
     // Human-readable profile URL (Mastodon's "view profile" link) — points at
     // the SPA route, distinct from the JSON-LD id.
     let profile_url = format!("https://{host}/perfil/?u={handle}");
-    let actor: Actor = Actor::person(
-        &host,
-        &handle,
-        Some(ActorRole::Voter),
-        profile.display_name,
-    )
-    .with_summary(summary_html)
-    .with_url(Some(profile_url))
-    .with_published(Some(profile.created_at.to_rfc3339()))
-    .with_images(icon_url, image_url)
-    .with_public_key(PublicKey::main_key(&actor_url, public_pem));
+    let actor: Actor = Actor::person(&host, &handle, Some(ActorRole::Voter), profile.display_name)
+        .with_summary(summary_html)
+        .with_url(Some(profile_url))
+        .with_published(Some(profile.created_at.to_rfc3339()))
+        .with_images(icon_url, image_url)
+        .with_public_key(PublicKey::main_key(&actor_url, public_pem));
     match serde_json::to_string(&actor) {
         Ok(body) => ([(header::CONTENT_TYPE, ACTIVITY_JSON)], body).into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -368,10 +361,7 @@ async fn inbox_post(
     let citizen = CitizenId::from_uuid(profile.citizen_id);
 
     // --- 1. Parse Signature header ---------------------------------------------------------
-    let sig_value = match headers
-        .get("signature")
-        .and_then(|v| v.to_str().ok())
-    {
+    let sig_value = match headers.get("signature").and_then(|v| v.to_str().ok()) {
         Some(v) => v,
         None => {
             tracing::warn!("inbox POST without Signature header");
@@ -387,7 +377,12 @@ async fn inbox_post(
     };
 
     // --- 2. Fetch the signer's Actor doc to get their publicKey ----------------------------
-    let signer_actor_url = sig.key_id.split('#').next().unwrap_or(&sig.key_id).to_owned();
+    let signer_actor_url = sig
+        .key_id
+        .split('#')
+        .next()
+        .unwrap_or(&sig.key_id)
+        .to_owned();
     // Server-wide block (migration 0508): se o host do signer está em
     // server_domain_block com severity='suspend', rejeitamos a atividade
     // ANTES de qualquer fetch. Silence-only não bloqueia entrega — só
@@ -435,7 +430,9 @@ async fn inbox_post(
     let header_pairs: Vec<(String, String)> = headers
         .iter()
         .filter_map(|(n, v)| {
-            v.to_str().ok().map(|s| (n.as_str().to_owned(), s.to_owned()))
+            v.to_str()
+                .ok()
+                .map(|s| (n.as_str().to_owned(), s.to_owned()))
         })
         .collect();
     let covered: Vec<&str> = sig.headers.iter().map(String::as_str).collect();
@@ -548,9 +545,7 @@ async fn inbox_post(
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }
         };
-        if let Err(err) =
-            deliver_signed(&me_url, &private_pem, &remote_inbox, &accept).await
-        {
+        if let Err(err) = deliver_signed(&me_url, &private_pem, &remote_inbox, &accept).await {
             tracing::warn!(error = ?err, target = %remote_inbox, "Accept delivery failed; will retry on next inbound");
             // Don't fail the inbox call — Mastodon will retry the Follow, and our idempotency
             // table will let us retry the Accept. The follow row stays unaccepted until then.
@@ -580,7 +575,15 @@ async fn inbox_post(
         handle_inbox_create(&state, &signer_actor, &signer_actor_url, &activity).await;
     } else if kind == "Like" || kind == "Announce" {
         // Remote reaction over one of OUR objects → upsert (re-delivery is a no-op).
-        handle_inbox_reaction(&state, &signer_actor, &signer_actor_url, kind, &activity_id, &activity).await;
+        handle_inbox_reaction(
+            &state,
+            &signer_actor,
+            &signer_actor_url,
+            kind,
+            &activity_id,
+            &activity,
+        )
+        .await;
     } else if kind == "Delete" {
         // Remote author (or their instance) deleted a Note. Soft-delete the row on our side
         // so the feed drops it and the thread view shows a tombstone. Signer-scoped: only
@@ -608,9 +611,13 @@ async fn inbox_post(
             if inner_short == "Note" {
                 if let Some(uri) = inner.get("id").and_then(Value::as_str) {
                     let raw = inner.get("content").and_then(Value::as_str).unwrap_or("");
-                    let capped = federation_feed::truncate_bytes(raw, federation_feed::CONTENT_MAX_BYTES);
+                    let capped =
+                        federation_feed::truncate_bytes(raw, federation_feed::CONTENT_MAX_BYTES);
                     let content = federation_feed::sanitize_html(capped);
-                    let sensitive = inner.get("sensitive").and_then(Value::as_bool).unwrap_or(false);
+                    let sensitive = inner
+                        .get("sensitive")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false);
                     let spoiler = inner
                         .get("summary")
                         .and_then(Value::as_str)
@@ -662,7 +669,11 @@ async fn inbox_post(
         } else if (inner_kind == "Like" || inner_kind == "Announce")
             && (inner_actor.is_empty() || inner_actor == signer_actor_url)
         {
-            let db_kind = if inner_kind == "Like" { "like" } else { "boost" };
+            let db_kind = if inner_kind == "Like" {
+                "like"
+            } else {
+                "boost"
+            };
             let inner_id = activity
                 .get("object")
                 .and_then(|o| o.get("id"))
@@ -695,7 +706,11 @@ async fn inbox_post(
                 }
             }
         } else {
-            tracing::debug!(inner_kind, inner_actor, "ignored Undo for unsupported type or actor mismatch");
+            tracing::debug!(
+                inner_kind,
+                inner_actor,
+                "ignored Undo for unsupported type or actor mismatch"
+            );
         }
     } else {
         tracing::debug!(kind, "ignored unhandled activity type");
@@ -903,7 +918,9 @@ const OUTBOX_CACHE_TTL_SECS: u64 = 60;
 /// Cache map: actor_url → (fetched_at, notes). Grows unbounded in practice but the working
 /// set is tiny (visited remote actors). A proper LRU is a future concern.
 static OUTBOX_CACHE: std::sync::LazyLock<
-    tokio::sync::RwLock<std::collections::HashMap<String, (std::time::Instant, Vec<RemoteNoteDto>)>>,
+    tokio::sync::RwLock<
+        std::collections::HashMap<String, (std::time::Instant, Vec<RemoteNoteDto>)>,
+    >,
 > = std::sync::LazyLock::new(|| tokio::sync::RwLock::new(std::collections::HashMap::new()));
 
 async fn fetch_actor_outbox(actor_url: &str) -> Result<Vec<RemoteNoteDto>, String> {
@@ -1159,7 +1176,12 @@ async fn follow_remote(
         return upstream_error("não consegui entregar o pedido de seguir");
     }
     if let Err(err) = svc
-        .record_outbound_follow(caller.citizen, &body.remote_actor_url, &remote_inbox, &activity_id)
+        .record_outbound_follow(
+            caller.citizen,
+            &body.remote_actor_url,
+            &remote_inbox,
+            &activity_id,
+        )
         .await
     {
         tracing::error!(error = ?err, "persist outbound follow failed");
@@ -1248,7 +1270,8 @@ async fn post_my_note(
             if remaining > 0 {
                 let mins = ((remaining as f64) / 60.0).ceil() as i64;
                 let msg = if mins <= 1 {
-                    "aguarde 1 minuto pra publicar de novo (limite de 1 publicação a cada 15 min)".to_owned()
+                    "aguarde 1 minuto pra publicar de novo (limite de 1 publicação a cada 15 min)"
+                        .to_owned()
                 } else {
                     format!(
                         "aguarde {} min pra publicar de novo (limite de 1 publicação a cada 15 min)",
@@ -1277,9 +1300,7 @@ async fn post_my_note(
     {
         Ok(p) => p,
         Err(_) => {
-            return client_error(
-                "torne seu perfil público antes de publicar (em Configurações)",
-            );
+            return client_error("torne seu perfil público antes de publicar (em Configurações)");
         }
     };
     // Make sure the keypair exists so the worker can sign — first publish triggers lazy gen.
@@ -1311,25 +1332,26 @@ async fn post_my_note(
             // 0.18.0-gamma: update alt_text (best-effort, per-id, only when the
             // caller sent a non-empty value) then bind media to the note.
             for (i, mid) in body.media_ids.iter().enumerate() {
-                if let Some(alt) = body.media_alts.get(i).map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                if let Some(alt) = body
+                    .media_alts
+                    .get(i)
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                {
                     let _ = note_media::update_alt_text(&state.db, *mid, alt).await;
                 }
             }
             if !body.media_ids.is_empty() {
-                if let Err(err) = note_media::attach_to_note(
-                    &state.db,
-                    &object_id,
-                    &body.media_ids,
-                )
-                .await
+                if let Err(err) =
+                    note_media::attach_to_note(&state.db, &object_id, &body.media_ids).await
                 {
                     tracing::warn!(error = ?err, "failed to attach media to note");
                 }
                 // 0.18.0-rc1: rewrite the outbox payload so the delivery worker
                 // ships `attachment[]` on the wire — federation instances render
                 // the images we just uploaded.
-                let media_base = std::env::var("MEDIA_BASE_URL")
-                    .unwrap_or_else(|_| "/media".to_owned());
+                let media_base =
+                    std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
                 if let Err(err) = note_media::update_outbox_payload_with_attachments(
                     &state.db,
                     &activity_id,
@@ -1367,7 +1389,10 @@ async fn post_my_note(
             // (b) mention-to-local: for each extracted mention whose actor URL points at
             //     our origin, ping the matching citizen. Skip self-notifications.
             let preview = notifications::preview_from_html(&body.content);
-            let sender_handle = me.handle.clone().unwrap_or_else(|| me.public_handle.clone());
+            let sender_handle = me
+                .handle
+                .clone()
+                .unwrap_or_else(|| me.public_handle.clone());
             let sender_display = me.display_name.clone();
             let sender_avatar = me.avatar_url.clone();
             if let Some(reply_uri) = body.in_reply_to_uri.as_deref().filter(|s| !s.is_empty()) {
@@ -1394,13 +1419,12 @@ async fn post_my_note(
             }
             for m in dsoc_federation::extract_mentions(&body.content) {
                 let target_url = m.best_actor_url(&public_origin);
-                if let Ok(Some(mentioned_id)) =
-                    notifications::find_local_citizen_by_actor_url(
-                        &state.db,
-                        &target_url,
-                        &public_origin,
-                    )
-                    .await
+                if let Ok(Some(mentioned_id)) = notifications::find_local_citizen_by_actor_url(
+                    &state.db,
+                    &target_url,
+                    &public_origin,
+                )
+                .await
                 {
                     if mentioned_id != caller.citizen.as_uuid() {
                         let _ = notifications::insert(
@@ -1519,13 +1543,12 @@ async fn delete_my_note(
     };
     let activity_id = row.0;
     let now = chrono::Utc::now();
-    if let Err(err) = sqlx::query(
-        r"UPDATE federation_outbox_entry SET deleted_at = $2 WHERE activity_id = $1",
-    )
-    .bind(&activity_id)
-    .bind(now)
-    .execute(&state.db)
-    .await
+    if let Err(err) =
+        sqlx::query(r"UPDATE federation_outbox_entry SET deleted_at = $2 WHERE activity_id = $1")
+            .bind(&activity_id)
+            .bind(now)
+            .execute(&state.db)
+            .await
     {
         tracing::error!(error = ?err, "delete-note soft-delete failed");
         return server_error();
@@ -1628,7 +1651,10 @@ async fn patch_my_note(
     // Rewrite the inner Note object in-place.
     if let Some(object) = payload.get_mut("object").and_then(|o| o.as_object_mut()) {
         object.insert("content".into(), serde_json::Value::String(content.clone()));
-        object.insert("updated".into(), serde_json::Value::String(now.to_rfc3339()));
+        object.insert(
+            "updated".into(),
+            serde_json::Value::String(now.to_rfc3339()),
+        );
         if body.sensitive {
             object.insert("sensitive".into(), serde_json::Value::Bool(true));
         } else {
@@ -1661,7 +1687,10 @@ async fn patch_my_note(
     let handle_now = handle_of(&svc, caller.citizen).await;
     let po = public_origin();
     let actor_url = format!("{}/actors/{}", po.trim_end_matches('/'), handle_now);
-    let inner_object = payload.get("object").cloned().unwrap_or(serde_json::Value::Null);
+    let inner_object = payload
+        .get("object")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
     let update = json!({
         "@context": "https://www.w3.org/ns/activitystreams",
         "id": format!("{actor_url}/activities/update-{}", uuid::Uuid::now_v7()),
@@ -1704,10 +1733,7 @@ async fn patch_my_note(
 /// document and pick up avatar/cover/summary/name changes. Otherwise their
 /// cache stays stale until it expires (~24h in Mastodon). Returns
 /// `{ delivered_to: N }`.
-async fn refresh_my_actor(
-    State(state): State<AppState>,
-    caller: CallerId,
-) -> Response {
+async fn refresh_my_actor(State(state): State<AppState>, caller: CallerId) -> Response {
     let svc = ProfileService::from_state(&state);
     let handle_now = handle_of(&svc, caller.citizen).await;
     let profile = match svc.find_public_by_handle(caller.org, &handle_now).await {
@@ -1716,8 +1742,7 @@ async fn refresh_my_actor(
             return client_error("torne seu perfil público antes de propagar");
         }
     };
-    let host = std::env::var("PUBLIC_HOST")
-        .unwrap_or_else(|_| "democracia.social.br".to_owned());
+    let host = std::env::var("PUBLIC_HOST").unwrap_or_else(|_| "democracia.social.br".to_owned());
     let actor_url = actor_id(&host, &handle_now);
     // Build the fresh Actor doc identical to what /actors/{handle} returns.
     let public_pem = match svc.ensure_actor_public_key(caller.citizen).await {
@@ -1904,13 +1929,7 @@ async fn get_my_notifications(
 ) -> Response {
     let limit = query.limit.unwrap_or(30).clamp(1, 50);
     let offset = query.offset.unwrap_or(0).max(0);
-    match notifications::list_for_citizen(
-        &state.db,
-        caller.citizen.as_uuid(),
-        limit,
-        offset,
-    )
-    .await
+    match notifications::list_for_citizen(&state.db, caller.citizen.as_uuid(), limit, offset).await
     {
         Ok(items) => {
             let unread = notifications::unread_count(&state.db, caller.citizen.as_uuid())
@@ -1933,12 +1952,13 @@ async fn get_my_notifications(
 }
 
 /// `POST /api/v1/me/notifications/clear` — mark every unread notification as read.
-async fn clear_my_notifications(
-    State(state): State<AppState>,
-    caller: CallerId,
-) -> Response {
+async fn clear_my_notifications(State(state): State<AppState>, caller: CallerId) -> Response {
     match notifications::mark_all_read(&state.db, caller.citizen.as_uuid()).await {
-        Ok(n) => (StatusCode::OK, Json(ApiResponse::ok(json!({ "cleared": n })))).into_response(),
+        Ok(n) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(json!({ "cleared": n }))),
+        )
+            .into_response(),
         Err(err) => {
             tracing::error!(error = ?err, "notifications clear failed");
             server_error()
@@ -1974,14 +1994,8 @@ async fn get_hashtag_timeline(
         return client_error("hashtag inválida");
     }
     let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
-    match federation_feed::list_hashtag_timeline(
-        &state.db,
-        &normalized,
-        &media_base,
-        limit,
-        offset,
-    )
-    .await
+    match federation_feed::list_hashtag_timeline(&state.db, &normalized, &media_base, limit, offset)
+        .await
     {
         Ok(mut items) => {
             federation_feed::enrich_with_media(&state.db, &mut items, &media_base).await;
@@ -2043,16 +2057,9 @@ async fn search_mentions(
     Query(query): Query<SearchQuery>,
 ) -> Response {
     let limit = query.limit.unwrap_or(8).clamp(1, 20);
-    let media_base =
-        std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
-    match discovery::mentions_matching(
-        &state.db,
-        &query.q,
-        &public_origin(),
-        &media_base,
-        limit,
-    )
-    .await
+    let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+    match discovery::mentions_matching(&state.db, &query.q, &public_origin(), &media_base, limit)
+        .await
     {
         Ok(items) => (
             StatusCode::OK,
@@ -2067,21 +2074,16 @@ async fn search_mentions(
 }
 
 /// `GET /api/v1/search?q=` — unified search: accounts + hashtags + notes.
-async fn search_all(
-    State(state): State<AppState>,
-    Query(query): Query<SearchQuery>,
-) -> Response {
+async fn search_all(State(state): State<AppState>, Query(query): Query<SearchQuery>) -> Response {
     let per = query.limit.unwrap_or(10).clamp(1, 30);
-    let media_base =
-        std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+    let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
     let po = public_origin();
     let hashtags = discovery::hashtags_matching(&state.db, &query.q, per)
         .await
         .unwrap_or_default();
-    let accounts =
-        discovery::mentions_matching(&state.db, &query.q, &po, &media_base, per)
-            .await
-            .unwrap_or_default();
+    let accounts = discovery::mentions_matching(&state.db, &query.q, &po, &media_base, per)
+        .await
+        .unwrap_or_default();
     let notes = discovery::notes_matching(&state.db, &query.q, &media_base, per)
         .await
         .unwrap_or_default();
@@ -2122,10 +2124,8 @@ async fn directory_endpoint(
 ) -> Response {
     let limit = query.limit.unwrap_or(24).clamp(1, 60);
     let offset = query.offset.unwrap_or(0).max(0);
-    let media_base =
-        std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
-    match discovery::directory(&state.db, &public_origin(), &media_base, limit, offset).await
-    {
+    let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+    match discovery::directory(&state.db, &public_origin(), &media_base, limit, offset).await {
         Ok(items) => (
             StatusCode::OK,
             Json(ApiResponse::ok(json!({ "items": items }))),
@@ -2146,8 +2146,7 @@ async fn follow_suggestions_endpoint(
     Query(query): Query<PageQuery>,
 ) -> Response {
     let limit = query.limit.unwrap_or(12).clamp(1, 30);
-    let media_base =
-        std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
+    let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
     match discovery::follow_suggestions(
         &state.db,
         caller.citizen.as_uuid(),
@@ -2180,7 +2179,11 @@ async fn viewer_actor_url_of(state: &AppState, caller: &CallerId) -> Option<Stri
         return None;
     }
     let po = public_origin();
-    Some(format!("{}/actors/{}", po.trim_end_matches('/'), handle_now))
+    Some(format!(
+        "{}/actors/{}",
+        po.trim_end_matches('/'),
+        handle_now
+    ))
 }
 
 /// Query for `GET /api/v1/notes/context?uri=`.
@@ -2327,15 +2330,20 @@ async fn toggle_reaction(
     }
     let db_kind = kind.db_kind();
     let citizen = caller.citizen.as_uuid();
-    let existing =
-        match federation_feed::find_local_reaction(&state.db, citizen, &object_uri, db_kind).await
-        {
-            Ok(v) => v,
-            Err(err) => {
-                tracing::error!(error = ?err, "reaction lookup failed");
-                return server_error();
-            }
-        };
+    let existing = match federation_feed::find_local_reaction(
+        &state.db,
+        citizen,
+        &object_uri,
+        db_kind,
+    )
+    .await
+    {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::error!(error = ?err, "reaction lookup failed");
+            return server_error();
+        }
+    };
     let active = if let Some(prev_activity_id) = existing {
         // Toggle OFF.
         if let Err(err) =
@@ -2443,7 +2451,9 @@ async fn deliver_reaction(
         .map_err(|e| FederationError::Http(format!("key: {e}")))?;
     let remote_actor = fetch_remote_actor(&author_actor_url).await?;
     let Some(inbox) = remote_actor.get("inbox").and_then(Value::as_str) else {
-        return Err(FederationError::Http("remote author has no inbox".to_owned()));
+        return Err(FederationError::Http(
+            "remote author has no inbox".to_owned(),
+        ));
     };
     let activity = match action {
         ReactionDelivery::Set { activity_id } => json!({
@@ -2522,9 +2532,7 @@ async fn handle_inbox_create(
             })
         })
         .unwrap_or(false);
-    let replies_to_us = if let Some(reply_uri) =
-        object.get("inReplyTo").and_then(Value::as_str)
-    {
+    let replies_to_us = if let Some(reply_uri) = object.get("inReplyTo").and_then(Value::as_str) {
         federation_feed::is_our_object(&state.db, reply_uri)
             .await
             .unwrap_or(false)
@@ -2610,8 +2618,7 @@ async fn handle_inbox_create(
     let preview = notifications::preview_from_html(&content);
     let src_handle = remote_handle_of(signer_actor, signer_actor_url);
     if let Some(reply_uri) = in_reply_to {
-        if let Ok(Some(owner_id)) =
-            notifications::find_owner_of_object(&state.db, reply_uri).await
+        if let Ok(Some(owner_id)) = notifications::find_owner_of_object(&state.db, reply_uri).await
         {
             let _ = notifications::insert(
                 &state.db,
@@ -2851,7 +2858,11 @@ async fn handle_inbox_reaction(
     }
     tracing::info!(remote = %signer_actor_url, db_kind, object_uri = %object_uri, "remote reaction stored");
     // 0.18.0-beta: user-facing notification for the object's owner.
-    let notif_kind = if kind == "Like" { "favourite" } else { "reblog" };
+    let notif_kind = if kind == "Like" {
+        "favourite"
+    } else {
+        "reblog"
+    };
     if let Ok(Some(owner_id)) = notifications::find_owner_of_object(&state.db, &object_uri).await {
         let handle = remote_handle_of(signer_actor, signer_actor_url);
         let display_name = signer_actor.get("name").and_then(Value::as_str);
@@ -2932,10 +2943,7 @@ pub(crate) async fn handle_of(svc: &ProfileService, citizen: CitizenId) -> Strin
 /// Reduce a fetched remote Actor JSON to the fields the UI needs. Strips raw HTML, picks the
 /// first usable avatar URL, and falls back gracefully when fields are absent.
 fn sanitize_actor(actor: Value, actor_url: &str, acct: &str) -> RemoteActorDto {
-    let name = actor
-        .get("name")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
+    let name = actor.get("name").and_then(Value::as_str).map(str::to_owned);
     let preferred_username = actor
         .get("preferredUsername")
         .and_then(Value::as_str)
@@ -3084,8 +3092,7 @@ pub(crate) async fn deliver_signed(
         .map_err(|e| FederationError::Http(format!("serialize: {e}")))?;
     let digest_b64 = {
         use sha2::Digest;
-        base64::engine::general_purpose::STANDARD
-            .encode(sha2::Sha256::digest(&body))
+        base64::engine::general_purpose::STANDARD.encode(sha2::Sha256::digest(&body))
     };
     let digest_value = format!("SHA-256={digest_b64}");
     let date = chrono::Utc::now()
@@ -3175,7 +3182,9 @@ fn host_from(headers: &HeaderMap) -> Option<String> {
 /// `https://host/@user` e `https://host/actors/user`.
 fn hint_handle_from_actor_url(u: &str) -> Option<String> {
     let host = host_from_url(u)?;
-    let rest = u.strip_prefix("https://").or_else(|| u.strip_prefix("http://"))?;
+    let rest = u
+        .strip_prefix("https://")
+        .or_else(|| u.strip_prefix("http://"))?;
     let path_start = rest.find('/')?;
     let path = &rest[path_start..];
     // Extrair último segmento do path
@@ -3202,17 +3211,11 @@ struct SocialLinkDto {
     accepted: bool,
 }
 
-async fn my_following_list(
-    State(state): State<AppState>,
-    caller: CallerId,
-) -> Response {
+async fn my_following_list(State(state): State<AppState>, caller: CallerId) -> Response {
     social_list(&state, caller.citizen.as_uuid(), "outbound").await
 }
 
-async fn my_followers_list(
-    State(state): State<AppState>,
-    caller: CallerId,
-) -> Response {
+async fn my_followers_list(State(state): State<AppState>, caller: CallerId) -> Response {
     social_list(&state, caller.citizen.as_uuid(), "inbound").await
 }
 
@@ -3245,7 +3248,11 @@ async fn bulk_follow(
         .into_iter()
         .filter_map(|s| {
             let t = s.trim().to_owned();
-            if t.is_empty() { None } else { Some(t) }
+            if t.is_empty() {
+                None
+            } else {
+                Some(t)
+            }
         })
         .take(200)
         .collect();
@@ -3320,7 +3327,7 @@ async fn bulk_follow(
         // Dispara o mesmo caminho do follow_remote via chamada interna helper.
         // Simplificado: só valida se resolve e insere pending row; delivery
         // real usa o worker. Pra minimizar duplicação, reusa a rota:
-        match do_follow_remote(&state, caller.clone(), &actor_url).await {
+        match do_follow_remote(&state, caller, &actor_url).await {
             Ok(()) => result.followed += 1,
             Err(msg) => {
                 result.failed += 1;
@@ -3428,11 +3435,21 @@ async fn social_list(state: &AppState, citizen: uuid::Uuid, direction: &str) -> 
 /// Extract the host from `https://host[:port]/…` sem depender do crate `url`.
 /// Retorna None se não for uma URL http(s) reconhecível.
 fn host_from_url(u: &str) -> Option<String> {
-    let rest = u.strip_prefix("https://").or_else(|| u.strip_prefix("http://"))?;
+    let rest = u
+        .strip_prefix("https://")
+        .or_else(|| u.strip_prefix("http://"))?;
     let end = rest.find('/').unwrap_or(rest.len());
     let hostport = &rest[..end];
-    let host = hostport.split(':').next().unwrap_or("").to_ascii_lowercase();
-    if host.is_empty() { None } else { Some(host) }
+    let host = hostport
+        .split(':')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if host.is_empty() {
+        None
+    } else {
+        Some(host)
+    }
 }
 
 /// Escape as 5 chars perigosos pra qualquer atributo/texto HTML.
@@ -3497,14 +3514,12 @@ fn strip_html(s: &str) -> String {
 
 /// Trunca a `max` chars mantendo unicode grapheme rough; adiciona reticência quando corta.
 fn truncate_chars(s: &str, max: usize) -> String {
-    let mut count = 0;
     let mut end = s.len();
-    for (i, _) in s.char_indices() {
+    for (count, (i, _)) in s.char_indices().enumerate() {
         if count == max {
             end = i;
             break;
         }
-        count += 1;
     }
     if end == s.len() {
         s.to_owned()

@@ -46,7 +46,7 @@ async fn require_admin(headers: &HeaderMap, db: &PgPool) -> std::result::Result<
         .get("x-dsoc-citizen-id")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse().ok())
-        .ok_or_else(|| unauthorized_resp())?;
+        .ok_or_else(unauthorized_resp)?;
     let is_admin = sqlx::query_scalar::<_, bool>(
         r"SELECT EXISTS (
              SELECT 1 FROM admin_role_binding
@@ -66,14 +66,20 @@ async fn require_admin(headers: &HeaderMap, db: &PgPool) -> std::result::Result<
 fn unauthorized_resp() -> Response {
     (
         StatusCode::UNAUTHORIZED,
-        Json(ApiResponse::<()>::fail("unauthorized", "Autenticação necessária.")),
+        Json(ApiResponse::<()>::fail(
+            "unauthorized",
+            "Autenticação necessária.",
+        )),
     )
         .into_response()
 }
 fn forbidden_resp() -> Response {
     (
         StatusCode::FORBIDDEN,
-        Json(ApiResponse::<()>::fail("forbidden", "Acesso restrito a admins.")),
+        Json(ApiResponse::<()>::fail(
+            "forbidden",
+            "Acesso restrito a admins.",
+        )),
     )
         .into_response()
 }
@@ -153,7 +159,10 @@ async fn list(
     }
     let limit = params.limit.clamp(1, 200);
     let offset = params.offset.max(0);
-    let q_like = params.q.as_deref().map(|s| format!("%{}%", s.to_lowercase()));
+    let q_like = params
+        .q
+        .as_deref()
+        .map(|s| format!("%{}%", s.to_lowercase()));
     let party = params.party.clone();
     let platform_role = params.platform_role.clone();
     let party_role = params.party_role.clone();
@@ -302,11 +311,11 @@ async fn update(
         return r;
     }
     // Normaliza party_sigla: "" → NULL.
-    let party_arg: Option<Option<String>> = body
-        .party_sigla
-        .map(|inner| inner.map(|s| if s.trim().is_empty() { None } else { Some(s) }).flatten().or(None))
-        .map(Some)
-        .flatten();
+    let party_arg: Option<Option<String>> = body.party_sigla.map(|inner| {
+        inner
+            .and_then(|s| if s.trim().is_empty() { None } else { Some(s) })
+            .or(None)
+    });
     // party_arg: Some(Some("PT")) atualiza, Some(None) seta NULL, None ignora.
     let (party_set, party_value) = match party_arg {
         Some(Some(s)) => (true, Some(s)),
@@ -381,7 +390,10 @@ async fn set_platform_role(
                 _ => {
                     return (
                         StatusCode::NOT_FOUND,
-                        Json(ApiResponse::<()>::fail("not_found", "Cidadão não encontrado.")),
+                        Json(ApiResponse::<()>::fail(
+                            "not_found",
+                            "Cidadão não encontrado.",
+                        )),
                     )
                         .into_response();
                 }
@@ -389,13 +401,12 @@ async fn set_platform_role(
         }
     };
     if body.role == "none" {
-        if let Err(err) = sqlx::query(
-            "DELETE FROM admin_role_binding WHERE citizen_id = $1 AND org_id = $2",
-        )
-        .bind(citizen_id)
-        .bind(org_id)
-        .execute(&state.db)
-        .await
+        if let Err(err) =
+            sqlx::query("DELETE FROM admin_role_binding WHERE citizen_id = $1 AND org_id = $2")
+                .bind(citizen_id)
+                .bind(org_id)
+                .execute(&state.db)
+                .await
         {
             return storage_resp(err);
         }
@@ -406,13 +417,12 @@ async fn set_platform_role(
             Ok(t) => t,
             Err(err) => return storage_resp(err),
         };
-        if let Err(err) = sqlx::query(
-            r"DELETE FROM admin_role_binding WHERE citizen_id = $1 AND org_id = $2",
-        )
-        .bind(citizen_id)
-        .bind(org_id)
-        .execute(&mut *tx)
-        .await
+        if let Err(err) =
+            sqlx::query(r"DELETE FROM admin_role_binding WHERE citizen_id = $1 AND org_id = $2")
+                .bind(citizen_id)
+                .bind(org_id)
+                .execute(&mut *tx)
+                .await
         {
             return storage_resp(err);
         }
@@ -477,20 +487,22 @@ async fn set_party_role(
             _ => {
                 return (
                     StatusCode::NOT_FOUND,
-                    Json(ApiResponse::<()>::fail("not_found", "Cidadão não encontrado.")),
+                    Json(ApiResponse::<()>::fail(
+                        "not_found",
+                        "Cidadão não encontrado.",
+                    )),
                 )
                     .into_response();
             }
         },
     };
     if body.role == "none" {
-        if let Err(err) = sqlx::query(
-            "DELETE FROM party_administrator WHERE citizen_id = $1 AND org_id = $2",
-        )
-        .bind(citizen_id)
-        .bind(org_id)
-        .execute(&state.db)
-        .await
+        if let Err(err) =
+            sqlx::query("DELETE FROM party_administrator WHERE citizen_id = $1 AND org_id = $2")
+                .bind(citizen_id)
+                .bind(org_id)
+                .execute(&state.db)
+                .await
         {
             return storage_resp(err);
         }
@@ -516,13 +528,12 @@ async fn set_party_role(
             Ok(t) => t,
             Err(err) => return storage_resp(err),
         };
-        if let Err(err) = sqlx::query(
-            r"DELETE FROM party_administrator WHERE citizen_id = $1 AND org_id = $2",
-        )
-        .bind(citizen_id)
-        .bind(org_id)
-        .execute(&mut *tx)
-        .await
+        if let Err(err) =
+            sqlx::query(r"DELETE FROM party_administrator WHERE citizen_id = $1 AND org_id = $2")
+                .bind(citizen_id)
+                .bind(org_id)
+                .execute(&mut *tx)
+                .await
         {
             return storage_resp(err);
         }

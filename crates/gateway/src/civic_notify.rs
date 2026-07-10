@@ -103,7 +103,8 @@ impl CivicNotifySub {
                 return;
             }
         };
-        self.notify_proposal_author(proposal_id, kind, preview).await;
+        self.notify_proposal_author(proposal_id, kind, preview)
+            .await;
     }
 
     async fn notify_proposal_author(&self, proposal_id: Uuid, kind: &str, preview: &str) {
@@ -177,13 +178,12 @@ impl CivicNotifySub {
     /// Tudo best-effort: qualquer falha vira `warn` e retorna, sem
     /// propagar `Err` (senão o batch inteiro do subscriber trava).
     async fn auto_federate_threshold(&self, proposal_id: Uuid) {
-        let row: Option<(Option<Uuid>, String)> = sqlx::query_as(
-            "SELECT author_citizen_id, title FROM proposal WHERE id = $1",
-        )
-        .bind(proposal_id)
-        .fetch_optional(&self.db)
-        .await
-        .unwrap_or_default();
+        let row: Option<(Option<Uuid>, String)> =
+            sqlx::query_as("SELECT author_citizen_id, title FROM proposal WHERE id = $1")
+                .bind(proposal_id)
+                .fetch_optional(&self.db)
+                .await
+                .unwrap_or_default();
         let Some((Some(author), title)) = row else {
             return; // proposta sumiu ou é legacy sem autor — nada a federar.
         };

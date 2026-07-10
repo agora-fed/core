@@ -167,13 +167,12 @@ pub async fn ap_question_fields(
     db: &PgPool,
     object_uri: &str,
 ) -> Result<Option<serde_json::Value>, sqlx::Error> {
-    let Some(row) =
-        sqlx::query_as::<_, (bool, DateTime<Utc>, Option<DateTime<Utc>>)>(
-            r"SELECT multiple, expires_at, closed_at FROM note_poll WHERE object_uri = $1",
-        )
-        .bind(object_uri)
-        .fetch_optional(db)
-        .await?
+    let Some(row) = sqlx::query_as::<_, (bool, DateTime<Utc>, Option<DateTime<Utc>>)>(
+        r"SELECT multiple, expires_at, closed_at FROM note_poll WHERE object_uri = $1",
+    )
+    .bind(object_uri)
+    .fetch_optional(db)
+    .await?
     else {
         return Ok(None);
     };
@@ -204,10 +203,7 @@ pub async fn ap_question_fields(
     Ok(Some(out))
 }
 
-async fn list_options(
-    db: &PgPool,
-    object_uri: &str,
-) -> Result<Vec<OptionRow>, sqlx::Error> {
+async fn list_options(db: &PgPool, object_uri: &str) -> Result<Vec<OptionRow>, sqlx::Error> {
     sqlx::query_as::<_, OptionRow>(
         r"SELECT o.id, o.sort_order, o.text, o.vote_count
             FROM note_poll_option o
@@ -323,12 +319,12 @@ pub async fn cast_vote(
     media_base_url_for_dto: &str,
 ) -> Result<PollDto, PollError> {
     let _ = media_base_url_for_dto; // reserved for later media-related read paths
-    // Defense-in-depth: apenas cidadãos DESTA instância podem votar. O único
-    // caller hoje (`POST /me/notes/vote`) constrói o voter_url do CallerId
-    // autenticado, mas guardamos o invariante aqui pra qualquer futuro
-    // hook de inbox federado que tente enfiar voto remoto (ex.: Create(Note)
-    // com `name`+inReplyTo, convenção Mastodon). Regra: o texto do site é
-    // "enquete propaga no fediverso mas voto é restrito a democracia.social.br".
+                                    // Defense-in-depth: apenas cidadãos DESTA instância podem votar. O único
+                                    // caller hoje (`POST /me/notes/vote`) constrói o voter_url do CallerId
+                                    // autenticado, mas guardamos o invariante aqui pra qualquer futuro
+                                    // hook de inbox federado que tente enfiar voto remoto (ex.: Create(Note)
+                                    // com `name`+inReplyTo, convenção Mastodon). Regra: o texto do site é
+                                    // "enquete propaga no fediverso mas voto é restrito a democracia.social.br".
     let po = std::env::var("PUBLIC_ORIGIN")
         .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
     let expected_prefix = format!("{}/actors/", po.trim_end_matches('/'));
@@ -395,23 +391,19 @@ pub async fn cast_vote(
     }
     // Bump vote_count on each chosen option.
     for oid in option_ids {
-        let _ = sqlx::query(
-            r"UPDATE note_poll_option SET vote_count = vote_count + 1 WHERE id = $1",
-        )
-        .bind(oid)
-        .execute(db)
-        .await
-        .map_err(PollError::Db)?;
+        let _ =
+            sqlx::query(r"UPDATE note_poll_option SET vote_count = vote_count + 1 WHERE id = $1")
+                .bind(oid)
+                .execute(db)
+                .await
+                .map_err(PollError::Db)?;
     }
     // Return the refreshed DTO.
     let uris = vec![object_uri.to_owned()];
     let map = list_for_notes(db, &uris, Some(actor_url))
         .await
         .map_err(PollError::Db)?;
-    Ok(map
-        .into_values()
-        .next()
-        .ok_or(PollError::NotFound)?)
+    map.into_values().next().ok_or(PollError::NotFound)
 }
 
 #[derive(Debug)]
@@ -440,19 +432,20 @@ impl PollError {
             Self::TooManyOptions => {
                 format!("no máximo {MAX_OPTIONS} opções")
             }
-            Self::WindowTooShort => format!(
-                "a enquete precisa durar pelo menos {MIN_EXPIRES_MINUTES} minutos"
-            ),
+            Self::WindowTooShort => {
+                format!("a enquete precisa durar pelo menos {MIN_EXPIRES_MINUTES} minutos")
+            }
             Self::NotFound => "enquete não encontrada".into(),
             Self::Closed => "esta enquete já foi encerrada".into(),
             Self::EmptyBallot => "escolha ao menos uma opção".into(),
             Self::TooManyForSingle => "esta enquete permite apenas 1 opção".into(),
             Self::UnknownOption => "opção inválida".into(),
             Self::AlreadyVoted => "você já votou nesta enquete".into(),
-            Self::RemoteVoterForbidden =>
+            Self::RemoteVoterForbidden => {
                 "enquetes podem circular no fediverso, mas a apuração só conta \
                  votos de cidadãos com conta em democracia.social.br"
-                    .into(),
+                    .into()
+            }
             Self::Db(_) => "erro ao registrar o voto".into(),
         }
     }

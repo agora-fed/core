@@ -94,22 +94,24 @@ pub(crate) async fn find_mandate_by_operator<'e, E: PgExecutor<'e>>(
     )
     .fetch_optional(exec)
     .await?;
-    Ok(row.map(|r| (
-        MandateRow {
-            id: r.id,
-            office: r.office,
-            display_name: r.display_name,
-            public_email: r.public_email,
-            is_candidate: r.is_candidate,
-            onboarded_at: r.onboarded_at,
-            party: r.party,
-            uf: r.uf,
-            house: r.house,
-            avatar_object_key: r.avatar_object_key,
-            sphere: r.sphere,
-        },
-        r.verification_level,
-    )))
+    Ok(row.map(|r| {
+        (
+            MandateRow {
+                id: r.id,
+                office: r.office,
+                display_name: r.display_name,
+                public_email: r.public_email,
+                is_candidate: r.is_candidate,
+                onboarded_at: r.onboarded_at,
+                party: r.party,
+                uf: r.uf,
+                house: r.house,
+                avatar_object_key: r.avatar_object_key,
+                sphere: r.sphere,
+            },
+            r.verification_level,
+        )
+    }))
 }
 
 /// Find a mandate within an organization (read for invite / display).

@@ -14,8 +14,8 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
-use dsoc_app::AppState;
 use dsoc_api_contract::ApiResponse;
+use dsoc_app::AppState;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -41,7 +41,10 @@ fn caller_citizen(headers: &HeaderMap) -> Option<Uuid> {
 fn unauthorized() -> Response {
     (
         StatusCode::UNAUTHORIZED,
-        Json(ApiResponse::<()>::fail("http_401", "Autenticação necessária.")),
+        Json(ApiResponse::<()>::fail(
+            "http_401",
+            "Autenticação necessária.",
+        )),
     )
         .into_response()
 }
@@ -144,12 +147,11 @@ async fn get_status(State(state): State<AppState>, headers: HeaderMap) -> Respon
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized();
     };
-    let row: Result<Option<(Option<String>, Option<String>)>, _> = sqlx::query_as(
-        r"SELECT titulo_eleitor, titulo_status FROM citizen WHERE id = $1",
-    )
-    .bind(citizen)
-    .fetch_optional(&state.db)
-    .await;
+    let row: Result<Option<(Option<String>, Option<String>)>, _> =
+        sqlx::query_as(r"SELECT titulo_eleitor, titulo_status FROM citizen WHERE id = $1")
+            .bind(citizen)
+            .fetch_optional(&state.db)
+            .await;
     match row {
         Ok(Some((titulo, status))) => {
             let last4 = titulo
@@ -201,9 +203,7 @@ async fn submit(
         return bad("O título deve ter 12 dígitos (sem pontos ou espaços).");
     };
     if !check_digits(&digits) {
-        return bad(
-            "Título de eleitor inválido — verifique os dígitos e tente novamente.",
-        );
+        return bad("Título de eleitor inválido — verifique os dígitos e tente novamente.");
     }
     let normalized: String = digits.iter().map(|d| char::from(b'0' + d)).collect();
     // Atualiza; ON CONFLICT via UNIQUE parcial dá violação → 409.

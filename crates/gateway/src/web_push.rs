@@ -33,7 +33,10 @@ use uuid::Uuid;
 pub fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/me/push-subscriptions", post(subscribe))
-        .route("/me/push-subscriptions/vapid-public-key", axum::routing::get(vapid_pub))
+        .route(
+            "/me/push-subscriptions/vapid-public-key",
+            axum::routing::get(vapid_pub),
+        )
         .with_state(state)
 }
 
@@ -93,7 +96,10 @@ async fn subscribe(
 /// GET público: navegador precisa da chave pública em base64url pra criar a
 /// subscription. Retorna 503 se não configurada — o front esconde o botão.
 async fn vapid_pub() -> Response {
-    match std::env::var("VAPID_PUBLIC_KEY").ok().filter(|s| !s.is_empty()) {
+    match std::env::var("VAPID_PUBLIC_KEY")
+        .ok()
+        .filter(|s| !s.is_empty())
+    {
         Some(key) => (
             StatusCode::OK,
             Json(ApiResponse::ok(json!({ "public_key": key }))),
@@ -120,11 +126,7 @@ async fn vapid_pub() -> Response {
 ///
 /// `payload_json` chega ao service worker como `event.data.text()` — front
 /// espera `{title, body, url}` e mostra `showNotification(title, {body, ...})`.
-pub async fn send_to_citizen(
-    db: &PgPool,
-    citizen_id: Uuid,
-    payload_json: &str,
-) {
+pub async fn send_to_citizen(db: &PgPool, citizen_id: Uuid, payload_json: &str) {
     let cfg = match VapidConfig::from_env() {
         Some(c) => c,
         None => {
@@ -183,8 +185,12 @@ impl VapidConfig {
         // Public key não é consumida aqui (o front pede via GET /vapid-public-key
         // e usa direto pra criar a subscription); só validamos que existe pra
         // não enviar push com config parcial.
-        let _pub = std::env::var("VAPID_PUBLIC_KEY").ok().filter(|s| !s.is_empty())?;
-        let private_key = std::env::var("VAPID_PRIVATE_KEY").ok().filter(|s| !s.is_empty())?;
+        let _pub = std::env::var("VAPID_PUBLIC_KEY")
+            .ok()
+            .filter(|s| !s.is_empty())?;
+        let private_key = std::env::var("VAPID_PRIVATE_KEY")
+            .ok()
+            .filter(|s| !s.is_empty())?;
         let subject = std::env::var("VAPID_SUBJECT")
             .unwrap_or_else(|_| "mailto:sistema@democracia.social.br".to_owned());
         Some(Self {

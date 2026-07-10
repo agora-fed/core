@@ -5,40 +5,45 @@
 //! OpenAPI contract, and exposes health. IPv6-first (PLAN.md principle 4).
 
 #![forbid(unsafe_code)]
+// The gateway's HTTP surface reads dozens of ad-hoc runtime `sqlx::query_as`
+// tuple rows (policy: no `.sqlx/` cache for this crate). Naming every 5+-field
+// tuple would add ~24 single-use aliases with no call-site reuse, so the
+// complexity lint is accepted crate-wide here (domain crates keep it denied).
+#![allow(clippy::type_complexity)]
 
 pub mod admin_ext;
 pub mod admin_reports;
 pub mod admin_users;
-pub mod announcements;
-pub mod fediverso_admin;
-pub mod invitations;
-pub mod preferences;
-pub mod signup_gates;
-pub mod webhooks;
 pub mod amendments;
+pub mod announcements;
 pub mod civic_notify;
-pub mod email_templates;
-pub mod govbr_oidc;
-pub mod lgpd;
-pub mod public_stats;
 pub mod discovery;
 pub mod elections;
+pub mod email_templates;
 pub mod federation;
-pub mod me_settings;
-pub mod politicos_ext;
-pub mod proposal_delivery;
-pub mod social_graph;
-pub mod titulo_eleitor;
-pub mod web_push;
 pub mod federation_feed;
+pub mod fediverso_admin;
+pub mod govbr_oidc;
+pub mod invitations;
+pub mod lgpd;
 pub mod mastodon_api;
 pub mod mastodon_dto;
 pub mod mastodon_oauth;
+pub mod me_settings;
 pub mod note_media;
 pub mod notifications;
 pub mod parlamentar_activity;
+pub mod politicos_ext;
 pub mod polls;
+pub mod preferences;
+pub mod proposal_delivery;
+pub mod public_stats;
 pub mod reports;
+pub mod signup_gates;
+pub mod social_graph;
+pub mod titulo_eleitor;
+pub mod web_push;
+pub mod webhooks;
 pub mod worker;
 
 use axum::extract::{Request, State};
@@ -47,8 +52,8 @@ use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::{routing::get, Json, Router};
 use dsoc_app::AppState;
-use uuid::Uuid;
 use tower_http::services::ServeDir;
+use uuid::Uuid;
 
 async fn health() -> Json<serde_json::Value> {
     Json(serde_json::json!({ "status": "ok", "service": "dsoc-gateway" }))
@@ -66,16 +71,8 @@ async fn openapi() -> Json<serde_json::Value> {
 /// (`x-dsoc-citizen-id` / `x-dsoc-org-id`, plus `x-citizen-id` for admin).
 /// Anonymous requests pass through with no headers added.
 async fn inject_identity(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
-    // First: cookie session (the site's own flow).
-    let mut resolved: Option<(Uuid, Uuid)> = req
-        .headers()
-        .get(header::COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|c| cookie_value(c, "dsoc_session"))
-        .and_then(|s| Uuid::parse_str(s).ok())
-        .and_then(|sid| Some((sid, ())))
-        .map(|(sid, ())| sid)
-        .and_then(|_sid| None::<(Uuid, Uuid)>); // placeholder — resolved async below
+    // First: cookie session (the site's own flow); resolved async below.
+    let mut resolved: Option<(Uuid, Uuid)> = None;
     if let Some(sid) = req
         .headers()
         .get(header::COOKIE)
@@ -113,7 +110,8 @@ async fn inject_identity(State(state): State<AppState>, mut req: Request, next: 
 pub(crate) fn cookie_value<'a>(cookie_header: &'a str, name: &str) -> Option<&'a str> {
     cookie_header.split(';').find_map(|kv| {
         let kv = kv.trim();
-        kv.strip_prefix(name).and_then(|rest| rest.strip_prefix('='))
+        kv.strip_prefix(name)
+            .and_then(|rest| rest.strip_prefix('='))
     })
 }
 
@@ -193,7 +191,10 @@ pub fn api_router(state: AppState) -> Router {
         // custom scripts). Same prefix; the Mastodon paths don't collide
         // with ours. Auth is bearer OR cookie (see `inject_identity`).
         .merge(mastodon_api::masto_routes(state.clone()))
-        .layer(middleware::from_fn_with_state(state.clone(), inject_identity));
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            inject_identity,
+        ));
 
     // Serve the static DemocraciaBR front-end (Astro SSG, ADR-0009) at the same origin as the API
     // (no CORS). WEB_ROOT defaults to /srv/web (baked into the image); a missing dir just 404s.

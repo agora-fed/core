@@ -109,7 +109,10 @@ pub struct Actor {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub published: Option<String>,
     /// Optional Mastodon-style privacy flags.
-    #[serde(rename = "manuallyApprovesFollowers", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "manuallyApprovesFollowers",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub manually_approves_followers: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub discoverable: Option<bool>,

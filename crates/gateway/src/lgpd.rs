@@ -40,7 +40,10 @@ fn caller(headers: &HeaderMap) -> Option<Uuid> {
 fn unauth() -> Response {
     (
         StatusCode::UNAUTHORIZED,
-        Json(ApiResponse::<()>::fail("unauthorized", "Autenticação necessária.")),
+        Json(ApiResponse::<()>::fail(
+            "unauthorized",
+            "Autenticação necessária.",
+        )),
     )
         .into_response()
 }
@@ -69,17 +72,13 @@ async fn export(State(state): State<AppState>, headers: HeaderMap) -> Response {
     }
 }
 
-async fn build_export(
-    db: &PgPool,
-    citizen_id: Uuid,
-) -> Result<serde_json::Value, sqlx::Error> {
+async fn build_export(db: &PgPool, citizen_id: Uuid) -> Result<serde_json::Value, sqlx::Error> {
     // Citizen row completo.
-    let citizen: serde_json::Value = sqlx::query_scalar(
-        r"SELECT to_jsonb(c) - 'oidc_subject' FROM citizen c WHERE c.id = $1",
-    )
-    .bind(citizen_id)
-    .fetch_one(db)
-    .await?;
+    let citizen: serde_json::Value =
+        sqlx::query_scalar(r"SELECT to_jsonb(c) - 'oidc_subject' FROM citizen c WHERE c.id = $1")
+            .bind(citizen_id)
+            .fetch_one(db)
+            .await?;
 
     // Credentials (só e-mail; jamais o hash da senha).
     let credentials: Vec<serde_json::Value> = sqlx::query_scalar(
@@ -237,12 +236,10 @@ async fn delete_account(State(state): State<AppState>, headers: HeaderMap) -> Re
         return storage(err);
     }
     // 4. Push subs.
-    if let Err(err) = sqlx::query(
-        "DELETE FROM notify_web_push_subscription WHERE citizen_id = $1",
-    )
-    .bind(cid)
-    .execute(&mut *tx)
-    .await
+    if let Err(err) = sqlx::query("DELETE FROM notify_web_push_subscription WHERE citizen_id = $1")
+        .bind(cid)
+        .execute(&mut *tx)
+        .await
     {
         return storage(err);
     }

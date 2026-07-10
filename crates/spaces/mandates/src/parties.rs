@@ -130,12 +130,33 @@ async fn get_party(
 // SQL (runtime queries — no `.sqlx/` cache regeneration needed)
 // ---------------------------------------------------------------------------
 
+/// (sigla, name, tse_number, logo_url, founded_year, mandate_count)
+type PartyRow = (
+    String,
+    String,
+    Option<i32>,
+    Option<String>,
+    Option<i32>,
+    Option<i64>,
+);
+/// (id, party_sigla, esfera, uf, municipio, name, parent_directory_id)
+type DirectoryRow = (
+    Uuid,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+    Option<Uuid>,
+);
+/// (handle, display_name, role, directory_id)
+type AdminRow = (Option<String>, Option<String>, String, Option<Uuid>);
+
 async fn load_parties(db: &sqlx::PgPool, org_id: Uuid) -> Result<Vec<PartyDto>, sqlx::Error> {
     // LEFT JOIN so a freshly-created party with zero mandates still appears (count = 0).
     // ORDER BY mandate_count DESC, then sigla for a stable tie-break.
-    let rows: Vec<(String, String, Option<i32>, Option<String>, Option<i32>, Option<i64>)> =
-        sqlx::query_as(
-            r"
+    let rows: Vec<PartyRow> = sqlx::query_as(
+        r"
             SELECT p.sigla,
                    p.name,
                    p.tse_number,
@@ -150,10 +171,10 @@ async fn load_parties(db: &sqlx::PgPool, org_id: Uuid) -> Result<Vec<PartyDto>, 
              GROUP BY p.sigla, p.name, p.tse_number, p.logo_url, p.founded_year
              ORDER BY COUNT(m.id) DESC, p.sigla ASC
             ",
-        )
-        .bind(org_id)
-        .fetch_all(db)
-        .await?;
+    )
+    .bind(org_id)
+    .fetch_all(db)
+    .await?;
 
     Ok(rows
         .into_iter()
@@ -174,9 +195,8 @@ async fn load_party_detail(
     sigla: &str,
 ) -> Result<Option<PartyDetailDto>, sqlx::Error> {
     // 1) The party row + derived mandate count.
-    let party_row: Option<(String, String, Option<i32>, Option<String>, Option<i32>, Option<i64>)> =
-        sqlx::query_as(
-            r"
+    let party_row: Option<PartyRow> = sqlx::query_as(
+        r"
             SELECT p.sigla,
                    p.name,
                    p.tse_number,
@@ -190,11 +210,11 @@ async fn load_party_detail(
              WHERE p.org_id = $1 AND p.sigla = $2
              GROUP BY p.sigla, p.name, p.tse_number, p.logo_url, p.founded_year
             ",
-        )
-        .bind(org_id)
-        .bind(sigla)
-        .fetch_optional(db)
-        .await?;
+    )
+    .bind(org_id)
+    .bind(sigla)
+    .fetch_optional(db)
+    .await?;
 
     let Some((s, name, tse, logo, year, count)) = party_row else {
         return Ok(None);
@@ -209,9 +229,8 @@ async fn load_party_detail(
     };
 
     // 2) Directories (any esfera). Ordered federal → estadual → municipal by natural sort.
-    let dir_rows: Vec<(Uuid, String, String, Option<String>, Option<String>, String, Option<Uuid>)> =
-        sqlx::query_as(
-            r"
+    let dir_rows: Vec<DirectoryRow> = sqlx::query_as(
+        r"
             SELECT id, party_sigla, esfera, uf, municipio, name, parent_directory_id
               FROM party_directory
              WHERE org_id = $1 AND party_sigla = $2
@@ -225,28 +244,30 @@ async fn load_party_detail(
                       municipio ASC NULLS FIRST,
                       name ASC
             ",
-        )
-        .bind(org_id)
-        .bind(sigla)
-        .fetch_all(db)
-        .await?;
+    )
+    .bind(org_id)
+    .bind(sigla)
+    .fetch_all(db)
+    .await?;
 
     let directories = dir_rows
         .into_iter()
-        .map(|(id, party_sigla, esfera, uf, municipio, name, parent)| PartyDirectoryDto {
-            id,
-            party_sigla,
-            esfera,
-            uf,
-            municipio,
-            name,
-            parent_directory_id: parent,
-        })
+        .map(
+            |(id, party_sigla, esfera, uf, municipio, name, parent)| PartyDirectoryDto {
+                id,
+                party_sigla,
+                esfera,
+                uf,
+                municipio,
+                name,
+                parent_directory_id: parent,
+            },
+        )
         .collect();
 
     // 3) Administrators. Privacy filter: only accepted admins are exposed publicly.
     // Only expose (handle, display_name, role, directory scope). Never the citizen id.
-    let admin_rows: Vec<(Option<String>, Option<String>, String, Option<Uuid>)> = sqlx::query_as(
+    let admin_rows: Vec<AdminRow> = sqlx::query_as(
         r"
         SELECT c.handle, c.display_name, pa.role, pa.directory_id
           FROM party_administrator pa

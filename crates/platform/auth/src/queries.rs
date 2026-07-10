@@ -1545,12 +1545,9 @@ pub(crate) async fn login_attempt_cleanup<'e, E: PgExecutor<'e>>(
     ex: E,
     cutoff: DateTime<Utc>,
 ) -> Result<u64, sqlx::Error> {
-    let r = sqlx::query!(
-        "DELETE FROM auth_login_attempt WHERE at < $1",
-        cutoff,
-    )
-    .execute(ex)
-    .await?;
+    let r = sqlx::query!("DELETE FROM auth_login_attempt WHERE at < $1", cutoff,)
+        .execute(ex)
+        .await?;
     Ok(r.rows_affected())
 }
 
@@ -1595,12 +1592,9 @@ pub(crate) async fn delete_all_sessions_for_citizen<'e, E: PgExecutor<'e>>(
     ex: E,
     citizen_id: Uuid,
 ) -> Result<u64, sqlx::Error> {
-    let r = sqlx::query!(
-        "DELETE FROM auth_session WHERE citizen_id = $1",
-        citizen_id,
-    )
-    .execute(ex)
-    .await?;
+    let r = sqlx::query!("DELETE FROM auth_session WHERE citizen_id = $1", citizen_id,)
+        .execute(ex)
+        .await?;
     Ok(r.rows_affected())
 }
 

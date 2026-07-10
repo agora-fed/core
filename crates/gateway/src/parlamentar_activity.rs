@@ -218,7 +218,10 @@ async fn get_activity(
         }
     };
 
-    let (source_kind, external_id) = match (source.source.as_deref(), source.source_external_id.as_deref()) {
+    let (source_kind, external_id) = match (
+        source.source.as_deref(),
+        source.source_external_id.as_deref(),
+    ) {
         (Some(s), Some(id)) if !id.is_empty() => (s.to_owned(), id.to_owned()),
         _ => {
             // No linked house profile (manual/candidate or historical seed) — nothing to proxy.
@@ -301,8 +304,9 @@ async fn fetch_camara(id: &str) -> ActivityDto {
     };
 
     let details_url = format!("{CAMARA_BASE}/deputados/{id}");
-    let eventos_url =
-        format!("{CAMARA_BASE}/deputados/{id}/eventos?ordem=ASC&ordenarPor=dataHoraInicio&itens=15");
+    let eventos_url = format!(
+        "{CAMARA_BASE}/deputados/{id}/eventos?ordem=ASC&ordenarPor=dataHoraInicio&itens=15"
+    );
     let props_url =
         format!("{CAMARA_BASE}/proposicoes?idDeputadoAutor={id}&ordem=DESC&ordenarPor=id&itens=20");
     let discursos_url = format!(
@@ -422,7 +426,11 @@ fn camara_expenses(v: Option<&Value>) -> Option<ExpenseSummary> {
         .into_iter()
         .map(|(name, amount)| ExpenseCategory { name, amount })
         .collect();
-    cats.sort_by(|a, b| b.amount.partial_cmp(&a.amount).unwrap_or(std::cmp::Ordering::Equal));
+    cats.sort_by(|a, b| {
+        b.amount
+            .partial_cmp(&a.amount)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     cats.truncate(5);
     Some(ExpenseSummary {
         year,
@@ -458,7 +466,10 @@ fn camara_profile_extra(v: Option<&Value>) -> Option<ProfileExtra> {
         .and_then(|s| s.get("urlFoto"))
         .and_then(Value::as_str)
         .map(str::to_owned);
-    let page_url = dados.get("urlWebsite").and_then(Value::as_str).map(str::to_owned);
+    let page_url = dados
+        .get("urlWebsite")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
     Some(ProfileExtra {
         social,
         office_contact,
@@ -526,8 +537,7 @@ fn senado_production(v: Option<&Value>) -> Vec<ProductionItem> {
             kind: str_field(&m, "Sigla"),
             number: str_field(&m, "Numero"),
             year: str_field(&m, "Ano"),
-            summary: str_field(&m, "Ementa")
-                .or_else(|| str_field(&m, "DescricaoIdentificacao")),
+            summary: str_field(&m, "Ementa").or_else(|| str_field(&m, "DescricaoIdentificacao")),
             url: None,
         })
         .collect()
@@ -611,9 +621,7 @@ fn senado_profile_extra(v: Option<&Value>) -> Option<ProfileExtra> {
         .and_then(|d| d.get("EnderecoParlamentar"))
         .and_then(Value::as_str)
         .unwrap_or("");
-    let telefone_node = parlamentar
-        .get("Telefones")
-        .and_then(|t| t.get("Telefone"));
+    let telefone_node = parlamentar.get("Telefones").and_then(|t| t.get("Telefone"));
     let phone = as_node_array(telefone_node)
         .into_iter()
         .next()
@@ -621,7 +629,10 @@ fn senado_profile_extra(v: Option<&Value>) -> Option<ProfileExtra> {
         .unwrap_or_default();
     let office_contact = {
         let combined = format!("{endereco} — Tel: {phone}");
-        if combined.trim_matches(|c: char| !c.is_alphanumeric()).is_empty() {
+        if combined
+            .trim_matches(|c: char| !c.is_alphanumeric())
+            .is_empty()
+        {
             None
         } else {
             Some(combined)

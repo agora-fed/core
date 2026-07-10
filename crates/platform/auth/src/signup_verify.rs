@@ -12,8 +12,8 @@
 //!    ainda.** Um e-mail com link `<origin>/confirmar-conta?token=…` sai
 //!    pela infra SMTP existente (mesmo transport do password-reset).
 //! 2. **Confirm** (`POST /auth/register/confirm`): recebemos o plaintext do
-//!    link, achamos a pending pelo hash, e materializamos citizen + credential
-//!    + sessão numa única transação (mark used, insert citizen, insert
+//!    link, achamos a pending pelo hash, e materializamos citizen, credential
+//!    e sessão numa única transação (mark used, insert citizen, insert
 //!    credential, [politico: mandate_binding + is_public=true], issue session).
 //!
 //! Espelha o pattern do [`crate::password_reset`] — mesmo hashing, mesma TTL
@@ -236,6 +236,9 @@ impl SignupVerifyService {
         .await
     }
 
+    // 8 args: o pipeline de signup é uma sequência linear de dados validados;
+    // agrupar em struct só adicionaria uma camada sem callers extras (2 sites).
+    #[allow(clippy::too_many_arguments)]
     async fn request_common(
         &self,
         org: OrgId,
@@ -279,14 +282,9 @@ impl SignupVerifyService {
         let expires_at = now + chrono::Duration::seconds(self.ttl_secs);
 
         // Mesma UX do password_reset: novo link mata o antigo pro mesmo e-mail.
-        queries::pending_signup_invalidate_live_for_email(
-            &self.db,
-            org.as_uuid(),
-            &email,
-            now,
-        )
-        .await
-        .map_err(map_sqlx)?;
+        queries::pending_signup_invalidate_live_for_email(&self.db, org.as_uuid(), &email, now)
+            .await
+            .map_err(map_sqlx)?;
 
         queries::pending_signup_insert(
             &self.db,
@@ -326,14 +324,10 @@ impl SignupVerifyService {
             Ok(e) => e,
             Err(_) => return Ok(()), // silêncio pra e-mail obviamente inválido
         };
-        let Some(row) = queries::pending_signup_find_live_for_email(
-            &self.db,
-            org.as_uuid(),
-            &email,
-            now,
-        )
-        .await
-        .map_err(map_sqlx)?
+        let Some(row) =
+            queries::pending_signup_find_live_for_email(&self.db, org.as_uuid(), &email, now)
+                .await
+                .map_err(map_sqlx)?
         else {
             return Ok(()); // nada pra reenviar
         };
@@ -681,7 +675,9 @@ mod tests {
         let b = generate_token();
         assert_ne!(a, b);
         assert_eq!(a.len(), 43); // 256 bits em base64url no-pad
-        assert!(a.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+        assert!(a
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
     }
 
     #[test]

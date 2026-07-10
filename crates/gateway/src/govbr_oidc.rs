@@ -14,6 +14,7 @@
 //!       - conta nova: cria com display_name=nome, legal_name=nome,
 //!         is_public=true, verification_level=directory.
 //!       - existente: atualiza legal_name e confiabilidade.
+//!
 //!    f. cria sessão + cookie e redireciona pra /feed.
 //!
 //! Config (env, prod k8s Secret):
@@ -71,8 +72,12 @@ struct Cfg {
 
 impl Cfg {
     fn from_env() -> Option<Self> {
-        let client_id = std::env::var("GOVBR_CLIENT_ID").ok().filter(|s| !s.is_empty())?;
-        let client_secret = std::env::var("GOVBR_CLIENT_SECRET").ok().filter(|s| !s.is_empty())?;
+        let client_id = std::env::var("GOVBR_CLIENT_ID")
+            .ok()
+            .filter(|s| !s.is_empty())?;
+        let client_secret = std::env::var("GOVBR_CLIENT_SECRET")
+            .ok()
+            .filter(|s| !s.is_empty())?;
         let issuer = std::env::var("GOVBR_ISSUER")
             .unwrap_or_else(|_| "https://sso.acesso.gov.br".to_owned())
             .trim_end_matches('/')
@@ -218,8 +223,7 @@ async fn callback(
     // 4. Cookie de sessão + limpa cookie de state gov.br.
     let session_cookie = format!(
         "dsoc_session={}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age={}",
-        session.session_id,
-        session.max_age_secs,
+        session.session_id, session.max_age_secs,
     );
     let kill_state = "dsoc_govbr=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0";
     (
@@ -254,9 +258,7 @@ fn read_govbr_cookie(headers: &HeaderMap) -> Option<(String, String)> {
     for kv in raw.split(';') {
         let kv = kv.trim();
         if let Some(v) = kv.strip_prefix("dsoc_govbr=") {
-            let mut parts = v.splitn(2, '|');
-            let s = parts.next()?;
-            let n = parts.next()?;
+            let (s, n) = v.split_once('|')?;
             return Some((s.to_owned(), n.to_owned()));
         }
     }
@@ -385,11 +387,10 @@ async fn upsert_citizen_and_session(
 
     // Tenta achar pelo govbr_sub. Se achou, atualiza legal_name (o nome pode
     // ter mudado no gov.br entre logins) e devolve o id.
-    let existing: Option<Uuid> =
-        sqlx::query_scalar("SELECT id FROM citizen WHERE govbr_sub = $1")
-            .bind(&claims.sub)
-            .fetch_optional(&mut *tx)
-            .await?;
+    let existing: Option<Uuid> = sqlx::query_scalar("SELECT id FROM citizen WHERE govbr_sub = $1")
+        .bind(&claims.sub)
+        .fetch_optional(&mut *tx)
+        .await?;
     let citizen_id: Uuid = if let Some(id) = existing {
         sqlx::query(
             r"UPDATE citizen

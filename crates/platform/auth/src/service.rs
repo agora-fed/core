@@ -321,13 +321,12 @@ impl ZitadelAuth {
         // 0.26.11: contas suspensas pela moderação (citizen.suspended_at) não
         // podem logar. Silenced continua logando; a UI é que esconde as notas
         // do feed público.
-        let suspended: bool = sqlx::query_scalar(
-            r"SELECT suspended_at IS NOT NULL FROM citizen WHERE id = $1",
-        )
-        .bind(cred.citizen_id)
-        .fetch_one(&self.db)
-        .await
-        .map_err(map_sqlx)?;
+        let suspended: bool =
+            sqlx::query_scalar(r"SELECT suspended_at IS NOT NULL FROM citizen WHERE id = $1")
+                .bind(cred.citizen_id)
+                .fetch_one(&self.db)
+                .await
+                .map_err(map_sqlx)?;
         if suspended {
             return Err(Error::Unauthorized);
         }

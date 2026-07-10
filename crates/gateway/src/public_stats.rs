@@ -68,12 +68,11 @@ async fn public_stats(State(state): State<AppState>) -> Response {
     .fetch_one(db)
     .await
     .unwrap_or(0);
-    let silences_public: i64 = sqlx::query_scalar(
-        r"SELECT COUNT(*) FROM consequence_sla WHERE status = 'ignored'",
-    )
-    .fetch_one(db)
-    .await
-    .unwrap_or(0);
+    let silences_public: i64 =
+        sqlx::query_scalar(r"SELECT COUNT(*) FROM consequence_sla WHERE status = 'ignored'")
+            .fetch_one(db)
+            .await
+            .unwrap_or(0);
     let response_rate = {
         let denom = responses_public + silences_public;
         if denom > 0 {

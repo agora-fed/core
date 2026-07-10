@@ -130,6 +130,11 @@ mod tests {
             author_handle: None,
             author_public_handle: None,
             author_avatar_url: None,
+            urgencia: "comum".to_owned(),
+            status: "published".to_owned(),
+            published_at: None,
+            notified_author_at: None,
+            notified_mandate_at: None,
             created_at: DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
         }
     }

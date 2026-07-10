@@ -103,11 +103,7 @@ impl From<FeedRow> for FeedItemDto {
 
 /// Batch-attach media to a set of DTOs. Handler calls this AFTER `list_feed`
 /// so the SQL stays simple and media joins happen in one round-trip.
-pub async fn enrich_with_media(
-    db: &PgPool,
-    items: &mut [FeedItemDto],
-    media_base_url: &str,
-) {
+pub async fn enrich_with_media(db: &PgPool, items: &mut [FeedItemDto], media_base_url: &str) {
     if items.is_empty() {
         return;
     }
@@ -782,8 +778,25 @@ pub async fn find_timeline_actor(
 /// Tags kept from remote Note content. Everything else (script, iframe, img, forms, …) is
 /// dropped wholesale; `script`/`style` also drop their inner text.
 const ALLOWED_TAGS: &[&str] = &[
-    "p", "br", "a", "span", "em", "strong", "i", "b", "u", "s", "ul", "ol", "li", "blockquote",
-    "code", "pre", "small", "sub", "sup",
+    "p",
+    "br",
+    "a",
+    "span",
+    "em",
+    "strong",
+    "i",
+    "b",
+    "u",
+    "s",
+    "ul",
+    "ol",
+    "li",
+    "blockquote",
+    "code",
+    "pre",
+    "small",
+    "sub",
+    "sup",
 ];
 
 /// Allowlist-sanitize remote HTML before it is persisted (defense-in-depth: the front should
@@ -865,7 +878,11 @@ pub fn sanitize_html(input: &str) -> String {
 fn extract_href(tag_raw: &str) -> Option<String> {
     let lower = tag_raw.to_ascii_lowercase();
     let idx = lower.find("href")?;
-    let after = tag_raw.get(idx + 4..)?.trim_start().strip_prefix('=')?.trim_start();
+    let after = tag_raw
+        .get(idx + 4..)?
+        .trim_start()
+        .strip_prefix('=')?
+        .trim_start();
     let value = if let Some(r) = after.strip_prefix('"') {
         r.split('"').next()?
     } else if let Some(r) = after.strip_prefix('\'') {
@@ -917,7 +934,8 @@ mod tests {
 
     #[test]
     fn sanitize_strips_event_handlers_and_unknown_tags() {
-        let dirty = r#"<p onclick="evil()">x</p><img src=x onerror=evil()><iframe src="a"></iframe>"#;
+        let dirty =
+            r#"<p onclick="evil()">x</p><img src=x onerror=evil()><iframe src="a"></iframe>"#;
         assert_eq!(sanitize_html(dirty), "<p>x</p>");
     }
 

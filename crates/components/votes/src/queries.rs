@@ -148,12 +148,9 @@ pub(crate) async fn read_proposal_urgencia<'e, E: PgExecutor<'e>>(
     exec: E,
     proposal_id: Uuid,
 ) -> Result<Option<String>, sqlx::Error> {
-    let row = sqlx::query_scalar!(
-        "SELECT urgencia FROM proposal WHERE id = $1",
-        proposal_id,
-    )
-    .fetch_optional(exec)
-    .await?;
+    let row = sqlx::query_scalar!("SELECT urgencia FROM proposal WHERE id = $1", proposal_id,)
+        .fetch_optional(exec)
+        .await?;
     Ok(row)
 }
 

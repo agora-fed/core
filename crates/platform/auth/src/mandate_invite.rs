@@ -234,7 +234,13 @@ impl MandateInviteService {
 
         let row = sqlx::query_as::<
             _,
-            (String, Option<String>, Option<String>, String, DateTime<Utc>),
+            (
+                String,
+                Option<String>,
+                Option<String>,
+                String,
+                DateTime<Utc>,
+            ),
         >(
             "SELECT m.display_name, m.party, m.uf, m.office, i.expires_at \
              FROM mandate_invite i \
@@ -289,7 +295,18 @@ impl MandateInviteService {
         // Lock the invite row so we serialize concurrent accept attempts with the same token.
         let mut tx = self.db.begin().await.map_err(map_sqlx)?;
 
-        let row = sqlx::query_as::<_, (Uuid, Uuid, Uuid, String, DateTime<Utc>, Option<DateTime<Utc>>, Option<DateTime<Utc>>)>(
+        let row = sqlx::query_as::<
+            _,
+            (
+                Uuid,
+                Uuid,
+                Uuid,
+                String,
+                DateTime<Utc>,
+                Option<DateTime<Utc>>,
+                Option<DateTime<Utc>>,
+            ),
+        >(
             "SELECT id, org_id, mandate_id, email, expires_at, accepted_at, revoked_at \
              FROM mandate_invite \
              WHERE token_hash = $1 \
@@ -304,16 +321,12 @@ impl MandateInviteService {
         let (invite_id, org_id, mandate_id, email, expires_at, accepted_at, revoked_at) = row;
         if accepted_at.is_some() || revoked_at.is_some() || expires_at <= now {
             tx.rollback().await.map_err(map_sqlx)?;
-            return Err(Error::NotFound(
-                "convite inválido ou expirado".to_owned(),
-            ));
+            return Err(Error::NotFound("convite inválido ou expirado".to_owned()));
         }
 
         // CPF verification kept algorithmic here (matches ZitadelAuth::register). If it check-
         // digit-fails, `Cpf::parse` already errored above; the async verify tags the assurance.
-        let cpf_status = crate::credential::AlgorithmicCpfVerifier
-            .verify(&cpf)
-            .await;
+        let cpf_status = crate::credential::AlgorithmicCpfVerifier.verify(&cpf).await;
 
         let citizen = CitizenId::new();
         // Citizen row — level `directory` because this bypass is the admin acting as the
@@ -378,9 +391,7 @@ impl MandateInviteService {
         .rows_affected();
         if affected == 0 {
             tx.rollback().await.map_err(map_sqlx)?;
-            return Err(Error::NotFound(
-                "convite inválido ou expirado".to_owned(),
-            ));
+            return Err(Error::NotFound("convite inválido ou expirado".to_owned()));
         }
 
         // Issue a session so the recipient lands logged-in on `/painel-mandato`. Reuse the
@@ -400,12 +411,7 @@ impl MandateInviteService {
     ///
     /// # Errors
     /// [`Error::NotFound`] if no matching pending row exists for this caller.
-    pub async fn revoke(
-        &self,
-        _org: OrgId,
-        caller: CitizenId,
-        token: &str,
-    ) -> Result<()> {
+    pub async fn revoke(&self, _org: OrgId, caller: CitizenId, token: &str) -> Result<()> {
         let hash = sha256(token);
         let now = self.clock.now();
         let affected = sqlx::query(
@@ -639,7 +645,9 @@ mod tests {
         let b = generate_token();
         assert_ne!(a, b);
         assert_eq!(a.len(), 43);
-        assert!(a.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+        assert!(a
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
     }
 
     #[test]

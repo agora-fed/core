@@ -24,7 +24,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // avatars stay blank — useful for dev/test loops that don't need MinIO running. Built
     // async because the AWS SDK loads its default sleep impl + HTTP connector through
     // `aws_config::defaults`.
-    let storage = dsoc_storage::S3Storage::from_env().await.map(|s| s.into_dyn());
+    let storage = dsoc_storage::S3Storage::from_env()
+        .await
+        .map(|s| s.into_dyn());
     if storage.is_none() {
         tracing::warn!("STORAGE_* env unset; blob uploads disabled (avatars/covers stay blank)");
     }

@@ -205,9 +205,7 @@ impl From<Office> for OfficeDto {
 fn to_mandate_dto(view: MandateView) -> MandateDto {
     let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
     let media_base = media_base.trim_end_matches('/');
-    let avatar_url = view
-        .avatar_object_key
-        .map(|k| format!("{media_base}/{k}"));
+    let avatar_url = view.avatar_object_key.map(|k| format!("{media_base}/{k}"));
     let public_email = Some(view.public_email).filter(|s| !s.is_empty());
     MandateDto {
         id: view.id.as_uuid(),
@@ -365,11 +363,17 @@ async fn list_mandates(
     Query(query): Query<MandateListQuery>,
 ) -> Result<Json<ApiResponse<Vec<MandateDto>>>, ApiErr> {
     let svc = MandateRegistry::from_state(&state);
-    let sphere = query.sphere.as_deref().filter(|s| {
-        matches!(*s, "federal" | "estadual" | "municipal")
-    });
+    let sphere = query
+        .sphere
+        .as_deref()
+        .filter(|s| matches!(*s, "federal" | "estadual" | "municipal"));
     let views = svc
-        .list_mandates(OrgId::from_uuid(query.org_id), sphere, query.limit, query.offset)
+        .list_mandates(
+            OrgId::from_uuid(query.org_id),
+            sphere,
+            query.limit,
+            query.offset,
+        )
         .await?;
     Ok(Json(ApiResponse::ok(
         views.into_iter().map(to_mandate_dto).collect(),

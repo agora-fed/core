@@ -22,8 +22,8 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use dsoc_app::AppState;
 use dsoc_api_contract::ApiResponse;
+use dsoc_app::AppState;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -48,7 +48,10 @@ pub fn routes(state: AppState) -> Router<()> {
 fn unauthorized() -> Response {
     (
         StatusCode::UNAUTHORIZED,
-        Json(ApiResponse::<()>::fail("http_401", "Autenticação necessária.")),
+        Json(ApiResponse::<()>::fail(
+            "http_401",
+            "Autenticação necessária.",
+        )),
     )
         .into_response()
 }
@@ -148,7 +151,8 @@ async fn stats(State(state): State<AppState>, headers: HeaderMap) -> Response {
             // LOCAL actors = public citizens (per ADR-0010; only these
             // materialize a Person Actor). REMOTE actors = distinct
             // remote_actor_url we've seen (via follow or inbound timeline).
-            actors_local: scalar(pool, "SELECT count(*) FROM citizen WHERE is_public = true").await?,
+            actors_local: scalar(pool, "SELECT count(*) FROM citizen WHERE is_public = true")
+                .await?,
             actors_remote: scalar(
                 pool,
                 r"SELECT count(*) FROM (
@@ -240,12 +244,11 @@ async fn users_list(
     // ordering that means "the most privileged tier we can display". Good
     // enough for the console; the full multi-role view lives in the
     // dedicated /admin/users/{id} detail page (out of scope here).
-    let search_pat = q
-        .q
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(|s| format!("{s}%"));
+    let search_pat =
+        q.q.as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| format!("{s}%"));
     let rows: Vec<(
         Uuid,
         Option<String>,
@@ -338,17 +341,20 @@ async fn users_set_role(
     if let Err(resp) = require_admin(&state, caller).await {
         return resp;
     }
-    let normalized = body.role.as_deref().map(str::trim).map(str::to_ascii_lowercase);
+    let normalized = body
+        .role
+        .as_deref()
+        .map(str::trim)
+        .map(str::to_ascii_lowercase);
     match normalized.as_deref() {
         None | Some("") => {
             // Remove any binding.
-            if let Err(err) = sqlx::query(
-                r"DELETE FROM admin_role_binding WHERE org_id = $1 AND citizen_id = $2",
-            )
-            .bind(DEFAULT_ORG_UUID)
-            .bind(citizen_id)
-            .execute(&state.db)
-            .await
+            if let Err(err) =
+                sqlx::query(r"DELETE FROM admin_role_binding WHERE org_id = $1 AND citizen_id = $2")
+                    .bind(DEFAULT_ORG_UUID)
+                    .bind(citizen_id)
+                    .execute(&state.db)
+                    .await
             {
                 tracing::error!(error = ?err, "admin_ext set_role delete failed");
                 return server_error();
@@ -362,13 +368,12 @@ async fn users_set_role(
         Some(role) if matches!(role, "owner" | "admin" | "auditor") => {
             // Replace any existing binding for this citizen: delete-all then
             // insert-one keeps the "current role" view single-valued.
-            if let Err(err) = sqlx::query(
-                r"DELETE FROM admin_role_binding WHERE org_id = $1 AND citizen_id = $2",
-            )
-            .bind(DEFAULT_ORG_UUID)
-            .bind(citizen_id)
-            .execute(&state.db)
-            .await
+            if let Err(err) =
+                sqlx::query(r"DELETE FROM admin_role_binding WHERE org_id = $1 AND citizen_id = $2")
+                    .bind(DEFAULT_ORG_UUID)
+                    .bind(citizen_id)
+                    .execute(&state.db)
+                    .await
             {
                 tracing::error!(error = ?err, "admin_ext set_role clear failed");
                 return server_error();
@@ -452,21 +457,20 @@ async fn federation_peers(
     // Union of "actor URLs we've received a Note from" with "actor URLs we
     // know via a follow relation" — the latter covers hosts that have a
     // follow but haven't posted anything we've stored yet.
-    let timeline_rows: Vec<(String, Option<chrono::DateTime<chrono::Utc>>)> =
-        match sqlx::query_as(
-            r"SELECT actor_url, MAX(published_at) AS last_seen
+    let timeline_rows: Vec<(String, Option<chrono::DateTime<chrono::Utc>>)> = match sqlx::query_as(
+        r"SELECT actor_url, MAX(published_at) AS last_seen
                 FROM federation_timeline_entry
                GROUP BY actor_url",
-        )
-        .fetch_all(&state.db)
-        .await
-        {
-            Ok(v) => v,
-            Err(err) => {
-                tracing::error!(error = ?err, "admin_ext peers timeline query failed");
-                return server_error();
-            }
-        };
+    )
+    .fetch_all(&state.db)
+    .await
+    {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::error!(error = ?err, "admin_ext peers timeline query failed");
+            return server_error();
+        }
+    };
     let follow_rows: Vec<(String, chrono::DateTime<chrono::Utc>)> = match sqlx::query_as(
         r"SELECT remote_actor_url, MIN(created_at) AS created_at
             FROM federation_follow
@@ -614,5 +618,9 @@ async fn notes_hide(
         tracing::error!(error = ?err, "admin_ext hide update failed");
         return server_error();
     }
-    (StatusCode::OK, Json(ApiResponse::ok(HideResponse { ok: true }))).into_response()
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(HideResponse { ok: true })),
+    )
+        .into_response()
 }

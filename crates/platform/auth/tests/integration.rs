@@ -527,14 +527,13 @@ async fn signup_verify_confirm_materializes_citizen_and_session() {
 
     // Session emitida com o public_handle esperado (formato @cidadao-<curto>).
     assert!(!session.public_handle.is_empty());
-    let live: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM auth_session WHERE id = $1 AND expires_at > $2",
-    )
-    .bind(session.id)
-    .bind(now())
-    .fetch_optional(&db)
-    .await
-    .unwrap();
+    let live: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM auth_session WHERE id = $1 AND expires_at > $2")
+            .bind(session.id)
+            .bind(now())
+            .fetch_optional(&db)
+            .await
+            .unwrap();
     assert_eq!(live, Some(session.id), "sessão viva depois do commit");
 
     // Retry do mesmo token deve falhar (single-use, agora used_at NOT NULL).

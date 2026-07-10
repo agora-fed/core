@@ -54,7 +54,10 @@ pub fn routes(state: AppState) -> Router<()> {
         .route("/me/avatar", post(post_me_avatar))
         .route("/me/cover", post(post_me_cover))
         .route("/me/sessions", get(list_me_sessions))
-        .route("/me/sessions/{session_id}", axum::routing::delete(delete_me_session))
+        .route(
+            "/me/sessions/{session_id}",
+            axum::routing::delete(delete_me_session),
+        )
         .route("/profiles/{handle}", get(get_public_profile))
         // Cadastro com verificação de e-mail (0.25.0): register/register-politician
         // agora começam um pending signup e disparam um link de confirmação; a
@@ -70,8 +73,14 @@ pub fn routes(state: AppState) -> Router<()> {
         // `/mandates/{id}/invitations` owned by dsoc-mandates (a different, mandate-lifecycle flow).
         .route("/mandates/{mandate_id}/invites", post(send_mandate_invite))
         .route("/mandate-invites/{token}", get(get_mandate_invite))
-        .route("/mandate-invites/{token}/accept", post(accept_mandate_invite))
-        .route("/mandate-invites/{token}/revoke", post(revoke_mandate_invite))
+        .route(
+            "/mandate-invites/{token}/accept",
+            post(accept_mandate_invite),
+        )
+        .route(
+            "/mandate-invites/{token}/revoke",
+            post(revoke_mandate_invite),
+        )
         // Multipart body cap: avatar/cover code re-validates at 5 MiB, but we cap the framework
         // intake at 6 MiB so a 5 GB upload is rejected before we touch RAM.
         .layer(axum::extract::DefaultBodyLimit::max(6 * 1024 * 1024))
@@ -389,7 +398,8 @@ async fn logout(State(svc): State<Arc<ZitadelAuth>>, headers: HeaderMap) -> Resp
 fn extract_session_cookie(cookie_header: &str) -> Option<&str> {
     cookie_header.split(';').find_map(|kv| {
         let kv = kv.trim();
-        kv.strip_prefix("dsoc_session").and_then(|rest| rest.strip_prefix('='))
+        kv.strip_prefix("dsoc_session")
+            .and_then(|rest| rest.strip_prefix('='))
     })
 }
 
@@ -641,7 +651,11 @@ async fn password_reset_request(
     let svc = PasswordResetService::from_state(&state);
     let request_ip = caller_ip(&headers);
     if let Err(error) = svc
-        .request(OrgId::from_uuid(body.org_id), &body.email, request_ip.as_deref())
+        .request(
+            OrgId::from_uuid(body.org_id),
+            &body.email,
+            request_ip.as_deref(),
+        )
         .await
     {
         // A hard storage failure is logged but still surfaces success at the wire — the user
@@ -696,7 +710,10 @@ async fn get_public_profile(
     Query(q): Query<PublicProfileQuery>,
 ) -> Response {
     let svc = ProfileService::from_state(&state);
-    match svc.find_public_by_handle(OrgId::from_uuid(q.org_id), &handle).await {
+    match svc
+        .find_public_by_handle(OrgId::from_uuid(q.org_id), &handle)
+        .await
+    {
         Ok(profile) => (StatusCode::OK, Json(ApiResponse::ok(profile))).into_response(),
         Err(error) => error_response(&error),
     }
@@ -761,9 +778,7 @@ async fn upload_media(
 
 /// Read the FIRST multipart part whose name is `file`. Other parts are ignored. The body cap
 /// applied at the router level guarantees a hostile upload never grows past 6 MiB.
-async fn read_file_part(
-    multipart: &mut axum::extract::Multipart,
-) -> Result<Option<Vec<u8>>> {
+async fn read_file_part(multipart: &mut axum::extract::Multipart) -> Result<Option<Vec<u8>>> {
     while let Some(field) = multipart
         .next_field()
         .await
@@ -807,7 +822,10 @@ async fn delete_me_session(
 ) -> Response {
     let svc = ProfileService::from_state(&state);
     let current = current_session_id_from_headers(&headers);
-    match svc.revoke_session(caller.citizen, session_id, current).await {
+    match svc
+        .revoke_session(caller.citizen, session_id, current)
+        .await
+    {
         Ok(()) => (StatusCode::NO_CONTENT, Json(ApiResponse::<()>::ok(()))).into_response(),
         Err(error) => error_response(&error),
     }
@@ -886,7 +904,10 @@ async fn send_mandate_invite(
     // TODO(auth): gate `send` to admin role. For now, any authenticated CallerId reaches here
     // (the extractor already enforced a live session).
     let svc = MandateInviteService::from_state(&state, build_service(&state));
-    match svc.send(caller.org, caller.citizen, mandate_id, &body.email).await {
+    match svc
+        .send(caller.org, caller.citizen, mandate_id, &body.email)
+        .await
+    {
         Ok(sent) => (
             StatusCode::CREATED,
             Json(ApiResponse::ok(SentInviteDto {

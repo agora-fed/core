@@ -14,7 +14,7 @@
 use axum::extract::{Json, Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, patch, post};
+use axum::routing::{get, patch};
 use axum::Router;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{DateTime, Utc};
@@ -33,10 +33,7 @@ type HmacSha256 = Hmac<Sha256>;
 pub fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/admin/webhooks", get(list_admin).post(create))
-        .route(
-            "/admin/webhooks/{id}",
-            patch(update).delete(delete_webhook),
-        )
+        .route("/admin/webhooks/{id}", patch(update).delete(delete_webhook))
         .with_state(state)
 }
 
@@ -66,14 +63,20 @@ async fn require_admin(headers: &HeaderMap, db: &PgPool) -> Result<Uuid, Respons
 fn unauthorized_resp() -> Response {
     (
         StatusCode::UNAUTHORIZED,
-        Json(ApiResponse::<()>::fail("unauthorized", "Autenticação necessária.")),
+        Json(ApiResponse::<()>::fail(
+            "unauthorized",
+            "Autenticação necessária.",
+        )),
     )
         .into_response()
 }
 fn forbidden_resp() -> Response {
     (
         StatusCode::FORBIDDEN,
-        Json(ApiResponse::<()>::fail("forbidden", "Acesso restrito a admins.")),
+        Json(ApiResponse::<()>::fail(
+            "forbidden",
+            "Acesso restrito a admins.",
+        )),
     )
         .into_response()
 }
@@ -178,7 +181,7 @@ async fn create(
     let events: Vec<String> = body
         .events
         .into_iter()
-        .filter(|e| VALID_EVENTS.iter().any(|v| *v == e.as_str()))
+        .filter(|e| VALID_EVENTS.contains(&e.as_str()))
         .collect();
     if events.is_empty() {
         return bad("selecione ao menos 1 evento válido");
@@ -305,7 +308,10 @@ pub fn dispatch_event(db: PgPool, event: &'static str, payload: serde_json::Valu
                     .body(body_bytes)
                     .send()
                     .await;
-                let status = resp.as_ref().map(|r| r.status().as_u16() as i32).unwrap_or(0);
+                let status = resp
+                    .as_ref()
+                    .map(|r| r.status().as_u16() as i32)
+                    .unwrap_or(0);
                 let _ = sqlx::query(
                     r"UPDATE webhook
                          SET last_status = $2, last_delivery_at = now()

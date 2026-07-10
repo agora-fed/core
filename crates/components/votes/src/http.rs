@@ -54,7 +54,11 @@ pub async fn cast(
     Json(req): Json<CastVoteRequest>,
 ) -> Response {
     // Authorize the authenticated caller BEFORE any write. Anonymous/unknown ⇒ Forbidden.
-    if let Err(e) = state.authz.require(caller.org, caller.citizen, MIN_VOTE_LEVEL).await {
+    if let Err(e) = state
+        .authz
+        .require(caller.org, caller.citizen, MIN_VOTE_LEVEL)
+        .await
+    {
         return error_response::<VoteReceiptDto>(&e);
     }
 

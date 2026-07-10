@@ -23,8 +23,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use chrono::Datelike;
-use dsoc_app::AppState;
 use dsoc_api_contract::ApiResponse;
+use dsoc_app::AppState;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -429,15 +429,14 @@ async fn gasto_parlamentar(
     if q.filters.sphere.as_deref() != Some("federal") {
         q.filters.sphere = Some("federal".to_owned());
     }
-    let force_refresh = q.refresh.as_deref().is_some_and(|s| s == "1" || s == "true");
+    let force_refresh = q
+        .refresh
+        .as_deref()
+        .is_some_and(|s| s == "1" || s == "true");
     // Check cache; refresh if stale, first hit, or forced.
     if !force_refresh {
         let cache = CACHE_LOCK.read().await;
-        if cache
-            .fetched_at
-            .is_some_and(|t| t.elapsed() < CACHE_TTL)
-            && cache.pending == 0
-        {
+        if cache.fetched_at.is_some_and(|t| t.elapsed() < CACHE_TTL) && cache.pending == 0 {
             let out = build_response(
                 &cache.map,
                 &cache.mandates,
@@ -502,16 +501,18 @@ async fn load_mandate_slims(state: &AppState) -> Result<Vec<MandateSlim>, sqlx::
     Ok(rows
         .into_iter()
         .map(
-            |(id, display_name, party, uf, house, sphere, office, external_id, source)| MandateSlim {
-                id,
-                display_name,
-                party,
-                uf,
-                house,
-                sphere,
-                office,
-                external_id,
-                source,
+            |(id, display_name, party, uf, house, sphere, office, external_id, source)| {
+                MandateSlim {
+                    id,
+                    display_name,
+                    party,
+                    uf,
+                    house,
+                    sphere,
+                    office,
+                    external_id,
+                    source,
+                }
             },
         )
         .collect())
@@ -631,13 +632,8 @@ async fn fetch_all_expenses(mandates: &[MandateSlim]) -> (RawMap, i32) {
 
 /// Download + parse the Senado CEAPS CSV for `year`. Returns a
 /// `NAME_UPPERCASE → cents` map (integer cents to match the Câmara path).
-async fn fetch_senado_ceaps(
-    cli: &reqwest::Client,
-    year: i32,
-) -> Result<HashMap<String, i64>, ()> {
-    let url = format!(
-        "https://www.senado.leg.br/transparencia/LAI/verba/despesa_ceaps_{year}.csv"
-    );
+async fn fetch_senado_ceaps(cli: &reqwest::Client, year: i32) -> Result<HashMap<String, i64>, ()> {
+    let url = format!("https://www.senado.leg.br/transparencia/LAI/verba/despesa_ceaps_{year}.csv");
     let resp = cli.get(&url).send().await.map_err(|_| ())?;
     if !resp.status().is_success() {
         return Err(());
@@ -722,13 +718,16 @@ fn build_response(
             })
         })
         .filter(|m| {
-            f.house.as_deref().is_none_or(|h| {
-                h.is_empty() || m.house.as_deref().is_some_and(|v| v == h)
-            })
+            f.house
+                .as_deref()
+                .is_none_or(|h| h.is_empty() || m.house.as_deref().is_some_and(|v| v == h))
         })
         .filter(|m| {
             f.party.as_deref().is_none_or(|p| {
-                p.is_empty() || m.party.as_deref().is_some_and(|v| v.eq_ignore_ascii_case(p))
+                p.is_empty()
+                    || m.party
+                        .as_deref()
+                        .is_some_and(|v| v.eq_ignore_ascii_case(p))
             })
         })
         .filter(|m| {
@@ -748,9 +747,7 @@ fn build_response(
     for m in &filtered {
         let cents = map.get(&m.id).copied().unwrap_or(0);
         let (key, label) = match group_by {
-            "politico" | "político" | "mandate" => {
-                (m.id.to_string(), m.display_name.clone())
-            }
+            "politico" | "político" | "mandate" => (m.id.to_string(), m.display_name.clone()),
             "cargo" | "casa" => (
                 m.house.clone().unwrap_or_else(|| "sem-casa".into()),
                 match m.house.as_deref() {

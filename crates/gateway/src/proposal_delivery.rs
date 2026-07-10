@@ -43,7 +43,10 @@ pub struct ProposalDeliverySub {
 #[async_trait]
 impl EventHandler for ProposalDeliverySub {
     async fn handle(&self, envelope: &EventEnvelope) -> Result<()> {
-        if let Event::ProposalCreated { proposal, mandate, .. } = envelope.event {
+        if let Event::ProposalCreated {
+            proposal, mandate, ..
+        } = envelope.event
+        {
             self.dispatch(proposal.as_uuid(), mandate.as_uuid()).await;
         }
         Ok(())
@@ -92,7 +95,11 @@ impl ProposalDeliverySub {
             .clone()
             .unwrap_or_else(|| "(mandato)".to_owned());
         let body_short: String = row.body.chars().take(400).collect::<String>()
-            + if row.body.chars().count() > 400 { "…" } else { "" };
+            + if row.body.chars().count() > 400 {
+                "…"
+            } else {
+                ""
+            };
 
         // AUTHOR — só se ainda não notificado E se tem e-mail.
         if row.notified_author_at.is_none() {
@@ -253,7 +260,13 @@ fn smtp_from_env() -> Option<SmtpConfig> {
         .unwrap_or(587_u16);
     let user = std::env::var("SMTP_USER").ok();
     let pass = std::env::var("SMTP_PASS").ok();
-    Some(SmtpConfig { host, port, user, pass, from })
+    Some(SmtpConfig {
+        host,
+        port,
+        user,
+        pass,
+        from,
+    })
 }
 
 async fn send_email(
@@ -267,9 +280,7 @@ async fn send_email(
     } else {
         AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&cfg.host)?
     };
-    builder = builder
-        .port(cfg.port)
-        .timeout(Some(Duration::from_secs(5)));
+    builder = builder.port(cfg.port).timeout(Some(Duration::from_secs(5)));
     if let (Some(u), Some(p)) = (cfg.user.as_ref(), cfg.pass.as_ref()) {
         builder = builder.credentials(Credentials::new(u.clone(), p.clone()));
     }

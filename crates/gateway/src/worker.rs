@@ -207,11 +207,17 @@ fn subscriptions(state: &AppState) -> Vec<Subscription> {
     // The names are fixed routing identifiers, not user input. `parse` is fallible, so a name that
     // somehow failed validation is dropped (logged) rather than panicking the process — but in
     // practice every literal below is valid, so the set is complete.
-    let sub = |name: &str, topic: EventTopic, handler: Arc<dyn EventHandler>| match SubscriberName::parse(name) {
-        Ok(name) => Some(Subscription { name, topic, handler }),
-        Err(err) => {
-            tracing::error!(subscriber = name, error = %err, "invalid subscriber name; skipping");
-            None
+    let sub = |name: &str, topic: EventTopic, handler: Arc<dyn EventHandler>| {
+        match SubscriberName::parse(name) {
+            Ok(name) => Some(Subscription {
+                name,
+                topic,
+                handler,
+            }),
+            Err(err) => {
+                tracing::error!(subscriber = name, error = %err, "invalid subscriber name; skipping");
+                None
+            }
         }
     };
 
@@ -392,7 +398,11 @@ pub fn spawn(state: AppState) {
         .and_then(|v| v.parse().ok())
         .filter(|&v: &i64| v > 0)
         .unwrap_or(DEFAULT_SIGNUP_CLEANUP_DAYS);
-    tokio::spawn(signup_cleanup_loop(state.clone(), signup_cleanup_ms, signup_cleanup_days));
+    tokio::spawn(signup_cleanup_loop(
+        state.clone(),
+        signup_cleanup_ms,
+        signup_cleanup_days,
+    ));
 
     // 0.26.19: apaga notas próprias com idade > auto_delete_notes_older_than_days.
     // 1 tick por hora — barato, indexed. Não bloqueia outros loops.
@@ -452,7 +462,8 @@ async fn signup_cleanup_loop(state: AppState, period_ms: u64, cutoff_days: i64) 
         }
         // login_attempt: TTL curto (mesmo cutoff) — só interessa pra rate + audit.
         match dsoc_auth::signup_verify::SignupVerifyService::cleanup_login_attempts_via(
-            &state, cutoff_days,
+            &state,
+            cutoff_days,
         )
         .await
         {

@@ -11,7 +11,7 @@
 use axum::extract::{Json, Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, patch, post};
+use axum::routing::{delete, get, patch};
 use axum::Router;
 use chrono::{DateTime, Utc};
 use dsoc_api_contract::ApiResponse;
@@ -25,14 +25,20 @@ pub fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/me/preferences", get(get_prefs).patch(patch_prefs))
         .route("/server/rules", get(public_rules))
-        .route("/admin/rules", get(admin_list_rules).post(admin_create_rule))
+        .route(
+            "/admin/rules",
+            get(admin_list_rules).post(admin_create_rule),
+        )
         .route(
             "/admin/rules/{id}",
             patch(admin_update_rule).delete(admin_delete_rule),
         )
         // 0.26.20: Termos editáveis + CW presets.
         .route("/server/terms", get(public_terms))
-        .route("/admin/server/terms", get(admin_get_terms).patch(admin_patch_terms))
+        .route(
+            "/admin/server/terms",
+            get(admin_get_terms).patch(admin_patch_terms),
+        )
         .route("/server/cw_presets", get(public_cw_presets))
         .route(
             "/admin/cw_presets",
@@ -80,7 +86,10 @@ async fn admin_patch_terms(
     if txt.is_empty() || txt.len() > 100_000 {
         return (
             StatusCode::BAD_REQUEST,
-            Json(ApiResponse::<()>::fail("bad_request", "corpo obrigatório (até 100 KB)")),
+            Json(ApiResponse::<()>::fail(
+                "bad_request",
+                "corpo obrigatório (até 100 KB)",
+            )),
         )
             .into_response();
     }
@@ -147,16 +156,21 @@ async fn admin_create_cw_preset(
     if phrase.is_empty() || phrase.len() > 200 {
         return (
             StatusCode::BAD_REQUEST,
-            Json(ApiResponse::<()>::fail("bad_request", "phrase 1..200 chars")),
+            Json(ApiResponse::<()>::fail(
+                "bad_request",
+                "phrase 1..200 chars",
+            )),
         )
             .into_response();
     }
-    let spoiler = body
-        .spoiler_text
-        .and_then(|s| {
-            let t = s.trim().to_owned();
-            if t.is_empty() { None } else { Some(t) }
-        });
+    let spoiler = body.spoiler_text.and_then(|s| {
+        let t = s.trim().to_owned();
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
+    });
     let res: Result<CwPresetDto, _> = sqlx::query_as::<_, CwPresetDto>(
         r"INSERT INTO cw_preset (id, phrase, spoiler_text, created_by)
           VALUES ($1, $2, $3, $4)
@@ -217,14 +231,20 @@ async fn require_admin(headers: &HeaderMap, db: &PgPool) -> Result<Uuid, Respons
 fn unauthorized_resp() -> Response {
     (
         StatusCode::UNAUTHORIZED,
-        Json(ApiResponse::<()>::fail("unauthorized", "Autenticação necessária.")),
+        Json(ApiResponse::<()>::fail(
+            "unauthorized",
+            "Autenticação necessária.",
+        )),
     )
         .into_response()
 }
 fn forbidden_resp() -> Response {
     (
         StatusCode::FORBIDDEN,
-        Json(ApiResponse::<()>::fail("forbidden", "Acesso restrito a admins.")),
+        Json(ApiResponse::<()>::fail(
+            "forbidden",
+            "Acesso restrito a admins.",
+        )),
     )
         .into_response()
 }
@@ -278,16 +298,18 @@ async fn get_prefs(State(state): State<AppState>, headers: HeaderMap) -> Respons
         .fetch_optional(&state.db)
         .await;
     match row {
-        Ok(Some((email_prefs, default_visibility, default_sensitive, auto_federate_threshold))) => (
-            StatusCode::OK,
-            Json(ApiResponse::ok(PrefsDto {
-                email_prefs,
-                default_visibility,
-                default_sensitive,
-                auto_federate_threshold,
-            })),
-        )
-            .into_response(),
+        Ok(Some((email_prefs, default_visibility, default_sensitive, auto_federate_threshold))) => {
+            (
+                StatusCode::OK,
+                Json(ApiResponse::ok(PrefsDto {
+                    email_prefs,
+                    default_visibility,
+                    default_sensitive,
+                    auto_federate_threshold,
+                })),
+            )
+                .into_response()
+        }
         Ok(None) => (
             StatusCode::NOT_FOUND,
             Json(ApiResponse::<()>::fail("not_found", "conta não encontrada")),
@@ -309,7 +331,10 @@ async fn patch_prefs(
         if !matches!(v, "public" | "unlisted" | "followers" | "direct") {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(ApiResponse::<()>::fail("bad_request", "default_visibility inválida")),
+                Json(ApiResponse::<()>::fail(
+                    "bad_request",
+                    "default_visibility inválida",
+                )),
             )
                 .into_response();
         }
@@ -402,7 +427,10 @@ async fn admin_create_rule(
     if text.is_empty() || text.len() > 4000 {
         return (
             StatusCode::BAD_REQUEST,
-            Json(ApiResponse::<()>::fail("bad_request", "texto entre 1 e 4000 chars")),
+            Json(ApiResponse::<()>::fail(
+                "bad_request",
+                "texto entre 1 e 4000 chars",
+            )),
         )
             .into_response();
     }
@@ -439,22 +467,19 @@ async fn admin_update_rule(
         return r;
     }
     if let Some(t) = body.text.as_deref() {
-        let _ = sqlx::query(
-            r"UPDATE server_rule SET text = $2, updated_at = now() WHERE id = $1",
-        )
-        .bind(id)
-        .bind(t.trim())
-        .execute(&state.db)
-        .await;
+        let _ = sqlx::query(r"UPDATE server_rule SET text = $2, updated_at = now() WHERE id = $1")
+            .bind(id)
+            .bind(t.trim())
+            .execute(&state.db)
+            .await;
     }
     if let Some(o) = body.ordinal {
-        let _ = sqlx::query(
-            r"UPDATE server_rule SET ordinal = $2, updated_at = now() WHERE id = $1",
-        )
-        .bind(id)
-        .bind(o)
-        .execute(&state.db)
-        .await;
+        let _ =
+            sqlx::query(r"UPDATE server_rule SET ordinal = $2, updated_at = now() WHERE id = $1")
+                .bind(id)
+                .bind(o)
+                .execute(&state.db)
+                .await;
     }
     ok_json()
 }

@@ -132,13 +132,9 @@ impl ProfileService {
                 "use POST /auth/logout para encerrar este dispositivo".to_owned(),
             ));
         }
-        let affected = queries::delete_session_for_citizen(
-            &self.db,
-            session_id,
-            caller.as_uuid(),
-        )
-        .await
-        .map_err(map_sqlx)?;
+        let affected = queries::delete_session_for_citizen(&self.db, session_id, caller.as_uuid())
+            .await
+            .map_err(map_sqlx)?;
         if affected == 0 {
             return Err(Error::NotFound("session not found".to_owned()));
         }
@@ -157,7 +153,8 @@ impl ProfileService {
         expected_org: OrgId,
         raw: Vec<u8>,
     ) -> Result<ProfileDto> {
-        self.set_media(caller, expected_org, MediaKind::Avatar, raw).await
+        self.set_media(caller, expected_org, MediaKind::Avatar, raw)
+            .await
     }
 
     /// Upload + persist the caller's cover image. Same shape as [`Self::set_avatar`].
@@ -170,7 +167,8 @@ impl ProfileService {
         expected_org: OrgId,
         raw: Vec<u8>,
     ) -> Result<ProfileDto> {
-        self.set_media(caller, expected_org, MediaKind::Cover, raw).await
+        self.set_media(caller, expected_org, MediaKind::Cover, raw)
+            .await
     }
 
     /// Read the citizen's PRIVATE federation PEM. Internal-use only: this is a credential and
@@ -191,11 +189,7 @@ impl ProfileService {
     ///
     /// # Errors
     /// [`Error::Storage`] on persistence failure.
-    pub async fn mark_inbox_seen(
-        &self,
-        activity_id: &str,
-        citizen: CitizenId,
-    ) -> Result<bool> {
+    pub async fn mark_inbox_seen(&self, activity_id: &str, citizen: CitizenId) -> Result<bool> {
         let now = self.clock.now();
         queries::mark_inbox_activity_seen(&self.db, activity_id, citizen.as_uuid(), now)
             .await
@@ -238,14 +232,9 @@ impl ProfileService {
         remote_actor_url: &str,
     ) -> Result<()> {
         let now = self.clock.now();
-        queries::mark_inbound_follow_accepted(
-            &self.db,
-            citizen.as_uuid(),
-            remote_actor_url,
-            now,
-        )
-        .await
-        .map_err(map_sqlx)?;
+        queries::mark_inbound_follow_accepted(&self.db, citizen.as_uuid(), remote_actor_url, now)
+            .await
+            .map_err(map_sqlx)?;
         Ok(())
     }
 
@@ -321,7 +310,9 @@ impl ProfileService {
     ) -> Result<(String, u64)> {
         let trimmed = content.trim().to_owned();
         if trimmed.is_empty() {
-            return Err(Error::Validation("digite alguma coisa antes de publicar".to_owned()));
+            return Err(Error::Validation(
+                "digite alguma coisa antes de publicar".to_owned(),
+            ));
         }
         if trimmed.chars().count() > 3_000 {
             return Err(Error::Validation(
@@ -422,23 +413,14 @@ impl ProfileService {
             .await;
         }
         for h in &hashtags {
-            let _ = queries::insert_note_hashtag(
-                &self.db,
-                &object_id,
-                &h.normalized,
-                &h.original,
-                now,
-            )
-            .await;
+            let _ =
+                queries::insert_note_hashtag(&self.db, &object_id, &h.normalized, &h.original, now)
+                    .await;
         }
-        let fanout = queries::fanout_delivery_to_followers(
-            &self.db,
-            entry_id,
-            citizen.as_uuid(),
-            now,
-        )
-        .await
-        .map_err(map_sqlx)?;
+        let fanout =
+            queries::fanout_delivery_to_followers(&self.db, entry_id, citizen.as_uuid(), now)
+                .await
+                .map_err(map_sqlx)?;
         Ok((activity_id, fanout))
     }
 
@@ -578,63 +560,67 @@ impl ProfileService {
     }
 
     /// Look up a public citizen by user-chosen handle (only when `is_public = true`). Used by the
-/// federation surface (`/.well-known/webfinger`, `/actors/{handle}`) to resolve `@handle`. Returns
-/// the profile DTO so the federation layer can build the Actor document from it.
-///
-/// # Errors
-/// [`Error::NotFound`] for unknown / private handles (the surface conflates the two to keep the
-/// member directory opaque); [`Error::Storage`] on persistence failure.
-pub async fn find_public_by_handle(&self, org: OrgId, handle: &str) -> Result<ProfileDto> {
-    let row = queries::find_public_citizen_by_handle(&self.db, org.as_uuid(), handle)
-        .await
-        .map_err(map_sqlx)?
-        .ok_or_else(|| Error::NotFound("public citizen not found".to_owned()))?;
-    Ok(self.row_to_dto(row))
-}
-
-/// Read (or LAZY-GENERATE) the citizen's federation actor public key. Called by the federation
-/// layer when materializing the Actor document. Generation runs on a blocking task (RSA-2048
-/// gen is ≈100ms CPU) and is wrapped in an `INSERT ... ON CONFLICT DO NOTHING` so a concurrent
-/// double-call never duplicates.
-///
-/// Only public citizens (`is_public = true`) ever land here — the upstream federation surface
-/// already filters by that flag — so the storage footprint of keypairs is paid for exactly by
-/// those who actually federate.
-///
-/// # Errors
-/// [`Error::Storage`] on persistence failure or RSA-gen failure (effectively never; the
-/// only realistic source of RSA failure is an exhausted OS RNG).
-pub async fn ensure_actor_public_key(&self, citizen: CitizenId) -> Result<String> {
-    if let Some(pem) = queries::find_actor_public_key(&self.db, citizen.as_uuid())
-        .await
-        .map_err(map_sqlx)?
-    {
-        return Ok(pem);
+    /// federation surface (`/.well-known/webfinger`, `/actors/{handle}`) to resolve `@handle`. Returns
+    /// the profile DTO so the federation layer can build the Actor document from it.
+    ///
+    /// # Errors
+    /// [`Error::NotFound`] for unknown / private handles (the surface conflates the two to keep the
+    /// member directory opaque); [`Error::Storage`] on persistence failure.
+    pub async fn find_public_by_handle(&self, org: OrgId, handle: &str) -> Result<ProfileDto> {
+        let row = queries::find_public_citizen_by_handle(&self.db, org.as_uuid(), handle)
+            .await
+            .map_err(map_sqlx)?
+            .ok_or_else(|| Error::NotFound("public citizen not found".to_owned()))?;
+        Ok(self.row_to_dto(row))
     }
-    // No key yet — generate, persist, re-read (the second SELECT is needed because the INSERT
-    // may be a no-op under contention; the surviving row's PEM is what we return).
-    let kp = tokio::task::spawn_blocking(dsoc_federation::generate_actor_keypair)
-        .await
-        .map_err(|e| Error::Storage(Box::new(e)))?
-        .map_err(|e| Error::Storage(Box::new(std::io::Error::other(format!("rsa gen: {e}")))))?;
-    let now = self.clock.now();
-    queries::insert_actor_keypair(
-        &self.db,
-        citizen.as_uuid(),
-        &kp.private_pem,
-        &kp.public_pem,
-        now,
-    )
-    .await
-    .map_err(map_sqlx)?;
-    let pem = queries::find_actor_public_key(&self.db, citizen.as_uuid())
-        .await
-        .map_err(map_sqlx)?
-        .ok_or_else(|| Error::Storage(Box::new(std::io::Error::other("post-insert lookup empty"))))?;
-    Ok(pem)
-}
 
-/// Shared body of [`Self::set_avatar`] / [`Self::set_cover`]. Validates the caller's
+    /// Read (or LAZY-GENERATE) the citizen's federation actor public key. Called by the federation
+    /// layer when materializing the Actor document. Generation runs on a blocking task (RSA-2048
+    /// gen is ≈100ms CPU) and is wrapped in an `INSERT ... ON CONFLICT DO NOTHING` so a concurrent
+    /// double-call never duplicates.
+    ///
+    /// Only public citizens (`is_public = true`) ever land here — the upstream federation surface
+    /// already filters by that flag — so the storage footprint of keypairs is paid for exactly by
+    /// those who actually federate.
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on persistence failure or RSA-gen failure (effectively never; the
+    /// only realistic source of RSA failure is an exhausted OS RNG).
+    pub async fn ensure_actor_public_key(&self, citizen: CitizenId) -> Result<String> {
+        if let Some(pem) = queries::find_actor_public_key(&self.db, citizen.as_uuid())
+            .await
+            .map_err(map_sqlx)?
+        {
+            return Ok(pem);
+        }
+        // No key yet — generate, persist, re-read (the second SELECT is needed because the INSERT
+        // may be a no-op under contention; the surviving row's PEM is what we return).
+        let kp = tokio::task::spawn_blocking(dsoc_federation::generate_actor_keypair)
+            .await
+            .map_err(|e| Error::Storage(Box::new(e)))?
+            .map_err(|e| {
+                Error::Storage(Box::new(std::io::Error::other(format!("rsa gen: {e}"))))
+            })?;
+        let now = self.clock.now();
+        queries::insert_actor_keypair(
+            &self.db,
+            citizen.as_uuid(),
+            &kp.private_pem,
+            &kp.public_pem,
+            now,
+        )
+        .await
+        .map_err(map_sqlx)?;
+        let pem = queries::find_actor_public_key(&self.db, citizen.as_uuid())
+            .await
+            .map_err(map_sqlx)?
+            .ok_or_else(|| {
+                Error::Storage(Box::new(std::io::Error::other("post-insert lookup empty")))
+            })?;
+        Ok(pem)
+    }
+
+    /// Shared body of [`Self::set_avatar`] / [`Self::set_cover`]. Validates the caller's
     /// citizen row, reads the prior object key (for cleanup), uploads the new image, updates
     /// the row, then best-effort deletes the prior object from storage.
     async fn set_media(
@@ -826,9 +812,8 @@ impl From<dsoc_api_contract::ProfileUpdateDto> for ProfileUpdate {
     fn from(dto: dsoc_api_contract::ProfileUpdateDto) -> Self {
         // Empty string from the wire = clear (NULL) the column. This is the only way the JSON
         // body can express "remove the bio" given a flat optional field.
-        let into_clear_or_set = |v: Option<String>| {
-            v.map(|s| if s.is_empty() { None } else { Some(s) })
-        };
+        let into_clear_or_set =
+            |v: Option<String>| v.map(|s| if s.is_empty() { None } else { Some(s) });
         Self {
             display_name: into_clear_or_set(dto.display_name),
             bio: into_clear_or_set(dto.bio),

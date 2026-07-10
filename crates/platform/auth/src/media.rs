@@ -132,7 +132,8 @@ mod tests {
         let buf: ImageBuffer<Rgba<u8>, _> =
             ImageBuffer::from_fn(w, h, |_, _| Rgba([10, 200, 80, 255]));
         let mut out = Vec::new();
-        buf.write_to(&mut Cursor::new(&mut out), ImageFormat::Png).unwrap();
+        buf.write_to(&mut Cursor::new(&mut out), ImageFormat::Png)
+            .unwrap();
         out
     }
 

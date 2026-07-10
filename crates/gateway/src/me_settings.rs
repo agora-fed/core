@@ -20,8 +20,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
-use dsoc_app::AppState;
 use dsoc_api_contract::ApiResponse;
+use dsoc_app::AppState;
 use dsoc_auth::credential::{hash_password, verify_password};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -44,7 +44,10 @@ pub fn routes(state: AppState) -> Router<()> {
 fn unauthorized() -> Response {
     (
         StatusCode::UNAUTHORIZED,
-        Json(ApiResponse::<()>::fail("http_401", "Autenticação necessária.")),
+        Json(ApiResponse::<()>::fail(
+            "http_401",
+            "Autenticação necessária.",
+        )),
     )
         .into_response()
 }
@@ -106,16 +109,23 @@ struct AuthorizedAppDto {
     last_expires_at: DateTime<Utc>,
 }
 
-async fn list_authorized_apps(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Response {
+async fn list_authorized_apps(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized();
     };
-    let rows: Result<Vec<(Uuid, String, Option<String>, String, i64, DateTime<Utc>, DateTime<Utc>)>, _> =
-        sqlx::query_as(
-            r"SELECT app.id, app.name, app.website, MAX(tok.scopes),
+    let rows: Result<
+        Vec<(
+            Uuid,
+            String,
+            Option<String>,
+            String,
+            i64,
+            DateTime<Utc>,
+            DateTime<Utc>,
+        )>,
+        _,
+    > = sqlx::query_as(
+        r"SELECT app.id, app.name, app.website, MAX(tok.scopes),
                      COUNT(tok.id) AS token_count,
                      MIN(tok.created_at) AS first_authorized_at,
                      MAX(tok.expires_at) AS last_expires_at
@@ -126,10 +136,10 @@ async fn list_authorized_apps(
                  AND tok.expires_at > now()
                GROUP BY app.id, app.name, app.website
                ORDER BY MAX(tok.created_at) DESC",
-        )
-        .bind(citizen)
-        .fetch_all(&state.db)
-        .await;
+    )
+    .bind(citizen)
+    .fetch_all(&state.db)
+    .await;
     let rows = match rows {
         Ok(rows) => rows,
         Err(err) => {
@@ -139,15 +149,17 @@ async fn list_authorized_apps(
     };
     let list: Vec<AuthorizedAppDto> = rows
         .into_iter()
-        .map(|(id, name, website, scopes, count, first, last)| AuthorizedAppDto {
-            application_id: id,
-            name,
-            website,
-            scopes,
-            token_count: count,
-            first_authorized_at: first,
-            last_expires_at: last,
-        })
+        .map(
+            |(id, name, website, scopes, count, first, last)| AuthorizedAppDto {
+                application_id: id,
+                name,
+                website,
+                scopes,
+                token_count: count,
+                first_authorized_at: first,
+                last_expires_at: last,
+            },
+        )
         .collect();
     (StatusCode::OK, Json(ApiResponse::ok(list))).into_response()
 }
@@ -215,20 +227,17 @@ async fn change_password(
         return bad_request("A nova senha precisa ser diferente da atual.");
     }
     // 1. Fetch current password hash.
-    let row: Result<Option<(String,)>, _> = sqlx::query_as(
-        r"SELECT password_hash FROM auth_credential WHERE citizen_id = $1",
-    )
-    .bind(citizen)
-    .fetch_optional(&state.db)
-    .await;
+    let row: Result<Option<(String,)>, _> =
+        sqlx::query_as(r"SELECT password_hash FROM auth_credential WHERE citizen_id = $1")
+            .bind(citizen)
+            .fetch_optional(&state.db)
+            .await;
     let stored = match row {
         Ok(Some((h,))) => h,
         Ok(None) => {
             // Citizen authenticated via cookie but has no credential row — must be
             // an OIDC-linked account. Password change is not available then.
-            return bad_request(
-                "Sua conta usa login externo — a senha não pode ser trocada aqui.",
-            );
+            return bad_request("Sua conta usa login externo — a senha não pode ser trocada aqui.");
         }
         Err(err) => {
             tracing::error!(?err, "change_password fetch");
@@ -238,7 +247,10 @@ async fn change_password(
     if !verify_password(&body.current_password, &stored) {
         return (
             StatusCode::UNAUTHORIZED,
-            Json(ApiResponse::<()>::fail("http_401", "Senha atual incorreta.")),
+            Json(ApiResponse::<()>::fail(
+                "http_401",
+                "Senha atual incorreta.",
+            )),
         )
             .into_response();
     }
@@ -255,26 +267,23 @@ async fn change_password(
             return server_error();
         }
     };
-    if let Err(err) = sqlx::query(
-        r"UPDATE auth_credential SET password_hash = $2 WHERE citizen_id = $1",
-    )
-    .bind(citizen)
-    .bind(&new_hash)
-    .execute(&mut *tx)
-    .await
+    if let Err(err) =
+        sqlx::query(r"UPDATE auth_credential SET password_hash = $2 WHERE citizen_id = $1")
+            .bind(citizen)
+            .bind(&new_hash)
+            .execute(&mut *tx)
+            .await
     {
         tracing::error!(?err, "change_password update hash");
         return server_error();
     }
     // Preserve the current browser's session; kill everything else.
     let kill_others = if let Some(sid) = current_session {
-        sqlx::query(
-            r"DELETE FROM auth_session WHERE citizen_id = $1 AND id <> $2",
-        )
-        .bind(citizen)
-        .bind(sid)
-        .execute(&mut *tx)
-        .await
+        sqlx::query(r"DELETE FROM auth_session WHERE citizen_id = $1 AND id <> $2")
+            .bind(citizen)
+            .bind(sid)
+            .execute(&mut *tx)
+            .await
     } else {
         sqlx::query(r"DELETE FROM auth_session WHERE citizen_id = $1")
             .bind(citizen)

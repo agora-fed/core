@@ -230,6 +230,7 @@ pub async fn issue_authorization_code(
 /// * code exists AND not used AND not expired
 /// * application_id matches the client_id
 /// * redirect_uri matches
+///
 /// Marks the code used before issuing (atomic-ish; a race would still
 /// double-issue, but the second grant would see used_at set and 400).
 pub async fn exchange_authorization_code(
@@ -248,16 +249,22 @@ pub async fn exchange_authorization_code(
         return Err(OAuthError::InvalidClient);
     }
     let code_hash = hash_hex(code);
-    let row: Option<(Uuid, Uuid, String, String, DateTime<Utc>, Option<DateTime<Utc>>)> =
-        sqlx::query_as(
-            r"SELECT application_id, citizen_id, redirect_uri, scopes, expires_at, used_at
+    let row: Option<(
+        Uuid,
+        Uuid,
+        String,
+        String,
+        DateTime<Utc>,
+        Option<DateTime<Utc>>,
+    )> = sqlx::query_as(
+        r"SELECT application_id, citizen_id, redirect_uri, scopes, expires_at, used_at
                 FROM oauth_authorization_code
                WHERE code_hash = $1",
-        )
-        .bind(&code_hash)
-        .fetch_optional(db)
-        .await
-        .map_err(|_| OAuthError::ServerError)?;
+    )
+    .bind(&code_hash)
+    .fetch_optional(db)
+    .await
+    .map_err(|_| OAuthError::ServerError)?;
     let (row_app, citizen_id, row_redirect, scopes, expires_at, used_at) =
         row.ok_or(OAuthError::InvalidGrant)?;
     if row_app != app_id
@@ -268,13 +275,11 @@ pub async fn exchange_authorization_code(
         return Err(OAuthError::InvalidGrant);
     }
     // Mark used before issuing so a replay is caught.
-    sqlx::query(
-        r"UPDATE oauth_authorization_code SET used_at = now() WHERE code_hash = $1",
-    )
-    .bind(&code_hash)
-    .execute(db)
-    .await
-    .map_err(|_| OAuthError::ServerError)?;
+    sqlx::query(r"UPDATE oauth_authorization_code SET used_at = now() WHERE code_hash = $1")
+        .bind(&code_hash)
+        .execute(db)
+        .await
+        .map_err(|_| OAuthError::ServerError)?;
     issue_access_token(db, app_id, Some(citizen_id), &scopes)
         .await
         .map_err(|_| OAuthError::ServerError)
@@ -417,7 +422,9 @@ mod tests {
     fn random_tokens_are_url_safe_and_sized() {
         let t = random_token(43);
         assert_eq!(t.len(), 43);
-        assert!(t.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'));
+        assert!(t
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'));
     }
 
     #[test]
