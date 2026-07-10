@@ -8,6 +8,14 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.28.1-contato** — nenhum e-mail é mais publicado no site (os endereços anteriores em
+  /sobre, /privacidade, /termos e /transparencia não existiam e eram alvo de harvesting):
+  novo formulário único em `/contato` com setor pré-selecionado por link
+  (`?setor=contato|lgpd|moderacao|seguranca`), enviado por `POST /api/v1/contact` via o
+  relay SMTP soberano para a caixa interna (`CONTACT_INBOX`), com `Reply-To` de quem
+  escreveu. Defesas do endpoint público: honeypot, rate-limit por IP
+  (`CONTACT_RATE_MAX_PER_HOUR`, default 5/h) e validação de tamanho/setor.
+  `SECURITY.md` passa a apontar para o formulário.
 - **0.28.0-nli-judge** — o merge deixa de confiar em representações por-texto: crítica de
   usuário ("a linguagem é dinâmica; não dá para parametrizar palavras soltas — 'a grande
   obra do mestre Picasso' ≠ 'a pica de aço do mestre de obras'") verificada por medição:

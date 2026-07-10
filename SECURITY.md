@@ -5,7 +5,8 @@ pressure. Security is a first-class, non-negotiable concern (PLAN.md principles 
 
 ## Reporting a vulnerability
 
-Report privately to **security@pop.coop** (PGP key in the wiki). Do **not** open a public issue.
+Report privately via the contact form at
+<https://democracia.social.br/contato/?setor=seguranca>. Do **not** open a public issue.
 We acknowledge within 72 hours and aim to remediate critical issues before public disclosure.
 
 ## Hard rules (enforced in CI)

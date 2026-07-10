@@ -243,15 +243,15 @@ struct ProposalDeliveryRow {
 // ---------------------------------------------------------------------------
 
 #[derive(Clone)]
-struct SmtpConfig {
-    host: String,
-    port: u16,
-    user: Option<String>,
-    pass: Option<String>,
-    from: String,
+pub(crate) struct SmtpConfig {
+    pub(crate) host: String,
+    pub(crate) port: u16,
+    pub(crate) user: Option<String>,
+    pub(crate) pass: Option<String>,
+    pub(crate) from: String,
 }
 
-fn smtp_from_env() -> Option<SmtpConfig> {
+pub(crate) fn smtp_from_env() -> Option<SmtpConfig> {
     let host = std::env::var("SMTP_HOST").ok()?;
     let from = std::env::var("SMTP_FROM").ok()?;
     let port = std::env::var("SMTP_PORT")

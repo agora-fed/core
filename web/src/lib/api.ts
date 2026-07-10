@@ -1991,3 +1991,15 @@ export const toggleLike = (object_uri: string) =>
 /** Toggle an Announce (republicar) on a note by its ActivityPub object URI. */
 export const toggleBoost = (object_uri: string) =>
   apiPost<BoostResultDto>('/api/v1/me/boost', { object_uri });
+
+/** Formulário público de contato (0.28.1) — setores fechados no backend. */
+export type ContactSector = 'contato' | 'lgpd' | 'moderacao' | 'seguranca';
+export const sendContactMessage = (body: {
+  sector: ContactSector;
+  name: string;
+  email: string;
+  subject: string;
+  message: string;
+  /** Honeypot anti-bot — sempre vazio em envio humano. */
+  website?: string;
+}) => apiPost<null>('/api/v1/contact', body);
