@@ -18,6 +18,8 @@ pub mod events;
 pub mod http;
 #[cfg(feature = "model-embedder")]
 pub mod model_embedder;
+#[cfg(feature = "model-embedder")]
+pub mod nli_judge;
 pub mod queries;
 pub mod service;
 pub mod stance;
@@ -26,6 +28,8 @@ pub use domain::{cosine_distance, Decision, Embedder, Placement, StubEmbedder, D
 pub use http::routes;
 #[cfg(feature = "model-embedder")]
 pub use model_embedder::ModelEmbedder;
+#[cfg(feature = "model-embedder")]
+pub use nli_judge::{NliJudge, Relation};
 pub use service::ClusterService;
 pub use stance::{direction_signature, directions_conflict};
 

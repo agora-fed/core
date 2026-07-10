@@ -72,7 +72,41 @@ const AXIS_LEXICON: &[(&str, &str, char)] = &[
 /// [`NEGATOR_WINDOW`] content tokens): "proibir a privatização" asserts
 /// `public+`, not `public-`. A negator with no axis stem in reach negates the
 /// nearest content stem instead (`n:<stem>`).
-const NEGATORS: &[&str] = &["nao", "proib", "imped", "contra", "fim", "acab", "barr"];
+///
+/// Each entry declares its match mode explicitly: `Exact` full-token words
+/// ("contra" must never match "contraTAR"), `Prefix` verb stems ("proib" →
+/// proibir/proíba/proibição). "barrar" was dropped entirely — its stem
+/// collides with "barragem"/"barraca", common civic nouns.
+const NEGATORS: &[(&str, Match)] = &[
+    ("nao", Match::Exact),
+    ("contra", Match::Exact),
+    ("fim", Match::Exact),
+    ("proib", Match::Prefix),
+    ("imped", Match::Prefix),
+    ("acab", Match::Prefix),
+];
+
+/// Prefix-collision exclusions: tokens starting with these are NEVER treated
+/// as axis stems or negators, because a shorter stem falsely captures them
+/// (measured/reported: "elevador"≠elevar, "cortesia"/"cortejo"/"cortina"≠
+/// cortar, "vendedor"/"vendaval"≠vender, "fechadura"≠fechar, "acabamento"≠
+/// acabar-com). Language is dynamic; this list is the lexicon admitting it.
+const EXCLUSIONS: &[&str] = &[
+    "elevad",
+    "cortes",
+    "cortej",
+    "cortin",
+    "vended",
+    "vendav",
+    "fechadur",
+    "acabament",
+];
+
+#[derive(Clone, Copy)]
+enum Match {
+    Exact,
+    Prefix,
+}
 
 /// How many content tokens ahead a negator reaches.
 const NEGATOR_WINDOW: usize = 3;
@@ -174,7 +208,14 @@ fn axis_signs(sig: &[String], axis: &str) -> (bool, bool) {
     (plus, minus)
 }
 
+fn excluded(token: &str) -> bool {
+    EXCLUSIONS.iter().any(|e| token.starts_with(e))
+}
+
 fn axis_of(token: &str) -> Option<(&'static str, char)> {
+    if excluded(token) {
+        return None;
+    }
     AXIS_LEXICON
         .iter()
         .find(|(prefix, _, _)| token.starts_with(prefix))
@@ -182,12 +223,12 @@ fn axis_of(token: &str) -> Option<(&'static str, char)> {
 }
 
 fn is_negator(token: &str) -> bool {
-    NEGATORS.iter().any(|n| {
-        if n.len() <= 4 {
-            token == *n
-        } else {
-            token.starts_with(n)
-        }
+    if excluded(token) {
+        return false;
+    }
+    NEGATORS.iter().any(|(word, mode)| match mode {
+        Match::Exact => token == *word,
+        Match::Prefix => token.starts_with(word),
     })
 }
 
@@ -314,6 +355,47 @@ mod tests {
         assert!(!conflict(
             "Recapear o asfalto da avenida principal",
             "Mais policiamento e iluminação na praça central",
+        ));
+    }
+
+    // ── Regressions for reported prefix collisions ("linguagem é dinâmica —
+    //    não dá para parametrizar palavras soltas"): each of these once
+    //    produced a false axis/negator signal. ───────────────────────────────
+
+    #[test]
+    fn contratar_is_not_the_negator_contra() {
+        // BUG (fixed): "contra" in prefix mode captured "contraTAR", so
+        // "contratar mais médicos" negated "médicos".
+        assert!(!conflict(
+            "Contratar mais médicos para os postos",
+            "Precisamos de médicos nos postos",
+        ));
+    }
+
+    #[test]
+    fn barragem_is_not_the_negator_barrar() {
+        // "barrar" was removed from the negator list entirely.
+        assert!(!conflict(
+            "Construir uma barragem no rio para conter as enchentes",
+            "Construir a barragem de contenção no rio",
+        ));
+    }
+
+    #[test]
+    fn noun_collisions_emit_no_axis_signal() {
+        // elevador≠elevar, cortina/cortesia≠cortar, vendedor≠vender,
+        // fechadura≠fechar, acabamento≠acabar-com.
+        assert!(!conflict(
+            "Consertar o elevador e a fechadura do posto de saúde",
+            "Reduzir a fila de espera do posto de saúde",
+        ));
+        assert!(!conflict(
+            "Apoiar os vendedores ambulantes com cortesia no atendimento",
+            "Proibir a venda de bebidas na praça durante os jogos",
+        ));
+        assert!(!conflict(
+            "Terminar o acabamento da obra da creche",
+            "Concluir a construção da creche do bairro",
         ));
     }
 }

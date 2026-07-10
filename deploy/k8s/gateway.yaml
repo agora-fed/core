@@ -52,14 +52,21 @@ spec:
         - { name: CONSENSUS_EMBEDDER, value: "model" }
         - { name: CONSENSUS_MODEL_DIR, value: "/srv/model" }
         - { name: CONSENSUS_QUERY_PREFIX, value: "query: " }   # E5-family requirement
+        # NLI pair judge (0.28.0): reads merge candidates jointly — homonyms
+        # and antagonists never share a cluster. mDeBERTa-xnli artifacts.
+        - { name: CONSENSUS_NLI_DIR, value: "/srv/model-nli" }
         ports: [ { containerPort: 8080 } ]
         readinessProbe: { httpGet: { path: /health, port: 8080 }, initialDelaySeconds: 3, periodSeconds: 10 }
         livenessProbe:  { httpGet: { path: /health, port: 8080 }, initialDelaySeconds: 10, periodSeconds: 20 }
-        # Memory: the f32 e5-small weights are ~450 MB in RAM (+ inference peaks);
-        # 1.5 Gi keeps a wide margin without starving Postgres on the 8 GB host.
-        resources: { requests: { cpu: "50m", memory: "512Mi" }, limits: { memory: "1536Mi" } }
+        # Memory: e5-small ~450 MB + mDeBERTa-xnli ~1.1 GB (f16 on disk, f32 in
+        # RAM) + inference peaks; 3 Gi keeps margin without starving Postgres
+        # on the 8 GB host.
+        resources: { requests: { cpu: "50m", memory: "1Gi" }, limits: { memory: "3Gi" } }
         volumeMounts:
         - { name: consensus-model, mountPath: /srv/model, readOnly: true }
+        - { name: consensus-nli, mountPath: /srv/model-nli, readOnly: true }
       volumes:
       - name: consensus-model
         hostPath: { path: /opt/dsoc/model, type: DirectoryOrCreate }
+      - name: consensus-nli
+        hostPath: { path: /opt/dsoc/model-nli, type: DirectoryOrCreate }

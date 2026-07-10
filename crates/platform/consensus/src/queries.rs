@@ -42,21 +42,48 @@ pub async fn insert_embedding(
     proposal_id: Uuid,
     embedding_literal: &str,
     direction_signature: &[String],
+    text_sample: &str,
     created_at: DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"INSERT INTO consensus_embedding
-               (id, proposal_id, embedding, direction_signature, created_at)
-           VALUES ($1, $2, $3::text::vector, $4, $5)"#,
+               (id, proposal_id, embedding, direction_signature, text_sample, created_at)
+           VALUES ($1, $2, $3::text::vector, $4, $5, $6)"#,
         id,
         proposal_id,
         embedding_literal,
         direction_signature,
+        text_sample,
         created_at,
     )
     .execute(executor)
     .await?;
     Ok(())
+}
+
+/// Non-empty text samples of a cluster's members (NLI pair-judge input). A
+/// small sample suffices: the judge asks "same ask?", and three members of a
+/// coherent cluster answer that as well as fifty would.
+///
+/// # Errors
+/// Propagates the underlying `sqlx::Error`.
+pub async fn member_texts(
+    executor: impl sqlx::PgExecutor<'_>,
+    cluster_id: Uuid,
+    limit: i64,
+) -> Result<Vec<String>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT e.text_sample
+           FROM consensus_embedding e
+           JOIN consensus_cluster_member m ON m.proposal_id = e.proposal_id
+           WHERE m.cluster_id = $1 AND e.text_sample <> ''
+           LIMIT $2"#,
+        cluster_id,
+        limit,
+    )
+    .fetch_all(executor)
+    .await?;
+    Ok(rows.into_iter().map(|r| r.text_sample).collect())
 }
 
 /// Direction signatures of a cluster's members (stance-veto input). Capped:

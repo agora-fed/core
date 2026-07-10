@@ -22,6 +22,21 @@ pub trait Embedder: Send + Sync {
     fn embed(&self, text: &str) -> Vec<f32>;
 }
 
+/// Reads a candidate pair JOINTLY and answers "is this the same ask?" —
+/// the judgment a per-text embedding cannot make (measured: homonyms like
+/// "obra do mestre Picasso" vs "mestre de obras" land UNDER the merge
+/// threshold; antagonists land at 0.015). Optional in the cluster service:
+/// absent judge = distance + stance lexicon only.
+pub trait PairJudge: Send + Sync {
+    /// `true` when the two texts assert the same demand.
+    ///
+    /// # Errors
+    /// Implementations surface inference failures as a human-readable message;
+    /// the service treats an erroring judge as "no opinion" (fail-open to the
+    /// cheaper guards, never wedge the loop).
+    fn same_ask(&self, a: &str, b: &str) -> Result<bool, String>;
+}
+
 /// A deterministic, dependency-free embedder: hashed bag-of-words (feature hashing) into
 /// [`EMBEDDING_DIM`] buckets, then L2-normalised. Same text always yields the same vector, and
 /// texts sharing tokens land close together — enough to exercise clustering deterministically.

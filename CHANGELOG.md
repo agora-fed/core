@@ -8,6 +8,27 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.28.0-nli-judge** — o merge deixa de confiar em representações por-texto: crítica de
+  usuário ("a linguagem é dinâmica; não dá para parametrizar palavras soltas — 'a grande
+  obra do mestre Picasso' ≠ 'a pica de aço do mestre de obras'") verificada por medição:
+  o par Picasso mede cosseno **0.068** (ABAIXO do threshold — mesclaria!) e os dois
+  sentidos de "banco" 0.078, enquanto paráfrase legítima pode medir 0.116. Embedding
+  comprime cada frase isoladamente; significado-em-contexto exige ler o PAR junto.
+  Novo `nli_judge.rs`: cross-encoder NLI multilíngue (mDeBERTa-v3-xnli via candle, local,
+  CPU) lê premissa+hipótese com cross-attention → implicação/neutro/contradição.
+  Política calibrada em matriz pt-BR (limiar de confiança 0.5): contradição confiante
+  veta (antagônicos medem 0.84–1.00); implicação confiante numa direção aceita (paráfrase
+  creche: 0.98); resto (neutro = mesmo tópico, não mesmo pedido) NÃO mescla — mata
+  homônimos, "mesma avenida outra obra" (cura a limitação documentada em 0.27.0) e
+  pedidos de escopo diferente. Encanamento: trait `PairJudge` (domain), texto amostrado
+  em `consensus_embedding.text_sample` (migration 0518), gate no ingest contra até 3
+  membros do cluster, fail-open com log (juiz com erro = sem opinião; distância + stance
+  continuam valendo). Env: `CONSENSUS_NLI_DIR` (~3-4s/par em release, pago só em
+  candidatos raros a merge; RAM do pod 1.5Gi → 3Gi).
+  Também: fixes de precisão no léxico de stance expostos pela mesma crítica —
+  "contra" virou match exato (capturava "contraTAR" como negador!), "barrar" removido
+  (colidia com "barragem"), exclusões para elevador/cortesia/cortina/vendedor/vendaval/
+  fechadura/acabamento, com testes de regressão.
 - **0.27.1-stance-guard** — veto de direção ideológica no clustering. Medição em pares
   cívicos pt-BR expôs o limite estrutural de QUALQUER sentence-embedder: "privatizar os
   postos do SUS" vs "proibir a privatização dos postos do SUS" medem cosseno 0.015 —
