@@ -8,6 +8,15 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.28.4-reembed** — fatia 2a do re-cluster: worker ganha o loop
+  `reembed_backlog_loop` (`WORKER_REEMBED_MS`, default 60s; lotes de 8) que drena as
+  rows de `consensus_embedding` com `text_sample` vazio — a era do stub FNV e o
+  intervalo 0.27.x — regravando vetor com o modelo real, `direction_signature`
+  (stance) e amostra NLI, e recomputando o centroide do cluster. Idempotente por
+  construção (amostra preenchida sai do backlog); some sozinho quando o backlog
+  seca. **Fronteira explícita**: membership NÃO é movida — reavaliar cluster de
+  proposta re-embedada (com skip de clusters com SLA disparado) é a fatia 2b,
+  porque mover emite eventos e mexe no gatilho de threshold.
 - **0.28.3-atestado** — verificação de cidadania por web-of-trust (migration 0519),
   a camada custo-zero enquanto TSE/gov.br não respondem: operadores de mandato
   (`mandate_identity_binding`) e admins de partido aceitos podem **atestar

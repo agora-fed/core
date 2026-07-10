@@ -336,6 +336,63 @@ impl ClusterService {
         }
     }
 
+    /// Backlog do re-embed (fatia 2a): propostas embedadas antes do 0518 —
+    /// vetor da era stub e/ou sem amostra NLI. O composition root busca o
+    /// texto (tabela de outro crate) e chama [`Self::re_embed`].
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on a persistence failure.
+    pub async fn stale_backlog(&self, limit: i64) -> Result<Vec<ProposalId>> {
+        let ids = queries::stale_embedding_proposals(&self.db, limit)
+            .await
+            .map_err(map_sqlx)?;
+        Ok(ids.into_iter().map(ProposalId::from_uuid).collect())
+    }
+
+    /// Fatia 2a do re-cluster (0.28.4): regrava o embedding de uma proposta
+    /// da era do stub com o modelo real, a assinatura de direção (stance.rs)
+    /// e a amostra NLI, e recomputa o centroide do cluster onde ela vive.
+    /// NÃO move a proposta de cluster — reavaliar membership (com skip de
+    /// clusters que já dispararam SLA) é a fatia 2b, porque mover emite
+    /// eventos e mexe no gatilho de threshold. Idempotente: a amostra
+    /// preenchida tira a row do backlog de [`Self::stale_backlog`].
+    ///
+    /// # Errors
+    /// [`Error::Validation`] pra texto vazio; [`Error::Storage`] em falha
+    /// de persistência.
+    pub async fn re_embed(&self, proposal: ProposalId, text: &str) -> Result<Option<ClusterId>> {
+        domain::validate_text(text)?;
+        let embedding = self.embedder.embed(text);
+        let literal = domain::to_pgvector_literal(&embedding);
+        let signature = crate::stance::direction_signature(text);
+        let text_sample: String = text.chars().take(1200).collect();
+
+        let mut tx = self.db.begin().await.map_err(map_sqlx)?;
+        let updated = queries::update_embedding(
+            &mut *tx,
+            proposal.as_uuid(),
+            &literal,
+            &signature,
+            &text_sample,
+        )
+        .await
+        .map_err(map_sqlx)?;
+        if !updated {
+            // Proposta sem embedding (nunca ingerida) — nada a re-embedar.
+            return Ok(None);
+        }
+        let cluster = queries::cluster_of_proposal(&mut *tx, proposal.as_uuid())
+            .await
+            .map_err(map_sqlx)?;
+        if let Some(cluster) = cluster {
+            queries::recompute_centroid(&mut *tx, cluster)
+                .await
+                .map_err(map_sqlx)?;
+        }
+        tx.commit().await.map_err(map_sqlx)?;
+        Ok(cluster.map(ClusterId::from_uuid))
+    }
+
     /// Fetch a single cluster.
     ///
     /// # Errors

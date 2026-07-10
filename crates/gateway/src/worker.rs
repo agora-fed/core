@@ -43,6 +43,12 @@ const DEFAULT_DELIVERY_MS: u64 = 2_000;
 /// Max deliveries claimed per delivery tick. Bounds the burst when a Note fans out to many
 /// followers; the queue drains over subsequent ticks.
 const DELIVERY_BATCH: u32 = 50;
+/// Default cadence do re-embed do backlog (fatia 2a, 0.28.4). Override com
+/// `WORKER_REEMBED_MS`. Backlog vazio = um SELECT indexado por tick.
+const DEFAULT_REEMBED_MS: u64 = 60_000;
+/// Propostas re-embedadas por tick. O modelo roda em CPU (~centenas de ms
+/// por texto) — lote pequeno pra não competir com o ingest ao vivo.
+const REEMBED_BATCH: i64 = 8;
 /// Drop a delivery row after this many failed attempts (the worker stops claiming it; the row
 /// stays in DB for ops introspection). Matches the longest reasonable Mastodon retry window.
 const DELIVERY_MAX_ATTEMPTS: i32 = 10;
@@ -408,6 +414,12 @@ pub fn spawn(state: AppState) {
     // 1 tick por hora — barato, indexed. Não bloqueia outros loops.
     tokio::spawn(auto_delete_notes_loop(state.clone()));
 
+    // 0.28.4 (fatia 2a): re-embeda o backlog da era do stub FNV — rows de
+    // consensus_embedding sem text_sample ganham vetor real + assinatura de
+    // direção + amostra NLI, e o centroide do cluster é recomputado. Some
+    // sozinho quando o backlog seca.
+    tokio::spawn(reembed_backlog_loop(state.clone()));
+
     tracing::info!(
         subscriptions = count,
         dispatch_ms,
@@ -416,6 +428,52 @@ pub fn spawn(state: AppState) {
         signup_cleanup_ms,
         "event worker started: consequence loop is live"
     );
+}
+
+/// Fatia 2a (0.28.4): drena o backlog de embeddings da era do stub. Cada
+/// tick pega até [`REEMBED_BATCH`] propostas com `text_sample` vazio, busca
+/// o texto no composition root (tabela de outro crate — mesmo padrão do
+/// [`ConsensusSub`]) e re-embeda via [`dsoc_consensus::ClusterService::re_embed`].
+/// Proposta cujo fetch falhe fica no backlog e é retentada no próximo tick
+/// (log em warn); o loop nunca derruba o worker.
+async fn reembed_backlog_loop(state: AppState) {
+    let reembed_ms = env_ms("WORKER_REEMBED_MS", DEFAULT_REEMBED_MS);
+    let consensus = dsoc_consensus::ClusterService::from_state(&state);
+    let proposals = dsoc_proposals::ProposalService::from_state(&state);
+    let mut ticker = interval(Duration::from_millis(reembed_ms));
+    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        ticker.tick().await;
+        let batch = match consensus.stale_backlog(REEMBED_BATCH).await {
+            Ok(batch) => batch,
+            Err(err) => {
+                tracing::error!(?err, "re-embed: backlog fetch failed");
+                continue;
+            }
+        };
+        if batch.is_empty() {
+            continue;
+        }
+        let mut done = 0usize;
+        for proposal in batch {
+            let row = match proposals.get(proposal).await {
+                Ok(row) => row,
+                Err(err) => {
+                    tracing::warn!(%proposal, ?err, "re-embed: proposal fetch failed; will retry");
+                    continue;
+                }
+            };
+            let text = format!("{}\n{}", row.title, row.body);
+            match consensus.re_embed(proposal, &text).await {
+                Ok(cluster) => {
+                    done += 1;
+                    tracing::info!(%proposal, ?cluster, "re-embedded stub-era proposal");
+                }
+                Err(err) => tracing::error!(%proposal, ?err, "re-embed failed"),
+            }
+        }
+        tracing::info!(done, "re-embed backlog tick");
+    }
 }
 
 /// Percorre todas as contas com preferência `auto_delete_notes_older_than_days`

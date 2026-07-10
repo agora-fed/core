@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE consensus_embedding\n           SET embedding = $2::text::vector,\n               direction_signature = $3,\n               text_sample = $4\n           WHERE proposal_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "TextArray",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c0142099207c47456782e8f76420196d8f86ac1c3e4c15d959dc37471cb7a77e"
+}

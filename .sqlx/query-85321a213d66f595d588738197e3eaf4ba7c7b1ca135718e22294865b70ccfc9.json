@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT proposal_id AS \"proposal_id!: Uuid\"\n           FROM consensus_embedding\n           WHERE text_sample = ''\n           ORDER BY created_at\n           LIMIT $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "proposal_id!: Uuid",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "85321a213d66f595d588738197e3eaf4ba7c7b1ca135718e22294865b70ccfc9"
+}

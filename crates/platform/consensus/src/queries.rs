@@ -286,3 +286,64 @@ pub async fn count_clusters(
     .await?;
     Ok(row.count)
 }
+
+/// Backlog do re-embed (fatia 2a, 0.28.4): propostas embedadas antes do
+/// 0518 — `text_sample` vazio marca tanto a era do stub FNV quanto o
+/// intervalo 0.27.x sem amostra. Depois do re-embed a amostra fica
+/// não-vazia (texto validado é não-vazio), então a row SAI do backlog —
+/// critério idempotente por construção.
+pub async fn stale_embedding_proposals(
+    executor: impl sqlx::PgExecutor<'_>,
+    limit: i64,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT proposal_id AS "proposal_id!: Uuid"
+           FROM consensus_embedding
+           WHERE text_sample = ''
+           ORDER BY created_at
+           LIMIT $1"#,
+        limit,
+    )
+    .fetch_all(executor)
+    .await
+}
+
+/// Regrava vetor + assinatura de direção + amostra de uma proposta já
+/// embedada. `false` = proposta sem embedding (nada a fazer).
+pub async fn update_embedding(
+    executor: impl sqlx::PgExecutor<'_>,
+    proposal_id: Uuid,
+    embedding_literal: &str,
+    direction_signature: &[String],
+    text_sample: &str,
+) -> Result<bool, sqlx::Error> {
+    let res = sqlx::query!(
+        r#"UPDATE consensus_embedding
+           SET embedding = $2::text::vector,
+               direction_signature = $3,
+               text_sample = $4
+           WHERE proposal_id = $1"#,
+        proposal_id,
+        embedding_literal,
+        direction_signature,
+        text_sample,
+    )
+    .execute(executor)
+    .await?;
+    Ok(res.rows_affected() > 0)
+}
+
+/// Cluster onde a proposta vive (edge UNIQUE por proposta).
+pub async fn cluster_of_proposal(
+    executor: impl sqlx::PgExecutor<'_>,
+    proposal_id: Uuid,
+) -> Result<Option<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT cluster_id AS "cluster_id!: Uuid"
+           FROM consensus_cluster_member
+           WHERE proposal_id = $1"#,
+        proposal_id,
+    )
+    .fetch_optional(executor)
+    .await
+}
