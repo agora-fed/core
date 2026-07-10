@@ -4,7 +4,10 @@
 # project does not enable (postgres-only). `cargo tree -i rsa` confirms it is not in the compiled
 # dependency graph, so the vulnerable code is never built into our binaries. Re-evaluate if a
 # patched rsa is released or if a MySQL driver is ever added.
-ignore = ["RUSTSEC-2023-0071"]
+# paste (RUSTSEC-2024-0436) is UNMAINTAINED, not vulnerable: a compile-time
+# proc-macro (no runtime surface) pulled by the candle ML stack (0.27.0
+# embeddings). Drop the ignore when candle replaces it upstream.
+ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2024-0436"]
 yanked = "deny"
 [bans]
 multiple-versions = "warn"
