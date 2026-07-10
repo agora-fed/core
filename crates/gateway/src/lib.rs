@@ -16,6 +16,7 @@ pub mod admin_reports;
 pub mod admin_users;
 pub mod amendments;
 pub mod announcements;
+pub mod attestations;
 pub mod civic_notify;
 pub mod contact;
 pub mod discovery;
@@ -174,6 +175,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(preferences::routes(state.clone()))
         .merge(fediverso_admin::routes(state.clone()))
         .merge(signup_gates::routes(state.clone()))
+        // Atestado de cidadania por operador verificado (0.28.3).
+        .merge(attestations::routes(state.clone()))
         // Formulário de contato público — nenhum e-mail exposto no site.
         .merge(contact::routes(state.clone()))
         .merge(webhooks::routes(state.clone()))

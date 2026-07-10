@@ -16,8 +16,12 @@
     getFollowStatus,
     toggleLike,
     toggleBoost,
+    getAttestations,
+    attestCitizen,
+    revokeAttestation,
     DEFAULT_ORG_ID,
     type RemoteNoteDto,
+    type AttestationsDto,
   } from '../../lib/api';
   import type { ProfileDto } from '../../lib/types';
   import { formatDate, formatRelative } from '../../lib/format';
@@ -97,6 +101,51 @@
     }
   });
 
+  // Atestado de cidadania (0.28.3, web-of-trust): quem já é verificado
+  // (operador de mandato / admin de partido) atesta que conhece o cidadão.
+  let attestations = $state<AttestationsDto | null>(null);
+  let attestBusy = $state(false);
+
+  async function loadAttestations(citizenId: string) {
+    const res = await getAttestations(citizenId);
+    if (res.success && res.data) attestations = res.data;
+  }
+
+  async function doAttest() {
+    if (!profile || attestBusy) return;
+    attestBusy = true;
+    const res = await attestCitizen(profile.citizen_id);
+    attestBusy = false;
+    if (res.success) {
+      toast('Atestado registrado — obrigado por fortalecer a rede de confiança.', 'success');
+      void loadAttestations(profile.citizen_id);
+    } else {
+      toast(res.error?.message ?? 'Não foi possível atestar agora.', 'error');
+    }
+  }
+
+  async function doRevoke() {
+    if (!profile || attestBusy) return;
+    attestBusy = true;
+    const res = await revokeAttestation(profile.citizen_id);
+    attestBusy = false;
+    if (res.success) {
+      toast('Atestado revogado.', 'success');
+      void loadAttestations(profile.citizen_id);
+    } else {
+      toast(res.error?.message ?? 'Não foi possível revogar agora.', 'error');
+    }
+  }
+
+  let attestTitle = $derived.by(() => {
+    if (!attestations || attestations.count === 0) return '';
+    const names = attestations.items
+      .slice(0, 5)
+      .map((i) => i.display_name ?? (i.handle ? `@${i.handle}` : 'operador'))
+      .join(', ');
+    return `Atestado por: ${names}${attestations.count > 5 ? '…' : ''}`;
+  });
+
   let displayName = $derived(
     profile?.display_name ?? profile?.handle ?? 'Cidadã(o)',
   );
@@ -155,6 +204,7 @@
       return;
     }
     profile = res.data;
+    void loadAttestations(profile.citizen_id);
     if (profile.is_public && profile.handle) {
       fediAddress = `@${profile.handle}@${window.location.host}`;
       // Timeline do perfil local reusa o mesmo proxy do outbox — passa a URL
@@ -453,12 +503,32 @@
               🇧🇷 {tituloBadge.label}
             </span>
           {/if}
+          {#if attestations && attestations.count > 0}
+            <span class="chip chip-ok" title={attestTitle}>
+              🤝 Cidadania atestada por {attestations.count}
+              {attestations.count === 1 ? 'operador(a)' : 'operadores'}
+            </span>
+          {/if}
           {#if profile.created_at}
             <span class="chip chip-plain" title={formatDate(profile.created_at)}>
               Por aqui desde {formatDate(profile.created_at)}
             </span>
           {/if}
         </div>
+        {#if attestations?.viewer_can_attest}
+          <div class="attest-cta">
+            {#if attestations.viewer_attested}
+              <button type="button" class="copy" onclick={doRevoke} disabled={attestBusy}>
+                {attestBusy ? '…' : 'Revogar meu atestado'}
+              </button>
+            {:else}
+              <button type="button" class="copy" onclick={doAttest} disabled={attestBusy}
+                title="Você opera um mandato ou administra um partido: pode atestar publicamente que conhece esta pessoa. O atestado é público e revogável.">
+                {attestBusy ? '…' : '🤝 Atestar que conheço esta pessoa'}
+              </button>
+            {/if}
+          </div>
+        {/if}
       </div>
     </header>
 
@@ -790,6 +860,9 @@
     border-radius: 6px;
     padding: 0.1rem 0.45rem;
     overflow-wrap: anywhere;
+  }
+  .attest-cta {
+    margin-top: 0.5rem;
   }
   .copy {
     font: inherit;

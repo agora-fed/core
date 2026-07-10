@@ -1992,6 +1992,48 @@ export const toggleLike = (object_uri: string) =>
 export const toggleBoost = (object_uri: string) =>
   apiPost<BoostResultDto>('/api/v1/me/boost', { object_uri });
 
+/** Atestado de cidadania por operador verificado (0.28.3, web-of-trust). */
+export interface AttestationItemDto {
+  attester_citizen_id: string;
+  display_name: string | null;
+  handle: string | null;
+  kind: 'mandato' | 'partido';
+  note: string | null;
+  created_at: string;
+}
+export interface AttestationsDto {
+  count: number;
+  viewer_can_attest: boolean;
+  viewer_attested: boolean;
+  items: AttestationItemDto[];
+}
+export const getAttestations = (citizenId: string) =>
+  apiGetCredentialed<AttestationsDto>(
+    `/api/v1/citizens/${encodeURIComponent(citizenId)}/attestations`,
+  );
+export const attestCitizen = (citizenId: string, note?: string) =>
+  apiPost<{ ok: true; kind: string }>(
+    `/api/v1/citizens/${encodeURIComponent(citizenId)}/attestations`,
+    { note },
+  );
+export async function revokeAttestation(
+  citizenId: string,
+): Promise<ApiResponse<{ ok: true }>> {
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/v1/citizens/${encodeURIComponent(citizenId)}/attestations`,
+      {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { accept: 'application/json' },
+      },
+    );
+    return (await res.json()) as ApiResponse<{ ok: true }>;
+  } catch (err) {
+    return { success: false, error: { code: 'network', message: String(err) } };
+  }
+}
+
 /** Formulário público de contato (0.28.1) — setores fechados no backend. */
 export type ContactSector = 'contato' | 'lgpd' | 'moderacao' | 'seguranca';
 export const sendContactMessage = (body: {
