@@ -71,6 +71,22 @@ impl PendingRole {
     }
 }
 
+/// Resultado do `confirm`: sessão pronta (instância aberta) ou conta criada
+/// mas travada em revisão manual (`GATEWAY_SIGNUP_REQUIRES_REVIEW`, 0514).
+#[derive(Debug)]
+pub enum ConfirmOutcome {
+    Session(Box<IssuedSession>),
+    PendingReview { email: String },
+}
+
+/// A instância exige aprovação manual de novos cadastros? Nome da env var
+/// segue o documentado na migration 0514 (`GATEWAY_SIGNUP_REQUIRES_REVIEW`).
+fn signup_requires_review() -> bool {
+    std::env::var("GATEWAY_SIGNUP_REQUIRES_REVIEW")
+        .map(|v| matches!(v.trim(), "1" | "true" | "TRUE" | "yes" | "on"))
+        .unwrap_or(false)
+}
+
 #[derive(Clone)]
 struct SmtpConfig {
     host: String,
@@ -394,9 +410,11 @@ impl SignupVerifyService {
             .map_err(map_sqlx)
     }
 
-    /// Passo 2 — redime o token e materializa a conta. Retorna a sessão pronta
-    /// pra o handler HTTP setar o cookie e o front redirecionar como se fosse
-    /// login normal.
+    /// Passo 2 — redime o token e materializa a conta. Em instância aberta
+    /// retorna a sessão pronta pra o handler HTTP setar o cookie; quando
+    /// `GATEWAY_SIGNUP_REQUIRES_REVIEW` está ligada (migration 0514), a conta
+    /// nasce com `pending_review = true`, NENHUMA sessão é emitida e o
+    /// outcome diz ao front que falta aprovação de admin (/admin/revisoes).
     ///
     /// # Errors
     /// [`Error::Unauthorized`] pra token inválido/expirado/já usado
@@ -404,7 +422,7 @@ impl SignupVerifyService {
     /// [`Error::Conflict`] se e-mail ou CPF já foram levados por outro cadastro
     /// entre o request e o confirm (mesma mensagem do register atual);
     /// [`Error::Storage`] em falha dura.
-    pub async fn confirm(&self, token: &str) -> Result<IssuedSession> {
+    pub async fn confirm(&self, token: &str) -> Result<ConfirmOutcome> {
         let hash = sha256(token);
         let now = self.clock.now();
         let row = queries::pending_signup_find_live(&self.db, &hash, now)
@@ -481,6 +499,18 @@ impl SignupVerifyService {
             }
         }
 
+        if signup_requires_review() {
+            sqlx::query(r"UPDATE citizen SET pending_review = true WHERE id = $1")
+                .bind(citizen.as_uuid())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+            tx.commit().await.map_err(map_sqlx)?;
+            return Ok(ConfirmOutcome::PendingReview {
+                email: row.email.clone(),
+            });
+        }
+
         let session = issue_session(
             &mut tx,
             org,
@@ -491,7 +521,7 @@ impl SignupVerifyService {
         )
         .await?;
         tx.commit().await.map_err(map_sqlx)?;
-        Ok(session)
+        Ok(ConfirmOutcome::Session(Box::new(session)))
     }
 
     async fn deliver_email(&self, to: &str, confirm_url: &str) {

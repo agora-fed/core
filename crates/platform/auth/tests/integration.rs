@@ -501,7 +501,10 @@ async fn signup_verify_confirm_materializes_citizen_and_session() {
     .await
     .expect("seed pending");
 
-    let session = svc.confirm(&token).await.expect("confirm");
+    let outcome = svc.confirm(&token).await.expect("confirm");
+    let dsoc_auth::signup_verify::ConfirmOutcome::Session(session) = outcome else {
+        panic!("instância aberta (sem GATEWAY_SIGNUP_REQUIRES_REVIEW) emite sessão no confirm");
+    };
 
     // Row pending marcada como usada.
     let used_at: Option<DateTime<Utc>> =

@@ -31,7 +31,7 @@ use crate::mandate_invite::{AcceptRequest, MandateInviteService};
 use crate::password_reset::PasswordResetService;
 use crate::profile::{ProfileService, ProfileUpdate};
 use crate::service::{IssuedSession, ZitadelAuth};
-use crate::signup_verify::SignupVerifyService;
+use crate::signup_verify::{ConfirmOutcome, SignupVerifyService};
 
 /// Build the routed service surface. Reads sovereign-issuer configuration from the environment
 /// (never hardcoded — PLAN.md principle 8). When the issuer/JWKS is unconfigured the endpoints
@@ -290,15 +290,25 @@ async fn register_confirm(
 ) -> Response {
     let svc = SignupVerifyService::from_state(&state);
     match svc.confirm(&body.token).await {
-        Ok(session) => {
+        Ok(ConfirmOutcome::Session(session)) => {
             let cookie = session_cookie(&session);
             (
                 StatusCode::CREATED,
                 [(header::SET_COOKIE, cookie)],
-                Json(ApiResponse::ok(SessionDto::from(session))),
+                Json(ApiResponse::ok(SessionDto::from(*session))),
             )
                 .into_response()
         }
+        // Instância com revisão manual ligada: conta criada, sem sessão.
+        // O front mostra "aguardando aprovação" no lugar do redirect.
+        Ok(ConfirmOutcome::PendingReview { email }) => (
+            StatusCode::ACCEPTED,
+            Json(ApiResponse::ok(SignupPendingDto {
+                status: "pending_review",
+                email,
+            })),
+        )
+            .into_response(),
         Err(error) => error_response(&error),
     }
 }

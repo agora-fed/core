@@ -330,6 +330,20 @@ impl ZitadelAuth {
         if suspended {
             return Err(Error::Unauthorized);
         }
+        // 0.28.2: contas em revisão (citizen.pending_review, migration 0514)
+        // não logam até um admin aprovar em /admin/revisoes. Diferente do
+        // suspended, a mensagem é explícita — a pessoa acertou a senha e
+        // precisa saber o que está acontecendo com a própria conta.
+        let pending: bool = sqlx::query_scalar(r"SELECT pending_review FROM citizen WHERE id = $1")
+            .bind(cred.citizen_id)
+            .fetch_one(&self.db)
+            .await
+            .map_err(map_sqlx)?;
+        if pending {
+            return Err(Error::Forbidden(
+                "Sua conta foi criada e aguarda aprovação de um administrador.".to_owned(),
+            ));
+        }
         let citizen = CitizenId::from_uuid(cred.citizen_id);
         let mut tx = self.db.begin().await.map_err(map_sqlx)?;
         let session = self

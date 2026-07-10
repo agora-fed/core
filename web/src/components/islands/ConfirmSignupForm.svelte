@@ -13,7 +13,7 @@
   import Alert from '../ui/Alert.svelte';
   import Button from '../ui/Button.svelte';
 
-  let phase = $state<'reading' | 'submitting' | 'error' | 'done'>('reading');
+  let phase = $state<'reading' | 'submitting' | 'error' | 'done' | 'pending'>('reading');
   let serverError = $state<string | null>(null);
   let citizenId = $state<string | null>(null);
 
@@ -33,6 +33,15 @@
     }
     phase = 'submitting';
     const res = await registerConfirm(token);
+    // Instância com revisão manual: a conta foi criada mas SEM sessão —
+    // o backend devolve {status: 'pending_review'} em vez do SessionDto.
+    if (
+      res.success &&
+      (res.data as unknown as { status?: string })?.status === 'pending_review'
+    ) {
+      phase = 'pending';
+      return;
+    }
     if (res.success && res.data) {
       try {
         localStorage.setItem('dsoc_citizen', res.data.citizen_id);
@@ -71,6 +80,18 @@
   <div class="state" aria-live="polite">
     <div class="spinner" aria-hidden="true"></div>
     <p>Confirmando seu cadastro…</p>
+  </div>
+{:else if phase === 'pending'}
+  <div class="state success" role="status">
+    <h2>Conta criada — falta a aprovação</h2>
+    <p class="muted">
+      Seu e-mail foi confirmado. Nesta instância, um administrador revisa os
+      novos cadastros antes do primeiro login — você já pode tentar entrar
+      assim que a aprovação sair.
+    </p>
+    <div class="cta">
+      <Button variant="ghost" size="md" href="/entrar">Ir para o login</Button>
+    </div>
   </div>
 {:else if phase === 'done'}
   <div class="state success" role="status">

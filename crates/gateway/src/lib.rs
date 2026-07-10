@@ -197,6 +197,13 @@ pub fn api_router(state: AppState) -> Router {
         .layer(middleware::from_fn_with_state(
             state.clone(),
             inject_identity,
+        ))
+        // Regras de registro (0.28.2): email_domain_block + ip_rule valem
+        // de fato em register/login — administradas em /admin/email-domains
+        // e /admin/ip-rules.
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            signup_gates::gates_middleware,
         ));
 
     // Serve the static DemocraciaBR front-end (Astro SSG, ADR-0009) at the same origin as the API

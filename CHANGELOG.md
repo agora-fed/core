@@ -8,6 +8,16 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.28.2-gates** — as regras de registro (migration 0514) passam a valer de fato; até
+  aqui os CRUDs admin existiam mas nada as consultava no fluxo real. (1) Middleware no
+  gateway (`signup_gates::gates_middleware`): register/register_politician recusam
+  domínio em `email_domain_block` e IP negado por `ip_rule` (escopo signup/all); login
+  recusa IP negado (escopo login/all); allow-pool vira allowlist; resposta 403 única e
+  opaca (`gate_denied`), fail-open em erro de DB. (2) `GATEWAY_SIGNUP_REQUIRES_REVIEW=true`
+  faz o confirm criar a conta com `pending_review=true` SEM emitir sessão (front mostra
+  "falta a aprovação") e o login recusa com mensagem explícita até um admin aprovar em
+  /admin/revisoes. CIDR matcher próprio (v4/v6, sem dependência nova) com testes; regra
+  malformada nunca nega por acidente.
 - **0.28.1-contato** — nenhum e-mail é mais publicado no site (os endereços anteriores em
   /sobre, /privacidade, /termos e /transparencia não existiam e eram alvo de harvesting):
   novo formulário único em `/contato` com setor pré-selecionado por link
