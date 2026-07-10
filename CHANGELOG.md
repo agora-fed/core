@@ -8,6 +8,13 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Fixed
+- **ops(k8s): Secret fora do manifest aplicável** — postmortem 2026-07-10: um
+  `kubectl apply -f deploy/k8s/gateway.yaml` sobrescreveu `DATABASE_URL`/`SMTP_*` de
+  produção com os placeholders `CHANGE_ME` que viviam no mesmo arquivo (site fora do
+  ar ~15 min; recuperação: rotação da senha do role `dsoc` no Postgres + restauração
+  do SMTP a partir do env de dev; STORAGE_*/VAPID_* sobreviveram porque apply faz
+  merge por chave). O Secret sai do `gateway.yaml` (agora seguro de aplicar) e vira
+  `gateway-secrets.example.yaml`, bootstrap-only; updates só via `kubectl patch`.
 - **0.28.5-reembed-fix** — dois achados do smoke da 0.28.4 em produção: (1) o boot
   frio carrega os dois modelos (~85 s) antes do listener e a **liveness probe matava
   o pod no meio do boot** (exit 137) — o manifest ganha `startupProbe` (até 5 min);

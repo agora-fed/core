@@ -2,24 +2,13 @@
 # runs on the VM host (apt), consumed externally — aligned with ADR-0002. The gateway pod uses
 # hostNetwork so it reaches Postgres on [::1] and binds the host's public IPv6 directly (no Ingress
 # needed on this single-node, IPv6-first node). See docs/ops/DEPLOYMENT-k3s-vm.md.
-apiVersion: v1
-kind: Secret
-metadata: { name: dsoc-gateway-secrets, namespace: default }
-type: Opaque
-stringData:
-  # Local Postgres over IPv6 loopback; sslmode=disable (same host, no TLS). Replace creds via your
-  # secret manager in a real deploy (PLAN.md principle 8) — this value is gitignored in practice.
-  DATABASE_URL: "postgres://dsoc:CHANGE_ME@[::1]:5432/democracia_social?sslmode=disable"
-  # Sovereign SMTP relay for password-reset, mandate invite, and SLA notifications. Values here
-  # are placeholders — never commit real credentials. Update on the sovereign VM with:
-  #   sudo k3s kubectl patch secret dsoc-gateway-secrets --type=merge -p '{"stringData":{...}}'
-  # See docs/ops/DEPLOYMENT-k3s-vm.md §SMTP for the exact command.
-  SMTP_HOST: "CHANGE_ME"
-  SMTP_PORT: "587"
-  SMTP_USER: "CHANGE_ME"
-  SMTP_PASS: "CHANGE_ME"
-  SMTP_FROM: "DemocraciaBR <sistema@democracia.social.br>"
----
+#
+# ⚠ SECRETS LIVE OUTSIDE THIS FILE. This manifest is safe to `kubectl apply`
+# on the live cluster. The `dsoc-gateway-secrets` Secret is bootstrapped ONCE
+# from deploy/k8s/gateway-secrets.example.yaml (placeholders) and thereafter
+# managed ONLY via `kubectl patch secret` — on 2026-07-10 an apply of this
+# file (when the Secret still lived here) overwrote the production
+# credentials with CHANGE_ME placeholders and took the site down.
 apiVersion: apps/v1
 kind: Deployment
 metadata: { name: dsoc-gateway, labels: { app: dsoc-gateway } }
@@ -39,7 +28,7 @@ spec:
       dnsPolicy: Default
       containers:
       - name: gateway
-        image: dsoc-gateway:0.27.0-embeddings
+        image: docker.io/library/dsoc-gateway:0.28.5-reembed-fix
         imagePullPolicy: Never        # image imported into containerd (k8s.io ns) on this node
         envFrom: [ { secretRef: { name: dsoc-gateway-secrets } } ]
         env:
