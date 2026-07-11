@@ -42,6 +42,7 @@ pub mod preferences;
 pub mod proposal_delivery;
 pub mod public_stats;
 pub mod reports;
+pub mod respond_link;
 pub mod signup_gates;
 pub mod social_graph;
 pub mod titulo_eleitor;
@@ -180,6 +181,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(attestations::routes(state.clone()))
         // Prova de notificação — timeline pública dos avisos ao gabinete (0.29).
         .merge(notification_receipts::routes(state.clone()))
+        // Reply-to-respond — gabinete responde via link assinado, sem conta (0.30).
+        .merge(respond_link::routes(state.clone()))
         // Formulário de contato público — nenhum e-mail exposto no site.
         .merge(contact::routes(state.clone()))
         .merge(webhooks::routes(state.clone()))

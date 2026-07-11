@@ -509,7 +509,15 @@ async fn notification_escalation_loop(state: AppState) {
     ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
     loop {
         ticker.tick().await;
-        type Due = (uuid::Uuid, String, Option<uuid::Uuid>, String, String, i64);
+        type Due = (
+            uuid::Uuid,
+            String,
+            Option<uuid::Uuid>,
+            String,
+            String,
+            i64,
+            uuid::Uuid,
+        );
         let due: Vec<Due> = match sqlx::query_as(
             r"SELECT p.id,
                      p.title,
@@ -517,7 +525,8 @@ async fn notification_escalation_loop(state: AppState) {
                      m.public_email,
                      COALESCE(m.display_name, 'gabinete'),
                      (SELECT max(r.attempt)::bigint FROM notification_receipt r
-                       WHERE r.proposal_id = p.id)
+                       WHERE r.proposal_id = p.id),
+                     s.id
                 FROM consequence_sla s
                 JOIN proposal p ON p.id = s.proposal_id
                 JOIN mandate m ON m.id = s.mandate_id
@@ -544,16 +553,24 @@ async fn notification_escalation_loop(state: AppState) {
         let smtp = crate::proposal_delivery::smtp_from_env();
         let public_origin = std::env::var("PUBLIC_ORIGIN")
             .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
-        for (proposal_id, title, mandate_id, email, display_name, last_attempt) in due {
+        for (proposal_id, title, mandate_id, email, display_name, last_attempt, sla_id) in due {
             let attempt = last_attempt + 1;
             let subject =
                 format!("[Lembrete {attempt}/3] Demanda cidadã aguardando resposta — {title}");
+            // Reply-to-respond (0.30): link assinado responde SEM conta —
+            // atrito zero pro gabinete. Sem RESPOND_LINK_SECRET, cai no
+            // link da proposta (que exige operador logado).
+            let origin = public_origin.trim_end_matches('/');
+            let respond_url = match crate::respond_link::respond_token(sla_id) {
+                Some(token) => format!("{origin}/responder/?sla={sla_id}&t={token}"),
+                None => format!("{origin}/propostas/{proposal_id}"),
+            };
             let body = format!(
                 "Prezado(a) {display_name},\n\nA demanda cidadã \"{title}\" segue \
                  aguardando resposta do gabinete. Este é o {attempt}º aviso; cada \
                  aviso fica registrado publicamente com recibo verificável.\n\n\
-                 Responder: {}/propostas/{proposal_id}\n\n— DemocraciaBR",
-                public_origin.trim_end_matches('/'),
+                 Responder agora (sem cadastro): {respond_url}\n\n\
+                 Ver a demanda: {origin}/propostas/{proposal_id}\n\n— DemocraciaBR",
             );
             let outcome = match &smtp {
                 Some(cfg) => {

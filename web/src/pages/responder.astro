@@ -1,0 +1,43 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import ColorBar from '../components/illustrations/ColorBar.astro';
+import RespondForm from '../components/islands/RespondForm.svelte';
+
+const description =
+  'Resposta oficial do gabinete a uma demanda cidadã — via link assinado do e-mail de aviso, sem necessidade de cadastro.';
+---
+
+<BaseLayout title="Responder demanda" {description}>
+  <section class="section">
+    <div class="container narrow">
+      <header class="head">
+        <ColorBar class="head-bar" />
+        <h1>Responder demanda cidadã</h1>
+        <p class="lede muted">
+          Você chegou aqui pelo link do e-mail oficial do gabinete. A resposta
+          é registrada publicamente no placar do mandato — sem cadastro.
+        </p>
+      </header>
+      <RespondForm client:load />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .narrow {
+    max-width: 38rem;
+  }
+  .head {
+    margin-bottom: var(--sp-6);
+  }
+  .head-bar {
+    margin-bottom: var(--sp-3);
+  }
+  h1 {
+    margin: 0 0 var(--sp-2);
+  }
+  .lede {
+    font-size: var(--fs-lg);
+    line-height: var(--lh-relaxed);
+  }
+</style>

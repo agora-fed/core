@@ -2049,6 +2049,24 @@ export const getDeliveryReceipts = (proposalId: string) =>
     `/api/v1/proposals/${encodeURIComponent(proposalId)}/delivery-receipts`,
   );
 
+/** Reply-to-respond (0.30) — gabinete responde via link assinado, sem conta. */
+export interface RespondContextDto {
+  proposal_title: string;
+  mandate_display_name: string | null;
+  due_at: string;
+  status: string;
+}
+export const getRespondContext = (sla: string, t: string) =>
+  apiGetCredentialed<RespondContextDto>(
+    `/api/v1/respond/context?sla=${encodeURIComponent(sla)}&t=${encodeURIComponent(t)}`,
+  );
+export const submitRespond = (body: {
+  sla_id: string;
+  token: string;
+  body: string;
+  committed: boolean;
+}) => apiPost<{ ok: true }>('/api/v1/respond', body);
+
 /** Formulário público de contato (0.28.1) — setores fechados no backend. */
 export type ContactSector = 'contato' | 'lgpd' | 'moderacao' | 'seguranca';
 export const sendContactMessage = (body: {

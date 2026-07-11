@@ -8,6 +8,16 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.30.0-responder — reply-to-respond: o gabinete responde sem conta** (item 3 do
+  plano): os e-mails de aviso ao gabinete passam a carregar um **link assinado**
+  (`/responder/?sla=…&t=hmac_sha256(RESPOND_LINK_SECRET, sla_id)`) que abre a página
+  de resposta pública SEM cadastro — a posse do token, entregue apenas à caixa
+  oficial do mandato (dado público Câmara/Senado/TSE), é a autorização, como o AR
+  postal. A página mostra a demanda e o prazo, aceita a resposta (com o opcional
+  "compromisso concreto" → status `acted`) e registra via
+  `ConsequenceService::respond` — desfecho permanente, SLA já resolvido responde
+  409. Env ausente = recurso dormant (e-mails caem no link da proposta). Ataca o
+  gargalo real do loop: a adoção pelo político, com atrito zero.
 - **0.29.1-silencio-provado — a prova viaja com a denúncia** (item 2, fatia 2 —
   fecha o item): (1) a página da proposta ganha a seção **"Avisos ao gabinete —
   com recibo"**: cada tentativa datada, resultado e hash encadeado visíveis a
