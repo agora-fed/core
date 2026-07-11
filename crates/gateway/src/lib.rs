@@ -33,6 +33,7 @@ pub mod mastodon_dto;
 pub mod mastodon_oauth;
 pub mod me_settings;
 pub mod note_media;
+pub mod notification_receipts;
 pub mod notifications;
 pub mod parlamentar_activity;
 pub mod politicos_ext;
@@ -177,6 +178,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(signup_gates::routes(state.clone()))
         // Atestado de cidadania por operador verificado (0.28.3).
         .merge(attestations::routes(state.clone()))
+        // Prova de notificação — timeline pública dos avisos ao gabinete (0.29).
+        .merge(notification_receipts::routes(state.clone()))
         // Formulário de contato público — nenhum e-mail exposto no site.
         .merge(contact::routes(state.clone()))
         .merge(webhooks::routes(state.clone()))

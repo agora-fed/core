@@ -46,6 +46,10 @@ const DELIVERY_BATCH: u32 = 50;
 /// Default cadence do re-embed do backlog (fatia 2a, 0.28.4). Override com
 /// `WORKER_REEMBED_MS`. Backlog vazio = um SELECT indexado por tick.
 const DEFAULT_REEMBED_MS: u64 = 60_000;
+/// Cadence do escalonamento de avisos ao gabinete (0.29 — AR digital).
+/// Reenvia D+1 e D+2 enquanto o SLA está pendente; 1 tick/hora basta
+/// (a granularidade da escada é diária). Override: `WORKER_ESCALATION_MS`.
+const DEFAULT_ESCALATION_MS: u64 = 60 * 60 * 1000;
 /// Propostas re-embedadas por tick. O modelo roda em CPU (~centenas de ms
 /// por texto) — lote pequeno pra não competir com o ingest ao vivo.
 const REEMBED_BATCH: i64 = 8;
@@ -420,6 +424,10 @@ pub fn spawn(state: AppState) {
     // sozinho quando o backlog seca.
     tokio::spawn(reembed_backlog_loop(state.clone()));
 
+    // 0.29 (AR digital do silêncio): enquanto o SLA está pendente, o aviso
+    // ao gabinete escala D+1 e D+2 — cada reenvio vira recibo hash-encadeado.
+    tokio::spawn(notification_escalation_loop(state.clone()));
+
     tracing::info!(
         subscriptions = count,
         dispatch_ms,
@@ -487,6 +495,89 @@ async fn reembed_backlog_loop(state: AppState) {
             }
         }
         tracing::info!(done, "re-embed backlog tick");
+    }
+}
+
+/// 0.29 — escada de avisos do "AR digital do silêncio": SLA `pending`
+/// dentro do prazo, com 1–2 recibos e o último há mais de 24h, recebe um
+/// lembrete (D+1, depois D+2) — e cada reenvio vira recibo hash-encadeado
+/// via [`crate::notification_receipts::record`]. Para quando o gabinete
+/// responde (status muda), quando o SLA vence, ou na 3ª tentativa.
+async fn notification_escalation_loop(state: AppState) {
+    let escalation_ms = env_ms("WORKER_ESCALATION_MS", DEFAULT_ESCALATION_MS);
+    let mut ticker = interval(Duration::from_millis(escalation_ms));
+    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        ticker.tick().await;
+        type Due = (uuid::Uuid, String, Option<uuid::Uuid>, String, String, i64);
+        let due: Vec<Due> = match sqlx::query_as(
+            r"SELECT p.id,
+                     p.title,
+                     s.mandate_id,
+                     m.public_email,
+                     COALESCE(m.display_name, 'gabinete'),
+                     (SELECT max(r.attempt)::bigint FROM notification_receipt r
+                       WHERE r.proposal_id = p.id)
+                FROM consequence_sla s
+                JOIN proposal p ON p.id = s.proposal_id
+                JOIN mandate m ON m.id = s.mandate_id
+               WHERE s.status = 'pending'
+                 AND now() < s.due_at
+                 AND (SELECT count(*) FROM notification_receipt r
+                       WHERE r.proposal_id = p.id) BETWEEN 1 AND 2
+                 AND (SELECT max(r.sent_at) FROM notification_receipt r
+                       WHERE r.proposal_id = p.id) < now() - interval '24 hours'
+               LIMIT 20",
+        )
+        .fetch_all(&state.db)
+        .await
+        {
+            Ok(rows) => rows,
+            Err(err) => {
+                tracing::error!(?err, "escalation: due query failed");
+                continue;
+            }
+        };
+        if due.is_empty() {
+            continue;
+        }
+        let smtp = crate::proposal_delivery::smtp_from_env();
+        let public_origin = std::env::var("PUBLIC_ORIGIN")
+            .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
+        for (proposal_id, title, mandate_id, email, display_name, last_attempt) in due {
+            let attempt = last_attempt + 1;
+            let subject =
+                format!("[Lembrete {attempt}/3] Demanda cidadã aguardando resposta — {title}");
+            let body = format!(
+                "Prezado(a) {display_name},\n\nA demanda cidadã \"{title}\" segue \
+                 aguardando resposta do gabinete. Este é o {attempt}º aviso; cada \
+                 aviso fica registrado publicamente com recibo verificável.\n\n\
+                 Responder: {}/propostas/{proposal_id}\n\n— DemocraciaBR",
+                public_origin.trim_end_matches('/'),
+            );
+            let outcome = match &smtp {
+                Some(cfg) => {
+                    match crate::proposal_delivery::send_email(cfg, &email, &subject, &body).await {
+                        Ok(()) => "accepted".to_owned(),
+                        Err(err) => {
+                            let mut msg = format!("failed: {err}");
+                            msg.truncate(200);
+                            msg
+                        }
+                    }
+                }
+                None => "dev-logged".to_owned(),
+            };
+            crate::notification_receipts::record(
+                &state.db,
+                proposal_id,
+                mandate_id,
+                &email,
+                &subject,
+                &outcome,
+            )
+            .await;
+        }
     }
 }
 

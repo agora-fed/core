@@ -8,6 +8,17 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.29.0-recibos — prova de notificação, o "AR digital do silêncio"** (item 2 do
+  plano estratégico, fatia 1; migration 0521): todo e-mail ao gabinete vira um
+  recibo persistido e **hash-encadeado por proposta** (`hash = sha256(prev|proposta|
+  destinatário|tentativa|resultado|instante)`, genesis por proposta) — adulterar um
+  recibo quebra a cadeia dali em diante e qualquer auditor reproduz os hashes na
+  mão. Enquanto o SLA está `pending`, o worker **escala o aviso: D0 → D+1 → D+2**
+  (máx. 3 tentativas; para quando o gabinete responde ou o prazo vence), cada
+  reenvio com recibo próprio. Timeline pública em
+  `GET /proposals/{id}/delivery-receipts`. O silêncio deixa de ser acusação e vira
+  fato auditável. Fatia 2 (futura): embutir a cadeia na Note federada do silêncio
+  e a timeline visual no ProposalDetail.
 - **feat(eleicoes): pipeline TSE DivulgaCand pronto e ensaiado** (item 5 do plano
   estratégico) — `scripts/seed-candidaturas-tse.py` baixa o `consulta_cand_{ano}.zip`
   dos dados abertos, parseia os CSVs por UF (Latin-1) e gera SQL idempotente de

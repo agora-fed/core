@@ -269,7 +269,7 @@ pub(crate) fn smtp_from_env() -> Option<SmtpConfig> {
     })
 }
 
-async fn send_email(
+pub(crate) async fn send_email(
     cfg: &SmtpConfig,
     to: &str,
     subject: &str,

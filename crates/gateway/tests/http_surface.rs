@@ -1505,3 +1505,20 @@ async fn invitation_preview_unknown_token_is_invalid_not_error() {
     let json = body_json(resp).await;
     assert_eq!(json["data"]["valid"], false);
 }
+
+#[tokio::test]
+async fn delivery_receipts_are_public_and_empty_for_unknown_proposal() {
+    // A timeline do "AR digital" é pública por design; proposta sem avisos
+    // devolve lista vazia — nunca 500, nunca 401.
+    let (app, _) = app().await;
+    let resp = app
+        .oneshot(get(&format!(
+            "/api/v1/proposals/{}/delivery-receipts",
+            Uuid::now_v7()
+        )))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["data"].as_array().map(Vec::len), Some(0));
+}
