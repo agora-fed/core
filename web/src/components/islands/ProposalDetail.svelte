@@ -8,10 +8,12 @@
     getProposal,
     getMandate,
     getSlas,
+    getDeliveryReceipts,
     DEFAULT_ORG_ID,
     apiGet,
     apiPost,
     postNote,
+    type DeliveryReceiptDto,
   } from '../../lib/api';
   // (DEFAULT_ORG_ID still imported because getSlas() defaults are convenient — left for future.)
   import type { ProposalDto, MandateDto, SlaDto, SlaStatus, CommentDto } from '../../lib/types';
@@ -25,6 +27,8 @@
   let mandate = $state<MandateDto | null>(null);
   let sla = $state<SlaDto | null>(null);
   let loadError = $state<string | null>(null);
+  // Prova de notificação (0.29): timeline pública dos avisos ao gabinete.
+  let receipts = $state<DeliveryReceiptDto[]>([]);
 
   // Voting state
   let count = $state(0);
@@ -122,6 +126,10 @@
     loading = false;
     // Load the debate in parallel with mandate but AFTER we know the proposal exists.
     loadComments();
+    // Prova de notificação — best-effort, a página funciona sem ela.
+    void getDeliveryReceipts(proposalId).then((r) => {
+      if (r.success && r.data) receipts = r.data;
+    });
   });
 
   async function loadComments() {
@@ -505,6 +513,37 @@
       </section>
     {/if}
 
+    <!-- Prova de notificação (0.29): a timeline pública dos avisos ao
+         gabinete — cada tentativa com recibo hash-encadeado verificável. -->
+    {#if receipts.length > 0}
+      <section class="receipts">
+        <h2>📨 Avisos ao gabinete — com recibo</h2>
+        <p class="muted">
+          Cada aviso enviado fica lavrado num recibo encadeado por hash:
+          adulterar qualquer um quebra a cadeia. O silêncio, se houver, é
+          provado — não alegado.
+        </p>
+        <ol class="receipt-list">
+          {#each receipts as r (r.attempt)}
+            <li class="receipt">
+              <span class="receipt-when">
+                {r.attempt}º aviso —
+                {new Date(r.sent_at).toLocaleDateString('pt-BR', {
+                  day: '2-digit', month: '2-digit', year: 'numeric',
+                })}
+              </span>
+              <span class="receipt-outcome" class:ok={r.outcome === 'accepted'}>
+                {r.outcome === 'accepted' ? 'entregue' : r.outcome}
+              </span>
+              <code class="receipt-hash" title={`sha256 completo: ${r.hash}`}>
+                …{r.hash.slice(-16)}
+              </code>
+            </li>
+          {/each}
+        </ol>
+      </section>
+    {/if}
+
     <!-- Corpo da proposta -->
     <section class="body">
       <h2>Sobre a demanda</h2>
@@ -807,6 +846,37 @@
     border-radius: 12px;
     padding: 1.25rem;
     margin-bottom: 2rem;
+  }
+  .receipts {
+    border: 1px solid var(--c-border);
+    border-radius: 12px;
+    padding: 1.25rem;
+    margin-bottom: 2rem;
+  }
+  .receipt-list {
+    list-style: none;
+    padding: 0;
+    margin: 0.75rem 0 0;
+    display: grid;
+    gap: 0.4rem;
+  }
+  .receipt {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.6rem;
+    font-size: 0.92rem;
+  }
+  .receipt-outcome {
+    font-weight: 600;
+  }
+  .receipt-outcome.ok {
+    color: var(--c-green-dark);
+  }
+  .receipt-hash {
+    font-size: 0.8rem;
+    opacity: 0.7;
+    overflow-wrap: anywhere;
   }
   .sla-block h2 {
     margin: 0 0 0.8rem;

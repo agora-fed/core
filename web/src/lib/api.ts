@@ -2034,6 +2034,21 @@ export async function revokeAttestation(
   }
 }
 
+/** Prova de notificação (0.29) — recibos hash-encadeados dos avisos ao gabinete. */
+export interface DeliveryReceiptDto {
+  attempt: number;
+  recipient: string;
+  subject: string;
+  outcome: string;
+  sent_at: string;
+  prev_hash: string;
+  hash: string;
+}
+export const getDeliveryReceipts = (proposalId: string) =>
+  apiGetCredentialed<DeliveryReceiptDto[]>(
+    `/api/v1/proposals/${encodeURIComponent(proposalId)}/delivery-receipts`,
+  );
+
 /** Formulário público de contato (0.28.1) — setores fechados no backend. */
 export type ContactSector = 'contato' | 'lgpd' | 'moderacao' | 'seguranca';
 export const sendContactMessage = (body: {

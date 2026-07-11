@@ -8,6 +8,14 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.29.1-silencio-provado — a prova viaja com a denúncia** (item 2, fatia 2 —
+  fecha o item): (1) a página da proposta ganha a seção **"Avisos ao gabinete —
+  com recibo"**: cada tentativa datada, resultado e hash encadeado visíveis a
+  qualquer visitante; (2) quando o SLA expira, o silêncio agora federa — a Note
+  `#SilêncioRegistrado` publicada em nome do autor (mesmos gates e opt-out da Note
+  de threshold, idempotente pela hashtag) carrega a linha do tempo dos avisos e o
+  hash final da cadeia: a prova criptográfica viaja junto com a denúncia para
+  Mastodon e todo o fediverso.
 - **0.29.0-recibos — prova de notificação, o "AR digital do silêncio"** (item 2 do
   plano estratégico, fatia 1; migration 0521): todo e-mail ao gabinete vira um
   recibo persistido e **hash-encadeado por proposta** (`hash = sha256(prev|proposta|

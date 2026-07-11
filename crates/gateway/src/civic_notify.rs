@@ -80,6 +80,9 @@ impl EventHandler for CivicNotifySub {
                     "o SLA venceu sem resposta — silêncio público registrado",
                 )
                 .await;
+                // 0.29.1: o silêncio federa com a PROVA — a Note carrega a
+                // cadeia de recibos dos avisos (AR digital, item 2 fatia 2).
+                self.auto_federate_silence(sla.as_uuid()).await;
             }
             _ => {}
         }
@@ -257,6 +260,132 @@ impl CivicNotifySub {
     }
 }
 
+impl CivicNotifySub {
+    /// Nota federada do SILÊNCIO com a prova embutida (0.29.1, AR digital
+    /// fatia 2). Mesmos gates da Note de threshold (autor federável +
+    /// preferência ligada); idempotência pela hashtag `#SilêncioRegistrado`
+    /// junto da URL — a Note de threshold cita a mesma URL, então a URL
+    /// sozinha não distingue. Best-effort: falha vira warn.
+    async fn auto_federate_silence(&self, sla_id: Uuid) {
+        let row: Option<(Uuid, Option<Uuid>, String)> = sqlx::query_as(
+            "SELECT p.id, p.author_citizen_id, p.title
+               FROM consequence_sla s JOIN proposal p ON p.id = s.proposal_id
+              WHERE s.id = $1",
+        )
+        .bind(sla_id)
+        .fetch_optional(&self.db)
+        .await
+        .unwrap_or_default();
+        let Some((proposal_id, Some(author), title)) = row else {
+            return;
+        };
+        let gate: Option<(Option<String>, bool, bool)> = sqlx::query_as(
+            "SELECT handle, is_public, auto_federate_threshold
+               FROM citizen WHERE id = $1 AND deleted_at IS NULL",
+        )
+        .bind(author)
+        .fetch_optional(&self.db)
+        .await
+        .unwrap_or_default();
+        let Some((Some(handle), true, true)) = gate else {
+            return;
+        };
+
+        let origin = self.public_origin.trim_end_matches('/');
+        let proposal_url = format!("{origin}/propostas/{proposal_id}");
+        let already: bool = sqlx::query_scalar(
+            "SELECT EXISTS (
+                SELECT 1 FROM federation_outbox_entry
+                 WHERE citizen_id = $1
+                   AND payload::text LIKE '%' || $2 || '%'
+                   AND payload::text LIKE '%#SilêncioRegistrado%')",
+        )
+        .bind(author)
+        .bind(&proposal_url)
+        .fetch_one(&self.db)
+        .await
+        .unwrap_or(true);
+        if already {
+            return;
+        }
+
+        // A prova: recibos hash-encadeados dos avisos ao gabinete.
+        let receipts: Vec<(i32, chrono::DateTime<chrono::Utc>, String, String)> = sqlx::query_as(
+            "SELECT attempt, sent_at, outcome, hash
+               FROM notification_receipt WHERE proposal_id = $1 ORDER BY attempt",
+        )
+        .bind(proposal_id)
+        .fetch_all(&self.db)
+        .await
+        .unwrap_or_default();
+
+        let citizen = CitizenId::from_uuid(author);
+        if let Err(err) = self.profiles.ensure_actor_public_key(citizen).await {
+            tracing::warn!(citizen = %author, error = ?err, "silence note: keypair falhou");
+            return;
+        }
+        let actor_url = format!("{origin}/actors/{handle}");
+        let content = build_silence_note(&title, &proposal_url, &receipts);
+        match self
+            .profiles
+            .create_public_note(citizen, &actor_url, origin, &content, None, false, None)
+            .await
+        {
+            Ok((activity_id, fanout)) => {
+                tracing::info!(
+                    citizen = %author,
+                    proposal = %proposal_id,
+                    activity = %activity_id,
+                    fanout,
+                    receipts = receipts.len(),
+                    "silence note: publicada com cadeia de recibos"
+                );
+            }
+            Err(err) => {
+                tracing::warn!(citizen = %author, proposal = %proposal_id, error = ?err,
+                    "silence note: create_public_note falhou");
+            }
+        }
+    }
+}
+
+/// Corpo da Note do silêncio — a denúncia viaja COM a prova: cada aviso
+/// datado e o hash final da cadeia (verificável no endpoint público).
+fn build_silence_note(
+    title: &str,
+    proposal_url: &str,
+    receipts: &[(i32, chrono::DateTime<chrono::Utc>, String, String)],
+) -> String {
+    let title_short: String = title.chars().take(120).collect();
+    let mut avisos = String::new();
+    for (attempt, sent_at, outcome, _) in receipts {
+        let ok = if outcome == "accepted" {
+            "entregue"
+        } else {
+            outcome.as_str()
+        };
+        avisos.push_str(&format!(
+            "• aviso {attempt}: {} ({ok})\n",
+            sent_at.format("%d/%m/%Y")
+        ));
+    }
+    let chain = receipts
+        .last()
+        .map(|(_, _, _, hash)| {
+            let short: String = hash.chars().take(16).collect();
+            format!(
+                "Cadeia de recibos sha256 …{short} — verifique em \
+                 {proposal_url} (recibos públicos).\n"
+            )
+        })
+        .unwrap_or_default();
+    format!(
+        "🔇 #SilêncioRegistrado: o mandato não respondeu à demanda \
+         \"{title_short}\" dentro do prazo público na #DemocraciaBR.\n\n\
+         {avisos}{chain}\n{proposal_url}"
+    )
+}
+
 /// Corpo da Note de threshold. Título capado pra caber com folga no limite
 /// de 3000 chars do `create_public_note`; a hashtag alimenta a timeline
 /// `#DemocraciaBR` local e das instâncias remotas.
@@ -271,7 +400,29 @@ fn build_threshold_note(title: &str, proposal_url: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::build_threshold_note;
+    use super::{build_silence_note, build_threshold_note};
+
+    #[test]
+    fn silence_note_carries_receipts_chain_and_marker() {
+        let t = chrono::DateTime::parse_from_rfc3339("2026-07-10T12:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let receipts = vec![
+            (1, t, "accepted".to_owned(), "aaaa1111".repeat(8)),
+            (2, t, "accepted".to_owned(), "bbbb2222".repeat(8)),
+        ];
+        let note = build_silence_note("Ciclovia", "https://x.br/propostas/abc", &receipts);
+        assert!(note.contains("#SilêncioRegistrado"));
+        assert!(note.contains("aviso 1: 10/07/2026 (entregue)"));
+        assert!(note.contains("aviso 2"));
+        // Hash final truncado presente — a prova viaja com a denúncia.
+        assert!(note.contains(&"bbbb2222".repeat(2)));
+        assert!(note.contains("https://x.br/propostas/abc"));
+        // Sem recibos (propostas antigas) a nota ainda sai, sem seção de cadeia.
+        let bare = build_silence_note("Ciclovia", "https://x.br/p/1", &[]);
+        assert!(bare.contains("#SilêncioRegistrado"));
+        assert!(!bare.contains("Cadeia de recibos"));
+    }
 
     #[test]
     fn threshold_note_carries_title_url_and_hashtag() {
