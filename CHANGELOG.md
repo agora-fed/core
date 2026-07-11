@@ -7,6 +7,17 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 
 ## [Unreleased]
 
+### Added
+- **test(coverage): 40.6% → 47.2%, ratchet 40 → 46** (issue #8, passo 2/4 do plano) —
+  17 testes novos no harness oneshot `crates/gateway/tests/http_surface.rs` (36 no
+  total), metade segurança / metade funcional: formulário de contato (setor fechado,
+  honeypot, rate-limit 429 por IP), atestados (401/422/403 + roundtrip completo
+  atestar→listar→revogar com operador de mandato real), gates de registro
+  (CRUD admin gated, domínio bloqueado barra register de ponta a ponta, ip_rule
+  deny nega login por CIDR e libera IP fora do range, CIDR inválido 400) e superfície
+  fediverso anônima (webfinger, actor, verify_credentials, bookmarks). O ledger sqlx
+  do banco de CI foi corrigido (0519 registrada via runner, não via psql).
+
 ### Fixed
 - **ops(k8s): Secret fora do manifest aplicável** — postmortem 2026-07-10: um
   `kubectl apply -f deploy/k8s/gateway.yaml` sobrescreveu `DATABASE_URL`/`SMTP_*` de

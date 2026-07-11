@@ -486,3 +486,400 @@ async fn notifications_feed_is_empty_for_fresh_citizen() {
     assert_eq!(body["data"]["items"].as_array().map(Vec::len), Some(0));
     assert_eq!(body["data"]["unread_count"], serde_json::json!(0));
 }
+
+// ---------------------------------------------------------------------------
+// SECURITY — 0.28.x surface: contact form, attestations, signup gates
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn contact_rejects_unknown_sector() {
+    let (app, _) = app().await;
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/contact",
+            None,
+            r#"{"sector":"marketing","name":"Nome","email":"a@b.co","subject":"assunto","message":"mensagem com tamanho ok"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn contact_honeypot_pretends_success_and_sends_nothing() {
+    // Bot que preenche o campo escondido recebe 200 "ok" — sem SMTP, sem efeito.
+    let (app, _) = app().await;
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/contact",
+            None,
+            r#"{"sector":"contato","name":"Bot","email":"bot@spam.co","subject":"spam","message":"mensagem de robô com tamanho","website":"http://spam.example"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn contact_rate_limits_per_ip() {
+    // 5/h por IP (default). O 6º do mesmo IP tem que ver 429 — antes de
+    // qualquer tentativa de SMTP.
+    let (app, _) = app().await;
+    let body = r#"{"sector":"contato","name":"Nome","email":"a@b.co","subject":"assunto","message":"mensagem com tamanho ok"}"#;
+    for _ in 0..5 {
+        let mut req = json_req("POST", "/api/v1/contact", None, body);
+        req.headers_mut()
+            .insert("x-forwarded-for", "198.51.100.77".parse().unwrap());
+        let _ = app.clone().oneshot(req).await.unwrap();
+    }
+    let mut req = json_req("POST", "/api/v1/contact", None, body);
+    req.headers_mut()
+        .insert("x-forwarded-for", "198.51.100.77".parse().unwrap());
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test]
+async fn attest_requires_session() {
+    let (app, st) = app().await;
+    let (_, citizen, _) = seed_session(&st.db).await;
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/citizens/{citizen}/attestations"),
+            None,
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn attest_rejects_self_attestation() {
+    let (app, st) = app().await;
+    let (_, citizen, cookie) = seed_session(&st.db).await;
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/citizens/{citizen}/attestations"),
+            Some(&cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn attest_requires_verified_operator_power() {
+    // Sessão comum (sem mandato, sem partido) não pode atestar ninguém.
+    let (app, st) = app().await;
+    let (_, _, cookie) = seed_session(&st.db).await;
+    let (_, target, _) = seed_session(&st.db).await;
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/citizens/{target}/attestations"),
+            Some(&cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn signup_gates_admin_surface_is_gated() {
+    let (app, st) = app().await;
+    // Anônimo: 401.
+    let resp = app
+        .clone()
+        .oneshot(get("/api/v1/admin/email_domain_blocks"))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    // Sessão comum: 403 — nunca a lista.
+    let (_, _, cookie) = seed_session(&st.db).await;
+    let resp = app
+        .oneshot(get_with_cookie("/api/v1/admin/email_domain_blocks", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn blocked_email_domain_gates_register() {
+    let (app, st) = app().await;
+    let (org, citizen, cookie) = seed_session(&st.db).await;
+    grant_admin(&st.db, org, citizen).await;
+    // Admin bloqueia o domínio pela API real.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/admin/email_domain_blocks",
+            Some(&cookie),
+            r#"{"domain":"blocked-gate-test.example","reason":"teste"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    // Cadastro com e-mail do domínio bloqueado: 403 opaco do gate.
+    let register = format!(
+        r#"{{"org_id":"{org}","email":"x@blocked-gate-test.example","password":"senha-forte-123","cpf":"00000000000"}}"#
+    );
+    let resp = app
+        .clone()
+        .oneshot(json_req("POST", "/api/v1/auth/register", None, &register))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    // Removida a regra, o mesmo request volta a cair na validação normal
+    // (CPF inválido = 4xx de validação, nunca o 403 do gate).
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "DELETE",
+            "/api/v1/admin/email_domain_blocks/blocked-gate-test.example",
+            Some(&cookie),
+            "",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp = app
+        .oneshot(json_req("POST", "/api/v1/auth/register", None, &register))
+        .await
+        .unwrap();
+    assert_ne!(resp.status(), StatusCode::FORBIDDEN);
+    assert!(resp.status().is_client_error());
+}
+
+#[tokio::test]
+async fn ip_deny_rule_gates_login_scope() {
+    let (app, st) = app().await;
+    let (org, citizen, cookie) = seed_session(&st.db).await;
+    grant_admin(&st.db, org, citizen).await;
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/admin/ip_rules",
+            Some(&cookie),
+            r#"{"cidr":"198.51.100.0/24","scope":"login","state":"deny","reason":"teste"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let login =
+        format!(r#"{{"org_id":"{org}","email":"ninguem@example.org","password":"whatever"}}"#);
+    // IP dentro do deny: 403 do gate, antes de qualquer verificação de credencial.
+    let mut req = json_req("POST", "/api/v1/auth/login", None, &login);
+    req.headers_mut()
+        .insert("x-forwarded-for", "198.51.100.9".parse().unwrap());
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    // IP fora do deny: passa o gate e cai no 401 normal de credencial errada.
+    let mut req = json_req("POST", "/api/v1/auth/login", None, &login);
+    req.headers_mut()
+        .insert("x-forwarded-for", "203.0.113.9".parse().unwrap());
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    // Cleanup: regra é global — remover pra não vazar pros outros testes.
+    let rules = body_json(
+        app.clone()
+            .oneshot(get_with_cookie("/api/v1/admin/ip_rules", &cookie))
+            .await
+            .unwrap(),
+    )
+    .await;
+    let id = rules["data"]
+        .as_array()
+        .and_then(|list| {
+            list.iter()
+                .find(|r| r["cidr"] == "198.51.100.0/24" && r["scope"] == "login")
+        })
+        .and_then(|r| r["id"].as_str())
+        .expect("rule id")
+        .to_owned();
+    let resp = app
+        .oneshot(json_req(
+            "DELETE",
+            &format!("/api/v1/admin/ip_rules/{id}"),
+            Some(&cookie),
+            "",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn ip_rule_rejects_invalid_cidr() {
+    let (app, st) = app().await;
+    let (org, citizen, cookie) = seed_session(&st.db).await;
+    grant_admin(&st.db, org, citizen).await;
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/admin/ip_rules",
+            Some(&cookie),
+            r#"{"cidr":"not-a-cidr","scope":"login","state":"deny"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+// ---------------------------------------------------------------------------
+// FUNCTIONAL — fediverso public reads + attestation loop
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn webfinger_without_resource_is_client_error() {
+    let (app, _) = app().await;
+    let resp = app
+        .oneshot(get("/.well-known/webfinger"))
+        .await
+        .unwrap();
+    assert!(resp.status().is_client_error(), "got {}", resp.status());
+}
+
+#[tokio::test]
+async fn webfinger_unknown_account_is_client_error() {
+    let (app, _) = app().await;
+    let resp = app
+        .oneshot(get(
+            "/.well-known/webfinger?resource=acct:nobody-xyz@localhost",
+        ))
+        .await
+        .unwrap();
+    assert!(resp.status().is_client_error(), "got {}", resp.status());
+}
+
+#[tokio::test]
+async fn unknown_actor_is_client_error_for_activitypub() {
+    // Handle inexistente/inválido nunca devolve 200 nem 500 pra um peer AP —
+    // a superfície responde 4xx (400 pra shape inválido, 404 pra ausente).
+    let (app, _) = app().await;
+    let req = Request::builder()
+        .uri("/actors/does-not-exist-xyz")
+        .header(header::ACCEPT, "application/activity+json")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert!(resp.status().is_client_error(), "got {}", resp.status());
+}
+
+#[tokio::test]
+async fn attestations_public_list_starts_empty() {
+    let (app, st) = app().await;
+    let (_, citizen, _) = seed_session(&st.db).await;
+    let resp = app
+        .oneshot(get(&format!("/api/v1/citizens/{citizen}/attestations")))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["data"]["count"], 0);
+    assert_eq!(json["data"]["viewer_can_attest"], false);
+}
+
+#[tokio::test]
+async fn attest_and_revoke_roundtrip() {
+    let (app, st) = app().await;
+    // Atestador: operador de mandato (binding verificado).
+    let (org, attester, cookie) = seed_session(&st.db).await;
+    let mandate = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO mandate (id, org_id, office, display_name, public_email, created_at)
+         VALUES ($1, $2, 'deputado_federal', 'Mandato Teste', 'gab@example.leg.br', now())",
+    )
+    .bind(mandate)
+    .bind(org)
+    .execute(&st.db)
+    .await
+    .expect("seed mandate");
+    sqlx::query(
+        "INSERT INTO mandate_identity_binding
+             (id, mandate_id, citizen_id, verification_level, verified_at, created_at)
+         VALUES ($1, $2, $3, 'directory', now(), now())",
+    )
+    .bind(Uuid::now_v7())
+    .bind(mandate)
+    .bind(attester)
+    .execute(&st.db)
+    .await
+    .expect("seed binding");
+    let (_, target, _) = seed_session(&st.db).await;
+
+    // Atesta com nota.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/citizens/{target}/attestations"),
+            Some(&cookie),
+            r#"{"note":"conheço do trabalho de base"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Lista pública mostra 1 + flags do viewer logado.
+    let resp = app
+        .clone()
+        .oneshot(get_with_cookie(
+            &format!("/api/v1/citizens/{target}/attestations"),
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    let json = body_json(resp).await;
+    assert_eq!(json["data"]["count"], 1);
+    assert_eq!(json["data"]["viewer_attested"], true);
+    assert_eq!(json["data"]["items"][0]["kind"], "mandato");
+
+    // Revoga; a lista volta a zero.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "DELETE",
+            &format!("/api/v1/citizens/{target}/attestations"),
+            Some(&cookie),
+            "",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp = app
+        .oneshot(get(&format!("/api/v1/citizens/{target}/attestations")))
+        .await
+        .unwrap();
+    let json = body_json(resp).await;
+    assert_eq!(json["data"]["count"], 0);
+}
+
+#[tokio::test]
+async fn mastodon_verify_credentials_requires_auth() {
+    let (app, _) = app().await;
+    let resp = app
+        .oneshot(get("/api/v1/accounts/verify_credentials"))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn bookmarks_list_empty_for_fresh_session() {
+    let (app, st) = app().await;
+    let (_, _, cookie) = seed_session(&st.db).await;
+    let resp = app
+        .oneshot(get_with_cookie("/api/v1/bookmarks", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
