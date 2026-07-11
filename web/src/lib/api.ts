@@ -2049,6 +2049,17 @@ export const getDeliveryReceipts = (proposalId: string) =>
     `/api/v1/proposals/${encodeURIComponent(proposalId)}/delivery-receipts`,
   );
 
+/** Preview do gatilho dinâmico (0.30.3) — o form mostra a regra do território. */
+export interface ThresholdPreviewDto {
+  threshold: number;
+  voters: number | null;
+  fraction: number;
+}
+export const getThresholdPreview = (mandateId: string) =>
+  apiGetCredentialed<ThresholdPreviewDto>(
+    `/api/v1/threshold-preview?mandate_id=${encodeURIComponent(mandateId)}`,
+  );
+
 /** Reply-to-respond (0.30) — gabinete responde via link assinado, sem conta. */
 export interface RespondContextDto {
   proposal_title: string;

@@ -185,6 +185,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(notification_receipts::routes(state.clone()))
         // Reply-to-respond — gabinete responde via link assinado, sem conta (0.30).
         .merge(respond_link::routes(state.clone()))
+        // Preview público do gatilho dinâmico (0.30.3) — o form mostra a regra.
+        .merge(threshold_policy::routes(state.clone()))
         // Formulário de contato público — nenhum e-mail exposto no site.
         .merge(contact::routes(state.clone()))
         .merge(webhooks::routes(state.clone()))

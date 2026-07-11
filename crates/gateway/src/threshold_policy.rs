@@ -14,12 +14,55 @@
 //! (fail-safe — nunca bloqueia a criação da proposta).
 
 use axum::body::Body;
-use axum::extract::{Request, State};
+use axum::extract::{Query, Request, State};
+use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
+use axum::routing::get;
+use axum::{Json, Router};
+use dsoc_api_contract::ApiResponse;
 use dsoc_app::AppState;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
+
+/// Rota pública de preview: o formulário de propor mostra o gatilho
+/// calculado do território ANTES do envio — o autor entende a regra em
+/// vez de escolher um número.
+pub fn routes(state: AppState) -> Router<()> {
+    Router::new()
+        .route("/threshold-preview", get(preview))
+        .with_state(state)
+}
+
+#[derive(Debug, Deserialize)]
+struct PreviewQuery {
+    mandate_id: Uuid,
+}
+
+#[derive(Debug, Serialize)]
+struct PreviewDto {
+    threshold: i64,
+    voters: Option<i64>,
+    fraction: f64,
+}
+
+async fn preview(State(state): State<AppState>, Query(q): Query<PreviewQuery>) -> Response {
+    let fraction = env_f64("THRESHOLD_FRACTION", DEFAULT_FRACTION);
+    let floor = env_i64("THRESHOLD_FLOOR", DEFAULT_FLOOR);
+    let ceil = env_i64("THRESHOLD_CEIL", DEFAULT_CEIL);
+    let voters = voters_for_mandate(&state.db, q.mandate_id).await;
+    let threshold = compute_threshold(voters, fraction, floor, ceil);
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(PreviewDto {
+            threshold,
+            voters,
+            fraction,
+        })),
+    )
+        .into_response()
+}
 
 const DEFAULT_FRACTION: f64 = 0.0005;
 const DEFAULT_FLOOR: i64 = 25;

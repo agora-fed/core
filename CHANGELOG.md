@@ -8,6 +8,12 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.30.3-threshold-ux — o formulário mostra a regra, não pede o número**: o campo
+  "Limiar de apoios" saiu do formulário de propor; ao escolher o mandato, o form
+  consulta o novo `GET /api/v1/threshold-preview?mandate_id=…` e exibe
+  "🎯 Gatilho deste território: N apoios — 0,05% do eleitorado (M eleitores, fonte
+  TSE)". Fecha a experiência do item 4: o autor entende a regra em vez de inventar
+  um número que o servidor sobrescreveria.
 - **0.30.2-embed — placar embedável para a imprensa** (item 7, fatia 1): novo
   `GET /embed/placar/{mandate_id}` na raiz — widget HTML autocontido (~2 KB, CSS
   inline, zero JS, cache 5 min) com respondidas × silêncios × taxa de resposta e

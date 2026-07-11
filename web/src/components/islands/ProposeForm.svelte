@@ -2,13 +2,22 @@
   // Propose form — create a civic proposal directed at a specific mandate.
   // The mandate is selected from a picker so the user never has to type a UUID by hand.
   import { onMount } from 'svelte';
-  import { apiPost, DEFAULT_ORG_ID, getAllMandates, type MandateDto } from '../../lib/api';
+  import {
+    apiPost,
+    DEFAULT_ORG_ID,
+    getAllMandates,
+    getThresholdPreview,
+    type MandateDto,
+    type ThresholdPreviewDto,
+  } from '../../lib/api';
   import type { ProposalDto } from '../../lib/types';
 
   let title = $state('');
   let body = $state('');
   let mandateId = $state('');
-  let threshold = $state(100);
+  // O gatilho é POLÍTICA DA PLATAFORMA (0,05% do eleitorado do território,
+  // com piso/teto) — o autor não escolhe; o form mostra o valor calculado.
+  let preview = $state<ThresholdPreviewDto | null>(null);
   let busy = $state(false);
   let status = $state<{ kind: 'error' | 'ok' | 'info'; text: string } | null>(
     null,
@@ -21,7 +30,18 @@
   let titleValid = $derived(title.trim().length >= 8);
   let bodyValid = $derived(body.trim().length >= 20);
   let mandateValid = $derived(/^[0-9a-f-]{36}$/i.test(mandateId.trim()));
-  let valid = $derived(titleValid && bodyValid && mandateValid && threshold > 0);
+  let valid = $derived(titleValid && bodyValid && mandateValid);
+
+  $effect(() => {
+    const id = mandateId.trim();
+    if (!/^[0-9a-f-]{36}$/i.test(id)) {
+      preview = null;
+      return;
+    }
+    void getThresholdPreview(id).then((r) => {
+      if (r.success && r.data) preview = r.data;
+    });
+  });
 
   function readCitizenId(): string | null {
     try {
@@ -85,7 +105,9 @@
       mandate_id: mandateId.trim(),
       title: title.trim(),
       body: body.trim(),
-      threshold,
+      // Sobrescrito no servidor pela política do território (0.30.1) —
+      // enviado só pra satisfazer o shape do contrato.
+      threshold: preview?.threshold ?? 1,
     });
     busy = false;
 
@@ -161,16 +183,22 @@
         </select>
       {/if}
     </div>
-    <div class="field narrow">
-      <label for="p-threshold">Limiar de apoios</label>
-      <input
-        id="p-threshold"
-        class="input"
-        type="number"
-        min="1"
-        bind:value={threshold}
-      />
-    </div>
+    {#if preview}
+      <div class="field narrow">
+        <span class="label-like">Gatilho deste território</span>
+        <p class="threshold-info">
+          🎯 <strong>{preview.threshold.toLocaleString('pt-BR')} apoios</strong>
+          {#if preview.voters}
+            — {(preview.fraction * 100).toLocaleString('pt-BR', {
+              maximumFractionDigits: 2,
+            })}% do eleitorado ({preview.voters.toLocaleString('pt-BR')} eleitores,
+            fonte TSE)
+          {:else}
+            — piso da plataforma (território sem dado de eleitorado)
+          {/if}
+        </p>
+      </div>
+    {/if}
   </div>
 
   <button class="btn btn-primary btn-lg" type="submit" disabled={!valid || busy}>
