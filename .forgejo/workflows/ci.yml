@@ -64,8 +64,8 @@ jobs:
     steps:
       - uses: https://code.forgejo.org/actions/checkout@v4
       # RATCHET, not aspiration: the number below is the measured floor and may
-      # only go UP (2026-07-09 baseline: 40.62%; 2026-07-10: 51.15% measured,
-      # floor set at 50 for runner variance; target: 95% — tracked in issue #8).
+      # only go UP (2026-07-09 baseline: 40.62%; 2026-07-10: 54.16% measured,
+      # floor set at 53 for runner variance; target: 95% — tracked in issue #8).
       # Raise it in the same PR that adds coverage; lowering it is a regression
       # and needs an ADR-grade justification.
       - name: coverage gate (ratchet)
@@ -74,4 +74,4 @@ jobs:
           command -v cargo-llvm-cov >/dev/null || cargo install cargo-llvm-cov --locked
           command -v sqlx >/dev/null || cargo install sqlx-cli --no-default-features --features postgres,rustls --locked
           cargo sqlx migrate run --source migrations
-          cargo llvm-cov --workspace --all-features --fail-under-lines 50
+          cargo llvm-cov --workspace --all-features --fail-under-lines 53

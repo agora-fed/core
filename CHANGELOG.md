@@ -8,6 +8,14 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **test(coverage) lote 3: 51.2% → 54.2%, ratchet 50 → 53** — a superfície admin sob
+  a mesma régua (anônimo 401, sessão comum 403, admin nunca 5xx) num loop sobre as 9
+  listas admin (stats/users/peers/users-rich/reports/audit/webhooks/announcements/
+  email-templates) + CRUDs: webhooks (criar/patch/deletar + evento inválido 400),
+  ciclo de announcements (criar publicado → ativo pro cidadão → dismiss →
+  despublicar), ações de moderação de conta (suspend/unsuspend/silence/unsilence),
+  /me/admin-status refletindo o papel, e preview de convite enumeração-neutro
+  (token desconhecido = 200 valid:false, nunca 500). 6 testes novos, 55 no total.
 - **test(coverage) lote 2: 47.2% → 51.2%, ratchet 46 → 50** — mais 13 testes no
   harness (49 no total), agora sobre a superfície federada e auth: fluxo completo
   publicar nota (Mastodon-compat) → servir actor/outbox/followers/following em

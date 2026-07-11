@@ -1279,3 +1279,229 @@ async fn auth_me_reflects_session_and_logout_is_idempotent() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 }
+
+// ---------------------------------------------------------------------------
+// SECURITY + FUNCTIONAL — superfície admin (issue #8, passo 4)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn admin_read_surface_is_gated_and_serves() {
+    // Toda leitura admin obedece a MESMA régua: anônimo 401, sessão comum
+    // 403, admin nunca 401/403 nem 5xx. Um loop cobre as nove listas.
+    let (app, st) = app().await;
+    // admin_ext valida o binding na org DEFAULT fixa — o admin de teste
+    // precisa viver nela (os demais módulos admin não filtram por org).
+    let default_org = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+    let (org, citizen, admin_cookie) = seed_session_in_org(&st.db, default_org).await;
+    grant_admin(&st.db, org, citizen).await;
+    let (_, _, plain_cookie) = seed_session(&st.db).await;
+    for path in [
+        "/api/v1/admin/stats",
+        "/api/v1/admin/users",
+        "/api/v1/admin/federation/peers",
+        "/api/v1/admin/users-rich",
+        "/api/v1/admin/reports",
+        "/api/v1/admin/audit",
+        "/api/v1/admin/webhooks",
+        "/api/v1/admin/announcements",
+        "/api/v1/admin/email-templates",
+    ] {
+        let resp = app.clone().oneshot(get(path)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED, "anon GET {path}");
+        let resp = app
+            .clone()
+            .oneshot(get_with_cookie(path, &plain_cookie))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN, "non-admin GET {path}");
+        let resp = app
+            .clone()
+            .oneshot(get_with_cookie(path, &admin_cookie))
+            .await
+            .unwrap();
+        let s = resp.status();
+        assert!(
+            s != StatusCode::UNAUTHORIZED && s != StatusCode::FORBIDDEN && !s.is_server_error(),
+            "admin GET {path} got {s}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn webhooks_crud_roundtrip() {
+    let (app, st) = app().await;
+    let (org, citizen, cookie) = seed_session(&st.db).await;
+    grant_admin(&st.db, org, citizen).await;
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/admin/webhooks",
+            Some(&cookie),
+            r#"{"url":"https://hooks.example.org/dsoc","events":["report.created"]}"#,
+        ))
+        .await
+        .unwrap();
+    assert!(resp.status().is_success(), "create got {}", resp.status());
+    let created = body_json(resp).await;
+    let id = created["data"]["id"]
+        .as_str()
+        .or_else(|| created["id"].as_str())
+        .expect("webhook id")
+        .to_owned();
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "PATCH",
+            &format!("/api/v1/admin/webhooks/{id}"),
+            Some(&cookie),
+            r#"{"enabled":false}"#,
+        ))
+        .await
+        .unwrap();
+    assert!(resp.status().is_success(), "patch got {}", resp.status());
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/admin/webhooks",
+            Some(&cookie),
+            r#"{"url":"https://hooks.example.org/x","events":["evento-que-nao-existe"]}"#,
+        ))
+        .await
+        .unwrap();
+    assert!(resp.status().is_client_error(), "evento inválido aceito");
+    let resp = app
+        .oneshot(json_req(
+            "DELETE",
+            &format!("/api/v1/admin/webhooks/{id}"),
+            Some(&cookie),
+            "",
+        ))
+        .await
+        .unwrap();
+    assert!(resp.status().is_success(), "delete got {}", resp.status());
+}
+
+#[tokio::test]
+async fn announcements_lifecycle() {
+    let (app, st) = app().await;
+    let (org, citizen, admin_cookie) = seed_session(&st.db).await;
+    grant_admin(&st.db, org, citizen).await;
+    let (_, _, citizen_cookie) = seed_session(&st.db).await;
+
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/admin/announcements",
+            Some(&admin_cookie),
+            r#"{"body":"Aviso de manutenção da suíte de testes","publish_now":true}"#,
+        ))
+        .await
+        .unwrap();
+    assert!(resp.status().is_success(), "create got {}", resp.status());
+    let created = body_json(resp).await;
+    let id = created["data"]["id"]
+        .as_str()
+        .or_else(|| created["id"].as_str())
+        .expect("announcement id")
+        .to_owned();
+
+    // Publicado aparece na lista ativa de qualquer cidadão logado.
+    let resp = app
+        .clone()
+        .oneshot(get_with_cookie(
+            "/api/v1/announcements/active",
+            &citizen_cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Cidadão descarta; admin despublica; segue 200 na lista ativa (vazia).
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/announcements/{id}/dismiss"),
+            Some(&citizen_cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert!(resp.status().is_success(), "dismiss got {}", resp.status());
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/admin/announcements/{id}/unpublish"),
+            Some(&admin_cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert!(
+        resp.status().is_success(),
+        "unpublish got {}",
+        resp.status()
+    );
+}
+
+#[tokio::test]
+async fn moderation_account_actions_roundtrip() {
+    // suspend → unsuspend → silence → unsilence numa conta alvo; cada ação
+    // é idempotente do ponto de vista do admin e nunca 5xx.
+    let (app, st) = app().await;
+    let (org, citizen, cookie) = seed_session(&st.db).await;
+    grant_admin(&st.db, org, citizen).await;
+    let (_, target, _) = seed_session(&st.db).await;
+    for action in ["suspend", "unsuspend", "silence", "unsilence"] {
+        let resp = app
+            .clone()
+            .oneshot(json_req(
+                "POST",
+                &format!("/api/v1/admin/accounts/{target}/{action}"),
+                Some(&cookie),
+                "{}",
+            ))
+            .await
+            .unwrap();
+        assert!(resp.status().is_success(), "{action} got {}", resp.status());
+    }
+}
+
+#[tokio::test]
+async fn me_admin_status_reflects_role() {
+    let (app, st) = app().await;
+    let (org, citizen, admin_cookie) = seed_session(&st.db).await;
+    grant_admin(&st.db, org, citizen).await;
+    let (_, _, plain_cookie) = seed_session(&st.db).await;
+    let resp = app
+        .clone()
+        .oneshot(get_with_cookie("/api/v1/me/admin-status", &admin_cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["data"]["is_admin"], true);
+    let resp = app
+        .oneshot(get_with_cookie("/api/v1/me/admin-status", &plain_cookie))
+        .await
+        .unwrap();
+    let json = body_json(resp).await;
+    assert_eq!(json["data"]["is_admin"], false);
+}
+
+#[tokio::test]
+async fn invitation_preview_unknown_token_is_invalid_not_error() {
+    // Preview é público e enumeração-neutro: token desconhecido devolve
+    // 200 {valid:false} — nunca 500, nunca dados de outro convite.
+    let (app, _) = app().await;
+    let resp = app
+        .oneshot(get("/api/v1/invitations/token-inexistente/preview"))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["data"]["valid"], false);
+}
