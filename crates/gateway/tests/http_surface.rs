@@ -604,7 +604,10 @@ async fn signup_gates_admin_surface_is_gated() {
     // Sessão comum: 403 — nunca a lista.
     let (_, _, cookie) = seed_session(&st.db).await;
     let resp = app
-        .oneshot(get_with_cookie("/api/v1/admin/email_domain_blocks", &cookie))
+        .oneshot(get_with_cookie(
+            "/api/v1/admin/email_domain_blocks",
+            &cookie,
+        ))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
@@ -741,10 +744,7 @@ async fn ip_rule_rejects_invalid_cidr() {
 #[tokio::test]
 async fn webfinger_without_resource_is_client_error() {
     let (app, _) = app().await;
-    let resp = app
-        .oneshot(get("/.well-known/webfinger"))
-        .await
-        .unwrap();
+    let resp = app.oneshot(get("/.well-known/webfinger")).await.unwrap();
     assert!(resp.status().is_client_error(), "got {}", resp.status());
 }
 
