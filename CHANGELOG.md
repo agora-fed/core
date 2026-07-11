@@ -8,6 +8,18 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.30.1-threshold — gatilho proporcional ao eleitorado** (item 4 do plano): o
+  autor não escolhe mais o threshold da própria proposta. Um middleware no
+  composition root reescreve o campo no create com
+  `clamp(⌈fração × eleitorado do território⌉, piso, teto)` — município para
+  mandato municipal, UF para estadual/federal, nacional como fallback. Eleitorado
+  oficial TSE na nova tabela `electorate` (migration 0522), populada por
+  `scripts/seed-eleitorado-tse.py` do `perfil_eleitorado_ATUAL` (validado:
+  157,8M nacional, SP 34,1M, capital paulista 9,1M — batem com o oficial; 5.571
+  municípios). Config: `THRESHOLD_FRACTION` (default 0,05%), `THRESHOLD_FLOOR`
+  (25), `THRESHOLD_CEIL` (10.000); território sem dado cai no piso (nunca
+  bloqueia). Mesmo esforço relativo dispara consequência em Roraima e em São
+  Paulo — legitimidade estatística do gatilho.
 - **0.30.0-responder — reply-to-respond: o gabinete responde sem conta** (item 3 do
   plano): os e-mails de aviso ao gabinete passam a carregar um **link assinado**
   (`/responder/?sla=…&t=hmac_sha256(RESPOND_LINK_SECRET, sla_id)`) que abre a página

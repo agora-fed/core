@@ -45,6 +45,7 @@ pub mod reports;
 pub mod respond_link;
 pub mod signup_gates;
 pub mod social_graph;
+pub mod threshold_policy;
 pub mod titulo_eleitor;
 pub mod web_push;
 pub mod webhooks;
@@ -213,6 +214,12 @@ pub fn api_router(state: AppState) -> Router {
         .layer(middleware::from_fn_with_state(
             state.clone(),
             signup_gates::gates_middleware,
+        ))
+        // Threshold dinâmico (0.30.1): o gatilho da proposta é fração do
+        // eleitorado TSE do território, com piso/teto — o autor não escolhe.
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            threshold_policy::threshold_middleware,
         ));
 
     // Serve the static DemocraciaBR front-end (Astro SSG, ADR-0009) at the same origin as the API
