@@ -52,17 +52,26 @@ async fn app() -> (Router, AppState) {
 
 /// Seed an isolated org + citizen + live session; returns the session cookie value.
 async fn seed_session(db: &Db) -> (Uuid, Uuid, String) {
-    let org = Uuid::now_v7();
+    seed_session_in_org(db, Uuid::now_v7()).await
+}
+
+/// Same as [`seed_session`] but pinning the org — the federation surface
+/// resolve handles contra a org default fixa, então testes federados
+/// precisam seedar NELA (idempotente via ON CONFLICT).
+async fn seed_session_in_org(db: &Db, org: Uuid) -> (Uuid, Uuid, String) {
     let citizen = Uuid::now_v7();
     let session = Uuid::now_v7();
     let now = Utc::now();
-    sqlx::query("INSERT INTO org (id, slug, name, created_at) VALUES ($1, $2, 'Test Org', $3)")
-        .bind(org)
-        .bind(format!("org-{}", org.simple()))
-        .bind(now)
-        .execute(db)
-        .await
-        .expect("seed org");
+    sqlx::query(
+        "INSERT INTO org (id, slug, name, created_at) VALUES ($1, $2, 'Test Org', $3)
+         ON CONFLICT (id) DO NOTHING",
+    )
+    .bind(org)
+    .bind(format!("org-{}", org.simple()))
+    .bind(now)
+    .execute(db)
+    .await
+    .expect("seed org");
     sqlx::query(
         "INSERT INTO citizen (id, org_id, oidc_subject, verification_level, created_at)
          VALUES ($1, $2, $3, 'email', $4)",
@@ -686,9 +695,14 @@ async fn ip_deny_rule_gates_login_scope() {
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     // IP fora do deny: passa o gate e cai no 401 normal de credencial errada.
+    // IP único por run — a auditoria de tentativas persiste entre execuções
+    // e um IP fixo chegaria rate-limitado (429) na enésima rodada.
+    let b = Uuid::now_v7();
+    let b = b.as_bytes();
+    let outside_ip = format!("10.{}.{}.{}", b[13], b[14], b[15]);
     let mut req = json_req("POST", "/api/v1/auth/login", None, &login);
     req.headers_mut()
-        .insert("x-forwarded-for", "203.0.113.9".parse().unwrap());
+        .insert("x-forwarded-for", outside_ip.parse().unwrap());
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     // Cleanup: regra é global — remover pra não vazar pros outros testes.
@@ -879,6 +893,388 @@ async fn bookmarks_list_empty_for_fresh_session() {
     let (_, _, cookie) = seed_session(&st.db).await;
     let resp = app
         .oneshot(get_with_cookie("/api/v1/bookmarks", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+// ---------------------------------------------------------------------------
+// FUNCTIONAL — mastodon API + federation actor surface (issue #8, passo 2)
+// ---------------------------------------------------------------------------
+
+/// Torna o cidadão da sessão um perfil público federável (handle + is_public).
+/// Handle respeita o CHECK `citizen_handle_format` (3–32 chars).
+async fn make_public(db: &Db, citizen: Uuid) -> String {
+    let simple = citizen.simple().to_string();
+    let handle = format!("h{}", &simple[..12]);
+    sqlx::query("UPDATE citizen SET handle = $2, is_public = true, display_name = 'Perfil Teste' WHERE id = $1")
+        .bind(citizen)
+        .bind(&handle)
+        .execute(db)
+        .await
+        .expect("make public");
+    handle
+}
+
+#[tokio::test]
+async fn instance_metadata_is_public() {
+    let (app, _) = app().await;
+    let resp = app.oneshot(get("/api/v1/instance")).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn public_timeline_is_readable_anonymously() {
+    let (app, _) = app().await;
+    let resp = app.oneshot(get("/api/v1/timelines/public")).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn home_timeline_requires_auth() {
+    let (app, _) = app().await;
+    let resp = app.oneshot(get("/api/v1/timelines/home")).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn post_status_requires_auth() {
+    let (app, _) = app().await;
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/statuses",
+            None,
+            r#"{"status":"olá mundo"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn publish_status_and_serve_actor_documents() {
+    // Fluxo federado completo: perfil público publica uma nota via a API
+    // Mastodon-compat, e a superfície ActivityPub serve actor/outbox/followers.
+    let (app, st) = app().await;
+    // A resolução de handle da superfície federada usa a org default fixa.
+    let default_org = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+    let (_, citizen, cookie) = seed_session_in_org(&st.db, default_org).await;
+    let handle = make_public(&st.db, citizen).await;
+
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/statuses",
+            Some(&cookie),
+            r#"{"status":"nota de teste da suíte de cobertura"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert!(json["id"].is_string() || json["data"]["id"].is_string());
+
+    for path in [
+        format!("/actors/{handle}"),
+        format!("/actors/{handle}/outbox"),
+        format!("/actors/{handle}/followers"),
+        format!("/actors/{handle}/following"),
+    ] {
+        let req = Request::builder()
+            .uri(&path)
+            .header(header::ACCEPT, "application/activity+json")
+            // O handler monta URLs absolutas do actor a partir do Host.
+            .header(header::HOST, "localhost")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "GET {path}");
+    }
+}
+
+#[tokio::test]
+async fn apps_registration_and_bad_oauth_token() {
+    let (app, _) = app().await;
+    // Registro de app OAuth (público, form-encoded como os clientes Mastodon).
+    let form = |uri: &str, body: &str| {
+        Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(Body::from(body.to_owned()))
+            .unwrap()
+    };
+    let resp = app
+        .clone()
+        .oneshot(form(
+            "/api/v1/apps",
+            "client_name=suite-teste&redirect_uris=urn:ietf:wg:oauth:2.0:oob",
+        ))
+        .await
+        .unwrap();
+    assert!(resp.status().is_success(), "got {}", resp.status());
+    // Token com client desconhecido nunca emite credencial.
+    let resp = app
+        .oneshot(form(
+            "/oauth/token",
+            "grant_type=client_credentials&client_id=nope&client_secret=nope",
+        ))
+        .await
+        .unwrap();
+    assert!(resp.status().is_client_error(), "got {}", resp.status());
+}
+
+// ---------------------------------------------------------------------------
+// FUNCTIONAL — social graph CRUD (mutes, blocks, filters, lists)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn mute_and_block_roundtrip() {
+    let (app, st) = app().await;
+    let (org, _, cookie) = seed_session(&st.db).await;
+    // Alvo na MESMA org, com perfil público (mute/block resolvem o actor URL).
+    let other = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO citizen (id, org_id, oidc_subject, verification_level, created_at)
+         VALUES ($1, $2, $3, 'email', now())",
+    )
+    .bind(other)
+    .bind(org)
+    .bind(format!("sub-{}", other.simple()))
+    .execute(&st.db)
+    .await
+    .expect("seed other citizen");
+    make_public(&st.db, other).await;
+
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/accounts/{other}/mute"),
+            Some(&cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert!(resp.status().is_success(), "mute got {}", resp.status());
+    let resp = app
+        .clone()
+        .oneshot(get_with_cookie("/api/v1/mutes", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/accounts/{other}/unmute"),
+            Some(&cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert!(resp.status().is_success());
+
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/accounts/{other}/block"),
+            Some(&cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert!(resp.status().is_success());
+    let resp = app
+        .clone()
+        .oneshot(get_with_cookie("/api/v1/blocks", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/accounts/{other}/unblock"),
+            Some(&cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert!(resp.status().is_success());
+}
+
+#[tokio::test]
+async fn filters_crud_roundtrip() {
+    let (app, st) = app().await;
+    let (_, _, cookie) = seed_session(&st.db).await;
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/filters",
+            Some(&cookie),
+            r#"{"phrase":"frase-filtrada-teste","context":["home"]}"#,
+        ))
+        .await
+        .unwrap();
+    assert!(resp.status().is_success(), "got {}", resp.status());
+    let created = body_json(resp).await;
+    let id = created["id"]
+        .as_str()
+        .or_else(|| created["data"]["id"].as_str())
+        .expect("filter id")
+        .to_owned();
+    let resp = app
+        .clone()
+        .oneshot(get_with_cookie("/api/v1/filters", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp = app
+        .oneshot(json_req(
+            "DELETE",
+            &format!("/api/v1/filters/{id}"),
+            Some(&cookie),
+            "",
+        ))
+        .await
+        .unwrap();
+    assert!(resp.status().is_success());
+}
+
+#[tokio::test]
+async fn lists_crud_roundtrip() {
+    let (app, st) = app().await;
+    let (_, _, cookie) = seed_session(&st.db).await;
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/lists",
+            Some(&cookie),
+            r#"{"title":"Minha lista de teste"}"#,
+        ))
+        .await
+        .unwrap();
+    assert!(resp.status().is_success(), "got {}", resp.status());
+    let created = body_json(resp).await;
+    let id = created["id"]
+        .as_str()
+        .or_else(|| created["data"]["id"].as_str())
+        .expect("list id")
+        .to_owned();
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "PUT",
+            &format!("/api/v1/lists/{id}"),
+            Some(&cookie),
+            r#"{"title":"Lista renomeada"}"#,
+        ))
+        .await
+        .unwrap();
+    assert!(resp.status().is_success());
+    let resp = app
+        .clone()
+        .oneshot(get_with_cookie("/api/v1/lists", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp = app
+        .oneshot(json_req(
+            "DELETE",
+            &format!("/api/v1/lists/{id}"),
+            Some(&cookie),
+            "",
+        ))
+        .await
+        .unwrap();
+    assert!(resp.status().is_success());
+}
+
+// ---------------------------------------------------------------------------
+// SECURITY + FUNCTIONAL — auth flows (register, login rate, reset, me)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn register_with_valid_cpf_starts_verification() {
+    // Sem SMTP no ambiente de teste o serviço entra em DEV mode (loga a URL)
+    // mas o contrato HTTP é o mesmo: 202 + status verification_sent.
+    let (app, st) = app().await;
+    let (org, citizen, _) = seed_session(&st.db).await;
+    let body = format!(
+        r#"{{"org_id":"{org}","email":"novo-{}@example.org","password":"senha-forte-123","cpf":"52998224725"}}"#,
+        citizen.simple()
+    );
+    let resp = app
+        .oneshot(json_req("POST", "/api/v1/auth/register", None, &body))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    let json = body_json(resp).await;
+    assert_eq!(json["data"]["status"], "verification_sent");
+}
+
+#[tokio::test]
+async fn login_rate_limits_by_ip() {
+    let (app, st) = app().await;
+    let (org, _, _) = seed_session(&st.db).await;
+    let body =
+        format!(r#"{{"org_id":"{org}","email":"forca-bruta@example.org","password":"errada"}}"#);
+    // IP único POR RUN: a tabela de auditoria persiste entre execuções e um
+    // IP fixo chegaria já rate-limitado na segunda rodada da suíte.
+    let b = Uuid::now_v7();
+    let b = b.as_bytes();
+    let ip = format!("10.{}.{}.{}", b[13], b[14], b[15]);
+    // 10 tentativas (default) do mesmo IP; a 11ª tem que ver 429.
+    for _ in 0..10 {
+        let mut req = json_req("POST", "/api/v1/auth/login", None, &body);
+        req.headers_mut()
+            .insert("x-forwarded-for", ip.parse().unwrap());
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+    let mut req = json_req("POST", "/api/v1/auth/login", None, &body);
+    req.headers_mut()
+        .insert("x-forwarded-for", ip.parse().unwrap());
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test]
+async fn password_reset_request_is_enumeration_resistant() {
+    let (app, st) = app().await;
+    let (org, _, _) = seed_session(&st.db).await;
+    let body = format!(r#"{{"org_id":"{org}","email":"nao-existe@example.org"}}"#);
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/auth/password-reset/request",
+            None,
+            &body,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn auth_me_reflects_session_and_logout_is_idempotent() {
+    let (app, st) = app().await;
+    let (_, _, cookie) = seed_session(&st.db).await;
+    // O perfil próprio via cookie (o /auth/me legado é da era OIDC/bearer).
+    let resp = app
+        .clone()
+        .oneshot(get_with_cookie("/api/v1/me", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    // Logout sem cookie nenhum continua 200 — aba velha nunca vê erro.
+    let resp = app
+        .oneshot(json_req("POST", "/api/v1/auth/logout", None, "{}"))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);

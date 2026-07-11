@@ -8,6 +8,15 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **test(coverage) lote 2: 47.2% → 51.2%, ratchet 46 → 50** — mais 13 testes no
+  harness (49 no total), agora sobre a superfície federada e auth: fluxo completo
+  publicar nota (Mastodon-compat) → servir actor/outbox/followers/following em
+  ActivityPub (com geração de chave do actor), instance/timelines públicos,
+  registro de app OAuth + token com client inválido, CRUD de mutes/blocks/filters/
+  lists, registro com CPF válido (202 verification_sent), rate-limit de login por
+  IP (429 na 11ª), reset de senha resistente a enumeração, logout idempotente.
+  Flakiness entre runs eliminada (IPs de teste aleatórios por execução — a
+  auditoria de tentativas persiste no banco); suíte validada 2× seguidas.
 - **test(coverage): 40.6% → 47.2%, ratchet 40 → 46** (issue #8, passo 2/4 do plano) —
   17 testes novos no harness oneshot `crates/gateway/tests/http_surface.rs` (36 no
   total), metade segurança / metade funcional: formulário de contato (setor fechado,
