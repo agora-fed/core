@@ -8,6 +8,16 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **feat(eleicoes): pipeline TSE DivulgaCand pronto e ensaiado** (item 5 do plano
+  estratégico) — `scripts/seed-candidaturas-tse.py` baixa o `consulta_cand_{ano}.zip`
+  dos dados abertos, parseia os CSVs por UF (Latin-1) e gera SQL idempotente de
+  upsert em `election`/`candidacy`; chave de upsert é o `SQ_CANDIDATO` do TSE
+  (migration 0520, coluna `candidacy.tse_sq` + índice único parcial — o TSE
+  republica os CSVs diariamente na janela de registro e o mesmo comando roda todo
+  dia sem duplicar). **Ensaio com o dataset real de 2022**: 28.461 candidaturas
+  ingeridas em 13s (13 presidenciáveis com nomes/números/status corretos, 33,9%
+  mulheres — bate com o oficial), re-run idempotente (28.461 = 28.461), turnos 1/2
+  separados por election. Em 15/08/2026 é um comando: `--year 2026` + psql.
 - **test(coverage) lote 3: 51.2% → 54.2%, ratchet 50 → 53** — a superfície admin sob
   a mesma régua (anônimo 401, sessão comum 403, admin nunca 5xx) num loop sobre as 9
   listas admin (stats/users/peers/users-rich/reports/audit/webhooks/announcements/
