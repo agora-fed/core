@@ -1522,3 +1522,38 @@ async fn delivery_receipts_are_public_and_empty_for_unknown_proposal() {
     let json = body_json(resp).await;
     assert_eq!(json["data"].as_array().map(Vec::len), Some(0));
 }
+
+#[tokio::test]
+async fn embed_placar_serves_selfcontained_widget() {
+    // O widget da imprensa é público, autocontido e nunca 500; mandato
+    // inexistente é 404 limpo.
+    let (app, st) = app().await;
+    let (org, _, _) = seed_session(&st.db).await;
+    let mandate = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO mandate (id, org_id, office, display_name, public_email, created_at)
+         VALUES ($1, $2, 'deputado_federal', 'Dep. Placar Teste', 'gab@example.leg.br', now())",
+    )
+    .bind(mandate)
+    .bind(org)
+    .execute(&st.db)
+    .await
+    .expect("seed mandate");
+    let resp = app
+        .clone()
+        .oneshot(get(&format!("/embed/placar/{mandate}")))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), 1 << 20)
+        .await
+        .unwrap();
+    let html = String::from_utf8_lossy(&body);
+    assert!(html.contains("Dep. Placar Teste"));
+    assert!(html.contains("silêncios registrados"));
+    let resp = app
+        .oneshot(get(&format!("/embed/placar/{}", Uuid::now_v7())))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}

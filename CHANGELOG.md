@@ -8,6 +8,13 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.30.2-embed — placar embedável para a imprensa** (item 7, fatia 1): novo
+  `GET /embed/placar/{mandate_id}` na raiz — widget HTML autocontido (~2 KB, CSS
+  inline, zero JS, cache 5 min) com respondidas × silêncios × taxa de resposta e
+  link-fonte para o placar verificável; feito para iframe em portais e blogs (sem
+  cabeçalhos anti-frame — circular é o ponto). O JSON para imprensa já existia na
+  rota pública `GET /api/v1/scorecards/{mandate_id}`. Fatia 2 futura: OG card PNG
+  por mandato/SLA (exige stack de rasterização).
 - **0.30.1-threshold — gatilho proporcional ao eleitorado** (item 4 do plano): o
   autor não escolhe mais o threshold da própria proposta. Um middleware no
   composition root reescreve o campo no create com

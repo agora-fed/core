@@ -22,6 +22,7 @@ pub mod contact;
 pub mod discovery;
 pub mod elections;
 pub mod email_templates;
+pub mod embed;
 pub mod federation;
 pub mod federation_feed;
 pub mod fediverso_admin;
@@ -240,6 +241,8 @@ pub fn api_router(state: AppState) -> Router {
         .route("/openapi.json", get(openapi))
         .nest("/api/v1", api)
         .merge(federation_public)
+        // Placar embedável pra imprensa (0.30.2) — raiz, URL limpa pra iframe.
+        .merge(embed::routes(state.clone()))
         .merge(oauth)
         // gov.br OIDC — start/callback na raiz porque o gov.br exige que
         // `redirect_uri` seja exatamente `<origin>/auth/govbr/callback`.
