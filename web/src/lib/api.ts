@@ -2159,3 +2159,22 @@ export const saveCampanhaConfig = (body: {
   crowdfunding_url?: string | null;
   is_published: boolean;
 }) => apiBody<{ ok: true }>('PUT', '/api/v1/me/campanha/config', body);
+
+/** Página pública da declaração — 404 quando despublicada/inexistente. */
+export interface CampanhaPublicaDto {
+  handle: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  meta_centavos: number | null;
+  bank_account: string | null;
+  crowdfunding_url: string | null;
+  total_entradas_centavos: number;
+  total_saidas_centavos: number;
+  doacoes_count: number;
+  lancamentos: CampanhaEntryDto[];
+}
+
+export const getCampanhaPublica = (handle: string) =>
+  apiGetCredentialed<CampanhaPublicaDto>(
+    `/api/v1/campanha/${encodeURIComponent(handle)}`,
+  );

@@ -8,6 +8,18 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.31.1-campanha-publica — a declaração vira página pública + selo no perfil**:
+  novo `GET /api/v1/campanha/{handle}` (público) serve a declaração quando
+  `is_published` E o vínculo de mandato segue vivo — 404 uniforme para handle
+  inexistente/despublicada/vínculo perdido (não vaza existência); totais,
+  contagem de doações e lançamentos ativos. Página `/campanha/?u=<handle>`
+  (indexável): arrecadado × meta, gastos, "Como doar (meios oficiais)" com
+  financiamento coletivo e conta de campanha + regras da Lei 9.504/1997,
+  tabelas de entradas (com doador e recibo) e saídas, e o aviso de histórico
+  imutável com link pro DivulgaCandContas. O perfil público ganha o selo
+  **"💰 Financiamento declarado"** linkando pra página, e o painel privado o
+  atalho "ver como eleitor". Teste http_surface: publicada 200 / despublicada
+  404 / anônimo lê.
 - **0.31.0-doacoes — o serviço de doações/financiamento vira produto** (aprova o
   protótipo 0.30.7): migration `0523` cria `campaign_finance_entry` (declaração
   **append-only** — lançamento não se edita, revoga-se com `revoked_at` e

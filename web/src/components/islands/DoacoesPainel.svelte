@@ -248,7 +248,13 @@
       <p class="muted">
         Doações e financiamento de campanha
         {#if campanha.config?.is_published}
-          · <span class="pub-ok">página pública ativa</span>
+          {#if profile?.handle}
+            · <a class="pub-ok" href={`/campanha/?u=${encodeURIComponent(profile.handle)}`}>
+              ver como eleitor ↗
+            </a>
+          {:else}
+            · <span class="pub-ok">página pública ativa</span>
+          {/if}
         {:else}
           · <span class="pub-off">página pública desativada</span>
         {/if}

@@ -1,0 +1,24 @@
+---
+// Página pública da declaração de financiamento de uma candidatura.
+// /campanha/?u=<handle> — SSG não conhece os handles, a ilha resolve no client
+// (mesmo padrão de /perfil). Indexável: transparência é pra ser achada.
+import BaseLayout from '../layouts/BaseLayout.astro';
+import CampanhaPublica from '../components/islands/CampanhaPublica.svelte';
+
+const description =
+  'Declaração pública de financiamento de campanha na DemocraciaBR: entradas, gastos e doações com recibo, em histórico imutável.';
+---
+
+<BaseLayout title="Financiamento de campanha" {description}>
+  <section class="section">
+    <div class="container narrow">
+      <CampanhaPublica client:load />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .narrow {
+    max-width: 52rem;
+  }
+</style>

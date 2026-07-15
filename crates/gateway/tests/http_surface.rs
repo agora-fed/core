@@ -1727,3 +1727,108 @@ async fn campanha_politico_roundtrip() {
     let body = body_json(resp).await;
     assert_eq!(body["data"]["lancamentos"], serde_json::json!([]));
 }
+
+#[tokio::test]
+async fn campanha_publica_only_when_published() {
+    let (app, st) = app().await;
+    // Org default fixa — find_public_by_handle resolve contra ela.
+    let default_org = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+    let (org, citizen, cookie) = seed_session_in_org(&st.db, default_org).await;
+    let handle = format!("cand{}", &citizen.simple().to_string()[..8]);
+    sqlx::query("UPDATE citizen SET handle = $2, is_public = TRUE, display_name = 'Cand. Teste' WHERE id = $1")
+        .bind(citizen)
+        .bind(&handle)
+        .execute(&st.db)
+        .await
+        .expect("public handle");
+    let mandate = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO mandate (id, org_id, office, display_name, public_email, created_at)
+         VALUES ($1, $2, 'vereador', 'Mandato Pub', 'gab2@example.leg.br', now())",
+    )
+    .bind(mandate)
+    .bind(org)
+    .execute(&st.db)
+    .await
+    .expect("seed mandate");
+    sqlx::query(
+        "INSERT INTO mandate_identity_binding
+             (id, mandate_id, citizen_id, verification_level, verified_at, created_at)
+         VALUES ($1, $2, $3, 'directory', now(), now())",
+    )
+    .bind(Uuid::now_v7())
+    .bind(mandate)
+    .bind(citizen)
+    .execute(&st.db)
+    .await
+    .expect("seed binding");
+
+    // Antes de publicar: 404 anônimo (sem vazar a config despublicada).
+    let resp = app
+        .clone()
+        .oneshot(get(&format!("/api/v1/campanha/{handle}")))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+    // Lança uma doação e publica.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/me/campanha/lancamentos",
+            Some(&cookie),
+            r#"{"kind":"entrada","descricao":"Doação — pessoa física","valor_centavos":10000,
+                "occurred_on":"2026-07-15","receipt_ref":"RE-2026-0002"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "PUT",
+            "/api/v1/me/campanha/config",
+            Some(&cookie),
+            r#"{"meta_centavos":100000,"is_published":true}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Publicada: página pública anônima serve totais + lançamentos.
+    let resp = app
+        .clone()
+        .oneshot(get(&format!("/api/v1/campanha/{handle}")))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_json(resp).await;
+    assert_eq!(
+        body["data"]["total_entradas_centavos"],
+        serde_json::json!(10000)
+    );
+    assert_eq!(body["data"]["doacoes_count"], serde_json::json!(1));
+    assert_eq!(
+        body["data"]["display_name"],
+        serde_json::json!("Cand. Teste")
+    );
+
+    // Despublica → volta a 404.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "PUT",
+            "/api/v1/me/campanha/config",
+            Some(&cookie),
+            r#"{"meta_centavos":100000,"is_published":false}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp = app
+        .oneshot(get(&format!("/api/v1/campanha/{handle}")))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}

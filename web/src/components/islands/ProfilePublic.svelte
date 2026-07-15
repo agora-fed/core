@@ -19,6 +19,7 @@
     getAttestations,
     attestCitizen,
     revokeAttestation,
+    getCampanhaPublica,
     DEFAULT_ORG_ID,
     type RemoteNoteDto,
     type AttestationsDto,
@@ -137,6 +138,15 @@
     }
   }
 
+  // Selo de financiamento transparente (0.31): a candidatura publicou a
+  // declaração — o chip leva pra página pública /campanha/?u=<handle>.
+  let campanhaHandle = $state<string | null>(null);
+
+  async function loadCampanha(h: string) {
+    const res = await getCampanhaPublica(h);
+    if (res.success && res.data) campanhaHandle = h;
+  }
+
   let attestTitle = $derived.by(() => {
     if (!attestations || attestations.count === 0) return '';
     const names = attestations.items
@@ -205,6 +215,7 @@
     }
     profile = res.data;
     void loadAttestations(profile.citizen_id);
+    if (profile.handle) void loadCampanha(profile.handle);
     if (profile.is_public && profile.handle) {
       fediAddress = `@${profile.handle}@${window.location.host}`;
       // Timeline do perfil local reusa o mesmo proxy do outbox — passa a URL
@@ -509,6 +520,15 @@
               {attestations.count === 1 ? 'operador(a)' : 'operadores'}
             </span>
           {/if}
+          {#if campanhaHandle}
+            <a
+              class="chip chip-ok chip-link"
+              href={`/campanha/?u=${encodeURIComponent(campanhaHandle)}`}
+              title="Esta candidatura declara publicamente o financiamento de campanha."
+            >
+              💰 Financiamento declarado
+            </a>
+          {/if}
           {#if profile.created_at}
             <span class="chip chip-plain" title={formatDate(profile.created_at)}>
               Por aqui desde {formatDate(profile.created_at)}
@@ -709,6 +729,13 @@
     color: var(--c-text-muted);
     border: 1px solid var(--c-border);
     font-weight: 500;
+  }
+  .chip-link {
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .chip-link:hover {
+    filter: brightness(0.96);
   }
   .chip-titulo {
     background: var(--c-blue-soft, #e6efff);

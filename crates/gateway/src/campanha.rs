@@ -12,6 +12,9 @@
 //! - `POST   /me/campanha/lancamentos` — novo lançamento (entrada/saída).
 //! - `DELETE /me/campanha/lancamentos/{id}` — revoga o próprio lançamento.
 //! - `PUT    /me/campanha/config` — upsert da configuração de arrecadação.
+//! - `GET    /campanha/{handle}` — página PÚBLICA da declaração (só quando
+//!   `is_published` e o vínculo de mandato segue vivo; 404 uniforme nos demais
+//!   casos pra não vazar existência de config despublicada).
 
 use axum::extract::{Json, Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -21,9 +24,14 @@ use axum::Router;
 use chrono::{DateTime, NaiveDate, Utc};
 use dsoc_api_contract::ApiResponse;
 use dsoc_app::AppState;
+use dsoc_auth::profile::ProfileService;
+use dsoc_core::ids::OrgId;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
+
+/// Mesma org default fixa da superfície de federação/perfis públicos.
+const DEFAULT_ORG_UUID: Uuid = uuid::uuid!("11111111-1111-1111-1111-111111111111");
 
 const MAX_DESCRICAO: usize = 200;
 const MAX_RECEIPT: usize = 60;
@@ -44,6 +52,7 @@ pub fn routes(state: AppState) -> Router<()> {
             axum::routing::delete(revoke_entry),
         )
         .route("/me/campanha/config", put(save_config))
+        .route("/campanha/{handle}", get(public_view))
         .with_state(state)
 }
 
@@ -187,6 +196,119 @@ async fn overview(State(state): State<AppState>, headers: HeaderMap) -> Response
         Json(ApiResponse::ok(CampanhaDto {
             is_politico: true,
             config,
+            lancamentos,
+        })),
+    )
+        .into_response()
+}
+
+// ---------------------------------------------------------------------------
+// GET /campanha/{handle} — página pública da declaração
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+struct CampanhaPublicaDto {
+    handle: String,
+    display_name: Option<String>,
+    avatar_url: Option<String>,
+    meta_centavos: Option<i64>,
+    bank_account: Option<String>,
+    crowdfunding_url: Option<String>,
+    total_entradas_centavos: i64,
+    total_saidas_centavos: i64,
+    doacoes_count: i64,
+    lancamentos: Vec<EntryDto>,
+}
+
+fn public_not_found() -> Response {
+    // Mensagem única para handle inexistente, config despublicada ou vínculo
+    // perdido — quem está de fora não descobre qual dos três.
+    fail(
+        StatusCode::NOT_FOUND,
+        "not_found",
+        "Declaração de campanha não encontrada.",
+    )
+}
+
+async fn public_view(State(state): State<AppState>, Path(handle): Path<String>) -> Response {
+    let svc = ProfileService::from_state(&state);
+    let org = OrgId::from_uuid(DEFAULT_ORG_UUID);
+    let Ok(profile) = svc.find_public_by_handle(org, &handle).await else {
+        return public_not_found();
+    };
+    let citizen = profile.citizen_id;
+    let config: Option<ConfigDto> = match sqlx::query_as(
+        r"SELECT meta_centavos, bank_account, crowdfunding_url, is_published
+            FROM campaign_fundraising_config
+           WHERE citizen_id = $1 AND is_published",
+    )
+    .bind(citizen)
+    .fetch_optional(&state.db)
+    .await
+    {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::error!(?err, "campanha public config read");
+            return storage_error();
+        }
+    };
+    let Some(config) = config else {
+        return public_not_found();
+    };
+    // Vínculo perdido despublica na prática — a página some junto com o gate.
+    match is_politico(&state.db, citizen).await {
+        Ok(true) => {}
+        Ok(false) => return public_not_found(),
+        Err(err) => {
+            tracing::error!(?err, "campanha public gate check");
+            return storage_error();
+        }
+    }
+    let lancamentos: Vec<EntryDto> = match sqlx::query_as(
+        r"SELECT id, kind, descricao, valor_centavos, occurred_on,
+                 receipt_ref, donor_name, created_at
+            FROM campaign_finance_entry
+           WHERE citizen_id = $1 AND revoked_at IS NULL
+           ORDER BY occurred_on DESC, created_at DESC
+           LIMIT $2",
+    )
+    .bind(citizen)
+    .bind(LIST_LIMIT)
+    .fetch_all(&state.db)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(err) => {
+            tracing::error!(?err, "campanha public entries read");
+            return storage_error();
+        }
+    };
+    let total_entradas_centavos = lancamentos
+        .iter()
+        .filter(|l| l.kind == "entrada")
+        .map(|l| l.valor_centavos)
+        .sum();
+    let total_saidas_centavos = lancamentos
+        .iter()
+        .filter(|l| l.kind == "saida")
+        .map(|l| l.valor_centavos)
+        .sum();
+    let doacoes_count = lancamentos
+        .iter()
+        .filter(|l| l.kind == "entrada" && l.receipt_ref.is_some())
+        .count() as i64;
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(CampanhaPublicaDto {
+            handle: profile.handle.unwrap_or(profile.public_handle),
+            display_name: profile.display_name,
+            avatar_url: profile.avatar_url,
+            meta_centavos: config.meta_centavos,
+            bank_account: config.bank_account,
+            crowdfunding_url: config.crowdfunding_url,
+            total_entradas_centavos,
+            total_saidas_centavos,
+            doacoes_count,
             lancamentos,
         })),
     )
