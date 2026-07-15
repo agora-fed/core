@@ -41,8 +41,12 @@
   let fediFollowing = $state(false);
   let fediFollowSent = $state(false);
 
+  // Mastodon-parity: handle (com ou sem @ inicial) OU URL de perfil colada.
+  const HANDLE_RE = /^@?[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const PROFILE_URL_RE = /^https:\/\/[^\s/]+\.[^\s/]+\/\S+$/i;
+  let fediIsUrl = $derived(PROFILE_URL_RE.test(fediQuery.trim()));
   let fediValid = $derived(
-    /^@?[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fediQuery.trim()),
+    HANDLE_RE.test(fediQuery.trim()) || fediIsUrl,
   );
 
   // Typeahead — contas já conhecidas pela instância aparecem enquanto digita
@@ -283,8 +287,12 @@
                         <Icon name="globe" size={14} />
                       </span>
                       <span class="sug-body">
-                        <strong>Procurar {fediQuery.trim()} no fediverso</strong>
-                        <span class="muted">WebFinger na instância remota</span>
+                        <strong>
+                          {fediIsUrl ? 'Abrir esse perfil do fediverso' : `Procurar ${fediQuery.trim()} no fediverso`}
+                        </strong>
+                        <span class="muted">
+                          {fediIsUrl ? 'resolve a URL colada na instância de origem' : 'WebFinger na instância remota'}
+                        </span>
                       </span>
                     {:else}
                       <span class="sug-ic" aria-hidden="true">
@@ -314,9 +322,10 @@
         </Button>
       </div>
       <p class="fedi-hint muted">
-        Digite um nome pra ver sugestões, ou o endereço completo
-        <code>@usuario@instancia</code> pra puxar uma conta nova do fediverso.
-        O perfil abre dentro do DemocraciaBR e você pode seguir sem sair.
+        Digite um nome pra ver sugestões, ou cole <code>@usuario@instancia</code>
+        (o <code>@</code> inicial é opcional) ou a URL do perfil
+        (<code>https://instancia/@usuario</code>) pra puxar uma conta nova do
+        fediverso. O perfil abre dentro do DemocraciaBR e você pode seguir sem sair.
       </p>
     </form>
 

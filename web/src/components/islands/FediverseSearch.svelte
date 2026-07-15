@@ -15,7 +15,11 @@
   let following = $state(false);
   let followState = $state<'idle' | 'sent' | 'failed'>('idle');
 
-  let valid = $derived(/^@?[^\s@]+@[^\s@]+\.[^\s@]+$/.test(acct.trim()));
+  // Mastodon-parity: handle (com ou sem @ inicial) OU URL de perfil colada.
+  let valid = $derived(
+    /^@?[^\s@]+@[^\s@]+\.[^\s@]+$/.test(acct.trim()) ||
+      /^https:\/\/[^\s/]+\.[^\s/]+\/\S+$/i.test(acct.trim()),
+  );
 
   async function lookup(event: SubmitEvent) {
     event.preventDefault();
@@ -59,8 +63,9 @@
 <section class="fedi">
   <h2>Encontrar pessoas no fediverso</h2>
   <p class="muted">
-    Busque por <code>@usuario@instancia</code> (Mastodon, Pleroma, outras
-    instâncias DemocraciaBR). Você precisa ter perfil público para seguir.
+    Busque por <code>@usuario@instancia</code> ou cole a URL do perfil
+    (<code>https://instancia/@usuario</code>) — Mastodon, Pleroma, outras
+    instâncias DemocraciaBR. Você precisa ter perfil público para seguir.
   </p>
 
   <form class="row" onsubmit={lookup} novalidate>

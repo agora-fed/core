@@ -809,7 +809,7 @@ async fn following_get(
 /// Query for `GET /api/v1/federation/lookup`.
 #[derive(Debug, Deserialize)]
 struct LookupQuery {
-    /// `acct` URI without the scheme (`user@host` or `@user@host`), as a citizen would type it.
+    /// What the citizen typed: `user@host`, `@user@host`, or a pasted `https://` profile URL.
     acct: String,
 }
 
@@ -833,21 +833,33 @@ struct RemoteActorDto {
     avatar_url: Option<String>,
 }
 
-/// `GET /api/v1/federation/lookup?acct=@user@host` — webfinger-resolve a remote handle and
-/// return a sanitized view. Auth-gated (citizen cookie) so the platform is not a generic
-/// fediverse crawler — only logged-in citizens can probe.
+/// `GET /api/v1/federation/lookup?acct=…` — resolve a remote profile and return a sanitized
+/// view. Auth-gated (citizen cookie) so the platform is not a generic fediverse crawler —
+/// only logged-in citizens can probe.
+///
+/// Mastodon-parity input forms:
+/// - `@user@host` ou `user@host` → WebFinger + Actor fetch;
+/// - `https://host/@user` (ou qualquer URL de perfil/actor) → Actor fetch direto com
+///   content negotiation, sem WebFinger — igual ao "colar a URL na busca" do Mastodon.
 async fn lookup_remote(
     State(_state): State<AppState>,
     _caller: CallerId,
     Query(query): Query<LookupQuery>,
 ) -> Response {
+    let input = query.acct.trim();
+    if input.starts_with("https://") {
+        return lookup_remote_by_url(input).await;
+    }
+    if input.starts_with("http://") {
+        return client_error("use https:// — instâncias do fediverso não federam por http");
+    }
     // Accept "@user@host" with a leading at, or bare "user@host".
-    let raw = query.acct.trim_start_matches('@');
+    let raw = input.trim_start_matches('@');
     let Some((user, host)) = raw.rsplit_once('@') else {
-        return client_error("forneça @usuario@host válido");
+        return client_error("forneça @usuario@host ou a URL https:// do perfil");
     };
     if user.is_empty() || host.is_empty() {
-        return client_error("forneça @usuario@host válido");
+        return client_error("forneça @usuario@host ou a URL https:// do perfil");
     }
     // Step 1: webfinger lookup on the remote host.
     let webfinger_url = format!("https://{host}/.well-known/webfinger?resource=acct:{user}@{host}");
@@ -885,6 +897,45 @@ async fn lookup_remote(
         }
     };
     let dto = sanitize_actor(actor, actor_url, raw);
+    (StatusCode::OK, Json(ApiResponse::ok(dto))).into_response()
+}
+
+/// Resolve a pasted profile URL (`https://host/@user`, `https://host/users/user` or the
+/// actor URL itself) by fetching the document directly with ActivityPub content negotiation.
+/// The handle shown to the UI comes from `preferredUsername@host-do-actor-id`, which is what
+/// Mastodon also displays before a canonical WebFinger round-trip.
+async fn lookup_remote_by_url(url: &str) -> Response {
+    let actor = match fetch_remote_actor(url).await {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!(error = ?err, url, "remote actor fetch by url failed");
+            return upstream_error("não consegui carregar esse endereço");
+        }
+    };
+    // Um perfil ActivityPub tem inbox; URL de post/coleção não vira perfil.
+    if actor.get("inbox").and_then(Value::as_str).is_none() {
+        return upstream_error("esse endereço não é um perfil ActivityPub");
+    }
+    let actor_url = actor
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or(url)
+        .to_owned();
+    let user = actor
+        .get("preferredUsername")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let host = reqwest::Url::parse(&actor_url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_owned))
+        .unwrap_or_default();
+    let acct = if user.is_empty() || host.is_empty() {
+        // Sem preferredUsername não dá pra montar user@host — mostra a URL mesmo.
+        actor_url.trim_start_matches("https://").to_owned()
+    } else {
+        format!("{user}@{host}")
+    };
+    let dto = sanitize_actor(actor, &actor_url, &acct);
     (StatusCode::OK, Json(ApiResponse::ok(dto))).into_response()
 }
 

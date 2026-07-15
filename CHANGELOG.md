@@ -8,6 +8,15 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.30.5-busca-formato-livre — a busca aceita o que você colar, como no Mastodon**:
+  `GET /api/v1/federation/lookup` passa a aceitar, além de `@usuario@instancia`
+  (o `@` inicial já era opcional), a **URL do perfil colada**
+  (`https://instancia/@usuario`, `/users/usuario` ou o próprio actor URL) — fetch
+  direto do Actor doc com content negotiation, sem WebFinger, igual ao colar-URL
+  do Mastodon; documento sem `inbox` (post, coleção) é rejeitado com mensagem
+  clara, e `http://` orienta a usar `https://`. O handle exibido vem de
+  `preferredUsername@host` do actor id. Front (`/explorar` e Configurações →
+  buscar no fediverso) valida os dois formatos e os textos de ajuda explicam.
 - **0.30.4-busca-viva — sugestões carregam enquanto você digita**: a página
   `/buscar` ganhou typeahead — a partir de 2 caracteres, um debounce de 300 ms
   dispara o `GET /api/v1/search` existente e um dropdown mostra contas (avatar +
