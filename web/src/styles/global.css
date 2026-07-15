@@ -54,6 +54,9 @@
 html {
   -webkit-text-size-adjust: 100%;
   scroll-behavior: smooth;
+  /* Sem isto, o overflow-x do body PROPAGA pro viewport e o body em si fica
+     sem clip — qualquer elemento largo demais faz o celular abrir com zoom out. */
+  overflow-x: clip;
 }
 
 body {

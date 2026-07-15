@@ -8,6 +8,13 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.30.4-busca-viva — sugestões carregam enquanto você digita**: a página
+  `/buscar` ganhou typeahead — a partir de 2 caracteres, um debounce de 300 ms
+  dispara o `GET /api/v1/search` existente e um dropdown mostra contas (avatar +
+  handle), hashtags (com contagem de notas) e a ação "Buscar…" para os resultados
+  completos. Navegável por teclado (↑/↓/Enter/Esc), respostas fora de ordem são
+  descartadas por sequência, e o padrão ARIA de combobox anuncia a lista para
+  leitores de tela. Nenhuma mudança de backend.
 - **0.30.3-threshold-ux — o formulário mostra a regra, não pede o número**: o campo
   "Limiar de apoios" saiu do formulário de propor; ao escolher o mandato, o form
   consulta o novo `GET /api/v1/threshold-preview?mandate_id=…` e exibe
@@ -100,6 +107,15 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
   do banco de CI foi corrigido (0519 registrada via runner, não via psql).
 
 ### Fixed
+- **mobile: fim do zoom-out — o site abria "miniaturizado" no celular**: dois
+  elementos mais largos que a tela faziam o Chrome mobile renderizar a página
+  inteira com zoom out (layout de 512 px numa tela de 390 px). Causas: (1) o form
+  de `/buscar` não encolhia — o campo tinha piso intrínseco de ~378 px + botão de
+  110 px; agora o combo tem `min-width: 0` + `flex-wrap` e o botão vira linha
+  própria ≤480 px; (2) os blobs decorativos do HeroArt sangram de propósito
+  (`inset` negativo) e vazavam 8 px — a section `.hero` ganhou `overflow: clip`.
+  Guarda global: `overflow-x: clip` também no `html` — sem ele o do `body`
+  propaga pro viewport e o body em si fica sem clip (pegadinha da spec).
 - **ops(k8s): Secret fora do manifest aplicável** — postmortem 2026-07-10: um
   `kubectl apply -f deploy/k8s/gateway.yaml` sobrescreveu `DATABASE_URL`/`SMTP_*` de
   produção com os placeholders `CHANGE_ME` que viviam no mesmo arquivo (site fora do

@@ -28,6 +28,108 @@
   let notes = $state<NoteHit[]>([]);
   let active = $state('all');
 
+  // Typeahead — sugestões carregam enquanto a pessoa digita (debounce 300ms).
+  const SUGGEST_MIN_CHARS = 2;
+  const SUGGEST_DEBOUNCE_MS = 300;
+  const SUGGEST_PER_KIND = 4;
+  let sugOpen = $state(false);
+  let sugLoading = $state(false);
+  let sugAccounts = $state<MentionHit[]>([]);
+  let sugHashtags = $state<HashtagHit[]>([]);
+  let cursor = $state(-1);
+  let combo: HTMLDivElement | undefined = $state();
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let sugSeq = 0;
+
+  type SugItem =
+    | { kind: 'account'; hit: MentionHit }
+    | { kind: 'hashtag'; hit: HashtagHit }
+    | { kind: 'submit' };
+
+  const sugItems = $derived.by((): SugItem[] => {
+    if (!sugOpen) return [];
+    return [
+      ...sugAccounts.map((hit) => ({ kind: 'account', hit }) as SugItem),
+      ...sugHashtags.map((hit) => ({ kind: 'hashtag', hit }) as SugItem),
+      { kind: 'submit' } as SugItem,
+    ];
+  });
+
+  function closeSuggest() {
+    sugOpen = false;
+    cursor = -1;
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+    sugSeq += 1; // invalida respostas em voo
+  }
+
+  async function fetchSuggestions(q: string) {
+    const mySeq = ++sugSeq;
+    sugLoading = true;
+    const res = await searchAll(q, SUGGEST_PER_KIND);
+    if (mySeq !== sugSeq) return; // resposta velha chegou depois — descarta
+    sugLoading = false;
+    if (res.success && res.data) {
+      sugAccounts = res.data.accounts.slice(0, SUGGEST_PER_KIND);
+      sugHashtags = res.data.hashtags.slice(0, SUGGEST_PER_KIND);
+      sugOpen = true;
+      cursor = -1;
+    }
+  }
+
+  function onQueryInput() {
+    const q = query.trim();
+    cursor = -1;
+    if (debounceTimer) clearTimeout(debounceTimer);
+    if (q.length < SUGGEST_MIN_CHARS) {
+      closeSuggest();
+      sugAccounts = [];
+      sugHashtags = [];
+      return;
+    }
+    debounceTimer = setTimeout(() => void fetchSuggestions(q), SUGGEST_DEBOUNCE_MS);
+  }
+
+  function pickItem(item: SugItem) {
+    if (item.kind === 'account') {
+      window.location.href = `/perfil/?u=${encodeURIComponent(item.hit.handle)}`;
+      return;
+    }
+    if (item.kind === 'hashtag') {
+      window.location.href = `/tag?nome=${encodeURIComponent(item.hit.tag_original)}`;
+      return;
+    }
+    closeSuggest();
+    syncUrl();
+    void run(query);
+  }
+
+  function onComboKeydown(e: KeyboardEvent) {
+    if (!sugOpen || sugItems.length === 0) {
+      if (e.key === 'Escape') closeSuggest();
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      cursor = (cursor + 1) % sugItems.length;
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      cursor = cursor <= 0 ? sugItems.length - 1 : cursor - 1;
+    } else if (e.key === 'Enter' && cursor >= 0) {
+      e.preventDefault();
+      pickItem(sugItems[cursor]);
+    } else if (e.key === 'Escape') {
+      closeSuggest();
+    }
+  }
+
+  function onComboFocusout(e: FocusEvent) {
+    // Fecha só quando o foco sai do combo inteiro (input + lista).
+    if (combo && !combo.contains(e.relatedTarget as Node | null)) closeSuggest();
+  }
+
   async function run(q: string) {
     if (!q.trim()) {
       accounts = [];
@@ -52,12 +154,17 @@
     if (query) void run(query);
   });
 
-  function submit(e: SubmitEvent) {
-    e.preventDefault();
+  function syncUrl() {
     const url = new URL(window.location.href);
     if (query.trim()) url.searchParams.set('q', query.trim());
     else url.searchParams.delete('q');
     history.replaceState({}, '', url);
+  }
+
+  function submit(e: SubmitEvent) {
+    e.preventDefault();
+    closeSuggest();
+    syncUrl();
     void run(query);
   }
 
@@ -84,16 +191,78 @@
     <h1>Buscar</h1>
   </header>
 
-  <form onsubmit={submit} class="search-form">
-    <Input
-      type="search"
-      placeholder="Buscar contas, hashtags ou publicações…"
-      bind:value={query}
-      leading={leadingIcon}
-    />
-    {#snippet leadingIcon()}
-      <Icon name="search" size={16} />
-    {/snippet}
+  <form onsubmit={submit} class="search-form" role="search">
+    <div
+      class="combo"
+      bind:this={combo}
+      role="combobox"
+      aria-expanded={sugOpen}
+      aria-haspopup="listbox"
+      aria-owns="busca-sugestoes"
+      onkeydown={onComboKeydown}
+      onfocusout={onComboFocusout}
+    >
+      <Input
+        type="search"
+        placeholder="Buscar contas, hashtags ou publicações…"
+        bind:value={query}
+        autocomplete="off"
+        oninput={onQueryInput}
+        leading={leadingIcon}
+      />
+      {#snippet leadingIcon()}
+        <Icon name="search" size={16} />
+      {/snippet}
+
+      {#if sugOpen && sugItems.length > 0}
+        <ul class="sug" id="busca-sugestoes" role="listbox" aria-label="Sugestões de busca">
+          {#each sugItems as item, i (item.kind === 'account' ? `a:${item.hit.handle}` : item.kind === 'hashtag' ? `h:${item.hit.tag_normalized}` : 'submit')}
+            <li role="option" aria-selected={cursor === i}>
+              <button
+                type="button"
+                class="sug-row"
+                class:hl={cursor === i}
+                onpointerenter={() => (cursor = i)}
+                onclick={() => pickItem(item)}
+              >
+                {#if item.kind === 'account'}
+                  <Avatar
+                    src={item.hit.avatar_url}
+                    name={item.hit.display_name ?? item.hit.handle}
+                    alt=""
+                    size="sm"
+                  />
+                  <span class="sug-body">
+                    <strong>{item.hit.display_name ?? item.hit.handle}</strong>
+                    <span class="muted">@{item.hit.handle}</span>
+                  </span>
+                {:else if item.kind === 'hashtag'}
+                  <span class="sug-hash" aria-hidden="true">#</span>
+                  <span class="sug-body">
+                    <strong>{item.hit.tag_original}</strong>
+                    <span class="muted">
+                      {item.hit.note_count}
+                      {item.hit.note_count === 1 ? 'nota' : 'notas'}
+                    </span>
+                  </span>
+                {:else}
+                  <span class="sug-hash" aria-hidden="true">
+                    <Icon name="search" size={14} />
+                  </span>
+                  <span class="sug-body">
+                    <strong>Buscar “{query.trim()}”</strong>
+                    <span class="muted">contas, hashtags e publicações</span>
+                  </span>
+                {/if}
+              </button>
+            </li>
+          {/each}
+          {#if sugLoading}
+            <li class="sug-loading" aria-hidden="true">Carregando…</li>
+          {/if}
+        </ul>
+      {/if}
+    </div>
     <Button type="submit" variant="primary">Buscar</Button>
   </form>
 
@@ -232,13 +401,91 @@
   }
   .search-form {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--sp-2);
     margin-bottom: var(--sp-4);
     align-items: flex-start;
   }
-  .search-form :global(.field) {
-    flex: 1;
+  .combo {
+    position: relative;
+    /* min-width:0 mata o piso intrínseco do input — sem isso a linha não
+       encolhe abaixo de ~500px e o celular renderiza a página com zoom out. */
+    flex: 1 1 240px;
+    min-width: 0;
+  }
+  .combo :global(.field) {
     margin-bottom: 0;
+  }
+  @media (max-width: 480px) {
+    .search-form :global(button[type='submit']) {
+      flex: 1 1 100%;
+    }
+  }
+  .sug {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 30;
+    margin: 0;
+    padding: var(--sp-1);
+    list-style: none;
+    background: var(--surface-1);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-base);
+    box-shadow: var(--shadow-lg);
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+  .sug-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    width: 100%;
+    padding: var(--sp-2) var(--sp-3);
+    background: none;
+    border: 0;
+    border-radius: var(--r-sm);
+    font: inherit;
+    text-align: left;
+    color: var(--text-1);
+    cursor: pointer;
+  }
+  .sug-row.hl {
+    background: var(--surface-2);
+  }
+  .sug-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+  .sug-body strong {
+    color: var(--text-1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sug-body .muted {
+    font-size: var(--fs-sm);
+    color: var(--text-3);
+  }
+  .sug-hash {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    border-radius: 50%;
+    font-weight: var(--fw-bold);
+  }
+  .sug-loading {
+    padding: var(--sp-2) var(--sp-3);
+    font-size: var(--fs-sm);
+    color: var(--text-3);
   }
   .sec {
     margin-bottom: var(--sp-6);
