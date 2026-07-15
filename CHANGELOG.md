@@ -8,6 +8,15 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.30.6-servicos — página institucional dos Serviços para candidaturas**: nova
+  `/servicos` apresenta os dois serviços para quem disputa mandato — **declarar o
+  financiamento de campanha** (página pública com histórico, complementar — nunca
+  substituta — à prestação de contas oficial, com link pro DivulgaCandContas) e
+  **pedir doações** (divulgação dentro das regras da Lei 9.504/1997: só pessoa
+  física, limite de 10% dos rendimentos, recibo eleitoral, arrecadação nos meios
+  oficiais — a plataforma não intermedeia pagamento). Fluxo: criar conta →
+  vincular candidatura TSE → ativar. **Fora do menu e `noindex` de propósito**
+  (fase de revisão por URL direta); entra no menu quando aprovada.
 - **0.30.5-busca-formato-livre — a busca aceita o que você colar, como no Mastodon**:
   `GET /api/v1/federation/lookup` passa a aceitar, além de `@usuario@instancia`
   (o `@` inicial já era opcional), a **URL do perfil colada**

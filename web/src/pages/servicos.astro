@@ -1,0 +1,176 @@
+---
+// Página institucional dos Serviços para candidaturas: declaração pública de
+// financiamento de campanha + pedido de doações. FORA do menu de propósito
+// (fase de revisão — a URL circula direto); noindex até a publicação oficial.
+import BaseLayout from '../layouts/BaseLayout.astro';
+import ColorBar from '../components/illustrations/ColorBar.astro';
+
+const description =
+  'Serviços da DemocraciaBR para candidaturas: declare o financiamento da sua campanha em página pública auditável e peça doações dentro das regras do TSE.';
+---
+
+<BaseLayout title="Serviços para candidaturas" {description} noindex>
+  <section class="section">
+    <div class="container narrow">
+      <header class="head">
+        <ColorBar class="head-bar" />
+        <h1>Serviços para candidaturas</h1>
+        <p class="lede muted">
+          Quem pede voto pede confiança. Aqui a sua campanha mostra, em página
+          pública e auditável, de onde vem e para onde vai cada real — e
+          arrecada doações dentro das regras.
+        </p>
+      </header>
+
+      <article class="prose">
+        <h2>Declarar o financiamento de campanha</h2>
+        <p>
+          A prestação de contas oficial ao TSE acontece nos prazos da lei — e a
+          maioria dos eleitores nunca a lê. A declaração de financiamento na
+          DemocraciaBR é o complemento
+          voluntário: <strong>uma página pública, com histórico imutável</strong>,
+          que a própria candidatura atualiza ao longo da campanha.
+        </p>
+        <ul>
+          <li>
+            <strong>Entradas</strong> — cada recurso recebido, com origem
+            (doação de pessoa física, recursos próprios, fundo partidário ou
+            fundo eleitoral) e data.
+          </li>
+          <li>
+            <strong>Saídas</strong> — os gastos declarados por categoria
+            (material, impulsionamento, pessoal, deslocamento…).
+          </li>
+          <li>
+            <strong>Histórico</strong> — toda alteração fica registrada; nada
+            some depois de publicado. É o mesmo princípio do placar de
+            mandatos: o que foi dito, fica.
+          </li>
+        </ul>
+        <p class="muted">
+          A declaração aqui <strong>não substitui</strong> a prestação de
+          contas oficial junto à Justiça Eleitoral — ela caminha junto, e a
+          página aponta para o registro da candidatura
+          no <a
+            href="https://divulgacandcontas.tse.jus.br"
+            rel="noopener noreferrer"
+            target="_blank">DivulgaCandContas do TSE</a
+          >.
+        </p>
+
+        <h2>Pedir doações</h2>
+        <p>
+          A candidatura ganha
+          uma <strong>página pública de arrecadação</strong> para divulgar o
+          pedido de doações e encaminhar quem quer contribuir
+          para os canais oficiais — sempre dentro das regras da legislação
+          eleitoral (Lei 9.504/1997 e resoluções do TSE):
+        </p>
+        <ul>
+          <li>
+            Só <strong>pessoas físicas</strong> podem doar — doação de empresas
+            é proibida no Brasil.
+          </li>
+          <li>
+            Cada pessoa pode doar
+            até <strong>10% dos rendimentos brutos</strong> que declarou no ano
+            anterior.
+          </li>
+          <li>
+            Toda doação gera <strong>recibo eleitoral</strong> e entra na
+            prestação de contas.
+          </li>
+          <li>
+            A arrecadação acontece
+            nos <strong>meios oficiais da candidatura</strong> (conta bancária de
+            campanha ou plataforma de financiamento coletivo homologada pelo
+            TSE). A DemocraciaBR divulga e dá transparência
+            — <strong>não intermedeia pagamento e não fica com percentual</strong>.
+          </li>
+        </ul>
+
+        <h2>Como funciona</h2>
+        <ol>
+          <li>
+            <strong>Crie sua conta</strong> — cadastro gratuito, verificado por
+            título de eleitor, como o de qualquer cidadã(o) da plataforma.
+          </li>
+          <li>
+            <strong>Registre sua candidatura</strong> — vincule seu número de
+            registro no TSE ao seu perfil; a plataforma confere contra os dados
+            oficiais.
+          </li>
+          <li>
+            <strong>Ative os serviços</strong> — publique a declaração de
+            financiamento e a página de doações; as duas passam a valer o selo
+            de transparência no seu perfil público.
+          </li>
+        </ol>
+
+        <div class="cta">
+          <a href="/cadastrar" class="btn btn-primary btn-lg">Criar minha conta</a>
+          <a href="/entrar" class="btn btn-ghost btn-lg">Já tenho conta</a>
+        </div>
+
+        <h2>Por que declarar aqui, se o TSE já existe?</h2>
+        <p>
+          Pelo mesmo motivo que o placar de mandatos existe: <strong>dado
+          público que ninguém consegue ler não gera consequência</strong>. A
+          declaração na DemocraciaBR é legível, acompanhável durante a campanha
+          (não só depois dela) e fica ao lado do restante da vida pública da
+          candidatura — propostas endereçadas, respostas, silêncios. Quem se
+          compromete com transparência radical se diferencia de quem não se
+          compromete. O eleitor vê os dois.
+        </p>
+      </article>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .narrow {
+    max-width: 42rem;
+  }
+  .head {
+    margin-bottom: var(--sp-6);
+  }
+  .head-bar {
+    margin-bottom: var(--sp-3);
+  }
+  h1 {
+    margin: 0 0 var(--sp-2);
+  }
+  .lede {
+    font-size: var(--fs-lg);
+    line-height: var(--lh-relaxed);
+  }
+  .prose h2 {
+    margin: var(--sp-5) 0 var(--sp-2);
+    font-size: var(--fs-lg);
+    color: var(--text-1);
+  }
+  .prose p,
+  .prose ul,
+  .prose ol {
+    line-height: var(--lh-relaxed);
+    color: var(--text-2);
+  }
+  .prose ul,
+  .prose ol {
+    padding-left: 1.5rem;
+    display: grid;
+    gap: 0.35rem;
+  }
+  .prose strong {
+    color: var(--text-1);
+  }
+  .prose a {
+    color: var(--accent-strong);
+  }
+  .cta {
+    display: flex;
+    gap: var(--sp-3);
+    flex-wrap: wrap;
+    margin: var(--sp-6) 0;
+  }
+</style>
