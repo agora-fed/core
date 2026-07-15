@@ -1,0 +1,24 @@
+---
+// PROTÓTIPO do painel de gerenciamento de doações/financiamento (serviço
+// /servicos). Fora do menu e noindex: existe pra revisão da interface com o
+// perfil real da sessão; nenhum dado é gravado. Vira produto na próxima fase.
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import DoacoesPainelPrototipo from '../../components/islands/DoacoesPainelPrototipo.svelte';
+
+const description =
+  'Protótipo do painel de doações e financiamento de campanha da DemocraciaBR.';
+---
+
+<BaseLayout title="Painel de doações (protótipo)" {description} noindex>
+  <section class="section">
+    <div class="container narrow">
+      <DoacoesPainelPrototipo client:load />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .narrow {
+    max-width: 52rem;
+  }
+</style>

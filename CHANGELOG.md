@@ -8,6 +8,13 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.30.7-doacoes-prototipo — protótipo navegável do painel de doações**: nova
+  `/servicos/painel` (noindex, fora do menu) monta a ilha `DoacoesPainelPrototipo`:
+  logada, a pessoa se vê na interface (perfil real via `GET /api/v1/me`) com dados
+  de exemplo em 4 abas — Visão geral (arrecadado × meta, gastos, doações, selo),
+  Financiamento (entradas/saídas + form local de lançamento), Doações (recibos,
+  CPF mascarado) e Configurações. Baner deixa explícito: demonstração, nada é
+  gravado. Serve pra aprovar a UX antes de construir o backend do serviço.
 - **0.30.6-servicos — página institucional dos Serviços para candidaturas**: nova
   `/servicos` apresenta os dois serviços para quem disputa mandato — **declarar o
   financiamento de campanha** (página pública com histórico, complementar — nunca
