@@ -9,6 +9,7 @@
     getDirectory,
     followRemoteActor,
     lookupRemoteActor,
+    searchMentions,
     type HashtagHit,
     type MentionHit,
     type RemoteActorDto,
@@ -44,12 +45,109 @@
     /^@?[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fediQuery.trim()),
   );
 
+  // Typeahead — contas já conhecidas pela instância aparecem enquanto digita
+  // (funciona deslogado; só o lookup WebFinger de conta inédita exige login).
+  const SUGGEST_MIN_CHARS = 2;
+  const SUGGEST_DEBOUNCE_MS = 300;
+  const SUGGEST_LIMIT = 6;
+  let sugOpen = $state(false);
+  let sugLoading = $state(false);
+  let sugAccounts = $state<MentionHit[]>([]);
+  let cursor = $state(-1);
+  let combo: HTMLDivElement | undefined = $state();
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let sugSeq = 0;
+
+  type SugItem =
+    | { kind: 'account'; hit: MentionHit }
+    | { kind: 'lookup' }
+    | { kind: 'buscar' };
+
+  const sugItems = $derived.by((): SugItem[] => {
+    if (!sugOpen) return [];
+    const items: SugItem[] = sugAccounts.map((hit) => ({ kind: 'account', hit }));
+    if (fediValid) items.push({ kind: 'lookup' });
+    items.push({ kind: 'buscar' });
+    return items;
+  });
+
+  function closeSuggest() {
+    sugOpen = false;
+    cursor = -1;
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+    sugSeq += 1; // invalida respostas em voo
+  }
+
+  async function fetchSuggestions(q: string) {
+    const mySeq = ++sugSeq;
+    sugLoading = true;
+    const res = await searchMentions(q.replace(/^@/, ''), SUGGEST_LIMIT);
+    if (mySeq !== sugSeq) return; // resposta velha — descarta
+    sugLoading = false;
+    sugAccounts = res.success && res.data ? res.data.items : [];
+    sugOpen = true;
+    cursor = -1;
+  }
+
+  function onFediInput() {
+    cursor = -1;
+    const q = fediQuery.trim();
+    if (debounceTimer) clearTimeout(debounceTimer);
+    if (q.length < SUGGEST_MIN_CHARS) {
+      closeSuggest();
+      sugAccounts = [];
+      return;
+    }
+    debounceTimer = setTimeout(() => void fetchSuggestions(q), SUGGEST_DEBOUNCE_MS);
+  }
+
+  function pickItem(item: SugItem) {
+    if (item.kind === 'account') {
+      window.location.href = `/perfil/?u=${encodeURIComponent(item.hit.handle)}`;
+      return;
+    }
+    if (item.kind === 'buscar') {
+      window.location.href = `/buscar/?q=${encodeURIComponent(fediQuery.trim())}`;
+      return;
+    }
+    closeSuggest();
+    void lookupFedi();
+  }
+
+  function onComboKeydown(e: KeyboardEvent) {
+    if (!sugOpen || sugItems.length === 0) {
+      if (e.key === 'Escape') closeSuggest();
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      cursor = (cursor + 1) % sugItems.length;
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      cursor = cursor <= 0 ? sugItems.length - 1 : cursor - 1;
+    } else if (e.key === 'Enter' && cursor >= 0) {
+      e.preventDefault();
+      pickItem(sugItems[cursor]);
+    } else if (e.key === 'Escape') {
+      closeSuggest();
+    }
+  }
+
+  function onComboFocusout(e: FocusEvent) {
+    // Fecha só quando o foco sai do combo inteiro (input + lista).
+    if (combo && !combo.contains(e.relatedTarget as Node | null)) closeSuggest();
+  }
+
   function stripHtml(html: string): string {
     return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   }
 
-  async function lookupFedi(event: SubmitEvent) {
-    event.preventDefault();
+  async function lookupFedi(event?: SubmitEvent) {
+    event?.preventDefault();
+    closeSuggest();
     if (!fediValid || fediLooking) return;
     if (!loggedIn) {
       fediError =
@@ -138,15 +236,74 @@
         Procurar alguém no fediverso
       </label>
       <div class="fedi-row">
-        <input
-          id="fedi-q"
-          type="text"
-          class="fedi-input"
-          bind:value={fediQuery}
-          placeholder="@usuario@instancia (ex.: @zedirceu@masto.social)"
-          autocomplete="off"
-          spellcheck="false"
-        />
+        <div
+          class="combo"
+          bind:this={combo}
+          role="combobox"
+          aria-expanded={sugOpen}
+          aria-haspopup="listbox"
+          aria-owns="explorar-sugestoes"
+          onkeydown={onComboKeydown}
+          onfocusout={onComboFocusout}
+        >
+          <input
+            id="fedi-q"
+            type="text"
+            class="fedi-input"
+            bind:value={fediQuery}
+            placeholder="@usuario@instancia (ex.: @zedirceu@masto.social)"
+            autocomplete="off"
+            spellcheck="false"
+            oninput={onFediInput}
+          />
+          {#if sugOpen && sugItems.length > 0}
+            <ul class="sug" id="explorar-sugestoes" role="listbox" aria-label="Sugestões de contas">
+              {#each sugItems as item, i (item.kind === 'account' ? `a:${item.hit.handle}` : item.kind)}
+                <li role="option" aria-selected={cursor === i}>
+                  <button
+                    type="button"
+                    class="sug-row"
+                    class:hl={cursor === i}
+                    onpointerenter={() => (cursor = i)}
+                    onclick={() => pickItem(item)}
+                  >
+                    {#if item.kind === 'account'}
+                      <Avatar
+                        src={item.hit.avatar_url}
+                        name={item.hit.display_name ?? item.hit.handle}
+                        alt=""
+                        size="sm"
+                      />
+                      <span class="sug-body">
+                        <strong>{item.hit.display_name ?? item.hit.handle}</strong>
+                        <span class="muted">@{item.hit.handle}</span>
+                      </span>
+                    {:else if item.kind === 'lookup'}
+                      <span class="sug-ic" aria-hidden="true">
+                        <Icon name="globe" size={14} />
+                      </span>
+                      <span class="sug-body">
+                        <strong>Procurar {fediQuery.trim()} no fediverso</strong>
+                        <span class="muted">WebFinger na instância remota</span>
+                      </span>
+                    {:else}
+                      <span class="sug-ic" aria-hidden="true">
+                        <Icon name="search" size={14} />
+                      </span>
+                      <span class="sug-body">
+                        <strong>Buscar “{fediQuery.trim()}” em tudo</strong>
+                        <span class="muted">contas, hashtags e publicações</span>
+                      </span>
+                    {/if}
+                  </button>
+                </li>
+              {/each}
+              {#if sugLoading}
+                <li class="sug-loading" aria-hidden="true">Carregando…</li>
+              {/if}
+            </ul>
+          {/if}
+        </div>
         <Button
           type="submit"
           variant="primary"
@@ -157,7 +314,8 @@
         </Button>
       </div>
       <p class="fedi-hint muted">
-        Digite o endereço completo no formato <code>@usuario@instancia</code>.
+        Digite um nome pra ver sugestões, ou o endereço completo
+        <code>@usuario@instancia</code> pra puxar uma conta nova do fediverso.
         O perfil abre dentro do DemocraciaBR e você pode seguir sem sair.
       </p>
     </form>
@@ -387,9 +545,78 @@
     gap: var(--sp-2);
     flex-wrap: wrap;
   }
+  .combo {
+    position: relative;
+    flex: 1 1 220px;
+    min-width: 0;
+  }
+  .sug {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 30;
+    margin: 0;
+    padding: var(--sp-1);
+    list-style: none;
+    background: var(--surface-1);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-base);
+    box-shadow: var(--shadow-lg);
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+  .sug-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    width: 100%;
+    padding: var(--sp-2) var(--sp-3);
+    background: none;
+    border: 0;
+    border-radius: var(--r-sm);
+    font: inherit;
+    text-align: left;
+    color: var(--text-1);
+    cursor: pointer;
+  }
+  .sug-row.hl {
+    background: var(--surface-2);
+  }
+  .sug-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+  .sug-body strong {
+    color: var(--text-1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sug-body .muted {
+    font-size: var(--fs-sm);
+  }
+  .sug-ic {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    border-radius: 50%;
+  }
+  .sug-loading {
+    padding: var(--sp-2) var(--sp-3);
+    font-size: var(--fs-sm);
+    color: var(--text-3);
+  }
   .fedi-input {
-    flex: 1;
-    min-width: 220px;
+    width: 100%;
+    min-width: 0;
     padding: var(--sp-3);
     height: 44px;
     background: var(--surface-1);

@@ -15,6 +15,12 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
   completos. Navegável por teclado (↑/↓/Enter/Esc), respostas fora de ordem são
   descartadas por sequência, e o padrão ARIA de combobox anuncia a lista para
   leitores de tela. Nenhuma mudança de backend.
+  Também em `/explorar` (a tela que motivou o pedido): a busca do fediverso, que
+  só aceitava o endereço exato `@usuario@instancia`, agora sugere contas já
+  conhecidas pela instância via `GET /api/v1/search/mentions` enquanto digita
+  (funciona deslogado), com atalhos "Procurar no fediverso" (quando o texto é um
+  endereço válido — o WebFinger continua exigindo login) e "Buscar em tudo"
+  (leva pra `/buscar?q=…`).
 - **0.30.3-threshold-ux — o formulário mostra a regra, não pede o número**: o campo
   "Limiar de apoios" saiu do formulário de propor; ao escolher o mandato, o form
   consulta o novo `GET /api/v1/threshold-preview?mandate_id=…` e exibe
