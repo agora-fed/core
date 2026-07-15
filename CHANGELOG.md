@@ -15,8 +15,9 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
   **pedir doações** (divulgação dentro das regras da Lei 9.504/1997: só pessoa
   física, limite de 10% dos rendimentos, recibo eleitoral, arrecadação nos meios
   oficiais — a plataforma não intermedeia pagamento). Fluxo: criar conta →
-  vincular candidatura TSE → ativar. **Fora do menu e `noindex` de propósito**
-  (fase de revisão por URL direta); entra no menu quando aprovada.
+  vincular candidatura TSE → ativar. Revisada por URL direta (noindex, fora do
+  menu) e então **publicada: entrou na nav do header e no rodapé, noindex
+  removido** — o header segue em linha única com 8 itens até 1024px (verificado).
 - **0.30.5-busca-formato-livre — a busca aceita o que você colar, como no Mastodon**:
   `GET /api/v1/federation/lookup` passa a aceitar, além de `@usuario@instancia`
   (o `@` inicial já era opcional), a **URL do perfil colada**
