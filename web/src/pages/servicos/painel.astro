@@ -1,18 +1,19 @@
 ---
-// PROTÓTIPO do painel de gerenciamento de doações/financiamento (serviço
-// /servicos). Fora do menu e noindex: existe pra revisão da interface com o
-// perfil real da sessão; nenhum dado é gravado. Vira produto na próxima fase.
+// Painel de gerenciamento de doações/financiamento de campanha (0.31).
+// Exclusivo de contas com vínculo de mandato — o gate mora no servidor
+// (GET /me/campanha → is_politico) e a entrada fica no submenu do perfil.
+// noindex: painel privado, como o painel-mandato.
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import DoacoesPainelPrototipo from '../../components/islands/DoacoesPainelPrototipo.svelte';
+import DoacoesPainel from '../../components/islands/DoacoesPainel.svelte';
 
 const description =
-  'Protótipo do painel de doações e financiamento de campanha da DemocraciaBR.';
+  'Painel de doações e financiamento de campanha da DemocraciaBR.';
 ---
 
-<BaseLayout title="Painel de doações (protótipo)" {description} noindex>
+<BaseLayout title="Doações e financiamento" {description} noindex>
   <section class="section">
     <div class="container narrow">
-      <DoacoesPainelPrototipo client:load />
+      <DoacoesPainel client:load />
     </div>
   </section>
 </BaseLayout>

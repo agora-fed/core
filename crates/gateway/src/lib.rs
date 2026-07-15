@@ -17,6 +17,7 @@ pub mod admin_users;
 pub mod amendments;
 pub mod announcements;
 pub mod attestations;
+pub mod campanha;
 pub mod civic_notify;
 pub mod contact;
 pub mod discovery;
@@ -187,6 +188,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(respond_link::routes(state.clone()))
         // Preview público do gatilho dinâmico (0.30.3) — o form mostra a regra.
         .merge(threshold_policy::routes(state.clone()))
+        // Doações/financiamento de campanha — gated por vínculo de mandato (0.31).
+        .merge(campanha::routes(state.clone()))
         // Formulário de contato público — nenhum e-mail exposto no site.
         .merge(contact::routes(state.clone()))
         .merge(webhooks::routes(state.clone()))

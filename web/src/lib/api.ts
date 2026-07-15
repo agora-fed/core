@@ -176,7 +176,7 @@ export async function apiGetCredentialed<T>(
 }
 
 async function apiBody<T>(
-  method: 'POST' | 'PATCH',
+  method: 'POST' | 'PATCH' | 'PUT',
   path: string,
   payload: unknown,
   init?: RequestInit,
@@ -2089,3 +2089,73 @@ export const sendContactMessage = (body: {
   /** Honeypot anti-bot — sempre vazio em envio humano. */
   website?: string;
 }) => apiPost<null>('/api/v1/contact', body);
+
+// ---------------------------------------------------------------------------
+// Doações/financiamento de campanha (0.31) — gated por vínculo de mandato.
+// ---------------------------------------------------------------------------
+
+/** Um lançamento da declaração pública de financiamento. */
+export interface CampanhaEntryDto {
+  id: string;
+  kind: 'entrada' | 'saida';
+  descricao: string;
+  valor_centavos: number;
+  /** ISO `YYYY-MM-DD`. */
+  occurred_on: string;
+  /** Recibo eleitoral — presente ⇒ o lançamento é uma doação. */
+  receipt_ref: string | null;
+  donor_name: string | null;
+  created_at: string;
+}
+
+/** Configuração da página de arrecadação. */
+export interface CampanhaConfigDto {
+  meta_centavos: number | null;
+  bank_account: string | null;
+  crowdfunding_url: string | null;
+  is_published: boolean;
+}
+
+/** `GET /me/campanha` — `is_politico=false` ⇒ conta sem vínculo de mandato. */
+export interface CampanhaDto {
+  is_politico: boolean;
+  config: CampanhaConfigDto | null;
+  lancamentos: CampanhaEntryDto[];
+}
+
+export const getMinhaCampanha = () =>
+  apiGetCredentialed<CampanhaDto>('/api/v1/me/campanha');
+
+export const addCampanhaLancamento = (body: {
+  kind: 'entrada' | 'saida';
+  descricao: string;
+  valor_centavos: number;
+  occurred_on: string;
+  receipt_ref?: string;
+  donor_name?: string;
+}) => apiPost<{ id: string }>('/api/v1/me/campanha/lancamentos', body);
+
+export async function revokeCampanhaLancamento(
+  id: string,
+): Promise<ApiResponse<{ ok: true }>> {
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/v1/me/campanha/lancamentos/${encodeURIComponent(id)}`,
+      {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { accept: 'application/json' },
+      },
+    );
+    return parseEnvelope<{ ok: true }>(res);
+  } catch {
+    return networkFailure<{ ok: true }>();
+  }
+}
+
+export const saveCampanhaConfig = (body: {
+  meta_centavos?: number | null;
+  bank_account?: string | null;
+  crowdfunding_url?: string | null;
+  is_published: boolean;
+}) => apiBody<{ ok: true }>('PUT', '/api/v1/me/campanha/config', body);

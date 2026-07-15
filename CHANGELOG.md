@@ -8,6 +8,21 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.31.0-doacoes — o serviço de doações/financiamento vira produto** (aprova o
+  protótipo 0.30.7): migration `0523` cria `campaign_finance_entry` (declaração
+  **append-only** — lançamento não se edita, revoga-se com `revoked_at` e
+  relança-se) e `campaign_fundraising_config` (meta, conta de campanha, link de
+  financiamento coletivo homologado, publicação). Novo `gateway/src/campanha.rs`:
+  `GET /me/campanha`, `POST/DELETE /me/campanha/lancamentos[/{id}]`,
+  `PUT /me/campanha/config` — **exclusivo de conta "tipo político"** (vínculo em
+  `mandate_identity_binding`, o mesmo do painel-mandato): leitura devolve
+  `is_politico=false` para os demais, escrita responde 403; 3 testes novos no
+  http_surface (401 anônimo, 403 não-político, roundtrip completo). Front:
+  `/servicos/painel` liga o painel na API (lançar, revogar com confirmação,
+  config com meta em reais → centavos) e o **submenu do perfil (AuthMenu) ganha
+  "💰 Doações e financiamento"** — visível só para político, cache
+  `dsoc_is_politico` no padrão do `dsoc_is_admin`, limpo no logout. A ilha
+  protótipo (`DoacoesPainelPrototipo`) sai do repo.
 - **0.30.7-doacoes-prototipo — protótipo navegável do painel de doações**: nova
   `/servicos/painel` (noindex, fora do menu) monta a ilha `DoacoesPainelPrototipo`:
   logada, a pessoa se vê na interface (perfil real via `GET /api/v1/me`) com dados

@@ -1557,3 +1557,173 @@ async fn embed_placar_serves_selfcontained_widget() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
+
+// ---------------------------------------------------------------------------
+// Doações/financiamento de campanha (0.31, migration 0523)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn campanha_requires_session() {
+    let (app, _st) = app().await;
+    let resp = app.oneshot(get("/api/v1/me/campanha")).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn campanha_write_gated_to_politico() {
+    let (app, st) = app().await;
+    let (_, _citizen, cookie) = seed_session(&st.db).await;
+
+    // Sem vínculo de mandato: a leitura responde 200 com a flag desligada…
+    let resp = app
+        .clone()
+        .oneshot(get_with_cookie("/api/v1/me/campanha", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_json(resp).await;
+    assert_eq!(body["data"]["is_politico"], serde_json::json!(false));
+
+    // …e QUALQUER escrita é 403.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/me/campanha/lancamentos",
+            Some(&cookie),
+            r#"{"kind":"entrada","descricao":"Doação — pessoa física","valor_centavos":25000,"occurred_on":"2026-07-15"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    let resp = app
+        .oneshot(json_req(
+            "PUT",
+            "/api/v1/me/campanha/config",
+            Some(&cookie),
+            r#"{"meta_centavos":5000000,"is_published":true}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn campanha_politico_roundtrip() {
+    let (app, st) = app().await;
+    let (org, citizen, cookie) = seed_session(&st.db).await;
+    let mandate = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO mandate (id, org_id, office, display_name, public_email, created_at)
+         VALUES ($1, $2, 'deputado_federal', 'Mandato Campanha', 'gab@example.leg.br', now())",
+    )
+    .bind(mandate)
+    .bind(org)
+    .execute(&st.db)
+    .await
+    .expect("seed mandate");
+    sqlx::query(
+        "INSERT INTO mandate_identity_binding
+             (id, mandate_id, citizen_id, verification_level, verified_at, created_at)
+         VALUES ($1, $2, $3, 'directory', now(), now())",
+    )
+    .bind(Uuid::now_v7())
+    .bind(mandate)
+    .bind(citizen)
+    .execute(&st.db)
+    .await
+    .expect("seed binding");
+
+    // Entrada com recibo (doação) grava e volta o id.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/me/campanha/lancamentos",
+            Some(&cookie),
+            r#"{"kind":"entrada","descricao":"Doação — pessoa física","valor_centavos":25000,
+                "occurred_on":"2026-07-15","receipt_ref":"RE-2026-0001","donor_name":"Maria S."}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let id = body_json(resp).await["data"]["id"]
+        .as_str()
+        .expect("entry id")
+        .to_owned();
+
+    // Saída com recibo é 400 (recibo/doador só valem em entrada).
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/me/campanha/lancamentos",
+            Some(&cookie),
+            r#"{"kind":"saida","descricao":"Material gráfico","valor_centavos":90000,
+                "occurred_on":"2026-07-15","receipt_ref":"RE-X"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+    // Config upsert.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "PUT",
+            "/api/v1/me/campanha/config",
+            Some(&cookie),
+            r#"{"meta_centavos":5000000,"crowdfunding_url":"https://financiamento.example/tse","is_published":true}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Overview reflete lançamento + config.
+    let resp = app
+        .clone()
+        .oneshot(get_with_cookie("/api/v1/me/campanha", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_json(resp).await;
+    assert_eq!(body["data"]["is_politico"], serde_json::json!(true));
+    assert_eq!(
+        body["data"]["lancamentos"][0]["descricao"],
+        serde_json::json!("Doação — pessoa física")
+    );
+    assert_eq!(
+        body["data"]["config"]["is_published"],
+        serde_json::json!(true)
+    );
+
+    // Revogação: some da lista; segunda revogação é 404.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "DELETE",
+            &format!("/api/v1/me/campanha/lancamentos/{id}"),
+            Some(&cookie),
+            "",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "DELETE",
+            &format!("/api/v1/me/campanha/lancamentos/{id}"),
+            Some(&cookie),
+            "",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    let resp = app
+        .oneshot(get_with_cookie("/api/v1/me/campanha", &cookie))
+        .await
+        .unwrap();
+    let body = body_json(resp).await;
+    assert_eq!(body["data"]["lancamentos"], serde_json::json!([]));
+}

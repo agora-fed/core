@@ -8,7 +8,12 @@
   // the login response only carries the opaque `u-<hex>` public handle, which we never
   // show as a label anymore.
   import { onMount } from 'svelte';
-  import { getMyProfile, refreshMyActor, getMyAdminStatus } from '../../lib/api';
+  import {
+    getMyProfile,
+    refreshMyActor,
+    getMyAdminStatus,
+    getMinhaCampanha,
+  } from '../../lib/api';
   import { toast } from '../../lib/toasts';
   import ThemeToggle from './ThemeToggle.svelte';
 
@@ -22,6 +27,9 @@
   // isAdmin é cacheado em localStorage pra pintar o link "Administração"
   // sem esperar o round-trip da /me/admin-status.
   let isAdmin = $state(false);
+  // isPolitico (vínculo de mandato) libera "Doações e financiamento" —
+  // mesmo padrão de cache do isAdmin, revalidado via GET /me/campanha.
+  let isPolitico = $state(false);
 
   function read(key: string): string | null {
     try {
@@ -53,8 +61,9 @@
     const cachedHandle = read('dsoc_handle');
     userHandle =
       cachedHandle && !cachedHandle.startsWith('u-') ? cachedHandle : null;
-    // Cached admin flag: paint imediato, revalida em background.
+    // Cached admin/político flags: paint imediato, revalida em background.
     isAdmin = read('dsoc_is_admin') === '1';
+    isPolitico = read('dsoc_is_politico') === '1';
     ready = true;
     if (!loggedIn) return;
     const res = await getMyProfile();
@@ -72,6 +81,11 @@
     if (ar.success && ar.data) {
       isAdmin = ar.data.is_admin;
       write('dsoc_is_admin', isAdmin ? '1' : '0');
+    }
+    const cr = await getMinhaCampanha();
+    if (cr.success && cr.data) {
+      isPolitico = cr.data.is_politico;
+      write('dsoc_is_politico', isPolitico ? '1' : '0');
     }
   });
 
@@ -117,7 +131,7 @@
     } catch {
       /* still clear locally; the cookie's TTL will expire it server-side */
     }
-    for (const k of ['dsoc_citizen', 'dsoc_handle', 'dsoc_name', 'dsoc_avatar', 'dsoc_is_admin'])
+    for (const k of ['dsoc_citizen', 'dsoc_handle', 'dsoc_name', 'dsoc_avatar', 'dsoc_is_admin', 'dsoc_is_politico'])
       write(k, null);
     window.location.href = '/';
   }
@@ -162,6 +176,9 @@
           <hr class="sep" />
           <a class="item" href="/rede">Seguindo e seguidores</a>
           <a class="item" href="/convites">Convidar pessoas</a>
+          {#if isPolitico}
+            <a class="item" href="/servicos/painel">💰 Doações e financiamento</a>
+          {/if}
           <a class="item" href="/configuracoes">Configurações</a>
           {#if isAdmin}
             <a class="item item-admin" href="/admin">
