@@ -448,29 +448,38 @@ impl MandateInviteService {
             summary.party.as_deref().unwrap_or("—"),
             summary.uf.as_deref().unwrap_or("—")
         );
-        let subject = format!(
-            "DemocraciaBR — convite para assumir o mandato de {}",
-            summary.display_name
-        );
-        let body = format!(
-            "Olá,\n\n\
-             Você foi convidado(a) a assumir, na plataforma DemocraciaBR, o mandato de:\n\n\
-             \t{name} ({party_uf} — {office})\n\n\
-             A DemocraciaBR é uma plataforma cidadã de cobrança pública de mandatos. \
-             Ao aceitar este convite você:\n\n\
-             \t• Cria sua conta pessoal (e-mail, senha e CPF).\n\
-             \t• Verifica sua identidade no mandato indicado acima (nível 'directory').\n\
-             \t• Torna seu perfil público — a transparência é a moeda desta plataforma.\n\n\
-             Este link é único, expira em {hours} horas e só pode ser usado uma vez:\n\n\
-             {accept_url}\n\n\
-             Se você não reconhece este convite, ignore este e-mail — nada é feito até você abrir o link acima.\n\n\
-             — DemocraciaBR",
-            name = summary.display_name,
-            party_uf = party_uf,
-            office = summary.office,
-            hours = hours,
-            accept_url = accept_url,
-        );
+        // Template editável pelo admin (0.32.0, key `mandate_invite`);
+        // fallback = versão curta do texto original.
+        let mut ctx: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
+        ctx.insert("mandate_name", summary.display_name.clone());
+        ctx.insert("party_uf", party_uf.clone());
+        ctx.insert("office", summary.office.clone());
+        ctx.insert("hours", hours.to_string());
+        ctx.insert("accept_url", accept_url.to_owned());
+        let (subject, body) = dsoc_db::email_templates::render(&self.db, "mandate_invite", &ctx)
+            .await
+            .unwrap_or_else(|| {
+                (
+                    format!(
+                        "DemocraciaBR — convite para assumir o mandato de {}",
+                        summary.display_name
+                    ),
+                    format!(
+                        "Olá,\n\n\
+                         Você foi convidado(a) a assumir, na plataforma DemocraciaBR, o mandato de:\n\n\
+                         \t{name} ({party_uf} — {office})\n\n\
+                         Este link é único, expira em {hours} horas e só pode ser usado uma vez:\n\n\
+                         {accept_url}\n\n\
+                         Se você não reconhece este convite, ignore este e-mail.\n\n\
+                         — DemocraciaBR",
+                        name = summary.display_name,
+                        party_uf = party_uf,
+                        office = summary.office,
+                        hours = hours,
+                        accept_url = accept_url,
+                    ),
+                )
+            });
         let to_owned = to.to_owned();
         let smtp = smtp.clone();
         tokio::spawn(async move {

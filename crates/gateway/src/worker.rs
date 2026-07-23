@@ -555,8 +555,6 @@ async fn notification_escalation_loop(state: AppState) {
             .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
         for (proposal_id, title, mandate_id, email, display_name, last_attempt, sla_id) in due {
             let attempt = last_attempt + 1;
-            let subject =
-                format!("[Lembrete {attempt}/3] Demanda cidadã aguardando resposta — {title}");
             // Reply-to-respond (0.30): link assinado responde SEM conta —
             // atrito zero pro gabinete. Sem RESPOND_LINK_SECRET, cai no
             // link da proposta (que exige operador logado).
@@ -565,13 +563,32 @@ async fn notification_escalation_loop(state: AppState) {
                 Some(token) => format!("{origin}/responder/?sla={sla_id}&t={token}"),
                 None => format!("{origin}/propostas/{proposal_id}"),
             };
-            let body = format!(
-                "Prezado(a) {display_name},\n\nA demanda cidadã \"{title}\" segue \
-                 aguardando resposta do gabinete. Este é o {attempt}º aviso; cada \
-                 aviso fica registrado publicamente com recibo verificável.\n\n\
-                 Responder agora (sem cadastro): {respond_url}\n\n\
-                 Ver a demanda: {origin}/propostas/{proposal_id}\n\n— DemocraciaBR",
-            );
+            let proposal_url = format!("{origin}/propostas/{proposal_id}");
+            // Template editável pelo admin (0.32.0); fallback = texto original.
+            let mut ctx: std::collections::HashMap<&str, String> =
+                std::collections::HashMap::new();
+            ctx.insert("mandate_name", display_name.clone());
+            ctx.insert("proposal_title", title.clone());
+            ctx.insert("attempt", attempt.to_string());
+            ctx.insert("respond_url", respond_url.clone());
+            ctx.insert("proposal_url", proposal_url.clone());
+            let (subject, body) =
+                crate::email_templates::render(&state.db, "sla_reminder_mandate", &ctx)
+                    .await
+                    .unwrap_or_else(|| {
+                        (
+                            format!(
+                                "[Lembrete {attempt}/3] Demanda cidadã aguardando resposta — {title}"
+                            ),
+                            format!(
+                                "Prezado(a) {display_name},\n\nA demanda cidadã \"{title}\" segue \
+                                 aguardando resposta do gabinete. Este é o {attempt}º aviso; cada \
+                                 aviso fica registrado publicamente com recibo verificável.\n\n\
+                                 Responder agora (sem cadastro): {respond_url}\n\n\
+                                 Ver a demanda: {proposal_url}\n\n— DemocraciaBR",
+                            ),
+                        )
+                    });
             let outcome = match &smtp {
                 Some(cfg) => {
                     match crate::proposal_delivery::send_email(cfg, &email, &subject, &body).await {

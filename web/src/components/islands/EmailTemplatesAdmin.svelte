@@ -47,12 +47,12 @@
     loading = true;
     const res = await listEmailTemplates();
     loading = false;
-    if (res.ok && res.data) {
+    if (res.success && res.data) {
       templates = res.data;
       if (!selectedKey && templates.length > 0) select(templates[0].key);
     } else {
       loadError =
-        res.error ?? 'Não foi possível carregar os templates. Você é admin?';
+        res.error?.message ?? 'Não foi possível carregar os templates. Você é admin?';
     }
   }
 

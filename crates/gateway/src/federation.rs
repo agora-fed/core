@@ -527,6 +527,19 @@ async fn inbox_post(
                 },
             )
             .await;
+            // 0.32.0: novo seguidor também sai por e-mail (template
+            // `follow_new`), respeitando `email_prefs.follow` — a chave já
+            // existia no schema (0511) mas nada a lia até aqui. Best-effort
+            // em spawn: o inbox nunca espera SMTP.
+            send_follow_email(
+                &state.db,
+                citizen.as_uuid(),
+                &host,
+                &source_handle,
+                display_name,
+                &signer_actor_url,
+            )
+            .await;
         }
 
         // Build, sign, and post the Accept.
@@ -2969,6 +2982,75 @@ fn remote_handle_of(actor: &Value, actor_url: &str) -> String {
         .and_then(|u| u.host_str().map(str::to_owned))
         .unwrap_or_else(|| "remoto".to_owned());
     format!("{user}@{host}")
+}
+
+/// 0.32.0: e-mail de "novo seguidor" (template `follow_new`), gated por
+/// `email_prefs.follow` (chave ausente = ligado). Best-effort: qualquer
+/// falha vira log; o envio em si roda em spawn pra não segurar o inbox.
+async fn send_follow_email(
+    db: &sqlx::PgPool,
+    citizen_id: uuid::Uuid,
+    host: &str,
+    follower_handle: &str,
+    follower_display_name: Option<&str>,
+    follower_url: &str,
+) {
+    let row: Option<(Option<String>, Option<Value>)> = match sqlx::query_as(
+        r"SELECT ac.email, c.email_prefs
+            FROM citizen c
+            LEFT JOIN auth_credential ac ON ac.citizen_id = c.id
+           WHERE c.id = $1",
+    )
+    .bind(citizen_id)
+    .fetch_optional(db)
+    .await
+    {
+        Ok(r) => r,
+        Err(err) => {
+            tracing::warn!(%citizen_id, error = ?err, "follow e-mail: lookup falhou");
+            return;
+        }
+    };
+    let Some((email, prefs)) = row else { return };
+    let Some(email) = email else { return };
+    let enabled = prefs
+        .as_ref()
+        .and_then(|p| p.get("follow"))
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if !enabled {
+        return;
+    }
+    let Some(cfg) = crate::proposal_delivery::smtp_from_env() else {
+        tracing::info!(to = %email, "DEV: SMTP unconfigured; follow e-mail logado em vez de enviado.");
+        return;
+    };
+    let follower_name = follower_display_name
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or(follower_handle)
+        .to_owned();
+    let mut ctx: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
+    ctx.insert("follower_name", follower_name.clone());
+    ctx.insert("follower_handle", follower_handle.to_owned());
+    ctx.insert("follower_url", follower_url.to_owned());
+    ctx.insert("notifications_url", format!("https://{host}/notificacoes/"));
+    let (subject, body) = crate::email_templates::render(db, "follow_new", &ctx)
+        .await
+        .unwrap_or_else(|| {
+            (
+                format!("{follower_name} começou a seguir você na DemocraciaBR"),
+                format!(
+                    "Olá,\n\n{follower_name} ({follower_handle}) começou a seguir você.\n\n\
+                     Ver perfil: {follower_url}\n\n— DemocraciaBR"
+                ),
+            )
+        });
+    tokio::spawn(async move {
+        if let Err(err) = crate::proposal_delivery::send_email(&cfg, &email, &subject, &body).await
+        {
+            tracing::warn!(?err, "follow e-mail: envio falhou");
+        }
+    });
 }
 
 /// The public origin this instance federates under (env `PUBLIC_ORIGIN`), trailing-slash-free.

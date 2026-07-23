@@ -209,16 +209,24 @@ impl PasswordResetService {
             );
             return;
         };
-        let subject = "DemocraciaBR — redefinição de senha";
-        let body = format!(
-            "Olá,\n\nVocê (ou alguém) pediu para redefinir a senha da sua conta na DemocraciaBR.\n\
-             Para criar uma nova senha, abra este link em até 1 hora:\n\n{reset_url}\n\n\
-             Se não foi você, ignore esta mensagem — sua senha continua a mesma.\n\n\
-             — DemocraciaBR"
-        );
+        // Template editável pelo admin (0.32.0); fallback = texto original.
+        let mut ctx: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
+        ctx.insert("reset_url", reset_url.to_owned());
+        let (subject, body) = dsoc_db::email_templates::render(&self.db, "password_reset", &ctx)
+            .await
+            .unwrap_or_else(|| {
+                (
+                    "DemocraciaBR — redefinição de senha".to_owned(),
+                    format!(
+                        "Olá,\n\nVocê (ou alguém) pediu para redefinir a senha da sua conta na DemocraciaBR.\n\
+                         Para criar uma nova senha, abra este link em até 1 hora:\n\n{reset_url}\n\n\
+                         Se não foi você, ignore esta mensagem — sua senha continua a mesma.\n\n\
+                         — DemocraciaBR"
+                    ),
+                )
+            });
         let to_owned = to.to_owned();
         let smtp = smtp.clone();
-        let subject = subject.to_owned();
         // Send in a non-blocking task so the request returns even if the relay is slow. The
         // user already learned nothing about whether their e-mail was registered (the wire path
         // is the same either way), so a failed send is invisible to the wire and only audited.

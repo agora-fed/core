@@ -8,6 +8,34 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.32.0-email-templates — todo e-mail da plataforma vira template editável**:
+  mapa completo dos e-mails transacionais com linha editável em
+  `/admin/email-templates` (página nova no menu admin — a API e a ilha
+  existiam desde a 0.25.0 mas nunca ganharam página; corrigido também o
+  envelope `res.ok`→`res.success` que impedia a lista de carregar). Migration
+  `0524` seeda 8 chaves novas: `welcome` (boas-vindas pós-ativação — e-mail
+  novo, disparado após o `confirm()` materializar a conta), `follow_new`
+  (alguém te seguiu — e-mail novo, primeiro consumidor real de
+  `email_prefs.follow` da 0511), `mandate_invite`, `sla_started_mandate`,
+  `sla_reminder_mandate`, `proposal_threshold_author`, `sla_response_author`
+  e `sla_expired_author`. Os três e-mails do crate de auth
+  (signup_verify/password_reset/mandate_invite) e o lembrete do worker saem
+  do hardcoded e passam pelo `render()` — extraído pra
+  `dsoc_db::email_templates` (Tier-0) porque auth não pode depender do
+  gateway; fallback hardcoded preservado em todos (e-mail nunca deixa de
+  sair porque o DB piscou). Os 3 marcos cívicos (gatilho cruzado, resposta
+  do mandato, silêncio registrado) agora também chegam por e-mail ao autor,
+  com opt-out por `email_prefs` (chave = kind, ausente = ligado).
+  **Bug fechado de quebra:** o "AR digital" (0.29) nunca enviava o aviso D0
+  ao gabinete nem gravava o recibo nº 1 — e a escada D+1/D+2 do worker exige
+  `count(recibos) BETWEEN 1 AND 2`, então nenhum lembrete jamais disparou e a
+  timeline pública de avisos ficava vazia. Agora o `ConsequenceSlaStarted`
+  dispara `sla_started_mandate` (com link responder-sem-conta) e grava o
+  recibo gênese da cadeia hash, idempotente contra redelivery.
+  E-mails deliberadamente fora do catálogo: formulário de contato (forward
+  operacional com Reply-To humano, não é e-mail de plataforma) e
+  mention/reply/favourite/reblog (ficam só in-app — volume de spam; entram
+  se houver demanda).
 - **0.31.1-campanha-publica — a declaração vira página pública + selo no perfil**:
   novo `GET /api/v1/campanha/{handle}` (público) serve a declaração quando
   `is_published` E o vínculo de mandato segue vivo — 404 uniforme para handle

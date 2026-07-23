@@ -12,6 +12,7 @@
 //! - Reads that can be unbounded MUST paginate (`LIMIT`/keyset). No `SELECT *` in app code.
 
 pub mod consumed;
+pub mod email_templates;
 pub mod outbox;
 
 use sqlx::postgres::{PgPool, PgPoolOptions};

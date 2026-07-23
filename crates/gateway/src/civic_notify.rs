@@ -64,6 +64,11 @@ impl EventHandler for CivicNotifySub {
                     "o mandato tem prazo pra responder sua proposta",
                 )
                 .await;
+                // 0.32.0: D0 do "AR digital" — o 1º aviso formal ao gabinete
+                // sai AQUI (com link responder-sem-conta) e grava o recibo
+                // nº 1 da cadeia. Sem ele a escada D+1/D+2 do worker nunca
+                // disparava: a query exige `count(receipts) BETWEEN 1 AND 2`.
+                self.email_gabinete_d0(sla.as_uuid()).await;
             }
             Event::ConsequenceOfficialResponded { sla, .. } => {
                 self.notify_via_sla(
@@ -108,6 +113,107 @@ impl CivicNotifySub {
         };
         self.notify_proposal_author(proposal_id, kind, preview)
             .await;
+    }
+
+    /// D0 do "AR digital do silêncio" (0.32.0): quando o SLA começa, o
+    /// gabinete recebe o 1º aviso formal por e-mail — com o link assinado de
+    /// responder-sem-conta — e o recibo nº 1 entra na cadeia hash-encadeada.
+    /// Idempotente: se a proposta já tem recibo (redelivery do dispatch
+    /// at-least-once), não reenvia. Best-effort — falha vira warn.
+    async fn email_gabinete_d0(&self, sla_id: Uuid) {
+        type D0Row = (
+            Uuid,
+            String,
+            Option<Uuid>,
+            Option<String>,
+            String,
+            chrono::DateTime<chrono::Utc>,
+        );
+        let row: Option<D0Row> = match sqlx::query_as(
+            r"SELECT p.id, p.title, s.mandate_id, m.public_email,
+                     COALESCE(m.display_name, 'gabinete'), s.due_at
+                FROM consequence_sla s
+                JOIN proposal p ON p.id = s.proposal_id
+                JOIN mandate m ON m.id = s.mandate_id
+               WHERE s.id = $1",
+        )
+        .bind(sla_id)
+        .fetch_optional(&self.db)
+        .await
+        {
+            Ok(r) => r,
+            Err(err) => {
+                tracing::warn!(sla = %sla_id, error = ?err, "civic_notify: D0 lookup falhou");
+                return;
+            }
+        };
+        let Some((proposal_id, title, mandate_id, email, mandate_name, due_at)) = row else {
+            return;
+        };
+        let Some(email) = email else {
+            // Mandato sem e-mail público — a escada nem começa; o silêncio
+            // ainda expira normalmente pelo sweep.
+            return;
+        };
+        // Idempotência: recibo 1 já existe → redelivery, não reenvia.
+        let already: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM notification_receipt WHERE proposal_id = $1",
+        )
+        .bind(proposal_id)
+        .fetch_one(&self.db)
+        .await
+        .unwrap_or(0);
+        if already > 0 {
+            return;
+        }
+        let origin = self.public_origin.trim_end_matches('/');
+        let respond_url = match crate::respond_link::respond_token(sla_id) {
+            Some(token) => format!("{origin}/responder/?sla={sla_id}&t={token}"),
+            None => format!("{origin}/propostas/{proposal_id}"),
+        };
+        let proposal_url = format!("{origin}/propostas/{proposal_id}");
+        let mut ctx: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
+        ctx.insert("mandate_name", mandate_name.clone());
+        ctx.insert("proposal_title", title.clone());
+        ctx.insert("due_date", due_at.format("%d/%m/%Y").to_string());
+        ctx.insert("respond_url", respond_url.clone());
+        ctx.insert("proposal_url", proposal_url.clone());
+        let (subject, body) =
+            crate::email_templates::render(&self.db, "sla_started_mandate", &ctx)
+                .await
+                .unwrap_or_else(|| {
+                    (
+                        format!("[DemocraciaBR] Prazo de resposta iniciado — {title}"),
+                        format!(
+                            "Prezado(a) {mandate_name},\n\nA proposta cidadã \"{title}\" atingiu \
+                             o número de apoios necessário e o prazo público de resposta começou.\n\n\
+                             Responder agora (sem cadastro): {respond_url}\n\n\
+                             Ver a demanda: {proposal_url}\n\n— DemocraciaBR",
+                        ),
+                    )
+                });
+        let outcome = match crate::proposal_delivery::smtp_from_env() {
+            Some(cfg) => {
+                match crate::proposal_delivery::send_email(&cfg, &email, &subject, &body).await {
+                    Ok(()) => "accepted".to_owned(),
+                    Err(err) => {
+                        let mut msg = format!("failed: {err}");
+                        msg.truncate(200);
+                        msg
+                    }
+                }
+            }
+            None => "dev-logged".to_owned(),
+        };
+        crate::notification_receipts::record(
+            &self.db,
+            proposal_id,
+            mandate_id,
+            &email,
+            &subject,
+            &outcome,
+        )
+        .await;
     }
 
     async fn notify_proposal_author(&self, proposal_id: Uuid, kind: &str, preview: &str) {
@@ -166,6 +272,85 @@ impl CivicNotifySub {
             "url": object_uri,
         });
         crate::web_push::send_to_citizen(&self.db, author, &payload.to_string()).await;
+        // 0.32.0: além do in-app + push, os 3 marcos cívicos também saem por
+        // e-mail pro autor (threshold cruzado, resposta, silêncio). O
+        // `sla_started` fica só in-app — chega segundos depois do threshold
+        // e viraria e-mail duplicado. Opt-out por `email_prefs` (chave =
+        // kind; ausente = ligado).
+        self.email_author(author, proposal_id, kind).await;
+    }
+
+    /// E-mail cívico ao autor da proposta (0.32.0). Best-effort + spawn —
+    /// nunca segura o dispatch loop. Kind sem template mapeado é no-op.
+    async fn email_author(&self, author: Uuid, proposal_id: Uuid, kind: &str) {
+        let template_key = match kind {
+            "proposal_threshold" => "proposal_threshold_author",
+            "sla_response" => "sla_response_author",
+            "sla_expired" => "sla_expired_author",
+            _ => return,
+        };
+        type AuthorRow = (Option<String>, Option<serde_json::Value>, String, String);
+        let row: Option<AuthorRow> = match sqlx::query_as(
+            r"SELECT ac.email, c.email_prefs, p.title,
+                     COALESCE(m.display_name, 'o mandato')
+                FROM proposal p
+                LEFT JOIN mandate m ON m.id = p.mandate_id
+                LEFT JOIN auth_credential ac ON ac.citizen_id = $2
+                LEFT JOIN citizen c ON c.id = $2
+               WHERE p.id = $1",
+        )
+        .bind(proposal_id)
+        .bind(author)
+        .fetch_optional(&self.db)
+        .await
+        {
+            Ok(r) => r,
+            Err(err) => {
+                tracing::warn!(proposal = %proposal_id, error = ?err, "civic_notify: author e-mail lookup falhou");
+                return;
+            }
+        };
+        let Some((email, prefs, proposal_title, mandate_name)) = row else {
+            return;
+        };
+        let Some(email) = email else { return };
+        // Opt-out: email_prefs é `{"follow":true,...}`; chave ausente = on.
+        let enabled = prefs
+            .as_ref()
+            .and_then(|p| p.get(kind))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(true);
+        if !enabled {
+            return;
+        }
+        let Some(cfg) = crate::proposal_delivery::smtp_from_env() else {
+            tracing::info!(to = %email, kind, "DEV: SMTP unconfigured; e-mail cívico logado em vez de enviado.");
+            return;
+        };
+        let origin = self.public_origin.trim_end_matches('/');
+        let proposal_url = format!("{origin}/propostas/{proposal_id}");
+        let mut ctx: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
+        ctx.insert("proposal_title", proposal_title.clone());
+        ctx.insert("proposal_url", proposal_url.clone());
+        ctx.insert("mandate_name", mandate_name);
+        let (subject, body) = crate::email_templates::render(&self.db, template_key, &ctx)
+            .await
+            .unwrap_or_else(|| {
+                (
+                    format!("DemocraciaBR — atualização da sua proposta \"{proposal_title}\""),
+                    format!(
+                        "Olá,\n\nSua proposta \"{proposal_title}\" tem uma atualização.\n\n\
+                         Acompanhe: {proposal_url}\n\n— DemocraciaBR"
+                    ),
+                )
+            });
+        tokio::spawn(async move {
+            if let Err(err) =
+                crate::proposal_delivery::send_email(&cfg, &email, &subject, &body).await
+            {
+                tracing::warn!(?err, "civic_notify: e-mail ao autor falhou");
+            }
+        });
     }
 
     /// Fase E completa (0.26.24): publica uma Note pública em nome do autor

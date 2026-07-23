@@ -1,0 +1,25 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import EmailTemplatesAdmin from '../../components/islands/EmailTemplatesAdmin.svelte';
+---
+
+<AdminLayout
+  title="Templates de e-mail (admin)"
+  description="Edite o assunto e o corpo de todos os e-mails que a plataforma envia: boas-vindas, confirmação, propostas, avisos ao gabinete, novo seguidor."
+>
+  <header class="head">
+    <h1>Templates de e-mail</h1>
+    <p class="muted">
+      Todo e-mail que a plataforma envia passa por aqui. Edite assunto e corpo,
+      use os chips de variáveis (<code>{'{{var}}'}</code>) e confira no preview
+      antes de salvar. "Voltar ao padrão" restaura o texto original.
+    </p>
+  </header>
+  <EmailTemplatesAdmin client:load />
+</AdminLayout>
+
+<style>
+  .head { margin-bottom: var(--sp-5); }
+  h1 { margin: 0 0 var(--sp-1); }
+  code { background: var(--surface-2); padding: 2px 6px; border-radius: 4px; }
+</style>

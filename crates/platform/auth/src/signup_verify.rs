@@ -521,6 +521,8 @@ impl SignupVerifyService {
         )
         .await?;
         tx.commit().await.map_err(map_sqlx)?;
+        // Boas-vindas só depois do commit — conta existe de fato.
+        self.deliver_welcome(&row.email);
         Ok(ConfirmOutcome::Session(Box::new(session)))
     }
 
@@ -534,21 +536,68 @@ impl SignupVerifyService {
             );
             return;
         };
-        let subject = "DemocraciaBR — confirme sua conta";
-        let body = format!(
-            "Olá,\n\nRecebemos seu cadastro na DemocraciaBR. Pra ativar a conta \
-             e fazer o primeiro login, abra este link em até 24 horas:\n\n{confirm_url}\n\n\
-             Se não foi você quem se cadastrou, é só ignorar esta mensagem — \
-             a conta nunca é criada sem esta confirmação.\n\n— DemocraciaBR"
-        );
+        // Template editável pelo admin (0.32.0); fallback hardcoded se a
+        // linha sumiu do DB — o e-mail de confirmação nunca deixa de sair.
+        let mut ctx: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
+        ctx.insert("confirm_url", confirm_url.to_owned());
+        let (subject, body) = dsoc_db::email_templates::render(&self.db, "signup_verify", &ctx)
+            .await
+            .unwrap_or_else(|| {
+                (
+                    "DemocraciaBR — confirme sua conta".to_owned(),
+                    format!(
+                        "Olá,\n\nRecebemos seu cadastro na DemocraciaBR. Pra ativar a conta \
+                         e fazer o primeiro login, abra este link em até 24 horas:\n\n{confirm_url}\n\n\
+                         Se não foi você quem se cadastrou, é só ignorar esta mensagem — \
+                         a conta nunca é criada sem esta confirmação.\n\n— DemocraciaBR"
+                    ),
+                )
+            });
         let to_owned = to.to_owned();
         let smtp = smtp.clone();
-        let subject = subject.to_owned();
         // Non-blocking: a request retorna mesmo se o relay travar. Falha de
         // envio só é auditada — mesma escolha do password_reset.
         tokio::spawn(async move {
             if let Err(err) = send_email(&smtp, &to_owned, &subject, &body).await {
                 tracing::error!(error = ?err, "signup-verify e-mail send failed");
+            }
+        });
+    }
+
+    /// Boas-vindas pós-ativação (0.32.0): dispara depois que `confirm()`
+    /// materializa a conta. Best-effort e não-bloqueante — falha de SMTP
+    /// nunca atrapalha a sessão recém-criada.
+    fn deliver_welcome(&self, to: &str) {
+        let Some(smtp) = &self.smtp else {
+            tracing::info!(
+                target: "auth::signup_verify",
+                to,
+                "DEV: SMTP unconfigured; welcome e-mail logado em vez de enviado."
+            );
+            return;
+        };
+        let origin = self.public_origin.trim_end_matches('/').to_owned();
+        let db = self.db.clone();
+        let smtp = smtp.clone();
+        let to_owned = to.to_owned();
+        tokio::spawn(async move {
+            let mut ctx: std::collections::HashMap<&str, String> =
+                std::collections::HashMap::new();
+            ctx.insert("site_url", origin.clone());
+            ctx.insert("settings_url", format!("{origin}/configuracoes/"));
+            let (subject, body) = dsoc_db::email_templates::render(&db, "welcome", &ctx)
+                .await
+                .unwrap_or_else(|| {
+                    (
+                        "Bem-vindo(a) à DemocraciaBR — sua conta está ativa".to_owned(),
+                        format!(
+                            "Olá,\n\nSua conta na DemocraciaBR está ativa.\n\n\
+                             Comece por aqui: {origin}\n\n— DemocraciaBR"
+                        ),
+                    )
+                });
+            if let Err(err) = send_email(&smtp, &to_owned, &subject, &body).await {
+                tracing::error!(error = ?err, "welcome e-mail send failed");
             }
         });
     }
