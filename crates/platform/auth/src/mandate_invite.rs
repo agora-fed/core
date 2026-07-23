@@ -572,7 +572,7 @@ async fn send_email(
     subject: &str,
     body: &str,
 ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    use lettre::message::header::ContentType;
+    
     use lettre::transport::smtp::authentication::Credentials;
     use lettre::transport::smtp::AsyncSmtpTransport;
     use lettre::{AsyncTransport, Message, Tokio1Executor};
@@ -595,8 +595,11 @@ async fn send_email(
         .from(from)
         .to(to_addr)
         .subject(subject)
-        .header(ContentType::TEXT_PLAIN)
-        .body(body.to_owned())?;
+        // 0.32.1: texto puro como fallback + HTML com a marca (html_wrap).
+        .multipart(lettre::message::MultiPart::alternative_plain_html(
+            body.to_owned(),
+            dsoc_db::email_templates::html_wrap(body),
+        ))?;
     mailer.send(email).await?;
     Ok(())
 }

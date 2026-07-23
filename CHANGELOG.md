@@ -8,6 +8,19 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.33.1-email-html — identidade visual em todos os e-mails + botão de
+  teste**: os e-mails saem agora em `multipart/alternative` — texto puro como
+  fallback universal + HTML com a marca (logo, wordmark Democracia/BR nas
+  cores, card branco com filete verde, links estilizados, rodapé
+  institucional). Os templates continuam **texto simples** editável no admin
+  (feature, não limitação: o admin não precisa saber HTML) — o wrapper
+  `dsoc_db::email_templates::html_wrap` escapa, converte URLs em links e
+  quebras em `<br>` automaticamente; cobre os 4 transportes (gateway + os 3
+  do crate auth) num ponto único cada. E `/admin/email-templates` ganha
+  **"📤 Enviar teste"**: `POST /admin/email-templates/{key}/send-test` envia
+  o template salvo pelo caminho real (SMTP + wrapper) pra qualquer caixa,
+  com assunto `[TESTE]` — valida o visual sem esperar o evento acontecer.
+  Formulário de contato permanece texto puro (forward operacional).
 - **0.33.0-og-cards — o placar circula como imagem** (item 7 do plano, fatia 2 —
   fecha o item): novo `GET /og/placar/{mandate_id}.png` — card 1200×630 com
   nome, cargo · partido/UF, respondidas × silêncios × taxa e barra de

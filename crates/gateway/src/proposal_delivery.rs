@@ -23,7 +23,6 @@ use async_trait::async_trait;
 use dsoc_core::events::{Event, EventEnvelope};
 use dsoc_core::Result;
 use dsoc_events::EventHandler;
-use lettre::message::header::ContentType;
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::transport::smtp::AsyncSmtpTransport;
 use lettre::{AsyncTransport, Message, Tokio1Executor};
@@ -288,12 +287,17 @@ pub(crate) async fn send_email(
 
     let from = cfg.from.parse()?;
     let to_addr: lettre::message::Mailbox = to.parse()?;
+    // 0.32.1: multipart/alternative — texto puro (fallback universal) +
+    // HTML com a identidade da marca. O template segue texto simples; o
+    // wrapper cuida do visual.
     let email = Message::builder()
         .from(from)
         .to(to_addr)
         .subject(subject)
-        .header(ContentType::TEXT_PLAIN)
-        .body(body.to_owned())?;
+        .multipart(lettre::message::MultiPart::alternative_plain_html(
+            body.to_owned(),
+            dsoc_db::email_templates::html_wrap(body),
+        ))?;
     mailer.send(email).await?;
     Ok(())
 }

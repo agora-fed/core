@@ -42,6 +42,13 @@ pub fn routes(state: AppState) -> Router<()> {
             "/admin/email-templates/{key}/preview",
             axum::routing::post(preview),
         )
+        // 0.32.1: envia o template renderizado de verdade (multipart com o
+        // wrapper HTML da marca) pra uma caixa de teste — o admin valida o
+        // visual real sem esperar o evento acontecer.
+        .route(
+            "/admin/email-templates/{key}/send-test",
+            axum::routing::post(send_test),
+        )
         // GET /me/admin-status — usado pelo AuthMenu no front pra saber se
         // mostra o link "Administração" no dropdown do perfil. Anônimo → 200
         // com `{is_admin: false}` (não vaza sinal). Não é aqui só porque o
@@ -220,6 +227,77 @@ async fn update(
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ApiResponse::<()>::fail("storage_error", "Erro interno.")),
+            )
+                .into_response()
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct SendTestBody {
+    to: String,
+    /// Valores de exemplo pros placeholders; ausente fica `{{var}}` literal.
+    #[serde(default)]
+    context: HashMap<String, String>,
+}
+
+/// `POST /admin/email-templates/{key}/send-test` — renderiza o que está
+/// SALVO e envia pro endereço informado pelo caminho real de produção
+/// (mesmo SMTP, mesmo wrapper HTML). Subject ganha prefixo `[TESTE]`.
+async fn send_test(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(key): Path<String>,
+    Json(body): Json<SendTestBody>,
+) -> Response {
+    if let Err(resp) = require_admin(&headers, &state.db).await {
+        return resp;
+    }
+    let to = body.to.trim();
+    if to.len() < 5 || !to.contains('@') || to.contains(char::is_whitespace) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse::<()>::fail(
+                "invalid_email",
+                "Informe um e-mail de destino válido.",
+            )),
+        )
+            .into_response();
+    }
+    let ctx: HashMap<&str, String> = body
+        .context
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.clone()))
+        .collect();
+    let Some((subject, rendered)) = render(&state.db, &key, &ctx).await else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::<()>::fail("not_found", "Template não existe.")),
+        )
+            .into_response();
+    };
+    let Some(cfg) = crate::proposal_delivery::smtp_from_env() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ApiResponse::<()>::fail(
+                "smtp_unavailable",
+                "SMTP não configurado neste ambiente.",
+            )),
+        )
+            .into_response();
+    };
+    match crate::proposal_delivery::send_email(&cfg, to, &format!("[TESTE] {subject}"), &rendered)
+        .await
+    {
+        Ok(()) => (StatusCode::OK, Json(ApiResponse::<()>::ok(()))).into_response(),
+        Err(err) => {
+            tracing::warn!(?err, key, "email_template send-test falhou");
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(ApiResponse::<()>::fail(
+                    "smtp_error",
+                    "O relay SMTP recusou o envio. Veja os logs.",
+                )),
             )
                 .into_response()
         }

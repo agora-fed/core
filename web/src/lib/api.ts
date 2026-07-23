@@ -972,6 +972,17 @@ export const previewEmailTemplate = (
     payload,
   );
 
+/** Envia o template SALVO pro e-mail informado (caminho real: SMTP +
+ *  wrapper HTML da marca). Subject chega prefixado com [TESTE]. */
+export const sendTestEmailTemplate = (
+  key: string,
+  payload: { to: string; context: Record<string, string> },
+) =>
+  apiPost<null>(
+    `/api/v1/admin/email-templates/${encodeURIComponent(key)}/send-test`,
+    payload,
+  );
+
 /** POST /me/titulo-eleitor — valida algoritmicamente (12 dígitos) e persiste. */
 export const submitTituloEleitor = (titulo: string) =>
   apiPost<{ titulo_status: string; titulo_last4: string }>(

@@ -10,6 +10,7 @@
     listEmailTemplates,
     updateEmailTemplate,
     previewEmailTemplate,
+    sendTestEmailTemplate,
     type EmailTemplateDto,
   } from '../../lib/api';
   import Card from '../ui/Card.svelte';
@@ -149,6 +150,26 @@
     if (res.success && res.data) previewOut = res.data;
   }
 
+  let testTo = $state('');
+  let testSending = $state(false);
+
+  async function doSendTest() {
+    if (!selected || testSending || !testTo.trim()) return;
+    testSending = true;
+    msg = null;
+    const res = await sendTestEmailTemplate(selected.key, {
+      to: testTo.trim(),
+      context: previewCtx,
+    });
+    testSending = false;
+    msg = res.success
+      ? { kind: 'ok', text: `Teste enviado pra ${testTo.trim()}.` }
+      : {
+          kind: 'error',
+          text: res.error?.message ?? 'Falha ao enviar o teste.',
+        };
+  }
+
   onMount(refresh);
 </script>
 
@@ -243,6 +264,28 @@
               Voltar ao padrão
             </Button>
           </div>
+
+          <div class="test-row">
+            <input
+              class="input"
+              type="email"
+              placeholder="e-mail de teste (ex.: voce@exemplo.br)"
+              bind:value={testTo}
+            />
+            <Button
+              variant="ghost"
+              onclick={doSendTest}
+              disabled={!testTo.trim() || testSending}
+              loading={testSending}
+            >
+              📤 Enviar teste
+            </Button>
+          </div>
+          <p class="muted small">
+            Envia o que está <strong>salvo</strong> pelo caminho real (SMTP +
+            layout HTML da marca), com assunto prefixado <code>[TESTE]</code>.
+            Salve antes de testar uma edição.
+          </p>
 
           {#if msg}
             <div class="alert-slot">
@@ -380,6 +423,16 @@
     display: flex;
     gap: var(--sp-2);
     align-items: center;
+  }
+  .test-row {
+    display: flex;
+    gap: var(--sp-2);
+    align-items: center;
+    margin-top: var(--sp-3);
+  }
+  .test-row .input {
+    flex: 1;
+    max-width: 340px;
   }
   .spacer {
     flex: 1;
