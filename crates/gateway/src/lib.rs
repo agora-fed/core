@@ -37,6 +37,7 @@ pub mod me_settings;
 pub mod note_media;
 pub mod notification_receipts;
 pub mod notifications;
+pub mod og_cards;
 pub mod parlamentar_activity;
 pub mod politicos_ext;
 pub mod polls;
@@ -248,6 +249,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(federation_public)
         // Placar embedável pra imprensa (0.30.2) — raiz, URL limpa pra iframe.
         .merge(embed::routes(state.clone()))
+        // OG card PNG do placar (0.33.0) — raiz, apontada pelos og:image.
+        .merge(og_cards::routes(state.clone()))
         .merge(oauth)
         // gov.br OIDC — start/callback na raiz porque o gov.br exige que
         // `redirect_uri` seja exatamente `<origin>/auth/govbr/callback`.

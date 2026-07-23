@@ -28,7 +28,12 @@ const description =
   'Perfil público do(a) parlamentar — demandas dirigidas, tempo de resposta, prazos correndo.';
 ---
 
-<BaseLayout title="Parlamentar" {description} noindex>
+<BaseLayout
+  title="Parlamentar"
+  {description}
+  image={`/og/placar/${mandate}.png`}
+  noindex
+>
   <section class="section">
     <div class="container">
       <MandateDetail client:load mandateId={mandate!} />

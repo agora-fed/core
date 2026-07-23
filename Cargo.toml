@@ -70,6 +70,8 @@ anyhow = "1"
 tracing = "0.1"
 # --- image processing (avatar/cover resize, ADR-0010 W1.2) ---
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+# OG cards (0.33.0): rasterização de texto pro PNG do placar — pure Rust.
+ab_glyph = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 [workspace.lints.rust]

@@ -8,6 +8,17 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.33.0-og-cards — o placar circula como imagem** (item 7 do plano, fatia 2 —
+  fecha o item): novo `GET /og/placar/{mandate_id}.png` — card 1200×630 com
+  nome, cargo · partido/UF, respondidas × silêncios × taxa e barra de
+  proporção, rasterizado 100% in-process (`image` + `ab_glyph`, DejaVu Sans
+  embarcada no binário — sem stack de navegador/screenshot), cache 5 min.
+  As páginas `/politicos/{id}` e `/politicos/{id}/placar` passam a apontar
+  `og:image`/`twitter:image` pro card: colar o link do político no WhatsApp,
+  X, Telegram ou Mastodon agora mostra o placar como imagem — o silêncio
+  vira custo social no compartilhamento. Nome auto-encolhe e trunca com
+  reticências; mandato sem SLA renderiza com taxa "—". 2 testes de
+  rasterização (assinatura PNG + nome comprido/total zero).
 - **0.32.0-email-templates — todo e-mail da plataforma vira template editável**:
   mapa completo dos e-mails transacionais com linha editável em
   `/admin/email-templates` (página nova no menu admin — a API e a ilha
