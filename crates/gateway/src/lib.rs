@@ -34,6 +34,7 @@ pub mod mastodon_api;
 pub mod mastodon_dto;
 pub mod mastodon_oauth;
 pub mod me_settings;
+pub mod audience;
 pub mod invite_campaign;
 pub mod note_media;
 pub mod notification_receipts;
@@ -175,6 +176,7 @@ pub fn api_router(state: AppState) -> Router {
         // Templates de e-mail editáveis (admin CRUD).
         .merge(email_templates::routes(state.clone()))
         .merge(invite_campaign::routes(state.clone()))
+        .merge(audience::routes(state.clone()))
         // GUI completa de usuários (admin CRUD).
         .merge(admin_users::routes(state.clone()))
         .merge(admin_reports::routes(state.clone()))

@@ -984,6 +984,80 @@ export const sendTestEmailTemplate = (
   );
 
 // ---------------------------------------------------------------------------
+// Base de contatos / audiência (0.35.0).
+// ---------------------------------------------------------------------------
+
+/** Captação pública ("receba novidades"): consent LGPD; `website` é honeypot. */
+export const subscribeAudience = (payload: {
+  email: string;
+  name?: string;
+  uf?: string;
+  website?: string;
+}) => apiPost<null>('/api/v1/audience/subscribe', { website: '', ...payload });
+
+export interface AudienceStatsDto {
+  total: number;
+  active: number;
+  unsubscribed: number;
+  from_site: number;
+  imported: number;
+  segments: { segment: string; active: number }[];
+}
+
+export interface AudienceContactDto {
+  id: string;
+  email: string;
+  name: string | null;
+  uf: string | null;
+  segment: string;
+  source: string;
+  legal_basis: string;
+  unsubscribed: boolean;
+  created_at: string;
+}
+
+export const getAudienceStats = () =>
+  apiGetCredentialed<AudienceStatsDto>('/api/v1/admin/audience/stats');
+
+export const listAudience = (opts: {
+  segment?: string;
+  status?: 'active' | 'unsubscribed' | 'all';
+  q?: string;
+  limit?: number;
+  offset?: number;
+}) => {
+  const p = new URLSearchParams();
+  if (opts.segment) p.set('segment', opts.segment);
+  if (opts.status) p.set('status', opts.status);
+  if (opts.q) p.set('q', opts.q);
+  if (opts.limit) p.set('limit', String(opts.limit));
+  if (opts.offset) p.set('offset', String(opts.offset));
+  const s = p.toString();
+  return apiGetCredentialed<AudienceContactDto[]>(
+    `/api/v1/admin/audience${s ? `?${s}` : ''}`,
+  );
+};
+
+export const importAudience = (payload: {
+  source_slug: string;
+  legal_basis: 'consent' | 'legitimate_interest';
+  segment?: string;
+  notes?: string;
+  contacts: { email: string; name?: string; uf?: string }[];
+}) => apiPost<{ received: number; upserted: number; invalid: number }>(
+  '/api/v1/admin/audience/import',
+  payload,
+);
+
+export const deleteAudienceContact = (id: string) =>
+  fetch(`${API_BASE}/api/v1/admin/audience/${id}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  }).then((r) => r.json());
+
+export const AUDIENCE_EXPORT_URL = `${API_BASE}/api/v1/admin/audience/export.csv`;
+
+// ---------------------------------------------------------------------------
 // Campanha de convites aos gabinetes (0.34.0) — admin only.
 // ---------------------------------------------------------------------------
 

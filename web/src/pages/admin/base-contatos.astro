@@ -1,0 +1,27 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminAudience from '../../components/islands/AdminAudience.svelte';
+---
+
+<AdminLayout
+  title="Base de contatos (admin)"
+  description="A base de audiência da plataforma: captados no site, listas importadas, segmentos, export CSV e descadastros."
+>
+  <header class="head">
+    <h1>Base de contatos</h1>
+    <p class="muted">
+      Pessoas em potencial: quem se inscreveu no site + listas importadas.
+      Todo envio futuro (digest, novidades) consome esta base e respeita o
+      descadastro de 1 clique.
+    </p>
+  </header>
+  <div class="stack">
+    <AdminAudience client:load />
+  </div>
+</AdminLayout>
+
+<style>
+  .head { margin-bottom: var(--sp-5); }
+  h1 { margin: 0 0 var(--sp-1); }
+  .stack { display: flex; flex-direction: column; gap: var(--sp-4); }
+</style>

@@ -8,6 +8,21 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.35.0-base-contatos — a base de audiência nasce**: "queria ter uma base
+  boa primeiro" — agora todo visitante pode virar contato. (1) **Captação no
+  site**: bloco "📬 Receba as novidades" no rodapé global (nome opcional +
+  e-mail, consent LGPD explícito, honeypot + rate-limit por IP) →
+  `POST /audience/subscribe`. (2) **Base no admin** (`/admin/base-contatos`):
+  totais (ativos/site/importados/descadastrados + por segmento), listagem
+  filtrável com busca, **importação de listas** coladas (`email, nome, UF`
+  por linha, até 2000/chamada) com slug de origem e **base legal LGPD
+  declarada** (consent × legítimo interesse), export CSV e remoção
+  definitiva (pedido LGPD). (3) **Descadastro de 1 clique** sem login
+  (`GET /audience/unsubscribe?token=…`, página de confirmação; token único
+  por contato na migration `0525_audience_contact`). Regras que
+  protegem a base: e-mail único (import nunca duplica), import **nunca**
+  rebaixa consent nem ressuscita opt-out; re-inscrição pelo site renova o
+  consent. O digest mensal (#12) e futuros envios consomem daqui.
 - **0.34.0-campanha-convites — onboarding dos gabinetes vira operação de um
   clique**: nova tela `/admin/convites-gabinetes` (menu admin) com o funil
   dos 594 federais (total → com e-mail público → já na plataforma → convite

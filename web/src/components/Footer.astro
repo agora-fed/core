@@ -2,6 +2,7 @@
 import Dialogo from './icons/Dialogo.astro';
 import Transparencia from './icons/Transparencia.astro';
 import Participacao from './icons/Participacao.astro';
+import NewsletterSignup from './islands/NewsletterSignup.svelte';
 
 const year = new Date().getFullYear();
 const pillars = [
@@ -40,6 +41,15 @@ const pillars = [
           </div>
         ))
       }
+    </div>
+
+    <div class="newsletter">
+      <h3>📬 Receba as novidades</h3>
+      <p class="muted">
+        Acompanhe o placar dos políticos, propostas em alta e o que mudou —
+        direto no seu e-mail.
+      </p>
+      <NewsletterSignup client:visible />
     </div>
 
     <div class="foot-bar">
@@ -108,6 +118,18 @@ const pillars = [
     border-radius: var(--r-base);
     background: var(--surface-2);
     border: 1px solid var(--border-subtle);
+  }
+  .newsletter {
+    margin: var(--sp-6) 0;
+    padding: var(--sp-4);
+    border-radius: var(--r-base, 12px);
+    background: var(--surface-2);
+  }
+  .newsletter h3 {
+    margin: 0 0 var(--sp-1);
+  }
+  .newsletter p {
+    margin: 0 0 var(--sp-3);
   }
   .foot-bar {
     display: flex;
