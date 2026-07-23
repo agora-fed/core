@@ -1,0 +1,28 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminInviteCampaign from '../../components/islands/AdminInviteCampaign.svelte';
+---
+
+<AdminLayout
+  title="Convites aos gabinetes (admin)"
+  description="Campanha de onboarding dos parlamentares: funil de elegíveis, envio de convites em lotes e acompanhamento."
+>
+  <header class="head">
+    <h1>Convites aos gabinetes</h1>
+    <p class="muted">
+      Onboarding dos parlamentares federais: veja o funil, dispare convites em
+      lotes controlados e acompanhe quem aceitou. O texto do e-mail é o
+      template <code>mandate_invite</code>.
+    </p>
+  </header>
+  <div class="stack">
+    <AdminInviteCampaign client:load />
+  </div>
+</AdminLayout>
+
+<style>
+  .head { margin-bottom: var(--sp-5); }
+  h1 { margin: 0 0 var(--sp-1); }
+  code { background: var(--surface-2); padding: 2px 6px; border-radius: 4px; }
+  .stack { display: flex; flex-direction: column; gap: var(--sp-4); }
+</style>

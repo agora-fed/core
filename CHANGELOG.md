@@ -8,7 +8,22 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
-- **0.33.1-email-html — identidade visual em todos os e-mails + botão de
+- **0.34.0-campanha-convites — onboarding dos gabinetes vira operação de um
+  clique**: nova tela `/admin/convites-gabinetes` (menu admin) com o funil
+  dos 594 federais (total → com e-mail público → já na plataforma → convite
+  pendente/aceito/expirado → elegíveis agora), envio de convites em **lotes
+  controlados** (1–50, default 20, filtros UF/partido, confirmação
+  explícita — nada dispara sozinho) e tabela de acompanhamento por status.
+  Backend `invite_campaign.rs`: `GET /admin/invite-campaign/overview`,
+  `POST /admin/invite-campaign/send-batch`, `GET
+  /admin/invite-campaign/invites` — cada envio passa pelo
+  `MandateInviteService` real (admin-only, token hasheado, TTL, template
+  `mandate_invite` editável, agora em HTML com a marca); elegibilidade
+  exclui mandato já vinculado, com convite vivo ou já aceito, então
+  reenviar lote nunca duplica convite. `dsoc_auth::http` expõe
+  `mandate_invite_service()` pro gateway construir o service. TTL do
+  convite em prod sobe pra 7 dias (`MANDATE_INVITE_TTL_SECS=604800` no
+  deployment — 72h é curto pra caixa de gabinete).
   teste**: os e-mails saem agora em `multipart/alternative` — texto puro como
   fallback universal + HTML com a marca (logo, wordmark Democracia/BR nas
   cores, card branco com filete verde, links estilizados, rodapé

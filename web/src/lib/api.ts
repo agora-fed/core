@@ -983,6 +983,86 @@ export const sendTestEmailTemplate = (
     payload,
   );
 
+// ---------------------------------------------------------------------------
+// Campanha de convites aos gabinetes (0.34.0) — admin only.
+// ---------------------------------------------------------------------------
+
+export interface InviteCampaignFilter {
+  sphere?: string;
+  house?: string;
+  uf?: string;
+  party?: string;
+}
+
+export interface InviteCampaignOverviewDto {
+  total: number;
+  with_email: number;
+  bound: number;
+  invite_pending: number;
+  invite_accepted: number;
+  invite_expired: number;
+  eligible_now: number;
+}
+
+export interface InviteBatchItemDto {
+  mandate_id: string;
+  display_name: string;
+  email: string;
+  ok: boolean;
+  error: string | null;
+}
+
+export interface InviteBatchResultDto {
+  attempted: number;
+  sent: number;
+  failed: number;
+  items: InviteBatchItemDto[];
+}
+
+export interface InviteCampaignRowDto {
+  invite_id: string;
+  mandate_id: string;
+  display_name: string;
+  office: string;
+  party: string | null;
+  uf: string | null;
+  email: string;
+  sent_at: string;
+  expires_at: string;
+  accepted_at: string | null;
+}
+
+const inviteCampaignQs = (f: InviteCampaignFilter) => {
+  const p = new URLSearchParams();
+  if (f.sphere) p.set('sphere', f.sphere);
+  if (f.house) p.set('house', f.house);
+  if (f.uf) p.set('uf', f.uf);
+  if (f.party) p.set('party', f.party);
+  const s = p.toString();
+  return s ? `?${s}` : '';
+};
+
+export const getInviteCampaignOverview = (filter: InviteCampaignFilter = {}) =>
+  apiGetCredentialed<InviteCampaignOverviewDto>(
+    `/api/v1/admin/invite-campaign/overview${inviteCampaignQs(filter)}`,
+  );
+
+export const sendInviteCampaignBatch = (
+  payload: InviteCampaignFilter & { limit?: number },
+) =>
+  apiPost<InviteBatchResultDto>(
+    '/api/v1/admin/invite-campaign/send-batch',
+    payload,
+  );
+
+export const listInviteCampaign = (
+  status: 'pending' | 'accepted' | 'expired',
+  limit = 200,
+) =>
+  apiGetCredentialed<InviteCampaignRowDto[]>(
+    `/api/v1/admin/invite-campaign/invites?status=${status}&limit=${limit}`,
+  );
+
 /** POST /me/titulo-eleitor — valida algoritmicamente (12 dígitos) e persiste. */
 export const submitTituloEleitor = (titulo: string) =>
   apiPost<{ titulo_status: string; titulo_last4: string }>(

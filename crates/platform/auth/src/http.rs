@@ -88,6 +88,14 @@ pub fn routes(state: AppState) -> Router<()> {
     auth_routes.merge(profile_routes)
 }
 
+/// Constrói o `MandateInviteService` completo (com o auth backend) a partir
+/// do `AppState`. Público porque o gateway usa no envio em lote da campanha
+/// de convites (0.34.0) — o service é o MESMO do fluxo individual, com todas
+/// as guardas (Forbidden pra não-admin, token hasheado, TTL).
+pub fn mandate_invite_service(state: &AppState) -> MandateInviteService {
+    MandateInviteService::from_state(state, build_service(state))
+}
+
 fn build_service(state: &AppState) -> Arc<ZitadelAuth> {
     Arc::new(build_zitadel(
         state.db.clone(),
