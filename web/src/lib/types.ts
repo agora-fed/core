@@ -131,12 +131,23 @@ export interface PromiseDto {
   delivered_at: string | null;
 }
 
-/** Public view of a debate (listing page). */
+/** Public view of a debate. `framing` é o enunciado (não `body`). */
 export interface DebateDto {
   id: string;
+  org_id: string;
   title: string;
-  body?: string;
-  created_at?: string;
+  framing: string;
+  created_at: string;
+}
+
+/** Uma contribuição a um debate (posição pró/contra/neutro). */
+export interface ContributionDto {
+  id: string;
+  debate_id: string;
+  author_id: string;
+  stance: 'pro' | 'con' | 'neutral';
+  body: string;
+  created_at: string;
 }
 
 /** Public view of a consultation / survey (listing page). */

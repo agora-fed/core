@@ -7,6 +7,7 @@ import type {
   BoostResultDto,
   ConsultationDto,
   DebateDto,
+  ContributionDto,
   ApiResponse,
   FeedItemDto,
   LikeResultDto,
@@ -800,6 +801,31 @@ export const getSla = (id: string) =>
 
 export const getDebates = (orgId = DEFAULT_ORG_ID, limit = 30) =>
   apiGet<DebateDto[]>(`/api/v1/debates${orgQuery(orgId, `&limit=${limit}`)}`);
+
+/** Um debate pelo id (público). */
+export const getDebate = (id: string) =>
+  apiGet<DebateDto>(`/api/v1/debates/${encodeURIComponent(id)}`);
+
+/** Contribuições de um debate (público). */
+export const getDebateContributions = (id: string, limit = 200) =>
+  apiGet<ContributionDto[]>(
+    `/api/v1/debates/${encodeURIComponent(id)}/contributions?limit=${limit}`,
+  );
+
+/** Abre um debate (exige sessão + e-mail confirmado). org vem do CallerId. */
+export const createDebate = (title: string, framing: string) =>
+  apiPost<DebateDto>('/api/v1/debates', { title, framing });
+
+/** Contribui num debate (pró/contra/neutro). */
+export const contributeToDebate = (
+  debateId: string,
+  stance: 'pro' | 'con' | 'neutral',
+  body: string,
+) =>
+  apiPost<ContributionDto>(
+    `/api/v1/debates/${encodeURIComponent(debateId)}/contributions`,
+    { stance, body },
+  );
 
 export const getConsultations = (orgId = DEFAULT_ORG_ID, limit = 30) =>
   apiGet<ConsultationDto[]>(

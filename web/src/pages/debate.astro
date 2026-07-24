@@ -1,0 +1,17 @@
+---
+// Detalhe de um debate. /debate/?id=<uuid> — SSG + querystring (a ilha resolve
+// no client, como /campanha e /grupo), pra debates novos aparecerem sem rebuild.
+import BaseLayout from '../layouts/BaseLayout.astro';
+import DebateDetail from '../components/islands/DebateDetail.svelte';
+
+const description =
+  'Debate na DemocraciaBR: argumentos a favor, contra e ponderações, num espaço plural.';
+---
+
+<BaseLayout title="Debate" {description}>
+  <section class="section">
+    <div class="container">
+      <DebateDetail client:load />
+    </div>
+  </section>
+</BaseLayout>

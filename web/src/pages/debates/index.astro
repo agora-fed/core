@@ -2,6 +2,7 @@
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import { getDebates, DEFAULT_ORG_ID } from '../../lib/api';
 import { formatDate } from '../../lib/format';
+import CreateDebateForm from '../../components/islands/CreateDebateForm.svelte';
 
 const debates = await getDebates(DEFAULT_ORG_ID, 30);
 const items = debates.ok && debates.data ? debates.data : [];
@@ -20,6 +21,8 @@ const description =
           amadurecem antes de virar cobrança.
         </p>
       </header>
+
+      <CreateDebateForm client:load />
 
       {
         !debates.ok && (
@@ -44,13 +47,15 @@ const description =
           <ul class="list grid grid-2">
             {items.map((d) => (
               <li class="card item">
-                <h2 class="item-title">{d.title}</h2>
-                {d.body && <p class="muted clamp">{d.body}</p>}
-                {d.created_at && (
-                  <time datetime={d.created_at} class="muted small">
-                    {formatDate(d.created_at)}
-                  </time>
-                )}
+                <a class="item-link" href={`/debate/?id=${d.id}`}>
+                  <h2 class="item-title">{d.title}</h2>
+                  {d.framing && <p class="muted clamp">{d.framing}</p>}
+                  {d.created_at && (
+                    <time datetime={d.created_at} class="muted small">
+                      {formatDate(d.created_at)}
+                    </time>
+                  )}
+                </a>
               </li>
             ))}
           </ul>
@@ -72,6 +77,16 @@ const description =
     list-style: none;
     padding: 0;
     margin: 0;
+  }
+  .item-link {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+  }
+  .item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.07);
+    transition: transform 100ms ease, box-shadow 100ms ease;
   }
   .item-title {
     font-size: 1.15rem;
