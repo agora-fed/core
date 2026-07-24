@@ -1859,3 +1859,168 @@ async fn campanha_publica_only_when_published() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
+
+// ---------------------------------------------------------------------------
+// Grupos de campanha (0.39.0 — Fase 2.3)
+// ---------------------------------------------------------------------------
+
+/// Cria um mandato + binding (nível directory) pro citizen — vira "político".
+async fn seed_mandate_binding(db: &Db, org: Uuid, citizen: Uuid) -> Uuid {
+    let mandate = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO mandate (id, org_id, office, display_name, public_email, is_candidate, created_at) \
+         VALUES ($1, $2, 'vereador', 'Vereador Teste', 'v@camara.test', false, $3)",
+    )
+    .bind(mandate)
+    .bind(org)
+    .bind(Utc::now())
+    .execute(db)
+    .await
+    .expect("seed mandate");
+    sqlx::query(
+        "INSERT INTO mandate_identity_binding \
+         (id, mandate_id, citizen_id, verification_level, verified_at, created_at) \
+         VALUES ($1, $2, $3, 'directory', $4, $4)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(mandate)
+    .bind(citizen)
+    .bind(Utc::now())
+    .execute(db)
+    .await
+    .expect("seed binding");
+    mandate
+}
+
+#[tokio::test]
+async fn campaign_group_full_flow() {
+    let (app, st) = app().await;
+    let (org, politico, owner_cookie) = seed_session(&st.db).await;
+    seed_mandate_binding(&st.db, org, politico).await;
+
+    // 1) Político cria o grupo.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/me/campaign-group",
+            Some(&owner_cookie),
+            r#"{"name":"Campanha da Fulana","description":"Vem construir comigo."}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_json(resp).await;
+    let group_id = body["data"]["id"].as_str().unwrap().to_owned();
+
+    // 2) Dono publica uma atualização.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/me/campaign-group/posts",
+            Some(&owner_cookie),
+            r#"{"body":"Primeira atualização da campanha!"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    // 3) Um eleitor (outra conta na mesma org) entra no grupo.
+    let (_, _, voter_cookie) = seed_session_in_org(&st.db, org).await;
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/campaign-groups/{group_id}/join"),
+            Some(&voter_cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Join é idempotente — segundo POST não duplica.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/campaign-groups/{group_id}/join"),
+            Some(&voter_cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // 4) Página pública: 1 membro, 1 post, e o eleitor vê sou_membro=true.
+    let resp = app
+        .clone()
+        .oneshot(get_with_cookie(
+            &format!("/api/v1/campaign-groups/{group_id}"),
+            &voter_cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_json(resp).await;
+    assert_eq!(body["data"]["member_count"], serde_json::json!(1));
+    assert_eq!(body["data"]["sou_membro"], serde_json::json!(true));
+    assert_eq!(body["data"]["posts"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        body["data"]["name"],
+        serde_json::json!("Campanha da Fulana")
+    );
+
+    // 5) O eleitor sai; contagem volta a zero.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "DELETE",
+            &format!("/api/v1/campaign-groups/{group_id}/join"),
+            Some(&voter_cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp = app
+        .oneshot(get(&format!("/api/v1/campaign-groups/{group_id}")))
+        .await
+        .unwrap();
+    let body = body_json(resp).await;
+    assert_eq!(body["data"]["member_count"], serde_json::json!(0));
+    assert_eq!(body["data"]["sou_membro"], serde_json::json!(false));
+}
+
+#[tokio::test]
+async fn campaign_group_create_requires_politico() {
+    let (app, st) = app().await;
+    // Conta comum, sem binding de mandato.
+    let (_, _, cookie) = seed_session(&st.db).await;
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/me/campaign-group",
+            Some(&cookie),
+            r#"{"name":"Grupo intruso"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn campaign_group_join_requires_auth() {
+    let (app, _st) = app().await;
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/campaign-groups/{}/join", Uuid::now_v7()),
+            None,
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}

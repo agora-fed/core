@@ -18,6 +18,7 @@ pub mod amendments;
 pub mod announcements;
 pub mod attestations;
 pub mod audience;
+pub mod campaign_groups;
 pub mod campanha;
 pub mod civic_notify;
 pub mod contact;
@@ -207,6 +208,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(threshold_policy::routes(state.clone()))
         // Doações/financiamento de campanha — gated por vínculo de mandato (0.31).
         .merge(campanha::routes(state.clone()))
+        // Grupos de campanha — canal proativo campanha→eleitor (0.39, Fase 2.3).
+        .merge(campaign_groups::routes(state.clone()))
         // Formulário de contato público — nenhum e-mail exposto no site.
         .merge(contact::routes(state.clone()))
         .merge(webhooks::routes(state.clone()))

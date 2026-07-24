@@ -1,0 +1,17 @@
+---
+// Painel do dono do grupo de campanha. /meu-grupo (só político; a ilha checa).
+import BaseLayout from '../layouts/BaseLayout.astro';
+import MeuGrupoCampanha from '../components/islands/MeuGrupoCampanha.svelte';
+---
+
+<BaseLayout title="Meu grupo de campanha" description="Gerencie seu grupo de campanha." noindex>
+  <section class="section">
+    <div class="container narrow">
+      <MeuGrupoCampanha client:load />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .narrow { max-width: 48rem; }
+</style>

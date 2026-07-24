@@ -1,0 +1,21 @@
+---
+// Página pública de um grupo de campanha. /grupo/?id=<uuid>
+// SSG + querystring (a ilha resolve no client, como /campanha e /municipio).
+import BaseLayout from '../layouts/BaseLayout.astro';
+import CampaignGroupPublic from '../components/islands/CampaignGroupPublic.svelte';
+
+const description =
+  'Grupo de campanha na DemocraciaBR: participe, acompanhe as atualizações e apoie a candidatura.';
+---
+
+<BaseLayout title="Grupo de campanha" {description}>
+  <section class="section">
+    <div class="container narrow">
+      <CampaignGroupPublic client:load />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .narrow { max-width: 48rem; }
+</style>

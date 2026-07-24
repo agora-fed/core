@@ -178,6 +178,7 @@
           <a class="item" href="/convites">Convidar pessoas</a>
           {#if isPolitico}
             <a class="item" href="/servicos/painel">💰 Doações e financiamento</a>
+            <a class="item" href="/meu-grupo">📣 Meu grupo de campanha</a>
           {/if}
           <a class="item" href="/configuracoes">Configurações</a>
           {#if isAdmin}

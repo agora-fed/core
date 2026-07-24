@@ -2349,6 +2349,64 @@ export const submitRespond = (body: {
   committed: boolean;
 }) => apiPost<{ ok: true }>('/api/v1/respond', body);
 
+// ---------------------------------------------------------------------------
+// Grupos de campanha (Fase 2.3) — canal proativo campanha→eleitor
+// ---------------------------------------------------------------------------
+
+export interface CampaignGroupPost {
+  id: string;
+  body: string;
+  created_at: string;
+}
+/** Painel do dono: GET /me/campaign-group. */
+export interface MyCampaignGroup {
+  is_politico: boolean;
+  group: { id: string; name: string; description: string | null; created_at: string } | null;
+  member_count: number;
+  posts: CampaignGroupPost[];
+}
+/** Página pública: GET /campaign-groups/{id}. */
+export interface PublicCampaignGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  owner_display_name: string | null;
+  owner_handle: string | null;
+  mandate_id: string;
+  member_count: number;
+  sou_membro: boolean;
+  posts: CampaignGroupPost[];
+}
+
+export const getMyCampaignGroup = () =>
+  apiGetCredentialed<MyCampaignGroup>('/api/v1/me/campaign-group');
+
+export const upsertCampaignGroup = (name: string, description?: string) =>
+  apiPost<{ id: string }>('/api/v1/me/campaign-group', { name, description });
+
+export const postCampaignGroupUpdate = (body: string) =>
+  apiPost<{ id: string }>('/api/v1/me/campaign-group/posts', { body });
+
+export const getCampaignGroup = (id: string) =>
+  apiGetCredentialed<PublicCampaignGroup>(
+    `/api/v1/campaign-groups/${encodeURIComponent(id)}`,
+  );
+
+export const joinCampaignGroup = (id: string) =>
+  apiPost<{ joined: boolean }>(`/api/v1/campaign-groups/${encodeURIComponent(id)}/join`, {});
+
+export const leaveCampaignGroup = async (id: string): Promise<ApiResponse<{ joined: boolean }>> => {
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/v1/campaign-groups/${encodeURIComponent(id)}/join`,
+      { method: 'DELETE', credentials: 'include', headers: { accept: 'application/json' } },
+    );
+    return parseEnvelope<{ joined: boolean }>(res);
+  } catch {
+    return networkFailure<{ joined: boolean }>();
+  }
+};
+
 /** Formulário público de contato (0.28.1) — setores fechados no backend. */
 export type ContactSector = 'contato' | 'lgpd' | 'moderacao' | 'seguranca';
 export const sendContactMessage = (body: {
