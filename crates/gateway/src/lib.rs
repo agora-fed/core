@@ -48,6 +48,7 @@ pub mod polls;
 pub mod preferences;
 pub mod proposal_delivery;
 pub mod public_stats;
+pub mod rate_limit;
 pub mod reports;
 pub mod respond_link;
 pub mod signup_gates;
@@ -233,6 +234,10 @@ pub fn api_router(state: AppState) -> Router {
         // custom scripts). Same prefix; the Mastodon paths don't collide
         // with ours. Auth is bearer OR cookie (see `inject_identity`).
         .merge(mastodon_api::masto_routes(state.clone()))
+        // Rate-limit de escrita (0.42.0): camada MAIS INTERNA — roda depois do
+        // inject_identity, então já enxerga o x-dsoc-citizen-id pra chavear por
+        // cidadão (anônimo cai no IP). Só conta métodos mutantes.
+        .layer(middleware::from_fn(rate_limit::rate_limit_middleware))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             inject_identity,
