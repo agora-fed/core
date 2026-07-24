@@ -829,8 +829,8 @@ export const getDebateContributions = (id: string, limit = 200) =>
   );
 
 /** Abre um debate (exige sessão + e-mail confirmado). org vem do CallerId. */
-export const createDebate = (title: string, framing: string) =>
-  apiPost<DebateDto>('/api/v1/debates', { title, framing });
+export const createDebate = (title: string, framing: string, uf?: string | null) =>
+  apiPost<DebateDto>('/api/v1/debates', { title, framing, uf: uf || null });
 
 /** Contribui num debate (pró/contra/neutro). */
 export const contributeToDebate = (

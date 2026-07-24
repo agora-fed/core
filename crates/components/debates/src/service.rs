@@ -65,6 +65,7 @@ impl DebateService {
             org.as_uuid(),
             &new.title,
             &new.framing,
+            new.uf.as_deref(),
             self.clock.now(),
         )
         .await

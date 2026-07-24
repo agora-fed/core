@@ -3,11 +3,13 @@
   // o backend exige e-mail confirmado. Espelha o padrão do ProposeForm.
   import { onMount } from 'svelte';
   import { createDebate } from '../../lib/api';
+  import { UFS } from '../../lib/ufs';
 
   let open = $state(false);
   let loggedIn = $state(false);
   let title = $state('');
   let framing = $state('');
+  let uf = $state(''); // '' = nacional
   let busy = $state(false);
   let msg = $state<string | null>(null);
 
@@ -18,7 +20,7 @@
     if (!valid || busy) return;
     busy = true;
     msg = null;
-    const res = await createDebate(title.trim(), framing.trim());
+    const res = await createDebate(title.trim(), framing.trim(), uf || null);
     busy = false;
     if (res.success && res.data) {
       window.location.href = `/debate/?id=${res.data.id}`;
@@ -56,6 +58,15 @@
         <span>Enunciado — o que está em jogo</span>
         <textarea bind:value={framing} rows="4" maxlength="20000" placeholder="Descreva o dilema, os lados, o contexto…"></textarea>
       </label>
+      <label>
+        <span>Abrangência</span>
+        <select bind:value={uf}>
+          <option value="">Nacional</option>
+          {#each UFS as u (u.code)}
+            <option value={u.code}>{u.name} ({u.code})</option>
+          {/each}
+        </select>
+      </label>
       {#if msg}<p class="hint-error" role="alert">{msg}</p>{/if}
       <div class="actions">
         <button type="submit" class="btn-primary" disabled={busy || !valid}>
@@ -87,7 +98,7 @@
   .note { display: grid; gap: 0.7rem; justify-items: start; }
   .form { display: grid; gap: 0.85rem; }
   label { display: grid; gap: 0.3rem; font-weight: 600; font-size: 0.9rem; }
-  input, textarea {
+  input, textarea, select {
     padding: 0.6rem 0.7rem;
     border-radius: 8px;
     border: 1px solid var(--border-subtle, #ccc);

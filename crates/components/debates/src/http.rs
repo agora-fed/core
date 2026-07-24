@@ -52,6 +52,8 @@ pub struct DebateDto {
     pub title: String,
     /// Framing — the neutral context.
     pub framing: String,
+    /// Optional UF territorial scope (`None` = nacional).
+    pub uf: Option<String>,
     /// Creation time.
     pub created_at: DateTime<Utc>,
 }
@@ -63,6 +65,7 @@ impl From<DebateRow> for DebateDto {
             org_id: row.org_id,
             title: row.title,
             framing: row.framing,
+            uf: row.uf,
             created_at: row.created_at,
         }
     }
@@ -106,6 +109,9 @@ pub struct CreateDebateRequest {
     pub title: String,
     /// Framing — the neutral context that frames the discussion.
     pub framing: String,
+    /// Optional UF territorial scope (2-letter code; omit/blank = nacional).
+    #[serde(default)]
+    pub uf: Option<String>,
 }
 
 /// Request to contribute to a debate. The author and org come from the verified
@@ -156,7 +162,7 @@ async fn create_debate(
     {
         return error_response::<DebateDto>(&e);
     }
-    let new = match NewDebate::validate(&req.title, &req.framing) {
+    let new = match NewDebate::validate(&req.title, &req.framing, req.uf.as_deref()) {
         Ok(n) => n,
         Err(e) => return error_response::<DebateDto>(&e),
     };
@@ -300,12 +306,14 @@ mod tests {
             org_id: Uuid::now_v7(),
             title: "Tarifa zero?".to_string(),
             framing: "Contexto".to_string(),
+            uf: Some("SP".to_string()),
             created_at: at(),
         };
         let dto = DebateDto::from(row.clone());
         assert_eq!(dto.id, row.id);
         assert_eq!(dto.title, "Tarifa zero?");
         assert_eq!(dto.framing, "Contexto");
+        assert_eq!(dto.uf.as_deref(), Some("SP"));
     }
 
     #[test]

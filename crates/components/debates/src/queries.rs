@@ -20,6 +20,8 @@ pub struct DebateRow {
     pub title: String,
     /// Framing — the neutral context.
     pub framing: String,
+    /// Optional UF territorial scope (`None` = nacional).
+    pub uf: Option<String>,
     /// Creation time (from the injected clock).
     pub created_at: DateTime<Utc>,
 }
@@ -51,16 +53,18 @@ pub async fn insert_debate(
     org_id: Uuid,
     title: &str,
     framing: &str,
+    uf: Option<&str>,
     created_at: DateTime<Utc>,
 ) -> Result<DebateRow, sqlx::Error> {
     let row = sqlx::query!(
-        r#"INSERT INTO debate (id, org_id, title, framing, created_at)
-           VALUES ($1, $2, $3, $4, $5)
-           RETURNING id, org_id, title, framing, created_at"#,
+        r#"INSERT INTO debate (id, org_id, title, framing, uf, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id, org_id, title, framing, uf, created_at"#,
         id,
         org_id,
         title,
         framing,
+        uf,
         created_at,
     )
     .fetch_one(executor)
@@ -70,6 +74,7 @@ pub async fn insert_debate(
         org_id: row.org_id,
         title: row.title,
         framing: row.framing,
+        uf: row.uf,
         created_at: row.created_at,
     })
 }
@@ -83,7 +88,7 @@ pub async fn get_debate(
     id: Uuid,
 ) -> Result<DebateRow, sqlx::Error> {
     let row = sqlx::query!(
-        r#"SELECT id, org_id, title, framing, created_at
+        r#"SELECT id, org_id, title, framing, uf, created_at
            FROM debate
            WHERE id = $1"#,
         id,
@@ -95,6 +100,7 @@ pub async fn get_debate(
         org_id: row.org_id,
         title: row.title,
         framing: row.framing,
+        uf: row.uf,
         created_at: row.created_at,
     })
 }
@@ -111,7 +117,7 @@ pub async fn list_debates(
     limit: i64,
 ) -> Result<Vec<DebateRow>, sqlx::Error> {
     let rows = sqlx::query!(
-        r#"SELECT id, org_id, title, framing, created_at
+        r#"SELECT id, org_id, title, framing, uf, created_at
            FROM debate
            WHERE org_id = $1 AND ($2::uuid IS NULL OR id > $2)
            ORDER BY id
@@ -129,6 +135,7 @@ pub async fn list_debates(
             org_id: row.org_id,
             title: row.title,
             framing: row.framing,
+            uf: row.uf,
             created_at: row.created_at,
         })
         .collect())

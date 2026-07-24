@@ -80,7 +80,7 @@ async fn seed_citizen(db: &PgPool, org: OrgId) -> CitizenId {
 }
 
 fn debate(title: &str, framing: &str) -> NewDebate {
-    NewDebate::validate(title, framing).expect("valid debate input")
+    NewDebate::validate(title, framing, None).expect("valid debate input")
 }
 
 fn contribution(stance: &str, body: &str) -> NewContribution {

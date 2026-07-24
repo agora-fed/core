@@ -9,6 +9,7 @@
     type DebateDto,
     type ContributionDto,
   } from '../../lib/api';
+  import { ufName } from '../../lib/ufs';
 
   // O id vem do querystring (?id=) — SSG não conhece debates novos, a ilha
   // resolve no client (mesmo padrão de /campanha, /grupo, /municipio).
@@ -101,6 +102,7 @@
 {:else}
   <header class="head">
     <p class="eyebrow muted"><a href="/debates">← Debates</a></p>
+    <span class="uf-chip">{debate.uf ? ufName(debate.uf) : 'Nacional'}</span>
     <h1>{debate.title}</h1>
     <p class="framing">{debate.framing}</p>
     <p class="muted small">
@@ -161,6 +163,7 @@
   .eyebrow a { color: var(--text-3, #888); text-decoration: none; }
   .head h1 { margin: 0.3rem 0 0.5rem; font-size: 1.7rem; }
   .framing { font-size: 1.08rem; color: var(--text-2, inherit); margin: 0 0 0.5rem; white-space: pre-wrap; }
+  .uf-chip { display: inline-block; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; color: var(--c-green-dark, #15803d); background: var(--c-green-soft, #dcfce7); padding: 0.15rem 0.55rem; border-radius: 999px; margin-bottom: 0.5rem; }
   .small { font-size: 0.85rem; }
 
   .columns {

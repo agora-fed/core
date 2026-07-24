@@ -137,6 +137,8 @@ export interface DebateDto {
   org_id: string;
   title: string;
   framing: string;
+  /** UF de escopo territorial (null = nacional). */
+  uf?: string | null;
   created_at: string;
 }
 

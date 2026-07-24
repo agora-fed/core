@@ -76,14 +76,17 @@ pub struct NewDebate {
     pub title: String,
     /// Framing — the neutral context that frames the pro/con discussion.
     pub framing: String,
+    /// Optional UF territorial scope, normalised to 2 uppercase letters (`None` = nacional).
+    pub uf: Option<String>,
 }
 
 impl NewDebate {
-    /// Validate and normalise raw create input (trim, non-empty, length bounds).
+    /// Validate and normalise raw create input (trim, non-empty, length bounds, optional UF).
     ///
     /// # Errors
-    /// [`Error::Validation`] when the title/framing are empty or over their length bounds.
-    pub fn validate(title: &str, framing: &str) -> Result<Self> {
+    /// [`Error::Validation`] when the title/framing are empty or over their length bounds, or the
+    /// UF (when present) is not a 2-letter code.
+    pub fn validate(title: &str, framing: &str, uf: Option<&str>) -> Result<Self> {
         let title = title.trim();
         let framing = framing.trim();
         if title.is_empty() {
@@ -102,9 +105,23 @@ impl NewDebate {
                 "framing must be at most {MAX_FRAMING_LEN} characters"
             )));
         }
+        let uf = match uf.map(str::trim).filter(|s| !s.is_empty()) {
+            None => None,
+            Some(raw) => {
+                let up = raw.to_uppercase();
+                if up.len() == 2 && up.bytes().all(|b| b.is_ascii_uppercase()) {
+                    Some(up)
+                } else {
+                    return Err(Error::Validation(
+                        "uf must be a 2-letter state code".to_string(),
+                    ));
+                }
+            }
+        };
         Ok(Self {
             title: title.to_string(),
             framing: framing.to_string(),
+            uf,
         })
     }
 }
@@ -169,33 +186,50 @@ mod tests {
 
     #[test]
     fn new_debate_trims_and_accepts_content() {
-        let d =
-            NewDebate::validate("  Transporte gratuito?  ", "  Debate sobre tarifa zero ").unwrap();
+        let d = NewDebate::validate(
+            "  Transporte gratuito?  ",
+            "  Debate sobre tarifa zero ",
+            None,
+        )
+        .unwrap();
         assert_eq!(d.title, "Transporte gratuito?");
         assert_eq!(d.framing, "Debate sobre tarifa zero");
+        assert_eq!(d.uf, None);
+    }
+
+    #[test]
+    fn new_debate_normalises_and_validates_uf() {
+        // UF em minúsculas com espaços → normalizada para 2 maiúsculas.
+        let d = NewDebate::validate("t", "f", Some("  sp ")).unwrap();
+        assert_eq!(d.uf.as_deref(), Some("SP"));
+        // UF em branco = nacional (None).
+        assert_eq!(NewDebate::validate("t", "f", Some("   ")).unwrap().uf, None);
+        // UF malformada é rejeitada.
+        assert!(NewDebate::validate("t", "f", Some("São Paulo")).is_err());
+        assert!(NewDebate::validate("t", "f", Some("S")).is_err());
     }
 
     #[test]
     fn new_debate_rejects_blank_title() {
-        let err = NewDebate::validate("   ", "framing").unwrap_err();
+        let err = NewDebate::validate("   ", "framing", None).unwrap_err();
         assert_eq!(err.code(), "invalid_input");
     }
 
     #[test]
     fn new_debate_rejects_blank_framing() {
-        assert!(NewDebate::validate("title", "   ").is_err());
+        assert!(NewDebate::validate("title", "   ", None).is_err());
     }
 
     #[test]
     fn new_debate_rejects_overlong_title() {
         let long = "a".repeat(MAX_TITLE_LEN + 1);
-        assert!(NewDebate::validate(&long, "framing").is_err());
+        assert!(NewDebate::validate(&long, "framing", None).is_err());
     }
 
     #[test]
     fn new_debate_rejects_overlong_framing() {
         let long = "a".repeat(MAX_FRAMING_LEN + 1);
-        assert!(NewDebate::validate("title", &long).is_err());
+        assert!(NewDebate::validate("title", &long, None).is_err());
     }
 
     #[test]
