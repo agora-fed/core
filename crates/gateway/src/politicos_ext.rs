@@ -31,6 +31,9 @@ pub fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/politicos/browse", get(browse))
         .route("/politicos/municipios", get(municipios))
+        // Resumo territorial (0.38.0 — Fase 2.2): eleitorado + mandatos por
+        // partido de um município, pra página /municipio.
+        .route("/politicos/territorio", get(territorio))
         .with_state(state)
 }
 
@@ -345,4 +348,103 @@ async fn municipios(State(state): State<AppState>, Query(p): Query<MunicipiosPar
             server_error()
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// GET /politicos/territorio — resumo de um município (Fase 2.2)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+struct TerritorioParams {
+    uf: Option<String>,
+    municipio: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct PartyCountRow {
+    party: String,
+    count: i64,
+}
+
+#[derive(Debug, Serialize)]
+struct TerritorioResponse {
+    uf: String,
+    municipio: String,
+    /// Eleitorado oficial (TSE) do município; `None` se não seedado.
+    voters: Option<i64>,
+    /// Total de mandatos municipais no município.
+    total: i64,
+    /// Mandatos por partido, do maior pro menor.
+    by_party: Vec<PartyCountRow>,
+}
+
+async fn territorio(State(state): State<AppState>, Query(p): Query<TerritorioParams>) -> Response {
+    let uf = match p.uf.as_deref().map(str::trim).filter(|s| s.len() == 2) {
+        Some(s) => s.to_ascii_uppercase(),
+        None => return bad_request("Informe `uf` (2 letras)."),
+    };
+    let municipio = match p
+        .municipio
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some(s) => s.to_owned(),
+        None => return bad_request("Informe `municipio`."),
+    };
+
+    // Eleitorado (nullable — nem todo município foi seedado).
+    let voters: Option<i64> = match sqlx::query_scalar::<_, i64>(
+        r"SELECT voters FROM electorate WHERE uf = $1 AND municipio = $2",
+    )
+    .bind(&uf)
+    .bind(&municipio)
+    .fetch_optional(&state.db)
+    .await
+    {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::error!(?err, "territorio: electorate");
+            return server_error();
+        }
+    };
+
+    // Mandatos por partido no município.
+    let by_party: Vec<(Option<String>, i64)> = match sqlx::query_as(
+        r"SELECT party, count(*) AS n
+            FROM mandate
+           WHERE org_id = $1 AND sphere = 'municipal' AND uf = $2 AND municipio = $3
+           GROUP BY party
+           ORDER BY n DESC, party ASC NULLS LAST",
+    )
+    .bind(DEFAULT_ORG_UUID)
+    .bind(&uf)
+    .bind(&municipio)
+    .fetch_all(&state.db)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(err) => {
+            tracing::error!(?err, "territorio: by_party");
+            return server_error();
+        }
+    };
+
+    let total: i64 = by_party.iter().map(|(_, n)| n).sum();
+    let by_party = by_party
+        .into_iter()
+        .filter_map(|(party, count)| party.map(|p| PartyCountRow { party: p, count }))
+        .collect();
+
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(TerritorioResponse {
+            uf,
+            municipio,
+            voters,
+            total,
+            by_party,
+        })),
+    )
+        .into_response()
 }

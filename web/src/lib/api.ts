@@ -683,6 +683,24 @@ export const listMunicipios = async (
     ),
   );
 
+/** Resumo territorial de um município (Fase 2.2): eleitorado + mandatos por partido. */
+export interface TerritorioResponse {
+  uf: string;
+  municipio: string;
+  voters: number | null;
+  total: number;
+  by_party: Array<{ party: string; count: number }>;
+}
+export const getTerritorio = async (
+  uf: string,
+  municipio: string,
+): Promise<ApiResponse<TerritorioResponse>> =>
+  fetchedToApiResponse(
+    await apiGet<TerritorioResponse>(
+      `/api/v1/politicos/territorio?uf=${encodeURIComponent(uf)}&municipio=${encodeURIComponent(municipio)}`,
+    ),
+  );
+
 /** Revoke one of my sessions. Cannot revoke the current one (use logout). */
 export async function revokeSession(id: string): Promise<ApiResponse<null>> {
   try {

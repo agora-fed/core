@@ -1,0 +1,18 @@
+---
+// Página de agregação territorial (Fase 2.2). /municipio/?uf=RJ&m=RIO DE JANEIRO
+// — SSG não conhece os 5.5k municípios; a ilha resolve no client (mesmo padrão
+// de /campanha). Mostra o eleitorado oficial e os mandatos municipais por partido.
+import BaseLayout from '../layouts/BaseLayout.astro';
+import TerritorioMunicipio from '../components/islands/TerritorioMunicipio.svelte';
+
+const description =
+  'Panorama do seu município: eleitorado, mandatos municipais e a representação por partido — na DemocraciaBR.';
+---
+
+<BaseLayout title="Município" {description}>
+  <section class="section">
+    <div class="container">
+      <TerritorioMunicipio client:load />
+    </div>
+  </section>
+</BaseLayout>

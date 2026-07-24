@@ -281,6 +281,12 @@
         {#if uf}· <em>{uf}</em>{/if}
         {#if municipio}· <em>{municipio}</em>{/if}
       </span>
+      {#if needsMunicipio && municipio && uf}
+        <a
+          class="panorama-link"
+          href={`/municipio/?uf=${encodeURIComponent(uf)}&m=${encodeURIComponent(municipio)}`}
+        >Ver panorama de {municipio} →</a>
+      {/if}
     </div>
 
     <ul class="grid">
@@ -380,6 +386,21 @@
   }
   .results-head {
     margin-bottom: var(--sp-3);
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    flex-wrap: wrap;
+  }
+  .panorama-link {
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    color: var(--accent-strong, #15803d);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .panorama-link:hover {
+    text-decoration: underline;
   }
   .total {
     color: var(--text-3);

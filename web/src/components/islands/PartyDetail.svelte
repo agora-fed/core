@@ -265,9 +265,7 @@
                         {/if}
                         <div class="meta">
                           <strong class="name">{m.display_name}</strong>
-                          <span class="muted office">
-                            {m.office}{m.municipio ? ` · ${m.municipio}` : m.uf ? ` · ${m.uf}` : ''}
-                          </span>
+                          <span class="muted office">{m.office}</span>
                         </div>
                       </a>
                     </li>
