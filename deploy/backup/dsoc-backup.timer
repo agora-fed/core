@@ -1,0 +1,12 @@
+[Unit]
+Description=Dispara o backup diário do banco DemocraciaBR
+
+[Timer]
+# Todo dia às 03:12 UTC (madrugada no BR), com jitter e catch-up se a VM
+# estiver desligada na hora.
+OnCalendar=*-*-* 03:12:00 UTC
+RandomizedDelaySec=600
+Persistent=true
+
+[Install]
+WantedBy=timers.target

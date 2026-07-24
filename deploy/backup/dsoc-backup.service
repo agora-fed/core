@@ -1,0 +1,16 @@
+[Unit]
+Description=Backup diário (cifrado) do banco DemocraciaBR
+After=postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=oneshot
+User=postgres
+Group=postgres
+ExecStart=/usr/local/bin/dsoc-backup.sh
+# Endurecimento: sem rede, FS mínimo de escrita.
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/backups/dsoc
+Nice=10
+IOSchedulingClass=idle
