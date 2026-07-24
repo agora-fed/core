@@ -9,6 +9,8 @@
     getMandate,
     getSlas,
     getDeliveryReceipts,
+    adminHideProposal,
+    adminDeleteProposal,
     DEFAULT_ORG_ID,
     apiGet,
     apiPost,
@@ -29,6 +31,39 @@
   let loadError = $state<string | null>(null);
   // Prova de notificação (0.29): timeline pública dos avisos ao gabinete.
   let receipts = $state<DeliveryReceiptDto[]>([]);
+
+  // Super-admin (SOCRATES): ocultar / apagar esta proposta.
+  let isAdmin = $state(false);
+  let adminBusy = $state(false);
+  let adminMsg = $state<string | null>(null);
+
+  async function hideProposal() {
+    if (adminBusy || !window.confirm('Ocultar esta proposta da plataforma? (reversível)')) return;
+    adminBusy = true;
+    const res = await adminHideProposal(proposalId, true);
+    adminBusy = false;
+    if (res.success) {
+      window.alert('Proposta ocultada — some das listagens públicas.');
+      window.location.href = '/propostas';
+    } else {
+      adminMsg = res.error?.message ?? 'Não foi possível ocultar.';
+    }
+  }
+
+  async function deleteProposal() {
+    if (adminBusy) return;
+    if (!window.confirm('APAGAR DEFINITIVAMENTE esta proposta e tudo ligado a ela? Irreversível.')) return;
+    if (!window.confirm('Tem certeza absoluta? Não há como desfazer.')) return;
+    adminBusy = true;
+    const res = await adminDeleteProposal(proposalId);
+    adminBusy = false;
+    if (res.success) {
+      window.alert('Proposta apagada.');
+      window.location.href = '/propostas';
+    } else {
+      adminMsg = res.error?.message ?? 'Não foi possível apagar. Tente ocultar.';
+    }
+  }
 
   // Voting state
   let count = $state(0);
@@ -107,6 +142,11 @@
   }
 
   onMount(async () => {
+    try {
+      isAdmin = localStorage.getItem('dsoc_is_admin') === '1';
+    } catch {
+      isAdmin = false;
+    }
     const [pr, slr] = await Promise.all([
       getProposal(proposalId),
       getSlas(DEFAULT_ORG_ID, 500),
@@ -364,6 +404,15 @@
     {/if}
 
     <h1>{proposal.title}</h1>
+
+    {#if isAdmin}
+      <div class="admin-bar">
+        <span class="admin-tag">🛠️ Admin</span>
+        <button type="button" onclick={hideProposal} disabled={adminBusy}>Ocultar</button>
+        <button type="button" class="danger" onclick={deleteProposal} disabled={adminBusy}>Apagar definitivo</button>
+        {#if adminMsg}<span class="admin-msg">{adminMsg}</span>{/if}
+      </div>
+    {/if}
 
     {#if isAuthor && (proposal.notified_author_at || proposal.notified_mandate_at)}
       <aside class="receipt" aria-label="Recibo de entrega">
@@ -957,4 +1006,28 @@
     text-align: center;
     padding: 2.5rem 1.5rem;
   }
+  /* Barra super-admin (SOCRATES) */
+  .admin-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    margin: 0.75rem 0 1rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px dashed var(--border-subtle, #ccc);
+    border-radius: 8px;
+  }
+  .admin-tag { font-weight: 700; font-size: 0.85rem; color: var(--text-2, inherit); }
+  .admin-bar button {
+    padding: 0.35rem 0.8rem;
+    border-radius: 7px;
+    border: 1px solid var(--border-subtle, #ccc);
+    background: var(--surface-1, #fff);
+    color: var(--text-1, inherit);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .admin-bar button.danger { color: #dc2626; border-color: #dc2626; }
+  .admin-bar button:disabled { opacity: 0.5; cursor: default; }
+  .admin-msg { font-size: 0.85rem; color: #dc2626; }
 </style>
