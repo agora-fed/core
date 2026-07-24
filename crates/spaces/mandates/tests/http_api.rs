@@ -504,3 +504,212 @@ async fn add_office_and_list_over_http() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["data"].as_array().unwrap().len(), 1);
 }
+
+// ---------------------------------------------------------------------------
+// Party directory write surface (0.37.0 — Fase 2.1)
+// ---------------------------------------------------------------------------
+
+async fn seed_citizen(db: &Db, org: OrgId) -> CitizenId {
+    let c = CitizenId::new();
+    sqlx::query(
+        "INSERT INTO citizen (id, org_id, verification_level, created_at) \
+         VALUES ($1, $2, 'directory', $3)",
+    )
+    .bind(c.as_uuid())
+    .bind(org.as_uuid())
+    .bind(now())
+    .execute(db)
+    .await
+    .expect("seed citizen");
+    c
+}
+
+async fn seed_party(db: &Db, org: OrgId, sigla: &str) {
+    sqlx::query("INSERT INTO party (org_id, sigla, name) VALUES ($1, $2, $2)")
+        .bind(org.as_uuid())
+        .bind(sigla)
+        .execute(db)
+        .await
+        .expect("seed party");
+}
+
+async fn grant_platform_admin(db: &Db, org: OrgId, citizen: CitizenId) {
+    sqlx::query(
+        "INSERT INTO admin_role_binding (id, org_id, citizen_id, role, created_at) \
+         VALUES ($1, $2, $3, 'admin', $4)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(org.as_uuid())
+    .bind(citizen.as_uuid())
+    .bind(now())
+    .execute(db)
+    .await
+    .expect("grant admin");
+}
+
+fn parties_app(db: Db) -> axum::Router {
+    dsoc_mandates::parties_routes(state(db, VerificationLevel::Directory))
+}
+
+#[tokio::test]
+async fn platform_admin_creates_municipal_directory_and_lists_members() {
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    seed_party(&db, org, "PT").await;
+    let admin = seed_citizen(&db, org).await;
+    grant_platform_admin(&db, org, admin).await;
+
+    // Cria o diretório municipal do PT em Porto Alegre/RS.
+    let app = parties_app(db.clone());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/parties/PT/directories")
+                .header(CITIZEN_HEADER, admin.as_uuid().to_string())
+                .header(ORG_HEADER, org.as_uuid().to_string())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "org_id": org.as_uuid(),
+                        "esfera": "municipal",
+                        "uf": "rs",
+                        "municipio": "Porto Alegre",
+                        "name": "Diretório Municipal do PT — Porto Alegre"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let (status, body) = read(resp).await;
+    assert_eq!(status, StatusCode::CREATED, "body={body}");
+    let dir_id = body["data"]["id"].as_str().unwrap().to_owned();
+
+    // Dois vereadores do PT em Porto Alegre + um de outra cidade (não deve entrar).
+    for (name, city) in [
+        ("Vereador A", "Porto Alegre"),
+        ("Vereadora B", "Porto Alegre"),
+        ("Vereador C", "Canoas"),
+    ] {
+        sqlx::query(
+            "INSERT INTO mandate (id, org_id, office, display_name, public_email, is_candidate, \
+             created_at, party, uf, sphere, municipio) \
+             VALUES ($1, $2, 'vereador', $3, 'x@camara.test', false, $4, 'PT', 'RS', 'municipal', $5)",
+        )
+        .bind(Uuid::now_v7())
+        .bind(org.as_uuid())
+        .bind(name)
+        .bind(now())
+        .bind(city)
+        .execute(&db)
+        .await
+        .unwrap();
+    }
+
+    // Membros derivados: só os dois de Porto Alegre.
+    let app = parties_app(db.clone());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(format!(
+                    "/parties/PT/directories/{dir_id}/members?org_id={}",
+                    org.as_uuid()
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let (status, body) = read(resp).await;
+    assert_eq!(status, StatusCode::OK);
+    let members = body["data"].as_array().unwrap();
+    assert_eq!(members.len(), 2, "só os vereadores de Porto Alegre: {body}");
+    assert_eq!(members[0]["display_name"], json!("Vereador A"));
+}
+
+#[tokio::test]
+async fn non_admin_cannot_create_directory() {
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    seed_party(&db, org, "PT").await;
+    let stranger = seed_citizen(&db, org).await; // sem admin_role_binding / party_administrator
+
+    let app = parties_app(db);
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/parties/PT/directories")
+                .header(CITIZEN_HEADER, stranger.as_uuid().to_string())
+                .header(ORG_HEADER, org.as_uuid().to_string())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "org_id": org.as_uuid(),
+                        "esfera": "estadual",
+                        "uf": "RS",
+                        "name": "Diretório intruso"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn create_directory_without_caller_is_unauthorized() {
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    seed_party(&db, org, "PT").await;
+    let app = parties_app(db);
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/parties/PT/directories")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({"org_id": org.as_uuid(), "esfera": "federal", "name": "x"}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn municipal_directory_rejects_missing_municipio() {
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    seed_party(&db, org, "PT").await;
+    let admin = seed_citizen(&db, org).await;
+    grant_platform_admin(&db, org, admin).await;
+
+    let app = parties_app(db);
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/parties/PT/directories")
+                .header(CITIZEN_HEADER, admin.as_uuid().to_string())
+                .header(ORG_HEADER, org.as_uuid().to_string())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({"org_id": org.as_uuid(), "esfera": "municipal", "uf": "RS", "name": "x"})
+                        .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let (status, body) = read(resp).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"]["code"], json!("federative_shape"));
+}

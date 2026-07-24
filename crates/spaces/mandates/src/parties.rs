@@ -16,10 +16,12 @@
 //!   endpoints degrade to empty lists — never an error.
 
 use axum::extract::{Path, Query, State};
-use axum::routing::get;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use dsoc_api_contract::envelope::ApiResponse;
-use dsoc_app::AppState;
+use dsoc_app::{AppState, CallerId};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -91,6 +93,19 @@ pub fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/parties", get(list_parties))
         .route("/parties/{sigla}", get(get_party))
+        // Write surface (0.37.0 — Fase 2.1): criar/remover diretórios subnacionais.
+        // Gate: admin de plataforma OU admin nacional do partido (party_write_authorized).
+        .route("/parties/{sigla}/directories", post(create_directory))
+        .route(
+            "/parties/{sigla}/directories/{id}",
+            axum::routing::delete(delete_directory),
+        )
+        // Membros derivados do diretório: os mandatos do partido naquele território.
+        // Público (read-only) — mesma lógica territorial que a PartyDetail derivava no client.
+        .route(
+            "/parties/{sigla}/directories/{id}/members",
+            get(list_directory_members),
+        )
         .with_state(state)
 }
 
@@ -127,6 +142,282 @@ async fn get_party(
 }
 
 // ---------------------------------------------------------------------------
+// Write surface (0.37.0 — Fase 2.1)
+// ---------------------------------------------------------------------------
+
+/// Corpo de `POST /parties/{sigla}/directories`. A esfera determina quais campos
+/// territoriais são obrigatórios (o CHECK do banco reforça, mas validamos cedo
+/// pra um 400 amigável em vez de um 500 de constraint).
+#[derive(Debug, Deserialize)]
+pub struct CreateDirectoryBody {
+    pub org_id: Uuid,
+    /// 'federal' | 'estadual' | 'municipal'.
+    pub esfera: String,
+    /// UF (2 letras) — obrigatória em estadual/municipal, proibida em federal.
+    pub uf: Option<String>,
+    /// Município — obrigatório só em municipal.
+    pub municipio: Option<String>,
+    /// Nome do diretório (ex.: "Diretório Municipal do PT — Porto Alegre").
+    pub name: String,
+    /// Pai na árvore (municipal→estadual→federal). Opcional.
+    pub parent_directory_id: Option<Uuid>,
+}
+
+/// Membro derivado de um diretório: um mandato do partido naquele território.
+#[derive(Debug, Clone, Serialize)]
+pub struct DirectoryMemberDto {
+    pub mandate_id: Uuid,
+    pub display_name: String,
+    pub office: String,
+    pub uf: Option<String>,
+    pub municipio: Option<String>,
+    pub avatar_object_key: Option<String>,
+}
+
+fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
+    (status, Json(ApiResponse::<()>::fail(code, msg))).into_response()
+}
+
+/// Gate de escrita da superfície de partido: admin/owner de plataforma OU admin
+/// NACIONAL do partido (party_administrator com directory_id NULL, role='admin',
+/// aceito). Mesmo critério do `mandate_invite::invite_authorized`; `moderador`
+/// não qualifica — criar diretório reorganiza a estrutura do partido.
+async fn party_write_authorized(
+    db: &sqlx::PgPool,
+    org: Uuid,
+    citizen: Uuid,
+    sigla: &str,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar::<_, bool>(
+        r"SELECT EXISTS(
+             SELECT 1 FROM admin_role_binding
+              WHERE org_id = $1 AND citizen_id = $2 AND role IN ('owner','admin')
+          ) OR EXISTS(
+             SELECT 1 FROM party_administrator
+              WHERE org_id = $1 AND citizen_id = $2 AND party_sigla = $3
+                AND role = 'admin' AND directory_id IS NULL
+                AND (accepted_at IS NOT NULL OR invited_by IS NULL)
+          )",
+    )
+    .bind(org)
+    .bind(citizen)
+    .bind(sigla)
+    .fetch_one(db)
+    .await
+}
+
+async fn create_directory(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Path(sigla): Path<String>,
+    Json(body): Json<CreateDirectoryBody>,
+) -> Response {
+    // O caller autenticado precisa agir na sua própria org (o CallerId já é
+    // resolvido da sessão; o org_id do corpo tem que bater pra não cruzar tenant).
+    if caller.org.as_uuid() != body.org_id {
+        return fail(
+            StatusCode::FORBIDDEN,
+            "org_mismatch",
+            "Organização inválida.",
+        );
+    }
+    // Normalização + validação federativa (espelha o CHECK party_directory_esfera_shape).
+    let esfera = body.esfera.trim().to_lowercase();
+    if !matches!(esfera.as_str(), "federal" | "estadual" | "municipal") {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_esfera",
+            "esfera deve ser federal, estadual ou municipal.",
+        );
+    }
+    let uf = body
+        .uf
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_uppercase);
+    if let Some(u) = &uf {
+        if u.len() != 2 || !u.chars().all(|c| c.is_ascii_alphabetic()) {
+            return fail(
+                StatusCode::BAD_REQUEST,
+                "invalid_uf",
+                "UF inválida (2 letras).",
+            );
+        }
+    }
+    let municipio = body
+        .municipio
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned);
+    let shape_ok = match esfera.as_str() {
+        "federal" => uf.is_none() && municipio.is_none(),
+        "estadual" => uf.is_some() && municipio.is_none(),
+        "municipal" => uf.is_some() && municipio.is_some(),
+        _ => false,
+    };
+    if !shape_ok {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "federative_shape",
+            "federal não leva UF/município; estadual exige UF; municipal exige UF e município.",
+        );
+    }
+    let name = body.name.trim();
+    if name.is_empty() || name.chars().count() > 160 {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_name",
+            "nome do diretório deve ter de 1 a 160 caracteres.",
+        );
+    }
+
+    // Autorização.
+    match party_write_authorized(&state.db, body.org_id, caller.citizen.as_uuid(), &sigla).await {
+        Ok(true) => {}
+        Ok(false) => {
+            return fail(
+                StatusCode::FORBIDDEN,
+                "not_party_admin",
+                "Apenas administradores da plataforma ou do partido podem criar diretórios.",
+            )
+        }
+        Err(err) => {
+            tracing::error!(error = ?err, "party directory: authz check");
+            return fail(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "storage",
+                "Erro interno.",
+            );
+        }
+    }
+
+    let id: Result<Uuid, sqlx::Error> = sqlx::query_scalar(
+        r"INSERT INTO party_directory
+            (org_id, party_sigla, esfera, uf, municipio, name, parent_directory_id)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          RETURNING id",
+    )
+    .bind(body.org_id)
+    .bind(&sigla)
+    .bind(&esfera)
+    .bind(uf.as_deref())
+    .bind(municipio.as_deref())
+    .bind(name)
+    .bind(body.parent_directory_id)
+    .fetch_one(&state.db)
+    .await;
+
+    match id {
+        Ok(id) => (
+            StatusCode::CREATED,
+            Json(ApiResponse::ok(serde_json::json!({ "id": id }))),
+        )
+            .into_response(),
+        // FK falha (sigla inexistente na org, ou parent inválido) → 404/409 amigável.
+        Err(sqlx::Error::Database(dberr)) if dberr.is_foreign_key_violation() => fail(
+            StatusCode::NOT_FOUND,
+            "party_or_parent_not_found",
+            "Partido não encontrado nesta organização, ou diretório-pai inválido.",
+        ),
+        Err(err) => {
+            tracing::error!(error = ?err, sigla, "party directory: insert");
+            fail(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "storage",
+                "Erro interno.",
+            )
+        }
+    }
+}
+
+async fn delete_directory(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Path((sigla, id)): Path<(String, Uuid)>,
+    Query(query): Query<OrgQuery>,
+) -> Response {
+    if caller.org.as_uuid() != query.org_id {
+        return fail(
+            StatusCode::FORBIDDEN,
+            "org_mismatch",
+            "Organização inválida.",
+        );
+    }
+    match party_write_authorized(&state.db, query.org_id, caller.citizen.as_uuid(), &sigla).await {
+        Ok(true) => {}
+        Ok(false) => {
+            return fail(
+                StatusCode::FORBIDDEN,
+                "not_party_admin",
+                "Apenas administradores da plataforma ou do partido podem remover diretórios.",
+            )
+        }
+        Err(err) => {
+            tracing::error!(error = ?err, "party directory: authz check");
+            return fail(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "storage",
+                "Erro interno.",
+            );
+        }
+    }
+    // Não deixa remover um diretório que ainda é pai de outro (a árvore ficaria órfã).
+    let has_children: Result<bool, sqlx::Error> = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM party_directory WHERE parent_directory_id = $1)",
+    )
+    .bind(id)
+    .fetch_one(&state.db)
+    .await;
+    if matches!(has_children, Ok(true)) {
+        return fail(
+            StatusCode::CONFLICT,
+            "has_children",
+            "Remova os diretórios-filhos antes deste.",
+        );
+    }
+    let res = sqlx::query(
+        "DELETE FROM party_directory WHERE id = $1 AND org_id = $2 AND party_sigla = $3",
+    )
+    .bind(id)
+    .bind(query.org_id)
+    .bind(&sigla)
+    .execute(&state.db)
+    .await;
+    match res {
+        Ok(r) if r.rows_affected() == 0 => fail(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "Diretório não encontrado.",
+        ),
+        Ok(_) => (StatusCode::OK, Json(ApiResponse::ok(()))).into_response(),
+        Err(err) => {
+            tracing::error!(error = ?err, "party directory: delete");
+            fail(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "storage",
+                "Erro interno.",
+            )
+        }
+    }
+}
+
+async fn list_directory_members(
+    State(state): State<AppState>,
+    Path((sigla, id)): Path<(String, Uuid)>,
+    Query(query): Query<OrgQuery>,
+) -> Json<ApiResponse<Vec<DirectoryMemberDto>>> {
+    match load_directory_members(&state.db, query.org_id, &sigla, id).await {
+        Ok(list) => Json(ApiResponse::ok(list)),
+        Err(err) => {
+            tracing::error!(error = ?err, sigla, "party directory: members");
+            Json(ApiResponse::ok(Vec::new()))
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // SQL (runtime queries — no `.sqlx/` cache regeneration needed)
 // ---------------------------------------------------------------------------
 
@@ -151,6 +442,15 @@ type DirectoryRow = (
 );
 /// (handle, display_name, role, directory_id)
 type AdminRow = (Option<String>, Option<String>, String, Option<Uuid>);
+/// (mandate_id, display_name, office, uf, municipio, avatar_object_key)
+type MemberRow = (
+    Uuid,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
 
 async fn load_parties(db: &sqlx::PgPool, org_id: Uuid) -> Result<Vec<PartyDto>, sqlx::Error> {
     // LEFT JOIN so a freshly-created party with zero mandates still appears (count = 0).
@@ -296,6 +596,70 @@ async fn load_party_detail(
         directories,
         administrators,
     }))
+}
+
+/// Membros derivados de um diretório: os mandatos do mesmo partido cuja esfera e
+/// território batem com o diretório. Municipal casa por (party, sphere, uf,
+/// municipio); estadual por (party, sphere, uf); federal por (party, sphere).
+/// É a mesma derivação que a `PartyDetail.svelte` fazia no client — agora no
+/// servidor, ancorada num diretório real.
+async fn load_directory_members(
+    db: &sqlx::PgPool,
+    org_id: Uuid,
+    sigla: &str,
+    directory_id: Uuid,
+) -> Result<Vec<DirectoryMemberDto>, sqlx::Error> {
+    // 1) Resolve o território do diretório (e prova que pertence a esta org + partido).
+    let dir: Option<(String, Option<String>, Option<String>)> = sqlx::query_as(
+        r"SELECT esfera, uf, municipio
+            FROM party_directory
+           WHERE id = $1 AND org_id = $2 AND party_sigla = $3",
+    )
+    .bind(directory_id)
+    .bind(org_id)
+    .bind(sigla)
+    .fetch_optional(db)
+    .await?;
+    let Some((esfera, uf, municipio)) = dir else {
+        return Ok(Vec::new());
+    };
+
+    // 2) Mandatos do partido no território. Os filtros de uf/municipio só se
+    // aplicam quando a esfera os define (federal ignora ambos; estadual ignora
+    // municipio) — implementado com o guard `$4::text IS NULL OR col = $4`.
+    let rows: Vec<MemberRow> = sqlx::query_as(
+        r"
+            SELECT id, display_name, office, uf, municipio, avatar_object_key
+              FROM mandate
+             WHERE org_id = $1
+               AND party = $2
+               AND sphere = $3
+               AND ($4::text IS NULL OR uf = $4)
+               AND ($5::text IS NULL OR municipio = $5)
+             ORDER BY display_name ASC
+            ",
+    )
+    .bind(org_id)
+    .bind(sigla)
+    .bind(&esfera)
+    .bind(uf.as_deref())
+    .bind(municipio.as_deref())
+    .fetch_all(db)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(mandate_id, display_name, office, uf, municipio, avatar)| DirectoryMemberDto {
+                mandate_id,
+                display_name,
+                office,
+                uf,
+                municipio,
+                avatar_object_key: avatar,
+            },
+        )
+        .collect())
 }
 
 #[cfg(test)]
