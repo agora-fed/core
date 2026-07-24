@@ -164,6 +164,8 @@ pub struct CreateDirectoryBody {
 }
 
 /// Membro derivado de um diretório: um mandato do partido naquele território.
+/// `avatar_url` já vem resolvido (mesmo padrão de `politicos_ext`/`MandateDto`),
+/// não a object key crua — o front só precisa exibir.
 #[derive(Debug, Clone, Serialize)]
 pub struct DirectoryMemberDto {
     pub mandate_id: Uuid,
@@ -171,11 +173,24 @@ pub struct DirectoryMemberDto {
     pub office: String,
     pub uf: Option<String>,
     pub municipio: Option<String>,
-    pub avatar_object_key: Option<String>,
+    pub avatar_url: Option<String>,
 }
 
 fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
     (status, Json(ApiResponse::<()>::fail(code, msg))).into_response()
+}
+
+/// Resolve a object key do avatar para URL pública (MEDIA_BASE_URL). Mesmo
+/// comportamento de `gateway::politicos_ext::resolve_avatar`, replicado aqui
+/// porque aquele é privado ao crate do gateway.
+fn resolve_avatar(object_key: Option<&str>) -> Option<String> {
+    let key = object_key?.trim();
+    if key.is_empty() {
+        return None;
+    }
+    let base = std::env::var("MEDIA_BASE_URL")
+        .unwrap_or_else(|_| "https://democracia.social.br/media".to_owned());
+    Some(format!("{}/{}", base.trim_end_matches('/'), key))
 }
 
 /// Gate de escrita da superfície de partido: admin/owner de plataforma OU admin
@@ -656,7 +671,7 @@ async fn load_directory_members(
                 office,
                 uf,
                 municipio,
-                avatar_object_key: avatar,
+                avatar_url: resolve_avatar(avatar.as_deref()),
             },
         )
         .collect())

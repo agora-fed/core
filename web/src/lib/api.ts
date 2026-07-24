@@ -332,6 +332,63 @@ export const getParty = (sigla: string, orgId = DEFAULT_ORG_ID) =>
     `/api/v1/parties/${encodeURIComponent(sigla)}${orgQuery(orgId)}`,
   );
 
+/** Membro derivado de um diretório partidário (mandato do partido no território). */
+export interface DirectoryMemberDto {
+  mandate_id: string;
+  display_name: string;
+  office: string;
+  uf: string | null;
+  municipio: string | null;
+  avatar_object_key: string | null;
+}
+
+/** Membros de um diretório: os mandatos do partido naquele território (0.37.0). */
+export const getDirectoryMembers = (
+  sigla: string,
+  dirId: string,
+  orgId = DEFAULT_ORG_ID,
+) =>
+  apiGet<DirectoryMemberDto[]>(
+    `/api/v1/parties/${encodeURIComponent(sigla)}/directories/${dirId}/members${orgQuery(orgId)}`,
+  );
+
+/** Campos para criar um diretório partidário. */
+export interface CreateDirectoryFields {
+  esfera: 'federal' | 'estadual' | 'municipal';
+  uf?: string;
+  municipio?: string;
+  name: string;
+  parent_directory_id?: string;
+}
+
+/** Cria um diretório do partido (admin de plataforma ou do partido). 0.37.0. */
+export const createPartyDirectory = (
+  sigla: string,
+  fields: CreateDirectoryFields,
+  orgId = DEFAULT_ORG_ID,
+) =>
+  apiPost<{ id: string }>(
+    `/api/v1/parties/${encodeURIComponent(sigla)}/directories`,
+    { org_id: orgId, ...fields },
+  );
+
+/** Remove um diretório partidário (admin). 0.37.0. */
+export const deletePartyDirectory = async (
+  sigla: string,
+  dirId: string,
+  orgId = DEFAULT_ORG_ID,
+): Promise<ApiResponse<null>> => {
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/v1/parties/${encodeURIComponent(sigla)}/directories/${dirId}${orgQuery(orgId)}`,
+      { method: 'DELETE', credentials: 'include', headers: { accept: 'application/json' } },
+    );
+    return parseEnvelope<null>(res);
+  } catch {
+    return networkFailure<null>();
+  }
+};
+
 /** Read the authenticated citizen's own profile (cookie required). */
 export const getMyProfile = () => apiGetCredentialed<ProfileDto>('/api/v1/me');
 
