@@ -2393,6 +2393,7 @@ export interface AdminPartyEdit {
   name?: string;
   tse_number?: number;
   logo_url?: string;
+  website?: string;
   founded_year?: number;
 }
 export const adminEditParty = (sigla: string, fields: AdminPartyEdit) =>

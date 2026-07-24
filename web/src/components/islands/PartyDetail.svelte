@@ -13,11 +13,15 @@
     getDirectoryMembers,
     createPartyDirectory,
     deletePartyDirectory,
+    adminEditParty,
+    adminDeleteParty,
     DEFAULT_ORG_ID,
     type MandateDto,
+    type PartyDto,
     type PartyDirectoryDto,
     type DirectoryMemberDto,
     type CreateDirectoryFields,
+    type AdminPartyEdit,
   } from '../../lib/api';
   import { partyColor } from '../../lib/parties';
 
@@ -26,12 +30,62 @@
   let loading = $state(true);
   let members = $state<MandateDto[]>([]);
   let loadError = $state<string | null>(null);
+  let party = $state<PartyDto | null>(null);
 
   // Diretórios reais + membros por diretório (lazy).
   let directories = $state<PartyDirectoryDto[]>([]);
   let dirMembers = $state<Record<string, DirectoryMemberDto[]>>({});
   let expanded = $state<Record<string, boolean>>({});
   let isAdmin = $state(false);
+
+  // Painel super-admin: editar dados do partido.
+  let editingParty = $state(false);
+  let pEdit: AdminPartyEdit = $state({});
+  let partyBusy = $state(false);
+  let partyMsg = $state<string | null>(null);
+
+  function startPartyEdit() {
+    if (!party) return;
+    pEdit = {
+      name: party.name,
+      tse_number: party.tse_number ?? undefined,
+      founded_year: party.founded_year ?? undefined,
+      logo_url: party.logo_url ?? '',
+      website: party.website ?? '',
+    };
+    editingParty = true;
+    partyMsg = null;
+  }
+
+  async function savePartyEdit() {
+    if (partyBusy) return;
+    partyBusy = true;
+    partyMsg = null;
+    const res = await adminEditParty(sigla, pEdit);
+    partyBusy = false;
+    if (res.success) {
+      await loadDirectories();
+      editingParty = false;
+      partyMsg = '✓ Salvo.';
+    } else {
+      partyMsg = res.error?.message ?? 'Não foi possível salvar.';
+    }
+  }
+
+  async function deleteWholeParty() {
+    if (partyBusy) return;
+    if (!window.confirm(`Apagar o partido ${sigla} e seus diretórios/admins? Os mandatos NÃO são apagados.`)) return;
+    if (!window.confirm('Tem certeza? Irreversível.')) return;
+    partyBusy = true;
+    const res = await adminDeleteParty(sigla);
+    partyBusy = false;
+    if (res.success) {
+      window.alert('Partido apagado.');
+      window.location.href = '/partidos';
+    } else {
+      partyMsg = res.error?.message ?? 'Não foi possível apagar.';
+    }
+  }
 
   // Formulário de criação.
   let showForm = $state(false);
@@ -82,7 +136,11 @@
 
   async function loadDirectories() {
     const res = await getParty(sigla);
-    if (res.ok && res.data) directories = res.data.directories ?? [];
+    if (res.ok && res.data) {
+      directories = res.data.directories ?? [];
+      // PartyDetailDto tem os campos do partido achatados (name, logo_url, website…).
+      party = res.data;
+    }
   }
 
   async function toggleMembers(dirId: string) {
@@ -160,14 +218,54 @@
 </script>
 
 <header class="head" style={`--party-accent:${accent}`}>
-  <span class="crest" aria-hidden="true">{sigla.slice(0, 4)}</span>
-  <div>
+  {#if party?.logo_url}
+    <img class="crest crest-logo" src={party.logo_url} alt={`Logo ${sigla}`} />
+  {:else}
+    <span class="crest" aria-hidden="true">{sigla.slice(0, 4)}</span>
+  {/if}
+  <div class="head-meta">
     <h1>{sigla}</h1>
+    {#if party && party.name !== sigla}
+      <p class="party-name">{party.name}</p>
+    {/if}
     {#if !loading}
       <p class="muted">{members.length} representante{members.length === 1 ? '' : 's'} na plataforma</p>
     {/if}
+    {#if party?.website}
+      <p class="party-site">
+        🔗 <a href={party.website} target="_blank" rel="noopener noreferrer nofollow">
+          {party.website.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+        </a>
+      </p>
+    {/if}
   </div>
 </header>
+
+{#if isAdmin && party}
+  <section class="admin-box">
+    <button type="button" class="admin-toggle" onclick={() => (editingParty ? (editingParty = false) : startPartyEdit())}>
+      🛠️ {editingParty ? 'Fechar edição' : 'Editar partido (logo, site, nome)'}
+    </button>
+    {#if editingParty}
+      <div class="admin-body">
+        <div class="admin-grid">
+          <label class="wide">Nome<input type="text" bind:value={pEdit.name} /></label>
+          <label>Nº TSE<input type="number" bind:value={pEdit.tse_number} /></label>
+          <label>Fundação<input type="number" bind:value={pEdit.founded_year} /></label>
+          <label class="wide">URL do logo<input type="url" bind:value={pEdit.logo_url} placeholder="https://…/logo.png" /></label>
+          <label class="wide">Site oficial<input type="url" bind:value={pEdit.website} placeholder="https://…" /></label>
+        </div>
+        <div class="admin-actions">
+          <button type="button" class="primary" onclick={savePartyEdit} disabled={partyBusy}>
+            {partyBusy ? 'Salvando…' : 'Salvar'}
+          </button>
+          <button type="button" class="danger" onclick={deleteWholeParty} disabled={partyBusy}>Apagar partido</button>
+        </div>
+        {#if partyMsg}<p class="admin-msg">{partyMsg}</p>{/if}
+      </div>
+    {/if}
+  </section>
+{/if}
 
 <!-- Diretórios reais (grupos territoriais curados) -->
 <section class="directories-block">
@@ -354,8 +452,68 @@
     flex-shrink: 0;
     letter-spacing: -0.02em;
   }
+  .crest-logo {
+    background: #fff;
+    object-fit: contain;
+    padding: 6px;
+    border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+  }
+  .head-meta { min-width: 0; }
   .head h1 { margin: 0 0 0.2rem; font-size: 1.6rem; }
   .head p { margin: 0; }
+  .party-name { font-weight: 600; color: var(--text-1, inherit); margin: 0 0 0.15rem; }
+  .party-site { margin-top: 0.2rem !important; font-size: 0.9rem; }
+  .party-site a { color: var(--accent-strong, #15803d); text-decoration: none; word-break: break-all; }
+  .party-site a:hover { text-decoration: underline; }
+
+  /* Painel super-admin do partido */
+  .admin-box {
+    margin: 0 0 1.5rem;
+    border: 1px dashed var(--border-subtle, #ccc);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .admin-toggle {
+    width: 100%;
+    text-align: left;
+    padding: 0.6rem 1rem;
+    background: var(--surface-2, #f4f4f7);
+    border: none;
+    color: var(--text-1, inherit);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .admin-body { padding: 1rem; display: grid; gap: 0.85rem; }
+  .admin-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.7rem;
+  }
+  .admin-grid label { display: grid; gap: 0.2rem; font-size: 0.82rem; font-weight: 600; }
+  .admin-grid label.wide { grid-column: 1 / -1; }
+  .admin-grid input {
+    padding: 0.45rem 0.55rem;
+    border-radius: 7px;
+    border: 1px solid var(--border-subtle, #ccc);
+    background: var(--surface-1, #fff);
+    color: var(--text-1, inherit);
+    font: inherit;
+    min-width: 0;
+  }
+  .admin-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+  .admin-actions button {
+    padding: 0.45rem 0.9rem;
+    border-radius: 7px;
+    border: 1px solid var(--border-subtle, #ccc);
+    background: var(--surface-1, #fff);
+    color: var(--text-1, inherit);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .admin-actions button.primary { background: var(--accent, #15803d); color: #fff; border: none; }
+  .admin-actions button.danger { color: #dc2626; border-color: #dc2626; }
+  .admin-actions button:disabled { opacity: 0.5; }
+  .admin-msg { margin: 0; font-size: 0.9rem; color: var(--text-2, inherit); }
 
   .directories-block { margin-bottom: 2.5rem; }
   .directory { margin-bottom: 2rem; }

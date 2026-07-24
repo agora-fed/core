@@ -37,6 +37,7 @@ pub struct PartyDto {
     pub name: String,
     pub tse_number: Option<i32>,
     pub logo_url: Option<String>,
+    pub website: Option<String>,
     pub founded_year: Option<i32>,
     /// Mandates currently attributed to this sigla in the org (derived, não-ocultos).
     pub mandate_count: i64,
@@ -440,11 +441,12 @@ async fn list_directory_members(
 // SQL (runtime queries — no `.sqlx/` cache regeneration needed)
 // ---------------------------------------------------------------------------
 
-/// (sigla, name, tse_number, logo_url, founded_year, mandate_count, federal, estadual, municipal)
+/// (sigla, name, tse_number, logo_url, website, founded_year, mandate_count, fed, est, mun)
 type PartyRow = (
     String,
     String,
     Option<i32>,
+    Option<String>,
     Option<String>,
     Option<i32>,
     Option<i64>,
@@ -483,6 +485,7 @@ async fn load_parties(db: &sqlx::PgPool, org_id: Uuid) -> Result<Vec<PartyDto>, 
                    p.name,
                    p.tse_number,
                    p.logo_url,
+                   p.website,
                    p.founded_year,
                    COUNT(m.id) AS mandate_count,
                    COUNT(m.id) FILTER (WHERE m.sphere = 'federal')   AS federal,
@@ -494,7 +497,7 @@ async fn load_parties(db: &sqlx::PgPool, org_id: Uuid) -> Result<Vec<PartyDto>, 
                     AND m.party  = p.sigla
                     AND m.hidden_at IS NULL
              WHERE p.org_id = $1
-             GROUP BY p.sigla, p.name, p.tse_number, p.logo_url, p.founded_year
+             GROUP BY p.sigla, p.name, p.tse_number, p.logo_url, p.website, p.founded_year
              ORDER BY COUNT(m.id) DESC, p.sigla ASC
             ",
     )
@@ -505,11 +508,12 @@ async fn load_parties(db: &sqlx::PgPool, org_id: Uuid) -> Result<Vec<PartyDto>, 
     Ok(rows
         .into_iter()
         .map(
-            |(sigla, name, tse, logo, year, count, fed, est, mun)| PartyDto {
+            |(sigla, name, tse, logo, website, year, count, fed, est, mun)| PartyDto {
                 sigla,
                 name,
                 tse_number: tse,
                 logo_url: logo,
+                website,
                 founded_year: year,
                 mandate_count: count.unwrap_or(0),
                 federal_count: fed.unwrap_or(0),
@@ -532,6 +536,7 @@ async fn load_party_detail(
                    p.name,
                    p.tse_number,
                    p.logo_url,
+                   p.website,
                    p.founded_year,
                    COUNT(m.id) AS mandate_count,
                    COUNT(m.id) FILTER (WHERE m.sphere = 'federal')   AS federal,
@@ -543,7 +548,7 @@ async fn load_party_detail(
                     AND m.party  = p.sigla
                     AND m.hidden_at IS NULL
              WHERE p.org_id = $1 AND p.sigla = $2
-             GROUP BY p.sigla, p.name, p.tse_number, p.logo_url, p.founded_year
+             GROUP BY p.sigla, p.name, p.tse_number, p.logo_url, p.website, p.founded_year
             ",
     )
     .bind(org_id)
@@ -551,7 +556,7 @@ async fn load_party_detail(
     .fetch_optional(db)
     .await?;
 
-    let Some((s, name, tse, logo, year, count, fed, est, mun)) = party_row else {
+    let Some((s, name, tse, logo, website, year, count, fed, est, mun)) = party_row else {
         return Ok(None);
     };
     let party = PartyDto {
@@ -559,6 +564,7 @@ async fn load_party_detail(
         name,
         tse_number: tse,
         logo_url: logo,
+        website,
         founded_year: year,
         mandate_count: count.unwrap_or(0),
         federal_count: fed.unwrap_or(0),
@@ -712,6 +718,7 @@ mod tests {
             name: "Partido dos Trabalhadores".to_owned(),
             tse_number: Some(13),
             logo_url: None,
+            website: None,
             founded_year: Some(1980),
             mandate_count: 42,
             federal_count: 10,
@@ -751,6 +758,7 @@ mod tests {
                 name: "PSOL".to_owned(),
                 tse_number: Some(50),
                 logo_url: None,
+                website: None,
                 founded_year: None,
                 mandate_count: 3,
                 federal_count: 3,

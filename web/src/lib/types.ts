@@ -155,6 +155,7 @@ export interface PartyDto {
   name: string;
   tse_number: number | null;
   logo_url: string | null;
+  website: string | null;
   founded_year: number | null;
   /** Mandates currently attributed to this sigla in the org (derived, não-ocultos). */
   mandate_count: number;

@@ -63,7 +63,11 @@ fn ok_empty() -> Response {
 }
 
 fn storage_error() -> Response {
-    fail(StatusCode::INTERNAL_SERVER_ERROR, "storage", "Erro interno.")
+    fail(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "storage",
+        "Erro interno.",
+    )
 }
 
 /// Org do caller (header setado pelo inject_identity). Cai no DEFAULT quando ausente.
@@ -174,9 +178,11 @@ async fn edit_mandate(
     .execute(&state.db)
     .await;
     match res {
-        Ok(r) if r.rows_affected() == 0 => {
-            fail(StatusCode::NOT_FOUND, "not_found", "Mandato não encontrado.")
-        }
+        Ok(r) if r.rows_affected() == 0 => fail(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "Mandato não encontrado.",
+        ),
         Ok(_) => ok_empty(),
         Err(err) => {
             tracing::error!(?err, "admin edit_mandate");
@@ -203,9 +209,11 @@ async fn hide_mandate(
     .execute(&state.db)
     .await;
     match res {
-        Ok(r) if r.rows_affected() == 0 => {
-            fail(StatusCode::NOT_FOUND, "not_found", "Mandato não encontrado.")
-        }
+        Ok(r) if r.rows_affected() == 0 => fail(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "Mandato não encontrado.",
+        ),
         Ok(_) => ok_empty(),
         Err(err) => {
             tracing::error!(?err, "admin hide_mandate");
@@ -297,9 +305,11 @@ async fn hide_proposal(
     .execute(&state.db)
     .await;
     match res {
-        Ok(r) if r.rows_affected() == 0 => {
-            fail(StatusCode::NOT_FOUND, "not_found", "Proposta não encontrada.")
-        }
+        Ok(r) if r.rows_affected() == 0 => fail(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "Proposta não encontrada.",
+        ),
         Ok(_) => ok_empty(),
         Err(err) => {
             tracing::error!(?err, "admin hide_proposal");
@@ -363,6 +373,7 @@ struct EditPartyBody {
     name: Option<String>,
     tse_number: Option<i32>,
     logo_url: Option<String>,
+    website: Option<String>,
     founded_year: Option<i32>,
 }
 
@@ -375,14 +386,19 @@ async fn edit_party(
     if let Err(r) = require_admin(&state.db, &headers).await {
         return r;
     }
-    let name = b.name.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
+    let name = b
+        .name
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty());
     let logo = b.logo_url.map(|s| s.trim().to_owned());
+    let website = b.website.map(|s| s.trim().to_owned());
     let res = sqlx::query(
         r"UPDATE party SET
             name         = COALESCE($3, name),
             tse_number   = COALESCE($4, tse_number),
             logo_url     = CASE WHEN $5::text IS NULL THEN logo_url ELSE NULLIF($5,'') END,
-            founded_year = COALESCE($6, founded_year)
+            founded_year = COALESCE($6, founded_year),
+            website      = CASE WHEN $7::text IS NULL THEN website ELSE NULLIF($7,'') END
           WHERE org_id = $1 AND sigla = $2",
     )
     .bind(DEFAULT_ORG_UUID)
@@ -391,12 +407,15 @@ async fn edit_party(
     .bind(b.tse_number)
     .bind(logo)
     .bind(b.founded_year)
+    .bind(website)
     .execute(&state.db)
     .await;
     match res {
-        Ok(r) if r.rows_affected() == 0 => {
-            fail(StatusCode::NOT_FOUND, "not_found", "Partido não encontrado.")
-        }
+        Ok(r) if r.rows_affected() == 0 => fail(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "Partido não encontrado.",
+        ),
         Ok(_) => ok_empty(),
         Err(err) => {
             tracing::error!(?err, "admin edit_party");
