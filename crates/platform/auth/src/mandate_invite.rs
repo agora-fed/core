@@ -572,7 +572,6 @@ async fn send_email(
     subject: &str,
     body: &str,
 ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    
     use lettre::transport::smtp::authentication::Credentials;
     use lettre::transport::smtp::AsyncSmtpTransport;
     use lettre::{AsyncTransport, Message, Tokio1Executor};

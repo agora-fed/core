@@ -50,9 +50,8 @@ async fn placar_card(State(state): State<AppState>, Path(file): Path<String>) ->
     let Ok(mandate_id) = file.trim_end_matches(".png").parse::<Uuid>() else {
         return (StatusCode::NOT_FOUND, "não encontrado").into_response();
     };
-    let row: Option<(String, String, Option<String>, Option<String>, i64, i64)> =
-        sqlx::query_as(
-            r"SELECT m.display_name,
+    let row: Option<(String, String, Option<String>, Option<String>, i64, i64)> = sqlx::query_as(
+        r"SELECT m.display_name,
                      m.office,
                      m.party,
                      m.uf,
@@ -61,11 +60,11 @@ async fn placar_card(State(state): State<AppState>, Path(file): Path<String>) ->
                 FROM mandate m
                 LEFT JOIN scorecard s ON s.mandate_id = m.id
                WHERE m.id = $1",
-        )
-        .bind(mandate_id)
-        .fetch_optional(&state.db)
-        .await
-        .unwrap_or(None);
+    )
+    .bind(mandate_id)
+    .fetch_optional(&state.db)
+    .await
+    .unwrap_or(None);
     let Some((name, office, party, uf, answered, ignored)) = row else {
         return (StatusCode::NOT_FOUND, "mandato não encontrado").into_response();
     };
@@ -317,7 +316,11 @@ mod tests {
         // Assinatura PNG.
         assert_eq!(&png[..8], &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]);
         // Sanidade: card não-trivial (fundo + texto + barras).
-        assert!(png.len() > 5_000, "png suspeito de vazio: {} bytes", png.len());
+        assert!(
+            png.len() > 5_000,
+            "png suspeito de vazio: {} bytes",
+            png.len()
+        );
     }
 
     #[test]

@@ -155,7 +155,15 @@ async fn overview(
         .fetch_one(&state.db)
         .await;
     match row {
-        Ok((total, with_email, bound, invite_pending, invite_accepted, invite_expired, eligible_now)) => (
+        Ok((
+            total,
+            with_email,
+            bound,
+            invite_pending,
+            invite_accepted,
+            invite_expired,
+            eligible_now,
+        )) => (
             StatusCode::OK,
             Json(ApiResponse::ok(OverviewDto {
                 total,

@@ -373,7 +373,17 @@ async fn list(
             let dtos: Vec<ContactDto> = rows
                 .into_iter()
                 .map(
-                    |(id, email, name, uf, segment, source, legal_basis, unsubscribed, created_at)| {
+                    |(
+                        id,
+                        email,
+                        name,
+                        uf,
+                        segment,
+                        source,
+                        legal_basis,
+                        unsubscribed,
+                        created_at,
+                    )| {
                         ContactDto {
                             id,
                             email,
@@ -485,11 +495,10 @@ async fn import(
             .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty() && s.len() <= 120);
-        let uf = c
-            .uf
-            .as_deref()
-            .map(|s| s.trim().to_uppercase())
-            .filter(|s| s.len() == 2);
+        let uf =
+            c.uf.as_deref()
+                .map(|s| s.trim().to_uppercase())
+                .filter(|s| s.len() == 2);
         let res = sqlx::query(
             r"INSERT INTO audience_contact
                   (email, name, uf, segment, source, legal_basis,
@@ -572,7 +581,11 @@ async fn export_csv(State(state): State<AppState>, headers: HeaderMap) -> Respon
             esc(&segment),
             esc(&source),
             esc(&legal_basis),
-            if unsub.is_some() { "descadastrado" } else { "ativo" },
+            if unsub.is_some() {
+                "descadastrado"
+            } else {
+                "ativo"
+            },
             created.to_rfc3339(),
         ));
     }

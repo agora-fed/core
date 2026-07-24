@@ -156,13 +156,12 @@ impl CivicNotifySub {
             return;
         };
         // Idempotência: recibo 1 já existe → redelivery, não reenvia.
-        let already: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM notification_receipt WHERE proposal_id = $1",
-        )
-        .bind(proposal_id)
-        .fetch_one(&self.db)
-        .await
-        .unwrap_or(0);
+        let already: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM notification_receipt WHERE proposal_id = $1")
+                .bind(proposal_id)
+                .fetch_one(&self.db)
+                .await
+                .unwrap_or(0);
         if already > 0 {
             return;
         }

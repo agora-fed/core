@@ -565,8 +565,7 @@ async fn notification_escalation_loop(state: AppState) {
             };
             let proposal_url = format!("{origin}/propostas/{proposal_id}");
             // Template editável pelo admin (0.32.0); fallback = texto original.
-            let mut ctx: std::collections::HashMap<&str, String> =
-                std::collections::HashMap::new();
+            let mut ctx: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
             ctx.insert("mandate_name", display_name.clone());
             ctx.insert("proposal_title", title.clone());
             ctx.insert("attempt", attempt.to_string());
@@ -577,17 +576,15 @@ async fn notification_escalation_loop(state: AppState) {
                     .await
                     .unwrap_or_else(|| {
                         (
-                            format!(
-                                "[Lembrete {attempt}/3] Demanda cidadã aguardando resposta — {title}"
-                            ),
-                            format!(
-                                "Prezado(a) {display_name},\n\nA demanda cidadã \"{title}\" segue \
+                    format!("[Lembrete {attempt}/3] Demanda cidadã aguardando resposta — {title}"),
+                    format!(
+                        "Prezado(a) {display_name},\n\nA demanda cidadã \"{title}\" segue \
                                  aguardando resposta do gabinete. Este é o {attempt}º aviso; cada \
                                  aviso fica registrado publicamente com recibo verificável.\n\n\
                                  Responder agora (sem cadastro): {respond_url}\n\n\
                                  Ver a demanda: {proposal_url}\n\n— DemocraciaBR",
-                            ),
-                        )
+                    ),
+                )
                     });
             let outcome = match &smtp {
                 Some(cfg) => {
