@@ -9,6 +9,7 @@
 // via query param.
 import BaseLayout from '../../../layouts/BaseLayout.astro';
 import ScorecardCard from '../../../components/islands/ScorecardCard.svelte';
+import PromiseTracker from '../../../components/islands/PromiseTracker.svelte';
 import { getAllMandates, DEFAULT_ORG_ID } from '../../../lib/api';
 
 export async function getStaticPaths() {
@@ -39,6 +40,7 @@ const description =
         <a href={`/politicos/${mandate}`}>← Voltar ao perfil</a>
       </p>
       <ScorecardCard client:load mandateId={mandate!} />
+      <PromiseTracker client:load mandateId={mandate!} />
     </div>
   </section>
 </BaseLayout>

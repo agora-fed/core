@@ -213,6 +213,22 @@ pub async fn get_scorecard_by_mandate(
     Ok(row.map(Into::into))
 }
 
+/// The org that owns a mandate, or `None` if the mandate does not exist. Cross-crate READ of the
+/// core identity table `mandate` (allowed) — used to lazily create a scorecard the first time a
+/// politician records a promise, before any consequence event has projected one.
+///
+/// # Errors
+/// Propagates the underlying `sqlx::Error`.
+pub async fn get_mandate_org(db: &Db, mandate_id: Uuid) -> Result<Option<Uuid>, Error> {
+    let row = sqlx::query_scalar!(
+        r#"SELECT org_id FROM mandate WHERE id = $1"#,
+        mandate_id,
+    )
+    .fetch_optional(db)
+    .await?;
+    Ok(row)
+}
+
 /// List an org's scorecards newest-first with keyset pagination.
 ///
 /// # Errors

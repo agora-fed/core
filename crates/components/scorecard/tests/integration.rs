@@ -600,6 +600,30 @@ async fn record_promise_on_unknown_mandate_is_not_found() {
 }
 
 #[tokio::test]
+async fn record_promise_creates_scorecard_when_absent() {
+    // Uma promessa pode ser o PRIMEIRO artefato público de um mandato — antes de
+    // qualquer evento da consequência ter projetado um scorecard. Registrar deve
+    // criar o scorecard sob demanda (não 404).
+    let db = pool().await;
+    let org = seed_org(&db).await;
+    let mandate = seed_mandate(&db, org).await;
+    // Repare: SEM on_onboarded — o scorecard ainda não existe.
+    let strong = service_with(db.clone(), VerificationLevel::Directory);
+    let promise = strong
+        .record_promise(CitizenId::new(), mandate, "primeira promessa")
+        .await
+        .expect("registrar deve criar o scorecard");
+    assert_eq!(promise.text, "primeira promessa");
+    assert!(!promise.delivered);
+    // O scorecard passou a existir e a promessa aparece na listagem pública.
+    let promises = strong
+        .list_promises(mandate, None, 10)
+        .await
+        .expect("list promises");
+    assert_eq!(promises.len(), 1);
+}
+
+#[tokio::test]
 async fn record_promise_rejects_empty_text() {
     let db = pool().await;
     let org = seed_org(&db).await;

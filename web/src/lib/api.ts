@@ -795,6 +795,20 @@ export const getPromises = (mandateId: string) =>
     `/api/v1/scorecards/${encodeURIComponent(mandateId)}/promises`,
   );
 
+/** O parlamentar registra uma promessa pública (gate MIN_OFFICIAL_LEVEL no backend). */
+export const recordPromise = (mandateId: string, text: string) =>
+  apiPost<PromiseDto>(
+    `/api/v1/scorecards/${encodeURIComponent(mandateId)}/promises`,
+    { text },
+  );
+
+/** O parlamentar marca uma promessa como cumprida. */
+export const deliverPromise = (promiseId: string) =>
+  apiPost<PromiseDto>(
+    `/api/v1/scorecards/promises/${encodeURIComponent(promiseId)}/deliver`,
+    {},
+  );
+
 export const getSlas = (orgId = DEFAULT_ORG_ID, limit = 50) =>
   apiGet<SlaDto[]>(`/api/v1/consequence/slas${orgQuery(orgId, `&limit=${limit}`)}`);
 

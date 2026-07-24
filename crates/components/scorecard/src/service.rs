@@ -282,17 +282,37 @@ impl ScorecardService {
         mandate: MandateId,
         text: &str,
     ) -> Result<Promise> {
-        let card = queries::get_scorecard_by_mandate(&self.db, mandate.as_uuid())
+        // A promise can be the FIRST public artifact of a mandate — before any consequence event
+        // has projected a scorecard. So we get-or-create: if the projection hasn't made one yet,
+        // create it (empty counters) from the mandate's real org, having first authorized the actor
+        // against that org. Authorization always precedes the write.
+        let now = self.clock.now();
+        let card = match queries::get_scorecard_by_mandate(&self.db, mandate.as_uuid())
             .await
             .map_err(map_storage)?
-            .ok_or_else(|| Error::NotFound("scorecard not found for mandate".to_owned()))?;
-        // Authorize against the resource's actual org, derived from storage — not the caller's input.
-        self.authz
-            .require(OrgId::from_uuid(card.org_id), actor, MIN_OFFICIAL_LEVEL)
-            .await?;
+        {
+            Some(card) => {
+                self.authz
+                    .require(OrgId::from_uuid(card.org_id), actor, MIN_OFFICIAL_LEVEL)
+                    .await?;
+                card
+            }
+            None => {
+                let org = queries::get_mandate_org(&self.db, mandate.as_uuid())
+                    .await
+                    .map_err(map_storage)?
+                    .ok_or_else(|| Error::NotFound("mandate not found".to_owned()))?;
+                self.authz
+                    .require(OrgId::from_uuid(org), actor, MIN_OFFICIAL_LEVEL)
+                    .await?;
+                let id = queries::upsert_scorecard(&self.db, Uuid::now_v7(), org, mandate.as_uuid(), now)
+                    .await
+                    .map_err(map_storage)?;
+                queries::get_scorecard(&self.db, id).await.map_err(map_storage)?
+            }
+        };
 
         let text = domain::validate_nonempty("text", text, MAX_TEXT_LEN).map_err(validation)?;
-        let now = self.clock.now();
         let promise = Promise {
             id: Uuid::now_v7(),
             scorecard_id: card.id,
