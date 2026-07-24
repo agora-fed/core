@@ -173,6 +173,7 @@ async fn browse(State(state): State<AppState>, Query(p): Query<BrowseParams>) ->
     let total: i64 = match sqlx::query_scalar::<_, i64>(
         r"SELECT count(*) FROM mandate
            WHERE org_id = $1
+             AND hidden_at IS NULL
              AND sphere = $2
              AND ($3::text IS NULL OR uf = $3)
              AND ($4::text IS NULL OR municipio = $4)
@@ -229,6 +230,7 @@ async fn browse(State(state): State<AppState>, Query(p): Query<BrowseParams>) ->
                  ) AS has_verified_operator
             FROM mandate m
            WHERE m.org_id = $1
+             AND m.hidden_at IS NULL
              AND m.sphere = $2
              AND ($3::text IS NULL OR m.uf = $3)
              AND ($4::text IS NULL OR m.municipio = $4)
@@ -413,7 +415,8 @@ async fn territorio(State(state): State<AppState>, Query(p): Query<TerritorioPar
     let by_party: Vec<(Option<String>, i64)> = match sqlx::query_as(
         r"SELECT party, count(*) AS n
             FROM mandate
-           WHERE org_id = $1 AND sphere = 'municipal' AND uf = $2 AND municipio = $3
+           WHERE org_id = $1 AND hidden_at IS NULL
+             AND sphere = 'municipal' AND uf = $2 AND municipio = $3
            GROUP BY party
            ORDER BY n DESC, party ASC NULLS LAST",
     )

@@ -332,63 +332,6 @@ export const getParty = (sigla: string, orgId = DEFAULT_ORG_ID) =>
     `/api/v1/parties/${encodeURIComponent(sigla)}${orgQuery(orgId)}`,
   );
 
-/** Membro derivado de um diretório partidário (mandato do partido no território). */
-export interface DirectoryMemberDto {
-  mandate_id: string;
-  display_name: string;
-  office: string;
-  uf: string | null;
-  municipio: string | null;
-  avatar_object_key: string | null;
-}
-
-/** Membros de um diretório: os mandatos do partido naquele território (0.37.0). */
-export const getDirectoryMembers = (
-  sigla: string,
-  dirId: string,
-  orgId = DEFAULT_ORG_ID,
-) =>
-  apiGet<DirectoryMemberDto[]>(
-    `/api/v1/parties/${encodeURIComponent(sigla)}/directories/${dirId}/members${orgQuery(orgId)}`,
-  );
-
-/** Campos para criar um diretório partidário. */
-export interface CreateDirectoryFields {
-  esfera: 'federal' | 'estadual' | 'municipal';
-  uf?: string;
-  municipio?: string;
-  name: string;
-  parent_directory_id?: string;
-}
-
-/** Cria um diretório do partido (admin de plataforma ou do partido). 0.37.0. */
-export const createPartyDirectory = (
-  sigla: string,
-  fields: CreateDirectoryFields,
-  orgId = DEFAULT_ORG_ID,
-) =>
-  apiPost<{ id: string }>(
-    `/api/v1/parties/${encodeURIComponent(sigla)}/directories`,
-    { org_id: orgId, ...fields },
-  );
-
-/** Remove um diretório partidário (admin). 0.37.0. */
-export const deletePartyDirectory = async (
-  sigla: string,
-  dirId: string,
-  orgId = DEFAULT_ORG_ID,
-): Promise<ApiResponse<null>> => {
-  try {
-    const res = await fetch(
-      `${API_BASE}/api/v1/parties/${encodeURIComponent(sigla)}/directories/${dirId}${orgQuery(orgId)}`,
-      { method: 'DELETE', credentials: 'include', headers: { accept: 'application/json' } },
-    );
-    return parseEnvelope<null>(res);
-  } catch {
-    return networkFailure<null>();
-  }
-};
-
 /** Read the authenticated citizen's own profile (cookie required). */
 export const getMyProfile = () => apiGetCredentialed<ProfileDto>('/api/v1/me');
 
@@ -680,24 +623,6 @@ export const listMunicipios = async (
   fetchedToApiResponse(
     await apiGet<MunicipioRow[]>(
       `/api/v1/politicos/municipios?uf=${encodeURIComponent(uf)}`,
-    ),
-  );
-
-/** Resumo territorial de um município (Fase 2.2): eleitorado + mandatos por partido. */
-export interface TerritorioResponse {
-  uf: string;
-  municipio: string;
-  voters: number | null;
-  total: number;
-  by_party: Array<{ party: string; count: number }>;
-}
-export const getTerritorio = async (
-  uf: string,
-  municipio: string,
-): Promise<ApiResponse<TerritorioResponse>> =>
-  fetchedToApiResponse(
-    await apiGet<TerritorioResponse>(
-      `/api/v1/politicos/territorio?uf=${encodeURIComponent(uf)}&municipio=${encodeURIComponent(municipio)}`,
     ),
   );
 
@@ -2348,115 +2273,6 @@ export const submitRespond = (body: {
   body: string;
   committed: boolean;
 }) => apiPost<{ ok: true }>('/api/v1/respond', body);
-
-// ---------------------------------------------------------------------------
-// Super-admin (SOCRATES) — editar/ocultar/apagar conteúdo (0.40.0)
-// ---------------------------------------------------------------------------
-
-export interface AdminMandateEdit {
-  display_name?: string;
-  party?: string;
-  office?: string;
-  uf?: string;
-  municipio?: string;
-  house?: string;
-  sphere?: string;
-  public_email?: string;
-}
-export const adminEditMandate = (id: string, fields: AdminMandateEdit) =>
-  apiPatch<null>(`/api/v1/admin/mandates/${encodeURIComponent(id)}`, fields);
-
-const adminDelete = async (path: string): Promise<ApiResponse<null>> => {
-  try {
-    const res = await fetch(`${API_BASE}${path}`, {
-      method: 'DELETE',
-      credentials: 'include',
-      headers: { accept: 'application/json' },
-    });
-    return parseEnvelope<null>(res);
-  } catch {
-    return networkFailure<null>();
-  }
-};
-
-export const adminHideMandate = (id: string, on = true) =>
-  apiPost<null>(`/api/v1/admin/mandates/${encodeURIComponent(id)}/hide?on=${on}`, {});
-export const adminDeleteMandate = (id: string) =>
-  adminDelete(`/api/v1/admin/mandates/${encodeURIComponent(id)}?force=true`);
-
-export const adminHideProposal = (id: string, on = true) =>
-  apiPost<null>(`/api/v1/admin/proposals/${encodeURIComponent(id)}/hide?on=${on}`, {});
-export const adminDeleteProposal = (id: string) =>
-  adminDelete(`/api/v1/admin/proposals/${encodeURIComponent(id)}?force=true`);
-
-export interface AdminPartyEdit {
-  name?: string;
-  tse_number?: number;
-  logo_url?: string;
-  founded_year?: number;
-}
-export const adminEditParty = (sigla: string, fields: AdminPartyEdit) =>
-  apiPatch<null>(`/api/v1/admin/parties/${encodeURIComponent(sigla)}`, fields);
-export const adminDeleteParty = (sigla: string) =>
-  adminDelete(`/api/v1/admin/parties/${encodeURIComponent(sigla)}?force=true`);
-
-// ---------------------------------------------------------------------------
-// Grupos de campanha (Fase 2.3) — canal proativo campanha→eleitor
-// ---------------------------------------------------------------------------
-
-export interface CampaignGroupPost {
-  id: string;
-  body: string;
-  created_at: string;
-}
-/** Painel do dono: GET /me/campaign-group. */
-export interface MyCampaignGroup {
-  is_politico: boolean;
-  group: { id: string; name: string; description: string | null; created_at: string } | null;
-  member_count: number;
-  posts: CampaignGroupPost[];
-}
-/** Página pública: GET /campaign-groups/{id}. */
-export interface PublicCampaignGroup {
-  id: string;
-  name: string;
-  description: string | null;
-  owner_display_name: string | null;
-  owner_handle: string | null;
-  mandate_id: string;
-  member_count: number;
-  sou_membro: boolean;
-  posts: CampaignGroupPost[];
-}
-
-export const getMyCampaignGroup = () =>
-  apiGetCredentialed<MyCampaignGroup>('/api/v1/me/campaign-group');
-
-export const upsertCampaignGroup = (name: string, description?: string) =>
-  apiPost<{ id: string }>('/api/v1/me/campaign-group', { name, description });
-
-export const postCampaignGroupUpdate = (body: string) =>
-  apiPost<{ id: string }>('/api/v1/me/campaign-group/posts', { body });
-
-export const getCampaignGroup = (id: string) =>
-  apiGetCredentialed<PublicCampaignGroup>(
-    `/api/v1/campaign-groups/${encodeURIComponent(id)}`,
-  );
-
-export const joinCampaignGroup = (id: string) =>
-  apiPost<{ joined: boolean }>(`/api/v1/campaign-groups/${encodeURIComponent(id)}/join`, {});
-
-export const leaveCampaignGroup = async (id: string): Promise<ApiResponse<{ joined: boolean }>> => {
-  try {
-    const res = await fetch(
-      `${API_BASE}/api/v1/campaign-groups/${encodeURIComponent(id)}/join`,
-      { method: 'DELETE', credentials: 'include', headers: { accept: 'application/json' } },
-    );
-    return parseEnvelope<{ joined: boolean }>(res);
-  } catch {
-    return networkFailure<{ joined: boolean }>();
-  }
-};
 
 /** Formulário público de contato (0.28.1) — setores fechados no backend. */
 export type ContactSector = 'contato' | 'lgpd' | 'moderacao' | 'seguranca';

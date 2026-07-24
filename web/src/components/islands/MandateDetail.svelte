@@ -9,9 +9,13 @@
     getProposals,
     getScorecard,
     getSlas,
+    adminEditMandate,
+    adminHideMandate,
+    adminDeleteMandate,
     DEFAULT_ORG_ID,
     type ActivityDto,
     type MandateDto,
+    type AdminMandateEdit,
   } from '../../lib/api';
   import type { ProposalDto, ScorecardDto, SlaDto } from '../../lib/types';
   import { responseRate, formatLatency } from '../../lib/format';
@@ -29,6 +33,66 @@
 
   let pendingSlas = $derived(mySlas.filter((s) => s.status === 'pending'));
 
+  // Super-admin (SOCRATES): editar/ocultar/apagar este mandato.
+  let isAdmin = $state(false);
+  let adminOpen = $state(false);
+  let editing = $state(false);
+  let adminBusy = $state(false);
+  let adminMsg = $state<string | null>(null);
+  let f: AdminMandateEdit = $state({});
+
+  function startEdit() {
+    if (!mandate) return;
+    f = {
+      display_name: mandate.display_name,
+      party: mandate.party ?? '',
+      office: mandate.office,
+      uf: mandate.uf ?? '',
+      house: mandate.house ?? '',
+    };
+    editing = true;
+    adminMsg = null;
+  }
+
+  async function saveEdit() {
+    if (adminBusy) return;
+    adminBusy = true;
+    adminMsg = null;
+    const res = await adminEditMandate(mandateId, f);
+    adminBusy = false;
+    if (res.success) {
+      const mr = await getMandate(mandateId);
+      if (mr.ok && mr.data) mandate = mr.data;
+      editing = false;
+      adminMsg = '✓ Salvo.';
+    } else {
+      adminMsg = res.error?.message ?? 'Não foi possível salvar.';
+    }
+  }
+
+  async function hideThis() {
+    if (adminBusy || !window.confirm('Ocultar este político da plataforma? (reversível)')) return;
+    adminBusy = true;
+    const res = await adminHideMandate(mandateId, true);
+    adminBusy = false;
+    adminMsg = res.success ? '✓ Ocultado — some das listagens públicas.' : (res.error?.message ?? 'Falhou.');
+  }
+
+  async function deleteThis() {
+    if (adminBusy) return;
+    if (!window.confirm('APAGAR DEFINITIVAMENTE este político e tudo ligado a ele (propostas, SLAs, placar)? Irreversível.')) return;
+    if (!window.confirm('Tem certeza absoluta? Não há como desfazer.')) return;
+    adminBusy = true;
+    const res = await adminDeleteMandate(mandateId);
+    adminBusy = false;
+    if (res.success) {
+      window.alert('Apagado.');
+      window.location.href = '/politicos';
+    } else {
+      adminMsg = res.error?.message ?? 'Não foi possível apagar. Tente ocultar.';
+    }
+  }
+
   const brlFormatter = new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL',
@@ -36,6 +100,11 @@
   const formatBrl = (v: number) => brlFormatter.format(v);
 
   onMount(async () => {
+    try {
+      isAdmin = localStorage.getItem('dsoc_is_admin') === '1';
+    } catch {
+      isAdmin = false;
+    }
     const [mr, scr, pr, slr, ar] = await Promise.all([
       getMandate(mandateId),
       getScorecard(mandateId),
@@ -175,6 +244,40 @@
       </a>
     </div>
   </header>
+
+  {#if isAdmin}
+    <section class="admin-box">
+      <button type="button" class="admin-toggle" onclick={() => (adminOpen = !adminOpen)}>
+        🛠️ Admin {adminOpen ? '▲' : '▼'}
+      </button>
+      {#if adminOpen}
+        <div class="admin-body">
+          {#if !editing}
+            <div class="admin-actions">
+              <button type="button" onclick={startEdit}>Editar dados</button>
+              <button type="button" onclick={hideThis} disabled={adminBusy}>Ocultar</button>
+              <button type="button" class="danger" onclick={deleteThis} disabled={adminBusy}>Apagar definitivo</button>
+            </div>
+          {:else}
+            <div class="admin-grid">
+              <label>Nome<input type="text" bind:value={f.display_name} /></label>
+              <label>Partido<input type="text" bind:value={f.party} /></label>
+              <label>Cargo<input type="text" bind:value={f.office} /></label>
+              <label>UF<input type="text" bind:value={f.uf} maxlength="2" /></label>
+              <label>Casa<input type="text" bind:value={f.house} placeholder="camara/senado/…" /></label>
+            </div>
+            <div class="admin-actions">
+              <button type="button" class="primary" onclick={saveEdit} disabled={adminBusy}>
+                {adminBusy ? 'Salvando…' : 'Salvar'}
+              </button>
+              <button type="button" onclick={() => (editing = false)}>Cancelar</button>
+            </div>
+          {/if}
+          {#if adminMsg}<p class="admin-msg">{adminMsg}</p>{/if}
+        </div>
+      {/if}
+    </section>
+  {/if}
 
   {#if pendingSlas.length > 0}
     <section class="urgent">
@@ -543,4 +646,51 @@
     font-variant-numeric: tabular-nums;
     color: var(--c-text-muted);
   }
+  /* Painel super-admin (SOCRATES) */
+  .admin-box {
+    margin: 0 0 1.5rem;
+    border: 1px dashed var(--border-subtle, #ccc);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .admin-toggle {
+    width: 100%;
+    text-align: left;
+    padding: 0.6rem 1rem;
+    background: var(--surface-2, #f4f4f7);
+    border: none;
+    color: var(--text-1, inherit);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .admin-body { padding: 1rem; display: grid; gap: 0.85rem; }
+  .admin-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.7rem;
+  }
+  .admin-grid label { display: grid; gap: 0.2rem; font-size: 0.82rem; font-weight: 600; }
+  .admin-grid input {
+    padding: 0.45rem 0.55rem;
+    border-radius: 7px;
+    border: 1px solid var(--border-subtle, #ccc);
+    background: var(--surface-1, #fff);
+    color: var(--text-1, inherit);
+    font: inherit;
+    min-width: 0;
+  }
+  .admin-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+  .admin-actions button {
+    padding: 0.45rem 0.9rem;
+    border-radius: 7px;
+    border: 1px solid var(--border-subtle, #ccc);
+    background: var(--surface-1, #fff);
+    color: var(--text-1, inherit);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .admin-actions button.primary { background: var(--accent, #15803d); color: #fff; border: none; }
+  .admin-actions button.danger { color: #dc2626; border-color: #dc2626; }
+  .admin-actions button:disabled { opacity: 0.5; cursor: default; }
+  .admin-msg { margin: 0; font-size: 0.9rem; color: var(--text-2, inherit); }
 </style>

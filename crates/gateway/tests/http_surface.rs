@@ -1967,10 +1967,7 @@ async fn campaign_group_full_flow() {
     assert_eq!(body["data"]["member_count"], serde_json::json!(1));
     assert_eq!(body["data"]["sou_membro"], serde_json::json!(true));
     assert_eq!(body["data"]["posts"].as_array().unwrap().len(), 1);
-    assert_eq!(
-        body["data"]["name"],
-        serde_json::json!("Campanha da Fulana")
-    );
+    assert_eq!(body["data"]["name"], serde_json::json!("Campanha da Fulana"));
 
     // 5) O eleitor sai; contagem volta a zero.
     let resp = app
@@ -2023,4 +2020,129 @@ async fn campaign_group_join_requires_auth() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+// ---------------------------------------------------------------------------
+// Super-admin: editar/ocultar/apagar conteúdo (0.40.0 — SOCRATES)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn admin_can_edit_and_hide_mandate_but_non_admin_cannot() {
+    let (app, st) = app().await;
+    let (org, admin, admin_cookie) = seed_session(&st.db).await;
+    grant_admin(&st.db, org, admin).await;
+    let mandate = seed_mandate_binding(&st.db, org, admin).await;
+
+    // Editar: renomeia o mandato e troca o partido.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "PATCH",
+            &format!("/api/v1/admin/mandates/{mandate}"),
+            Some(&admin_cookie),
+            r#"{"display_name":"Nome Corrigido","party":"PT"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let (name, party): (String, Option<String>) =
+        sqlx::query_as("SELECT display_name, party FROM mandate WHERE id = $1")
+            .bind(mandate)
+            .fetch_one(&st.db)
+            .await
+            .unwrap();
+    assert_eq!(name, "Nome Corrigido");
+    assert_eq!(party.as_deref(), Some("PT"));
+
+    // Ocultar: hidden_at passa a != NULL.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/admin/mandates/{mandate}/hide"),
+            Some(&admin_cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let hidden: Option<chrono::DateTime<chrono::Utc>> =
+        sqlx::query_scalar("SELECT hidden_at FROM mandate WHERE id = $1")
+            .bind(mandate)
+            .fetch_one(&st.db)
+            .await
+            .unwrap();
+    assert!(hidden.is_some(), "mandato deve ficar oculto");
+
+    // Reexibir com ?on=false.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/admin/mandates/{mandate}/hide?on=false"),
+            Some(&admin_cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let hidden: Option<chrono::DateTime<chrono::Utc>> =
+        sqlx::query_scalar("SELECT hidden_at FROM mandate WHERE id = $1")
+            .bind(mandate)
+            .fetch_one(&st.db)
+            .await
+            .unwrap();
+    assert!(hidden.is_none(), "reexibido");
+
+    // Não-admin (conta comum) não edita → 403.
+    let (_, _, plain_cookie) = seed_session_in_org(&st.db, org).await;
+    let resp = app
+        .oneshot(json_req(
+            "PATCH",
+            &format!("/api/v1/admin/mandates/{mandate}"),
+            Some(&plain_cookie),
+            r#"{"display_name":"Hack"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_hard_delete_requires_force() {
+    let (app, st) = app().await;
+    let (org, admin, admin_cookie) = seed_session(&st.db).await;
+    grant_admin(&st.db, org, admin).await;
+    let mandate = seed_mandate_binding(&st.db, org, admin).await;
+
+    // Sem ?force=true → 400 (protege contra apagar sem querer).
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "DELETE",
+            &format!("/api/v1/admin/mandates/{mandate}"),
+            Some(&admin_cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+    // Com ?force=true → apaga em cascata (mandato limpo, só o binding).
+    let resp = app
+        .oneshot(json_req(
+            "DELETE",
+            &format!("/api/v1/admin/mandates/{mandate}?force=true"),
+            Some(&admin_cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let gone: i64 = sqlx::query_scalar("SELECT count(*) FROM mandate WHERE id = $1")
+        .bind(mandate)
+        .fetch_one(&st.db)
+        .await
+        .unwrap();
+    assert_eq!(gone, 0, "mandato apagado");
 }

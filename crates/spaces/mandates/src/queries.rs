@@ -154,6 +154,7 @@ pub(crate) async fn list_mandates<'e, E: PgExecutor<'e>>(
                party, uf, house, avatar_object_key, sphere
         FROM mandate
         WHERE org_id = $1
+          AND hidden_at IS NULL
           AND ($2::text IS NULL OR sphere = $2)
         ORDER BY display_name ASC
         LIMIT $3 OFFSET $4

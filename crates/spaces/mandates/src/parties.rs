@@ -647,6 +647,7 @@ async fn load_directory_members(
             SELECT id, display_name, office, uf, municipio, avatar_object_key
               FROM mandate
              WHERE org_id = $1
+               AND hidden_at IS NULL
                AND party = $2
                AND sphere = $3
                AND ($4::text IS NULL OR uf = $4)

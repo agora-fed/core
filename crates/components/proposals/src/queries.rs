@@ -231,7 +231,7 @@ pub async fn list_proposals(
                   c.avatar_object_key   AS "author_avatar_object_key?"
            FROM proposal p
            LEFT JOIN citizen c ON c.id = p.author_citizen_id
-           WHERE p.org_id = $1 AND ($2::uuid IS NULL OR p.id > $2)
+           WHERE p.org_id = $1 AND p.hidden_at IS NULL AND ($2::uuid IS NULL OR p.id > $2)
            ORDER BY p.id
            LIMIT $3"#,
         org_id,
