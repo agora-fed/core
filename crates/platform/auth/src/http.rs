@@ -24,8 +24,8 @@ use dsoc_core::{Error, Result};
 
 use crate::domain::{KeySource, TokenValidator, DEFAULT_SESSION_TTL_SECS, IDENTITY_DEPENDENCY};
 use crate::dto::{
-    CreateSessionRequest, LoginRequest, MeDto, RegisterPoliticianRequest, RegisterRequest,
-    SessionDto,
+    CreateSessionRequest, LoginRequest, MeDto, RegisterCandidateRequest, RegisterPoliticianRequest,
+    RegisterRequest, SessionDto,
 };
 use crate::mandate_invite::{AcceptRequest, MandateInviteService};
 use crate::password_reset::PasswordResetService;
@@ -64,6 +64,7 @@ pub fn routes(state: AppState) -> Router<()> {
         // conta só é materializada em /auth/register/confirm.
         .route("/auth/register", post(register))
         .route("/auth/register/politician", post(register_politician))
+        .route("/auth/register/candidate", post(register_candidate))
         .route("/auth/register/confirm", post(register_confirm))
         .route("/auth/register/resend", post(register_resend))
         .route("/auth/password-reset/request", post(password_reset_request))
@@ -239,6 +240,48 @@ async fn register_politician(
             &req.password,
             &req.cpf,
             req.mandate_id,
+            ip.as_deref(),
+        )
+        .await
+    {
+        Ok(()) => (
+            StatusCode::ACCEPTED,
+            Json(ApiResponse::ok(SignupPendingDto {
+                status: "verification_sent",
+                email: req.email.trim().to_lowercase(),
+            })),
+        )
+            .into_response(),
+        Err(error) => error_response(&error),
+    }
+}
+
+/// `POST /auth/register/candidate` — cadastro de candidato(a) SEM mandato
+/// (0526). Valida os metadados da candidatura, grava a pending e envia o
+/// link de verificação. Mesmo shape de resposta do `/auth/register`.
+async fn register_candidate(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<RegisterCandidateRequest>,
+) -> Response {
+    let svc = SignupVerifyService::from_state(&state);
+    let org = OrgId::from_uuid(req.org_id);
+    let ip = caller_ip(&headers);
+    let meta = crate::signup_verify::CandidateMeta {
+        display_name: req.display_name,
+        office: req.office,
+        uf: req.uf,
+        municipio: req.municipio,
+        party_sigla: req.party_sigla,
+        number: req.number,
+    };
+    match svc
+        .request_candidato(
+            org,
+            &req.email,
+            &req.password,
+            &req.cpf,
+            meta,
             ip.as_deref(),
         )
         .await

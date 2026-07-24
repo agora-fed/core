@@ -64,6 +64,12 @@
         <a href={`/perfil/?u=${encodeURIComponent(data.handle)}`}>@{data.handle}</a>
         · financiamento de campanha declarado publicamente
       </p>
+      {#if !data.verificado}
+        <p class="selo-autodeclarada">
+          ⚠️ Candidatura autodeclarada — identidade ainda não verificada por
+          partido, mandato ou TSE.
+        </p>
+      {/if}
     </div>
   </header>
 
@@ -175,6 +181,16 @@
     align-items: center;
     gap: var(--sp-3);
     margin-bottom: var(--sp-4);
+  }
+  .selo-autodeclarada {
+    margin: var(--sp-2) 0 0;
+    padding: var(--sp-1) var(--sp-2);
+    display: inline-block;
+    font-size: var(--fs-sm);
+    border-radius: var(--r-sm);
+    background: color-mix(in srgb, var(--pol-center, #f4c20d) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--pol-center, #f4c20d) 45%, transparent);
+    color: var(--text-1);
   }
   .head h1 {
     margin: 0;

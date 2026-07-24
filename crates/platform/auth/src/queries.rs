@@ -353,6 +353,103 @@ pub(crate) async fn insert_mandate_identity_binding<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
+/// Cria a row de `mandate` de um(a) candidato(a) auto-declarado(a) (0526).
+/// `source='self'` + `is_candidate=true`; `source_external_id` = uuid do
+/// citizen (chave natural, garante 1 mandato self por conta).
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn insert_mandate_self_candidate<'e, E: PgExecutor<'e>>(
+    ex: E,
+    id: Uuid,
+    org: Uuid,
+    citizen: Uuid,
+    office: &str,
+    display_name: &str,
+    public_email: &str,
+    party: &str,
+    uf: Option<&str>,
+    sphere: &str,
+    now: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"
+        INSERT INTO mandate
+            (id, org_id, office, display_name, public_email, is_candidate,
+             onboarded_at, created_at, party, uf, sphere, source, source_external_id)
+        VALUES ($1, $2, $3, $4, $5, true, $10, $10, $6, $7, $8, 'self', $9)
+        "#,
+        id,
+        org,
+        office,
+        display_name,
+        public_email,
+        party,
+        uf,
+        sphere,
+        citizen.to_string(),
+        now,
+    )
+    .execute(ex)
+    .await?;
+    Ok(())
+}
+
+/// Eleição-alvo do cadastro de candidato: round 1 do ano/esfera na org.
+pub(crate) async fn find_election_id<'e, E: PgExecutor<'e>>(
+    ex: E,
+    org: Uuid,
+    year: i32,
+    sphere: &str,
+) -> Result<Option<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"
+        SELECT id FROM election
+         WHERE org_id = $1 AND year = $2 AND round = 1 AND sphere = $3
+        "#,
+        org,
+        year,
+        sphere,
+    )
+    .fetch_optional(ex)
+    .await
+}
+
+/// Candidatura auto-declarada (0526): `listed=false` — fora do comparador
+/// público até verificação (atestação de partido/mandato, match TSE ou admin).
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn insert_candidacy_self<'e, E: PgExecutor<'e>>(
+    ex: E,
+    id: Uuid,
+    election_id: Uuid,
+    mandate_id: Uuid,
+    party_sigla: &str,
+    office: &str,
+    number: &str,
+    sphere_uf: Option<&str>,
+    sphere_municipio: Option<&str>,
+    candidate_name: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"
+        INSERT INTO candidacy
+            (id, election_id, mandate_id, party_sigla, office, number,
+             sphere_uf, sphere_municipio, candidate_name, status, listed)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'autodeclarada', false)
+        "#,
+        id,
+        election_id,
+        mandate_id,
+        party_sigla,
+        office,
+        number,
+        sphere_uf,
+        sphere_municipio,
+        candidate_name,
+    )
+    .execute(ex)
+    .await?;
+    Ok(())
+}
+
 /// Look up a credential by e-mail within an org (for login).
 pub(crate) async fn find_credential_by_email<'e, E: PgExecutor<'e>>(
     ex: E,
@@ -1348,6 +1445,7 @@ pub(crate) struct PendingSignupRow {
     pub cpf: String,
     pub role: String,
     pub mandate_id: Option<Uuid>,
+    pub candidate_meta: Option<serde_json::Value>,
 }
 
 /// Insere um pending_signup. Caller pré-computou o SHA-256 do token (só o
@@ -1362,6 +1460,7 @@ pub(crate) async fn pending_signup_insert<'e, E: PgExecutor<'e>>(
     cpf: &str,
     role: &str,
     mandate_id: Option<Uuid>,
+    candidate_meta: Option<&serde_json::Value>,
     token_hash: &[u8],
     expires_at: DateTime<Utc>,
     request_ip: Option<&str>,
@@ -1370,9 +1469,9 @@ pub(crate) async fn pending_signup_insert<'e, E: PgExecutor<'e>>(
     sqlx::query!(
         r#"
         INSERT INTO auth_pending_signup
-            (id, org_id, email, password_hash, cpf, role, mandate_id,
+            (id, org_id, email, password_hash, cpf, role, mandate_id, candidate_meta,
              token_hash, expires_at, used_at, request_ip, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, $11, $12)
         "#,
         id,
         org_id,
@@ -1381,6 +1480,7 @@ pub(crate) async fn pending_signup_insert<'e, E: PgExecutor<'e>>(
         cpf,
         role,
         mandate_id,
+        candidate_meta,
         token_hash,
         expires_at,
         request_ip,
@@ -1426,7 +1526,7 @@ pub(crate) async fn pending_signup_find_live<'e, E: PgExecutor<'e>>(
     let row = sqlx::query_as!(
         PendingSignupRow,
         r#"
-        SELECT id, org_id, email, password_hash, cpf, role, mandate_id
+        SELECT id, org_id, email, password_hash, cpf, role, mandate_id, candidate_meta
           FROM auth_pending_signup
          WHERE token_hash = $1 AND used_at IS NULL AND expires_at > $2
         "#,
@@ -1473,7 +1573,7 @@ pub(crate) async fn pending_signup_find_live_for_email<'e, E: PgExecutor<'e>>(
     let row = sqlx::query_as!(
         PendingSignupRow,
         r#"
-        SELECT id, org_id, email, password_hash, cpf, role, mandate_id
+        SELECT id, org_id, email, password_hash, cpf, role, mandate_id, candidate_meta
           FROM auth_pending_signup
          WHERE org_id = $1 AND email = $2
            AND used_at IS NULL AND expires_at > $3

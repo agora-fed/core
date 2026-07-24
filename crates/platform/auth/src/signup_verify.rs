@@ -53,6 +53,7 @@ const DEFAULT_RATE_MAX_PER_HOUR: i64 = 3;
 enum PendingRole {
     Cidadao,
     Politico,
+    Candidato,
 }
 
 impl PendingRole {
@@ -60,14 +61,119 @@ impl PendingRole {
         match self {
             Self::Cidadao => "cidadao",
             Self::Politico => "politico",
+            Self::Candidato => "candidato",
         }
     }
     fn parse(s: &str) -> Option<Self> {
         match s {
             "cidadao" => Some(Self::Cidadao),
             "politico" => Some(Self::Politico),
+            "candidato" => Some(Self::Candidato),
             _ => None,
         }
+    }
+}
+
+/// Eleição-alvo do cadastro de candidato(a). Quando 2028 chegar, vira env/config.
+const CANDIDATE_ELECTION_YEAR: i32 = 2026;
+
+/// Metadados da candidatura auto-declarada (migration 0526). Validados no
+/// request ([`CandidateMeta::validated`]), persistidos como jsonb na pending
+/// e materializados no confirm (mandate + binding + candidacy).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CandidateMeta {
+    /// Nome de urna (público).
+    pub display_name: String,
+    /// Cargo pretendido — mesmo eixo de `candidacy.office`.
+    pub office: String,
+    /// UF (obrigatória exceto presidente).
+    pub uf: Option<String>,
+    /// Município (obrigatório pra cargos municipais).
+    pub municipio: Option<String>,
+    /// Sigla do partido na filiação atual.
+    pub party_sigla: String,
+    /// Número de urna, se já definido pelo partido.
+    pub number: Option<String>,
+}
+
+/// Esfera derivada do cargo — mesma taxonomia de `candidacy.office`/`election.sphere`.
+fn office_sphere(office: &str) -> Option<&'static str> {
+    match office {
+        "presidente" | "senador" | "deputado_federal" => Some("federal"),
+        "governador" | "deputado_estadual" => Some("estadual"),
+        "prefeito" | "vice_prefeito" | "vereador" => Some("municipal"),
+        _ => None,
+    }
+}
+
+impl CandidateMeta {
+    /// Normaliza + valida. Retorna `(meta_normalizada, sphere)`.
+    ///
+    /// # Errors
+    /// [`Error::Validation`] com mensagem amigável pra cada campo inválido.
+    pub fn validated(mut self) -> Result<(Self, &'static str)> {
+        self.display_name = self.display_name.trim().to_owned();
+        if self.display_name.chars().count() < 3 || self.display_name.chars().count() > 80 {
+            return Err(Error::Validation(
+                "nome de urna deve ter entre 3 e 80 caracteres".to_owned(),
+            ));
+        }
+        let sphere = office_sphere(&self.office).ok_or_else(|| {
+            Error::Validation(
+                "cargo inválido — use presidente, governador, senador, deputado_federal, \
+                 deputado_estadual, prefeito, vice_prefeito ou vereador"
+                    .to_owned(),
+            )
+        })?;
+        self.uf = match self.uf.take() {
+            Some(uf) => {
+                let uf = uf.trim().to_uppercase();
+                if uf.len() != 2 || !uf.chars().all(|c| c.is_ascii_alphabetic()) {
+                    return Err(Error::Validation("UF inválida (2 letras)".to_owned()));
+                }
+                Some(uf)
+            }
+            None => None,
+        };
+        if self.office != "presidente" && self.uf.is_none() {
+            return Err(Error::Validation(
+                "UF é obrigatória pra esse cargo".to_owned(),
+            ));
+        }
+        self.municipio = self
+            .municipio
+            .take()
+            .map(|m| m.trim().to_owned())
+            .filter(|m| !m.is_empty());
+        if sphere == "municipal" && self.municipio.is_none() {
+            return Err(Error::Validation(
+                "município é obrigatório pra cargos municipais".to_owned(),
+            ));
+        }
+        if let Some(m) = &self.municipio {
+            if m.chars().count() > 120 {
+                return Err(Error::Validation("município longo demais".to_owned()));
+            }
+        }
+        self.party_sigla = self.party_sigla.trim().to_uppercase();
+        if self.party_sigla.chars().count() < 2 || self.party_sigla.chars().count() > 20 {
+            return Err(Error::Validation(
+                "sigla do partido deve ter entre 2 e 20 caracteres".to_owned(),
+            ));
+        }
+        self.number = self
+            .number
+            .take()
+            .map(|n| n.trim().to_owned())
+            .filter(|n| !n.is_empty());
+        if let Some(n) = &self.number {
+            if n.len() < 2 || n.len() > 5 || !n.chars().all(|c| c.is_ascii_digit()) {
+                return Err(Error::Validation(
+                    "número de urna deve ter de 2 a 5 dígitos".to_owned(),
+                ));
+            }
+        }
+        Ok((self, sphere))
     }
 }
 
@@ -206,6 +312,45 @@ impl SignupVerifyService {
             cpf_raw,
             PendingRole::Cidadao,
             None,
+            None,
+            request_ip,
+        )
+        .await
+    }
+
+    /// Passo 1c — candidato(a) SEM mandato (0526). Não há prova automática
+    /// possível (a pessoa ainda não consta em registro oficial nenhum), então
+    /// os metadados são validados e guardados como auto-declaração; o confirm
+    /// materializa mandate `source='self'` + binding nível `email` + candidacy
+    /// `listed=false`. A verificação (partido/TSE/admin) vem depois.
+    ///
+    /// # Errors
+    /// Idem [`Self::request_cidadao`] + [`Error::Validation`] pros campos da
+    /// candidatura.
+    pub async fn request_candidato(
+        &self,
+        org: OrgId,
+        email: &str,
+        password: &str,
+        cpf_raw: &str,
+        meta: CandidateMeta,
+        request_ip: Option<&str>,
+    ) -> Result<()> {
+        let (meta, _sphere) = meta.validated()?;
+        let meta_json = serde_json::to_value(&meta).map_err(|e| {
+            Error::Storage(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e,
+            )))
+        })?;
+        self.request_common(
+            org,
+            email,
+            password,
+            cpf_raw,
+            PendingRole::Candidato,
+            None,
+            Some(meta_json),
             request_ip,
         )
         .await
@@ -247,6 +392,7 @@ impl SignupVerifyService {
             cpf_raw,
             PendingRole::Politico,
             Some(mandate_id),
+            None,
             request_ip,
         )
         .await
@@ -263,6 +409,7 @@ impl SignupVerifyService {
         cpf_raw: &str,
         role: PendingRole,
         mandate_id: Option<Uuid>,
+        candidate_meta: Option<serde_json::Value>,
         request_ip: Option<&str>,
     ) -> Result<()> {
         let now = self.clock.now();
@@ -311,6 +458,7 @@ impl SignupVerifyService {
             cpf.as_str(),
             role.as_str(),
             mandate_id,
+            candidate_meta.as_ref(),
             &token_hash,
             expires_at,
             request_ip,
@@ -369,6 +517,7 @@ impl SignupVerifyService {
             &row.cpf,
             role.as_str(),
             row.mandate_id,
+            row.candidate_meta.as_ref(),
             &token_hash,
             expires_at,
             request_ip,
@@ -440,7 +589,9 @@ impl SignupVerifyService {
         let cpf_status = self.cpf_verifier.verify(&cpf).await;
         let level = match role {
             PendingRole::Politico => VerificationLevel::Directory,
-            PendingRole::Cidadao => match cpf_status {
+            // Candidato auto-declarado NÃO ganha 'directory' — não há registro
+            // oficial pra conferir. Sobe via atestação/TSE/admin depois.
+            PendingRole::Cidadao | PendingRole::Candidato => match cpf_status {
                 crate::credential::CpfStatus::Verified => VerificationLevel::Strong,
                 _ => VerificationLevel::Email,
             },
@@ -493,6 +644,85 @@ impl SignupVerifyService {
                     "directory",
                     None,
                     now,
+                )
+                .await
+                .map_err(map_sqlx)?;
+            }
+        }
+
+        if role == PendingRole::Candidato {
+            // Mesma transparência não-opt-out do político: candidatura é pública.
+            queries::force_citizen_public(&mut *tx, citizen.as_uuid())
+                .await
+                .map_err(map_sqlx)?;
+            let meta: CandidateMeta = row
+                .candidate_meta
+                .clone()
+                .ok_or_else(|| {
+                    Error::Storage(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "pending role=candidato sem candidate_meta",
+                    )))
+                })
+                .and_then(|v| {
+                    serde_json::from_value(v).map_err(|e| {
+                        Error::Storage(Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            e,
+                        )))
+                    })
+                })?;
+            // Defensivo: re-valida o que o request gravou (o CHECK do banco só
+            // garante presença do jsonb, não o shape).
+            let (meta, sphere) = meta.validated()?;
+            let mandate_id = Uuid::now_v7();
+            queries::insert_mandate_self_candidate(
+                &mut *tx,
+                mandate_id,
+                org.as_uuid(),
+                citizen.as_uuid(),
+                &meta.office,
+                &meta.display_name,
+                &row.email,
+                &meta.party_sigla,
+                meta.uf.as_deref(),
+                sphere,
+                now,
+            )
+            .await
+            .map_err(map_sqlx)?;
+            // Binding nível 'email' — o gate is_politico destrava (painel +
+            // /me/campanha), mas o selo público segue "autodeclarada".
+            queries::insert_mandate_identity_binding(
+                &mut *tx,
+                Uuid::now_v7(),
+                mandate_id,
+                citizen.as_uuid(),
+                "email",
+                Some(&format!("self_signup:{}", row.id)),
+                now,
+            )
+            .await
+            .map_err(map_sqlx)?;
+            // Candidatura fora do comparador (listed=false) até verificação.
+            // Sem eleição correspondente cadastrada, segue sem candidacy — o
+            // mandato/binding bastam pras ferramentas.
+            if let Some(election_id) =
+                queries::find_election_id(&mut *tx, org.as_uuid(), CANDIDATE_ELECTION_YEAR, sphere)
+                    .await
+                    .map_err(map_sqlx)?
+            {
+                queries::insert_candidacy_self(
+                    &mut *tx,
+                    Uuid::now_v7(),
+                    election_id,
+                    mandate_id,
+                    &meta.party_sigla,
+                    &meta.office,
+                    meta.number.as_deref().unwrap_or(""),
+                    meta.uf.as_deref(),
+                    meta.municipio.as_deref(),
+                    &meta.display_name,
                 )
                 .await
                 .map_err(map_sqlx)?;
@@ -581,8 +811,7 @@ impl SignupVerifyService {
         let smtp = smtp.clone();
         let to_owned = to.to_owned();
         tokio::spawn(async move {
-            let mut ctx: std::collections::HashMap<&str, String> =
-                std::collections::HashMap::new();
+            let mut ctx: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
             ctx.insert("site_url", origin.clone());
             ctx.insert("settings_url", format!("{origin}/configuracoes/"));
             let (subject, body) = dsoc_db::email_templates::render(&db, "welcome", &ctx)
@@ -639,7 +868,6 @@ async fn send_email(
     subject: &str,
     body: &str,
 ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    
     use lettre::transport::smtp::authentication::Credentials;
     use lettre::transport::smtp::AsyncSmtpTransport;
     use lettre::{AsyncTransport, Message, Tokio1Executor};

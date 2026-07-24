@@ -784,6 +784,37 @@ export const registerPolitician = (
     mandate_id: mandateId,
   });
 
+/** Campos da candidatura auto-declarada (cadastro de candidato sem mandato). */
+export interface CandidateSignupFields {
+  display_name: string;
+  office: string;
+  uf?: string;
+  municipio?: string;
+  party_sigla: string;
+  number?: string;
+}
+
+/**
+ * Inicia o cadastro de CANDIDATO(A) SEM MANDATO (0.36.0). A candidatura é
+ * auto-declarada: o confirm cria mandato `source='self'` + vínculo nível
+ * `email` (ferramentas destravam já, com selo "não verificada") e a
+ * candidatura fica fora do comparador até verificação. Também 202 + e-mail.
+ */
+export const registerCandidate = (
+  email: string,
+  password: string,
+  cpf: string,
+  fields: CandidateSignupFields,
+  orgId = DEFAULT_ORG_ID,
+) =>
+  apiPost<SignupPendingData>('/api/v1/auth/register/candidate', {
+    org_id: orgId,
+    email: email.trim(),
+    password,
+    cpf,
+    ...fields,
+  });
+
 /**
  * Redime o token do e-mail de verificação e finaliza o cadastro. Emite a
  * sessão como se fosse um login — o front seta o cookie e redireciona.
@@ -2284,6 +2315,8 @@ export interface CampanhaConfigDto {
 /** `GET /me/campanha` — `is_politico=false` ⇒ conta sem vínculo de mandato. */
 export interface CampanhaDto {
   is_politico: boolean;
+  /** false = candidatura autodeclarada ainda não verificada (selo no painel). */
+  verificado: boolean;
   config: CampanhaConfigDto | null;
   lancamentos: CampanhaEntryDto[];
 }
@@ -2330,6 +2363,8 @@ export interface CampanhaPublicaDto {
   handle: string;
   display_name: string | null;
   avatar_url: string | null;
+  /** false = candidatura autodeclarada, ainda sem verificação (selo público). */
+  verificado: boolean;
   meta_centavos: number | null;
   bank_account: string | null;
   crowdfunding_url: string | null;

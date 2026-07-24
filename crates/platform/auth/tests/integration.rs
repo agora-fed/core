@@ -588,6 +588,138 @@ async fn signup_verify_confirm_rejects_expired_token() {
     assert!(matches!(err, dsoc_core::Error::Unauthorized));
 }
 
+/// 0.36.0 (migration 0526): confirm de `role='candidato'` materializa a
+/// tríade — mandate `source='self'`/`is_candidate=true`, binding nível
+/// `'email'` e candidacy `listed=false` amarrada à eleição do ano/esfera.
+#[tokio::test]
+async fn signup_verify_confirm_materializes_candidato() {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine;
+    use sha2::{Digest, Sha256};
+
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    let clock: Arc<dyn Clock> = Arc::new(FixedClock(now()));
+    let svc = dsoc_auth::signup_verify::SignupVerifyService::new_for_tests(
+        db.clone(),
+        clock,
+        "https://test.local",
+        3600,
+        3600,
+    );
+
+    // Eleição municipal 2026 — alvo da candidacy do confirm.
+    let election_id = Uuid::now_v7();
+    sqlx::query(
+        r"INSERT INTO election (id, org_id, year, round, sphere, election_day)
+          VALUES ($1, $2, 2026, 1, 'municipal', '2026-10-04')
+          ON CONFLICT (org_id, year, round, sphere) DO NOTHING",
+    )
+    .bind(election_id)
+    .bind(org.as_uuid())
+    .execute(&db)
+    .await
+    .expect("seed election");
+
+    let token: String = URL_SAFE_NO_PAD.encode([9u8; 32]);
+    let hash: Vec<u8> = {
+        let mut h = Sha256::new();
+        h.update(token.as_bytes());
+        h.finalize().to_vec()
+    };
+    let pending_id = Uuid::now_v7();
+    let email = format!("candidata-{}@exemplo.br", Uuid::now_v7());
+    let meta = serde_json::json!({
+        "display_name": "Fulana da Silva",
+        "office": "vereador",
+        "uf": "RS",
+        "municipio": "Porto Alegre",
+        "party_sigla": "XYZ",
+        "number": "12345",
+    });
+    sqlx::query(
+        r"INSERT INTO auth_pending_signup
+            (id, org_id, email, password_hash, cpf, role, mandate_id, candidate_meta,
+             token_hash, expires_at, used_at, request_ip, created_at)
+          VALUES ($1, $2, $3, $4, $5, 'candidato', NULL, $6,
+                  $7, $8, NULL, NULL, $9)",
+    )
+    .bind(pending_id)
+    .bind(org.as_uuid())
+    .bind(&email)
+    .bind("$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHQ$hash")
+    .bind("52998224725")
+    .bind(&meta)
+    .bind(&hash)
+    .bind(now() + chrono::Duration::hours(1))
+    .bind(now())
+    .execute(&db)
+    .await
+    .expect("seed pending candidato");
+
+    let outcome = svc.confirm(&token).await.expect("confirm candidato");
+    let dsoc_auth::signup_verify::ConfirmOutcome::Session(session) = outcome else {
+        panic!("confirm de candidato emite sessão em instância aberta");
+    };
+
+    // Mandate self criado com os metadados da candidatura.
+    let (mandate_id, office, display_name, is_candidate, party, uf, sphere): (
+        Uuid,
+        String,
+        String,
+        bool,
+        Option<String>,
+        Option<String>,
+        String,
+    ) = sqlx::query_as(
+        r"SELECT id, office, display_name, is_candidate, party, uf, sphere
+            FROM mandate WHERE source = 'self' AND source_external_id = $1",
+    )
+    .bind(session.citizen.as_uuid().to_string())
+    .fetch_one(&db)
+    .await
+    .expect("mandate self criado");
+    assert_eq!(office, "vereador");
+    assert_eq!(display_name, "Fulana da Silva");
+    assert!(is_candidate, "mandato de candidato marca is_candidate");
+    assert_eq!(party.as_deref(), Some("XYZ"));
+    assert_eq!(uf.as_deref(), Some("RS"));
+    assert_eq!(sphere, "municipal");
+
+    // Binding nível 'email' (autodeclarado) — destrava o gate is_politico,
+    // mas NÃO o selo de verificado.
+    let level: String = sqlx::query_scalar(
+        r"SELECT verification_level FROM mandate_identity_binding
+           WHERE mandate_id = $1 AND citizen_id = $2",
+    )
+    .bind(mandate_id)
+    .bind(session.citizen.as_uuid())
+    .fetch_one(&db)
+    .await
+    .expect("binding criado");
+    assert_eq!(level, "email");
+
+    // Candidacy fora do comparador até verificação.
+    let (cand_listed, cand_status, cand_name): (bool, Option<String>, String) = sqlx::query_as(
+        r"SELECT listed, status, candidate_name FROM candidacy WHERE mandate_id = $1",
+    )
+    .bind(mandate_id)
+    .fetch_one(&db)
+    .await
+    .expect("candidacy criada");
+    assert!(!cand_listed, "autodeclarada nasce fora do comparador");
+    assert_eq!(cand_status.as_deref(), Some("autodeclarada"));
+    assert_eq!(cand_name, "Fulana da Silva");
+
+    // Transparência não-opt-out: candidato é público como político.
+    let is_public: bool = sqlx::query_scalar("SELECT is_public FROM citizen WHERE id = $1")
+        .bind(session.citizen.as_uuid())
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert!(is_public);
+}
+
 #[tokio::test]
 async fn signup_verify_confirm_rejects_unknown_token() {
     let db = connect().await;

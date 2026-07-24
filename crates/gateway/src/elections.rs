@@ -182,6 +182,7 @@ async fn list_candidacies(
                  sphere_uf, sphere_municipio, result_rank, status, created_at
             FROM candidacy
            WHERE election_id = $1
+             AND listed
              AND ($2::text IS NULL OR sphere_uf = $2)
              AND ($3::text IS NULL OR office = $3)
              AND ($4::text IS NULL OR party_sigla = $4)

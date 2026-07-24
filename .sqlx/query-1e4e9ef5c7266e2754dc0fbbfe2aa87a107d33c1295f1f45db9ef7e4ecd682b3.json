@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, org_id, email, password_hash, cpf, role, mandate_id\n          FROM auth_pending_signup\n         WHERE token_hash = $1 AND used_at IS NULL AND expires_at > $2\n        ",
+  "query": "\n        SELECT id, org_id, email, password_hash, cpf, role, mandate_id, candidate_meta\n          FROM auth_pending_signup\n         WHERE token_hash = $1 AND used_at IS NULL AND expires_at > $2\n        ",
   "describe": {
     "columns": [
       {
@@ -37,6 +37,11 @@
         "ordinal": 6,
         "name": "mandate_id",
         "type_info": "Uuid"
+      },
+      {
+        "ordinal": 7,
+        "name": "candidate_meta",
+        "type_info": "Jsonb"
       }
     ],
     "parameters": {
@@ -52,8 +57,9 @@
       false,
       false,
       false,
+      true,
       true
     ]
   },
-  "hash": "f7b137b3b6089f43d6289aa6e4fd098e38545c6eb3f63ebde04f7e581db819a2"
+  "hash": "1e4e9ef5c7266e2754dc0fbbfe2aa87a107d33c1295f1f45db9ef7e4ecd682b3"
 }

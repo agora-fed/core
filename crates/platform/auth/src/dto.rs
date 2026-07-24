@@ -140,6 +140,34 @@ pub struct RegisterPoliticianRequest {
     pub mandate_id: uuid::Uuid,
 }
 
+/// Cadastro de candidato(a) SEM mandato (auto-declarado, migration 0526).
+/// O confirm materializa mandate `source='self'` + binding nível `email` +
+/// candidacy `listed=false`. Runs against `POST /auth/register/candidate`.
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
+pub struct RegisterCandidateRequest {
+    /// Organization/tenant.
+    pub org_id: uuid::Uuid,
+    /// Contact e-mail (verificado por link, como no register comum).
+    pub email: String,
+    /// Password (>= 8 chars; stored Argon2id-hashed).
+    pub password: String,
+    /// Brazilian CPF (any punctuation; validated by check digits).
+    pub cpf: String,
+    /// Nome de urna (público).
+    pub display_name: String,
+    /// Cargo pretendido: presidente | governador | senador | deputado_federal
+    /// | deputado_estadual | prefeito | vice_prefeito | vereador.
+    pub office: String,
+    /// UF (obrigatória exceto presidente).
+    pub uf: Option<String>,
+    /// Município (obrigatório pra cargos municipais).
+    pub municipio: Option<String>,
+    /// Sigla do partido da filiação atual.
+    pub party_sigla: String,
+    /// Número de urna, se já definido.
+    pub number: Option<String>,
+}
+
 /// Login with e-mail + senha.
 #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct LoginRequest {

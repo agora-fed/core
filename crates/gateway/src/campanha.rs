@@ -101,6 +101,19 @@ async fn is_politico(db: &PgPool, citizen: Uuid) -> Result<bool, sqlx::Error> {
     .await
 }
 
+/// Vínculo VERIFICADO (directory/strong)? Candidato auto-declarado (binding
+/// nível 'email', 0526) fica `false` — o front pinta o selo "candidatura
+/// autodeclarada — não verificada" nas superfícies públicas.
+async fn is_verificado(db: &PgPool, citizen: Uuid) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar(
+        r"SELECT EXISTS (SELECT 1 FROM mandate_identity_binding
+           WHERE citizen_id = $1 AND verification_level IN ('directory','strong'))",
+    )
+    .bind(citizen)
+    .fetch_one(db)
+    .await
+}
+
 // ---------------------------------------------------------------------------
 // GET /me/campanha — visão completa
 // ---------------------------------------------------------------------------
@@ -128,6 +141,8 @@ struct ConfigDto {
 #[derive(Debug, Serialize)]
 struct CampanhaDto {
     is_politico: bool,
+    /// Vínculo directory/strong. false = candidatura autodeclarada (selo no front).
+    verificado: bool,
     config: Option<ConfigDto>,
     lancamentos: Vec<EntryDto>,
 }
@@ -151,12 +166,20 @@ async fn overview(State(state): State<AppState>, headers: HeaderMap) -> Response
             StatusCode::OK,
             Json(ApiResponse::ok(CampanhaDto {
                 is_politico: false,
+                verificado: false,
                 config: None,
                 lancamentos: Vec::new(),
             })),
         )
             .into_response();
     }
+    let verificado = match is_verificado(&state.db, citizen).await {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::error!(?err, "campanha verificado check");
+            return storage_error();
+        }
+    };
     let config: Option<ConfigDto> = match sqlx::query_as(
         r"SELECT meta_centavos, bank_account, crowdfunding_url, is_published
             FROM campaign_fundraising_config
@@ -195,6 +218,7 @@ async fn overview(State(state): State<AppState>, headers: HeaderMap) -> Response
         StatusCode::OK,
         Json(ApiResponse::ok(CampanhaDto {
             is_politico: true,
+            verificado,
             config,
             lancamentos,
         })),
@@ -211,6 +235,8 @@ struct CampanhaPublicaDto {
     handle: String,
     display_name: Option<String>,
     avatar_url: Option<String>,
+    /// false = candidatura autodeclarada, ainda sem verificação (selo público).
+    verificado: bool,
     meta_centavos: Option<i64>,
     bank_account: Option<String>,
     crowdfunding_url: Option<String>,
@@ -264,6 +290,13 @@ async fn public_view(State(state): State<AppState>, Path(handle): Path<String>) 
             return storage_error();
         }
     }
+    let verificado = match is_verificado(&state.db, citizen).await {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::error!(?err, "campanha public verificado check");
+            return storage_error();
+        }
+    };
     let lancamentos: Vec<EntryDto> = match sqlx::query_as(
         r"SELECT id, kind, descricao, valor_centavos, occurred_on,
                  receipt_ref, donor_name, created_at
@@ -303,6 +336,7 @@ async fn public_view(State(state): State<AppState>, Path(handle): Path<String>) 
             handle: profile.handle.unwrap_or(profile.public_handle),
             display_name: profile.display_name,
             avatar_url: profile.avatar_url,
+            verificado,
             meta_centavos: config.meta_centavos,
             bank_account: config.bank_account,
             crowdfunding_url: config.crowdfunding_url,

@@ -10,6 +10,7 @@
   import {
     register,
     registerPolitician,
+    registerCandidate,
     registerResend,
     getAllMandates,
     DEFAULT_ORG_ID,
@@ -22,7 +23,7 @@
   import Avatar from '../ui/Avatar.svelte';
   import Icon from '../ui/Icon.svelte';
 
-  type Role = 'cidadao' | 'politico';
+  type Role = 'cidadao' | 'politico' | 'candidato';
 
   let role = $state<Role>('cidadao');
   let email = $state('');
@@ -53,6 +54,40 @@
   let mandatesLoaded = $state(false);
   let mandateListOpen = $state(false);
 
+  // Candidate-mode state (0.36.0 — candidatura auto-declarada, sem mandato).
+  const OFFICES = [
+    { value: 'vereador', label: 'Vereador(a)', sphere: 'municipal' },
+    { value: 'prefeito', label: 'Prefeito(a)', sphere: 'municipal' },
+    { value: 'vice_prefeito', label: 'Vice-prefeito(a)', sphere: 'municipal' },
+    { value: 'deputado_estadual', label: 'Deputado(a) estadual', sphere: 'estadual' },
+    { value: 'governador', label: 'Governador(a)', sphere: 'estadual' },
+    { value: 'deputado_federal', label: 'Deputado(a) federal', sphere: 'federal' },
+    { value: 'senador', label: 'Senador(a)', sphere: 'federal' },
+    { value: 'presidente', label: 'Presidente', sphere: 'federal' },
+  ] as const;
+  const UFS = [
+    'AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA',
+    'PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO',
+  ] as const;
+  let candName = $state('');
+  let candOffice = $state('');
+  let candUf = $state('');
+  let candMunicipio = $state('');
+  let candParty = $state('');
+  let candNumber = $state('');
+
+  let candSphere = $derived(
+    OFFICES.find((o) => o.value === candOffice)?.sphere ?? null,
+  );
+  let candValid = $derived(
+    candName.trim().length >= 3 &&
+      candOffice !== '' &&
+      (candOffice === 'presidente' || candUf !== '') &&
+      (candSphere !== 'municipal' || candMunicipio.trim().length > 0) &&
+      candParty.trim().length >= 2 &&
+      (candNumber.trim() === '' || /^\d{2,5}$/.test(candNumber.trim())),
+  );
+
   let emailValid = $derived(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
   let passwordValid = $derived(password.length >= 8);
   let cpfValid = $derived(isValidCpf(cpf));
@@ -60,7 +95,9 @@
     emailValid &&
       passwordValid &&
       cpfValid &&
-      (role === 'cidadao' || selectedMandate !== null),
+      (role === 'cidadao' ||
+        (role === 'politico' && selectedMandate !== null) ||
+        (role === 'candidato' && candValid)),
   );
 
   let mandateResults = $derived.by(() => {
@@ -121,7 +158,17 @@
             onlyDigits(cpf),
             selectedMandate.id,
           )
-        : await register(email, password, onlyDigits(cpf));
+        : role === 'candidato'
+          ? await registerCandidate(email, password, onlyDigits(cpf), {
+              display_name: candName.trim(),
+              office: candOffice,
+              uf: candOffice === 'presidente' && !candUf ? undefined : candUf,
+              municipio:
+                candSphere === 'municipal' ? candMunicipio.trim() : undefined,
+              party_sigla: candParty.trim().toUpperCase(),
+              number: candNumber.trim() || undefined,
+            })
+          : await register(email, password, onlyDigits(cpf));
     busy = false;
 
     if (res.success) {
@@ -223,12 +270,98 @@
       >
         <span class="role-ic"><Icon name="mandate" size={20} /></span>
         <span>
-          <strong>Político(a) / Candidata(o)</strong>
+          <strong>Político(a) com mandato</strong>
           <span class="role-hint">Responder, prestar contas</span>
+        </span>
+      </button>
+      <button
+        type="button"
+        class="role-tab"
+        class:active={role === 'candidato'}
+        onclick={() => switchRole('candidato')}
+      >
+        <span class="role-ic"><Icon name="ballot" size={20} /></span>
+        <span>
+          <strong>Candidato(a) 2026</strong>
+          <span class="role-hint">Ainda sem mandato</span>
         </span>
       </button>
     </div>
   </fieldset>
+
+  {#if role === 'candidato'}
+    <div class="field">
+      <Input
+        id="r-cand-name"
+        label="Nome de urna"
+        type="text"
+        bind:value={candName}
+        required
+        error={candName.length > 0 && candName.trim().length < 3
+          ? 'Mínimo de 3 caracteres.'
+          : undefined}
+      />
+      <div class="cand-grid">
+        <label class="cand-select">
+          <span>Cargo pretendido</span>
+          <select class="input" bind:value={candOffice} required>
+            <option value="" disabled>Selecione…</option>
+            {#each OFFICES as o (o.value)}
+              <option value={o.value}>{o.label}</option>
+            {/each}
+          </select>
+        </label>
+        {#if candOffice !== 'presidente'}
+          <label class="cand-select">
+            <span>UF</span>
+            <select class="input" bind:value={candUf} required>
+              <option value="" disabled>UF…</option>
+              {#each UFS as uf (uf)}
+                <option value={uf}>{uf}</option>
+              {/each}
+            </select>
+          </label>
+        {/if}
+      </div>
+      {#if candSphere === 'municipal'}
+        <Input
+          id="r-cand-mun"
+          label="Município"
+          type="text"
+          bind:value={candMunicipio}
+          required
+        />
+      {/if}
+      <div class="cand-grid">
+        <Input
+          id="r-cand-party"
+          label="Partido (sigla)"
+          type="text"
+          bind:value={candParty}
+          required
+          error={candParty.length > 0 && candParty.trim().length < 2
+            ? 'Sigla curta demais.'
+            : undefined}
+        />
+        <Input
+          id="r-cand-number"
+          label="Número de urna (opcional)"
+          type="text"
+          inputmode="numeric"
+          bind:value={candNumber}
+          error={candNumber.trim() !== '' && !/^\d{2,5}$/.test(candNumber.trim())
+            ? 'De 2 a 5 dígitos.'
+            : undefined}
+        />
+      </div>
+      <p class="hint muted">
+        Sua candidatura entra como <strong>autodeclarada</strong>: as
+        ferramentas de campanha e financiamento destravam agora, e o selo de
+        verificação vem depois — por atestação do seu partido, por um mandato
+        já verificado ou pelo registro oficial no TSE.
+      </p>
+    </div>
+  {/if}
 
   {#if role === 'politico'}
     <div class="field">
@@ -467,8 +600,26 @@
   }
   .role-tabs {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     gap: var(--sp-2);
+  }
+  .cand-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: var(--sp-3);
+    margin-top: var(--sp-3);
+  }
+  .cand-select {
+    display: block;
+  }
+  .cand-select > span {
+    display: block;
+    font-weight: var(--fw-medium);
+    font-size: var(--fs-sm);
+    margin-bottom: var(--sp-1);
+  }
+  .cand-select select.input {
+    width: 100%;
   }
   .role-tab {
     display: flex;
