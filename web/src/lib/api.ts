@@ -2475,12 +2475,22 @@ export interface CampaignGroupPost {
   body: string;
   created_at: string;
 }
+/** Enquete dirigida do grupo de campanha (Fase 3.4, migration 0532). */
+export interface CampaignGroupPoll {
+  id: string;
+  question: string;
+  status: 'open' | 'closed';
+  created_at: string;
+  tally: { concordo: number; neutro: number; discordo: number; total: number };
+  my_answer: 'concordo' | 'neutro' | 'discordo' | null;
+}
 /** Painel do dono: GET /me/campaign-group. */
 export interface MyCampaignGroup {
   is_politico: boolean;
   group: { id: string; name: string; description: string | null; created_at: string } | null;
   member_count: number;
   posts: CampaignGroupPost[];
+  polls: CampaignGroupPoll[];
 }
 /** Página pública: GET /campaign-groups/{id}. */
 export interface PublicCampaignGroup {
@@ -2493,6 +2503,7 @@ export interface PublicCampaignGroup {
   member_count: number;
   sou_membro: boolean;
   posts: CampaignGroupPost[];
+  polls: CampaignGroupPoll[];
 }
 
 export const getMyCampaignGroup = () =>
@@ -2503,6 +2514,24 @@ export const upsertCampaignGroup = (name: string, description?: string) =>
 
 export const postCampaignGroupUpdate = (body: string) =>
   apiPost<{ id: string }>('/api/v1/me/campaign-group/posts', { body });
+
+/** O dono abre uma enquete rápida dirigida à base. */
+export const createCampaignPoll = (question: string) =>
+  apiPost<{ id: string }>('/api/v1/me/campaign-group/polls', { question });
+
+/** O dono encerra uma enquete. */
+export const closeCampaignPoll = (pollId: string) =>
+  apiPost<{ status: string }>(
+    `/api/v1/me/campaign-group/polls/${encodeURIComponent(pollId)}/close`,
+    {},
+  );
+
+/** O cidadão logado responde a uma enquete do grupo (concordo/neutro/discordo). */
+export const respondCampaignPoll = (groupId: string, pollId: string, answer: string) =>
+  apiPost<{ saved: boolean }>(
+    `/api/v1/campaign-groups/${encodeURIComponent(groupId)}/polls/${encodeURIComponent(pollId)}/respond`,
+    { answer },
+  );
 
 export const getCampaignGroup = (id: string) =>
   apiGetCredentialed<PublicCampaignGroup>(

@@ -6,6 +6,7 @@
     getCampaignGroup,
     joinCampaignGroup,
     leaveCampaignGroup,
+    respondCampaignPoll,
     type PublicCampaignGroup,
   } from '../../lib/api';
 
@@ -13,7 +14,24 @@
   let error = $state<string | null>(null);
   let group = $state<PublicCampaignGroup | null>(null);
   let busy = $state(false);
+  let busyPoll = $state<string | null>(null);
   let loggedIn = $state(false);
+
+  function pct(n: number, total: number): number {
+    return total > 0 ? Math.round((n / total) * 100) : 0;
+  }
+
+  async function answerPoll(pollId: string, choice: string) {
+    if (!group || busyPoll) return;
+    if (!loggedIn) {
+      window.location.href = `/entrar/?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      return;
+    }
+    busyPoll = pollId;
+    const res = await respondCampaignPoll(group.id, pollId, choice);
+    busyPoll = null;
+    if (res.success) await load(group.id);
+  }
 
   const fmtDate = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
 
@@ -90,6 +108,44 @@
     </div>
   </header>
 
+  {#if group.polls.length > 0}
+    <section class="enquetes">
+      <h2>Enquetes da campanha</h2>
+      {#each group.polls as poll (poll.id)}
+        <div class="card poll">
+          <div class="poll-head">
+            <p class="poll-q">{poll.question}</p>
+            {#if poll.status === 'closed'}<span class="badge closed">Encerrada</span>{/if}
+          </div>
+          {#if poll.status === 'open'}
+            <div class="options" role="group" aria-label="Sua resposta">
+              {#each [['concordo','Concordo'],['neutro','Neutro'],['discordo','Discordo']] as [key, label] (key)}
+                <button
+                  type="button"
+                  class="opt {key}"
+                  class:selected={poll.my_answer === key}
+                  aria-pressed={poll.my_answer === key}
+                  disabled={busyPoll === poll.id}
+                  onclick={() => answerPoll(poll.id, key)}
+                >{label}</button>
+              {/each}
+            </div>
+          {/if}
+          <div class="results">
+            {#each [['concordo','Concordo'],['neutro','Neutro'],['discordo','Discordo']] as [key, label] (key)}
+              <div class="bar-row">
+                <span class="bar-label">{label}</span>
+                <div class="bar-track"><div class="bar-fill {key}" style={`width:${pct(poll.tally[key], poll.tally.total)}%`}></div></div>
+                <span class="bar-val muted">{pct(poll.tally[key], poll.tally.total)}% · {poll.tally[key]}</span>
+              </div>
+            {/each}
+            <p class="total muted">{poll.tally.total} {poll.tally.total === 1 ? 'resposta' : 'respostas'}</p>
+          </div>
+        </div>
+      {/each}
+    </section>
+  {/if}
+
   <section class="updates">
     <h2>Atualizações</h2>
     {#if group.posts.length === 0}
@@ -147,4 +203,28 @@
   }
   .center { text-align: center; padding: 2.5rem 1.5rem; }
   .hint-error { color: #dc2626; }
+
+  .enquetes { margin-bottom: 2rem; }
+  .enquetes h2 { font-size: 1.2rem; margin: 0 0 1rem; }
+  .poll { padding: 1.1rem 1.2rem; display: grid; gap: 0.85rem; margin-bottom: 0.8rem; }
+  .poll-head { display: flex; justify-content: space-between; align-items: start; gap: 0.75rem; }
+  .poll-q { margin: 0; font-weight: 600; font-size: 1.05rem; }
+  .badge.closed { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--surface-2, #f1f5f9); color: var(--text-2, #64748b); white-space: nowrap; }
+  .options { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .opt { flex: 1 1 auto; min-width: 6rem; padding: 0.55rem 0.7rem; border-radius: 8px; border: 1.5px solid var(--border-subtle, #cbd5e1); background: var(--surface-1, #fff); color: inherit; font-weight: 600; cursor: pointer; }
+  .opt:hover:not(:disabled) { border-color: var(--text-1, #0f172a); }
+  .opt:disabled { opacity: 0.6; cursor: default; }
+  .opt.selected.concordo { border-color: #15803d; background: #dcfce7; color: #14532d; }
+  .opt.selected.neutro { border-color: #b45309; background: #fef3c7; color: #78350f; }
+  .opt.selected.discordo { border-color: #b91c1c; background: #fee2e2; color: #7f1d1d; }
+  .results { display: grid; gap: 0.35rem; }
+  .bar-row { display: grid; grid-template-columns: 4.5rem 1fr auto; align-items: center; gap: 0.5rem; font-size: 0.85rem; }
+  .bar-label { color: var(--text-2, #64748b); }
+  .bar-track { height: 0.55rem; background: var(--surface-2, #f1f5f9); border-radius: 999px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 999px; min-width: 2px; }
+  .bar-fill.concordo { background: #22c55e; }
+  .bar-fill.neutro { background: #f59e0b; }
+  .bar-fill.discordo { background: #ef4444; }
+  .bar-val { font-variant-numeric: tabular-nums; }
+  .total { margin: 0.15rem 0 0; font-size: 0.8rem; }
 </style>

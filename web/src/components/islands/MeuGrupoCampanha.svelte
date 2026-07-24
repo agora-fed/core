@@ -6,6 +6,8 @@
     getMyCampaignGroup,
     upsertCampaignGroup,
     postCampaignGroupUpdate,
+    createCampaignPoll,
+    closeCampaignPoll,
     type MyCampaignGroup,
   } from '../../lib/api';
 
@@ -22,6 +24,15 @@
   let postBody = $state('');
   let posting = $state(false);
   let postError = $state<string | null>(null);
+
+  // Form de enquete.
+  let pollQuestion = $state('');
+  let creatingPoll = $state(false);
+  let pollError = $state<string | null>(null);
+
+  function pct(n: number, total: number): number {
+    return total > 0 ? Math.round((n / total) * 100) : 0;
+  }
 
   const fmtDate = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
 
@@ -65,6 +76,26 @@
     } else {
       postError = res.error?.message ?? 'Não foi possível publicar.';
     }
+  }
+
+  async function openPoll(e: SubmitEvent) {
+    e.preventDefault();
+    if (pollQuestion.trim().length === 0 || creatingPoll) return;
+    creatingPoll = true;
+    pollError = null;
+    const res = await createCampaignPoll(pollQuestion.trim());
+    creatingPoll = false;
+    if (res.success) {
+      pollQuestion = '';
+      await reload();
+    } else {
+      pollError = res.error?.message ?? 'Não foi possível abrir a enquete.';
+    }
+  }
+
+  async function endPoll(id: string) {
+    const res = await closeCampaignPoll(id);
+    if (res.success) await reload();
   }
 
   onMount(async () => {
@@ -125,6 +156,44 @@
         {posting ? 'Publicando…' : 'Publicar'}
       </button>
     </form>
+
+    <section class="polls-block">
+      <form class="card block" onsubmit={openPoll}>
+        <h2>Abrir enquete</h2>
+        <p class="muted small">Pergunte à sua base e ouça a resposta. Cada apoiador responde concordo, neutro ou discordo.</p>
+        <input type="text" bind:value={pollQuestion} maxlength="300" placeholder="Ex.: Devo priorizar saúde no orçamento?" />
+        {#if pollError}<p class="hint-error" role="alert">{pollError}</p>{/if}
+        <button type="submit" class="btn-primary" disabled={creatingPoll || pollQuestion.trim().length === 0}>
+          {creatingPoll ? 'Abrindo…' : 'Abrir enquete'}
+        </button>
+      </form>
+
+      {#if data.polls.length > 0}
+        <ul class="polls">
+          {#each data.polls as poll (poll.id)}
+            <li class="card poll">
+              <div class="poll-head">
+                <p class="poll-q">{poll.question}</p>
+                <span class="badge {poll.status}">{poll.status === 'open' ? 'Aberta' : 'Encerrada'}</span>
+              </div>
+              <div class="results">
+                {#each [['concordo','Concordo'],['neutro','Neutro'],['discordo','Discordo']] as [key, label] (key)}
+                  <div class="bar-row">
+                    <span class="bar-label">{label}</span>
+                    <div class="bar-track"><div class="bar-fill {key}" style={`width:${pct(poll.tally[key], poll.tally.total)}%`}></div></div>
+                    <span class="bar-val muted">{pct(poll.tally[key], poll.tally.total)}% · {poll.tally[key]}</span>
+                  </div>
+                {/each}
+                <p class="total muted small">{poll.tally.total} {poll.tally.total === 1 ? 'resposta' : 'respostas'}</p>
+              </div>
+              {#if poll.status === 'open'}
+                <button class="btn-close" onclick={() => endPoll(poll.id)}>Encerrar enquete</button>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
 
     {#if data.posts.length > 0}
       <section class="published">
@@ -188,4 +257,25 @@
   .center { text-align: center; padding: 2.5rem 1.5rem; }
   .center h2 { margin: 0 0 0.5rem; }
   .hint-error { color: #dc2626; margin: 0; }
+  .small { font-weight: 400; font-size: 0.82rem; }
+
+  .polls-block { margin-bottom: 1.5rem; }
+  .polls { list-style: none; padding: 0; margin: 1rem 0 0; display: grid; gap: 0.8rem; }
+  .poll { padding: 1.1rem 1.2rem; display: grid; gap: 0.8rem; }
+  .poll-head { display: flex; justify-content: space-between; align-items: start; gap: 0.75rem; }
+  .poll-q { margin: 0; font-weight: 600; }
+  .badge { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; padding: 0.15rem 0.5rem; border-radius: 999px; white-space: nowrap; }
+  .badge.open { background: #dcfce7; color: #15803d; }
+  .badge.closed { background: #f1f5f9; color: #64748b; }
+  .results { display: grid; gap: 0.35rem; }
+  .bar-row { display: grid; grid-template-columns: 4.5rem 1fr auto; align-items: center; gap: 0.5rem; font-size: 0.85rem; }
+  .bar-label { color: var(--text-2, #64748b); }
+  .bar-track { height: 0.55rem; background: var(--surface-2, #f1f5f9); border-radius: 999px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 999px; min-width: 2px; }
+  .bar-fill.concordo { background: #22c55e; }
+  .bar-fill.neutro { background: #f59e0b; }
+  .bar-fill.discordo { background: #ef4444; }
+  .bar-val { font-variant-numeric: tabular-nums; }
+  .total { margin: 0.15rem 0 0; }
+  .btn-close { justify-self: start; padding: 0.4rem 0.9rem; border-radius: 8px; border: 1px solid var(--border-subtle, #ccc); background: transparent; color: inherit; font-weight: 600; cursor: pointer; font-size: 0.85rem; }
 </style>

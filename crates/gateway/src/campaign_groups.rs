@@ -11,6 +11,8 @@
 //! - `POST   /campaign-groups/{id}/join` — o eleitor entra (idempotente).
 //! - `DELETE /campaign-groups/{id}/join` — o eleitor sai.
 
+use std::collections::HashMap;
+
 use axum::extract::{Json, Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -27,14 +29,20 @@ const DEFAULT_ORG_UUID: Uuid = uuid::uuid!("11111111-1111-1111-1111-111111111111
 const MAX_NAME: usize = 80;
 const MAX_DESCRICAO: usize = 500;
 const MAX_POST: usize = 2000;
+const MAX_QUESTION: usize = 300;
 const POSTS_LIMIT: i64 = 100;
+const POLLS_LIMIT: i64 = 50;
+const ANSWERS: [&str; 3] = ["concordo", "neutro", "discordo"];
 
 pub fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/me/campaign-group", get(my_group).post(upsert_group))
         .route("/me/campaign-group/posts", post(add_post))
+        .route("/me/campaign-group/polls", post(create_poll))
+        .route("/me/campaign-group/polls/{poll_id}/close", post(close_poll))
         .route("/campaign-groups/{id}", get(public_view))
         .route("/campaign-groups/{id}/join", post(join).delete(leave))
+        .route("/campaign-groups/{id}/polls/{poll_id}/respond", post(respond_poll))
         .with_state(state)
 }
 
@@ -50,19 +58,11 @@ fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
 }
 
 fn unauthorized() -> Response {
-    fail(
-        StatusCode::UNAUTHORIZED,
-        "unauthorized",
-        "Autenticação necessária.",
-    )
+    fail(StatusCode::UNAUTHORIZED, "unauthorized", "Autenticação necessária.")
 }
 
 fn storage_error() -> Response {
-    fail(
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "storage_error",
-        "Erro interno.",
-    )
+    fail(StatusCode::INTERNAL_SERVER_ERROR, "storage_error", "Erro interno.")
 }
 
 /// O mandato do político logado (o vínculo mais recente). `None` = não é político.
@@ -108,6 +108,35 @@ struct GroupCore {
     created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CreatePollBody {
+    pub question: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RespondPollBody {
+    pub answer: String,
+}
+
+#[derive(Debug, Serialize)]
+struct PollTally {
+    concordo: i64,
+    neutro: i64,
+    discordo: i64,
+    total: i64,
+}
+
+#[derive(Debug, Serialize)]
+struct PollDto {
+    id: Uuid,
+    question: String,
+    status: String,
+    created_at: DateTime<Utc>,
+    tally: PollTally,
+    /// Resposta do caller autenticado (`None` = não respondeu / anônimo).
+    my_answer: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 struct MyGroupDto {
     is_politico: bool,
@@ -115,6 +144,7 @@ struct MyGroupDto {
     group: Option<GroupCore>,
     member_count: i64,
     posts: Vec<PostDto>,
+    polls: Vec<PollDto>,
 }
 
 #[derive(Debug, Serialize)]
@@ -129,6 +159,7 @@ struct PublicGroupDto {
     /// `true` só quando o caller autenticado já é membro.
     sou_membro: bool,
     posts: Vec<PostDto>,
+    polls: Vec<PollDto>,
 }
 
 // ---------------------------------------------------------------------------
@@ -159,11 +190,7 @@ async fn upsert_group(
     };
     let name = body.name.trim();
     if name.is_empty() || name.chars().count() > MAX_NAME {
-        return fail(
-            StatusCode::BAD_REQUEST,
-            "invalid_name",
-            "Nome de 1 a 80 caracteres.",
-        );
+        return fail(StatusCode::BAD_REQUEST, "invalid_name", "Nome de 1 a 80 caracteres.");
     }
     let description = body
         .description
@@ -173,11 +200,7 @@ async fn upsert_group(
         .map(str::to_owned);
     if let Some(d) = &description {
         if d.chars().count() > MAX_DESCRICAO {
-            return fail(
-                StatusCode::BAD_REQUEST,
-                "invalid_description",
-                "Descrição longa demais.",
-            );
+            return fail(StatusCode::BAD_REQUEST, "invalid_description", "Descrição longa demais.");
         }
     }
 
@@ -198,11 +221,9 @@ async fn upsert_group(
     .await;
 
     match id {
-        Ok(id) => (
-            StatusCode::OK,
-            Json(ApiResponse::ok(serde_json::json!({ "id": id }))),
-        )
-            .into_response(),
+        Ok(id) => {
+            (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "id": id })))).into_response()
+        }
         Err(err) => {
             tracing::error!(?err, "campaign_group upsert: insert");
             storage_error()
@@ -228,6 +249,7 @@ async fn my_group(State(state): State<AppState>, headers: HeaderMap) -> Response
                     group: None,
                     member_count: 0,
                     posts: Vec::new(),
+                    polls: Vec::new(),
                 })),
             )
                 .into_response()
@@ -260,6 +282,16 @@ async fn my_group(State(state): State<AppState>, headers: HeaderMap) -> Response
         },
         None => (0, Vec::new()),
     };
+    let polls = match &group {
+        Some(g) => match load_polls(&state.db, g.id, Some(citizen)).await {
+            Ok(v) => v,
+            Err(err) => {
+                tracing::error!(?err, "campaign_group my: polls");
+                return storage_error();
+            }
+        },
+        None => Vec::new(),
+    };
     (
         StatusCode::OK,
         Json(ApiResponse::ok(MyGroupDto {
@@ -267,6 +299,7 @@ async fn my_group(State(state): State<AppState>, headers: HeaderMap) -> Response
             group,
             member_count,
             posts,
+            polls,
         })),
     )
         .into_response()
@@ -286,11 +319,7 @@ async fn add_post(
     };
     let text = body.body.trim();
     if text.is_empty() || text.chars().count() > MAX_POST {
-        return fail(
-            StatusCode::BAD_REQUEST,
-            "invalid_post",
-            "Post de 1 a 2000 caracteres.",
-        );
+        return fail(StatusCode::BAD_REQUEST, "invalid_post", "Post de 1 a 2000 caracteres.");
     }
     // Só o dono do grupo posta: acha o grupo pelo mandato do caller.
     let group_id: Option<Uuid> = match sqlx::query_scalar::<_, Uuid>(
@@ -382,7 +411,8 @@ async fn public_view(
         }
     };
     // Sou membro? só quando há caller autenticado.
-    let sou_membro = if let Some(citizen) = caller_citizen(&headers) {
+    let caller = caller_citizen(&headers);
+    let sou_membro = if let Some(citizen) = caller {
         sqlx::query_scalar::<_, bool>(
             "SELECT EXISTS(SELECT 1 FROM campaign_group_member WHERE group_id = $1 AND citizen_id = $2)",
         )
@@ -393,6 +423,13 @@ async fn public_view(
         .unwrap_or(false)
     } else {
         false
+    };
+    let polls = match load_polls(&state.db, id, caller).await {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::error!(?err, "campaign_group public: polls");
+            return storage_error();
+        }
     };
     (
         StatusCode::OK,
@@ -406,6 +443,7 @@ async fn public_view(
             member_count,
             sou_membro,
             posts,
+            polls,
         })),
     )
         .into_response()
@@ -445,11 +483,7 @@ async fn join(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<
     }
 }
 
-async fn leave(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<Uuid>,
-) -> Response {
+async fn leave(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<Uuid>) -> Response {
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized();
     };
@@ -496,4 +530,234 @@ async fn load_count_and_posts(
     .fetch_all(db)
     .await?;
     Ok((member_count, posts))
+}
+
+// ---------------------------------------------------------------------------
+// Enquetes dirigidas (0.45.0, migration 0532) — Fase 3.4
+// ---------------------------------------------------------------------------
+
+/// O grupo do político logado (via mandato). `None` = não tem grupo.
+async fn owner_group(db: &PgPool, citizen: Uuid) -> Result<Option<Uuid>, sqlx::Error> {
+    sqlx::query_scalar::<_, Uuid>(
+        r"SELECT cg.id FROM campaign_group cg
+           JOIN mandate_identity_binding mib ON mib.mandate_id = cg.mandate_id
+          WHERE mib.citizen_id = $1
+          LIMIT 1",
+    )
+    .bind(citizen)
+    .fetch_optional(db)
+    .await
+}
+
+/// POST /me/campaign-group/polls — o dono abre uma enquete rápida.
+async fn create_poll(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<CreatePollBody>,
+) -> Response {
+    let Some(citizen) = caller_citizen(&headers) else {
+        return unauthorized();
+    };
+    let question = body.question.trim();
+    if question.is_empty() || question.chars().count() > MAX_QUESTION {
+        return fail(StatusCode::BAD_REQUEST, "invalid_question", "Pergunta de 1 a 300 caracteres.");
+    }
+    let group_id = match owner_group(&state.db, citizen).await {
+        Ok(Some(g)) => g,
+        Ok(None) => {
+            return fail(
+                StatusCode::FORBIDDEN,
+                "no_group",
+                "Crie seu grupo de campanha antes de abrir enquetes.",
+            )
+        }
+        Err(err) => {
+            tracing::error!(?err, "campaign_group poll: owner");
+            return storage_error();
+        }
+    };
+    let res: Result<Uuid, sqlx::Error> = sqlx::query_scalar(
+        "INSERT INTO campaign_group_poll (group_id, question) VALUES ($1, $2) RETURNING id",
+    )
+    .bind(group_id)
+    .bind(question)
+    .fetch_one(&state.db)
+    .await;
+    match res {
+        Ok(id) => (
+            StatusCode::CREATED,
+            Json(ApiResponse::ok(serde_json::json!({ "id": id }))),
+        )
+            .into_response(),
+        Err(err) => {
+            tracing::error!(?err, "campaign_group poll: insert");
+            storage_error()
+        }
+    }
+}
+
+/// POST /me/campaign-group/polls/{poll_id}/close — o dono encerra.
+async fn close_poll(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(poll_id): Path<Uuid>,
+) -> Response {
+    let Some(citizen) = caller_citizen(&headers) else {
+        return unauthorized();
+    };
+    let group_id = match owner_group(&state.db, citizen).await {
+        Ok(Some(g)) => g,
+        Ok(None) => {
+            return fail(StatusCode::FORBIDDEN, "no_group", "Você não tem um grupo de campanha.")
+        }
+        Err(err) => {
+            tracing::error!(?err, "campaign_group poll close: owner");
+            return storage_error();
+        }
+    };
+    let res = sqlx::query(
+        r"UPDATE campaign_group_poll SET status = 'closed', closed_at = now()
+           WHERE id = $1 AND group_id = $2 AND status = 'open'",
+    )
+    .bind(poll_id)
+    .bind(group_id)
+    .execute(&state.db)
+    .await;
+    match res {
+        Ok(r) if r.rows_affected() == 1 => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(serde_json::json!({ "status": "closed" }))),
+        )
+            .into_response(),
+        Ok(_) => fail(StatusCode::NOT_FOUND, "not_found", "Enquete aberta não encontrada."),
+        Err(err) => {
+            tracing::error!(?err, "campaign_group poll close");
+            storage_error()
+        }
+    }
+}
+
+/// POST /campaign-groups/{id}/polls/{poll_id}/respond — o cidadão logado responde.
+async fn respond_poll(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((group_id, poll_id)): Path<(Uuid, Uuid)>,
+    Json(body): Json<RespondPollBody>,
+) -> Response {
+    let Some(citizen) = caller_citizen(&headers) else {
+        return unauthorized();
+    };
+    if !ANSWERS.contains(&body.answer.as_str()) {
+        return fail(StatusCode::BAD_REQUEST, "invalid_answer", "Resposta inválida.");
+    }
+    // A enquete existe, pertence ao grupo e está aberta?
+    let status: Option<String> = match sqlx::query_scalar(
+        "SELECT status FROM campaign_group_poll WHERE id = $1 AND group_id = $2",
+    )
+    .bind(poll_id)
+    .bind(group_id)
+    .fetch_optional(&state.db)
+    .await
+    {
+        Ok(s) => s,
+        Err(err) => {
+            tracing::error!(?err, "campaign_group poll respond: status");
+            return storage_error();
+        }
+    };
+    match status.as_deref() {
+        None => return fail(StatusCode::NOT_FOUND, "not_found", "Enquete não encontrada."),
+        Some("open") => {}
+        Some(_) => return fail(StatusCode::CONFLICT, "closed", "Esta enquete está encerrada."),
+    }
+    let res = sqlx::query(
+        r"INSERT INTO campaign_group_poll_response (poll_id, citizen_id, answer)
+          VALUES ($1, $2, $3)
+          ON CONFLICT (poll_id, citizen_id)
+          DO UPDATE SET answer = EXCLUDED.answer, updated_at = now()",
+    )
+    .bind(poll_id)
+    .bind(citizen)
+    .bind(&body.answer)
+    .execute(&state.db)
+    .await;
+    match res {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(serde_json::json!({ "saved": true }))),
+        )
+            .into_response(),
+        Err(err) => {
+            tracing::error!(?err, "campaign_group poll respond: upsert");
+            storage_error()
+        }
+    }
+}
+
+/// Enquetes de um grupo com agregado por opção e (opcional) a resposta do caller.
+async fn load_polls(
+    db: &PgPool,
+    group_id: Uuid,
+    caller: Option<Uuid>,
+) -> Result<Vec<PollDto>, sqlx::Error> {
+    let rows: Vec<(Uuid, String, String, DateTime<Utc>)> = sqlx::query_as(
+        r"SELECT id, question, status, created_at FROM campaign_group_poll
+           WHERE group_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2",
+    )
+    .bind(group_id)
+    .bind(POLLS_LIMIT)
+    .fetch_all(db)
+    .await?;
+    let ids: Vec<Uuid> = rows.iter().map(|r| r.0).collect();
+
+    let tallies: Vec<(Uuid, String, i64)> = sqlx::query_as(
+        r"SELECT poll_id, answer, count(*) FROM campaign_group_poll_response
+           WHERE poll_id = ANY($1) GROUP BY poll_id, answer",
+    )
+    .bind(&ids)
+    .fetch_all(db)
+    .await?;
+    let mut by_p: HashMap<Uuid, (i64, i64, i64)> = HashMap::new();
+    for (pid, answer, n) in tallies {
+        let e = by_p.entry(pid).or_insert((0, 0, 0));
+        match answer.as_str() {
+            "concordo" => e.0 += n,
+            "neutro" => e.1 += n,
+            "discordo" => e.2 += n,
+            _ => {}
+        }
+    }
+
+    let mut mine: HashMap<Uuid, String> = HashMap::new();
+    if let Some(c) = caller {
+        let rows2: Vec<(Uuid, String)> = sqlx::query_as(
+            "SELECT poll_id, answer FROM campaign_group_poll_response
+              WHERE citizen_id = $1 AND poll_id = ANY($2)",
+        )
+        .bind(c)
+        .bind(&ids)
+        .fetch_all(db)
+        .await?;
+        mine = rows2.into_iter().collect();
+    }
+
+    Ok(rows
+        .into_iter()
+        .map(|(id, question, status, created_at)| {
+            let (concordo, neutro, discordo) = by_p.get(&id).copied().unwrap_or((0, 0, 0));
+            PollDto {
+                id,
+                question,
+                status,
+                created_at,
+                tally: PollTally {
+                    concordo,
+                    neutro,
+                    discordo,
+                    total: concordo + neutro + discordo,
+                },
+                my_answer: mine.get(&id).cloned(),
+            }
+        })
+        .collect())
 }

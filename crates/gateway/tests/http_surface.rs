@@ -2022,6 +2022,102 @@ async fn campaign_group_join_requires_auth() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
+#[tokio::test]
+async fn campaign_group_poll_flow() {
+    let (app, st) = app().await;
+    let (org, politico, owner) = seed_session(&st.db).await;
+    seed_mandate_binding(&st.db, org, politico).await;
+
+    // Político cria o grupo.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/me/campaign-group",
+            Some(&owner),
+            r#"{"name":"Campanha X"}"#,
+        ))
+        .await
+        .unwrap();
+    let gid = body_json(resp).await["data"]["id"].as_str().unwrap().to_owned();
+
+    // Abre uma enquete dirigida.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/me/campaign-group/polls",
+            Some(&owner),
+            r#"{"question":"Priorizar saúde no orçamento?"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let pid = body_json(resp).await["data"]["id"].as_str().unwrap().to_owned();
+
+    // Um eleitor responde.
+    let (_, _, voter) = seed_session_in_org(&st.db, org).await;
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/campaign-groups/{gid}/polls/{pid}/respond"),
+            Some(&voter),
+            r#"{"answer":"concordo"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Página pública (cookie do eleitor): agregado conta 1 + minha resposta.
+    let resp = app
+        .clone()
+        .oneshot(get_with_cookie(&format!("/api/v1/campaign-groups/{gid}"), &voter))
+        .await
+        .unwrap();
+    let body = body_json(resp).await;
+    let poll = &body["data"]["polls"][0];
+    assert_eq!(poll["tally"]["concordo"].as_i64().unwrap(), 1);
+    assert_eq!(poll["tally"]["total"].as_i64().unwrap(), 1);
+    assert_eq!(poll["my_answer"].as_str().unwrap(), "concordo");
+
+    // Cidadão comum não abre enquete (sem grupo → 403).
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/me/campaign-group/polls",
+            Some(&voter),
+            r#"{"question":"intruso"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+    // Dono encerra; nova resposta é recusada (409).
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/me/campaign-group/polls/{pid}/close"),
+            Some(&owner),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/campaign-groups/{gid}/polls/{pid}/respond"),
+            Some(&voter),
+            r#"{"answer":"discordo"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+}
+
 // ---------------------------------------------------------------------------
 // Super-admin: editar/ocultar/apagar conteúdo (0.40.0 — SOCRATES)
 // ---------------------------------------------------------------------------
