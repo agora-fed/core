@@ -38,9 +38,11 @@
     ]);
     loading = false;
 
-    if (sumRes.ok && sumRes.data) summary = sumRes.data;
+    // getTerritorio/browsePoliticos passam por fetchedToApiResponse → shape
+    // { success, data, error:{message} } (não o { ok } do apiGet cru).
+    if (sumRes.success && sumRes.data) summary = sumRes.data;
 
-    if (browseRes.ok && browseRes.data) {
+    if (browseRes.success && browseRes.data) {
       const groups: Record<string, PoliticoRow[]> = {};
       for (const m of browseRes.data.items) {
         const key = m.party ?? '—';
@@ -57,7 +59,7 @@
       // Inclui partidos que apareceram no browse mas não no resumo (defensivo).
       for (const k of Object.keys(groups)) if (!partyOrder.includes(k)) partyOrder.push(k);
     } else if (!summary) {
-      error = browseRes.error ?? 'Não foi possível carregar o município.';
+      error = browseRes.error?.message ?? 'Não foi possível carregar o município.';
     }
   });
 
