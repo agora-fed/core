@@ -22,6 +22,7 @@ pub mod audience;
 pub mod campaign_groups;
 pub mod consultas_ext;
 pub mod profile_nudge;
+pub mod mailer;
 pub mod campanha;
 pub mod civic_notify;
 pub mod contact;

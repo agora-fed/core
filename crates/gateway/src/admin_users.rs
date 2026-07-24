@@ -368,6 +368,84 @@ struct PlatformRoleBody {
     org_id: Option<Uuid>,
 }
 
+// ---------------------------------------------------------------------------
+// Aviso por e-mail ao designar um papel (0.50.0) — templates aprovados em revisão.
+// ---------------------------------------------------------------------------
+
+/// Qual papel foi atribuído — carrega o dado necessário pro template.
+enum RoleNotice {
+    /// Admin de partido (sigla).
+    PartyAdmin(String),
+    /// Moderador de partido (sigla).
+    PartyModerador(String),
+    /// Papel de plataforma (`owner`|`admin`|`auditor`).
+    Platform(String),
+}
+
+/// Dispara, em background (fire-and-forget), o e-mail de designação. O texto vem
+/// do catálogo editável (`email_template`, keys `role_party_admin` /
+/// `role_party_moderador` / `role_platform`) renderizado com `{{vars}}`, enviado
+/// multipart (texto + HTML da marca). Best-effort: o papel já foi gravado; se o
+/// SMTP estiver ausente, o template faltar ou o envio falhar, só loga — nunca
+/// falha a operação de admin.
+fn notify_role_bg(db: &PgPool, citizen_id: Uuid, notice: RoleNotice) {
+    let db = db.clone();
+    tokio::spawn(async move {
+        let Some(cfg) = crate::proposal_delivery::smtp_from_env() else {
+            tracing::info!("SMTP ausente; e-mail de designação de papel não enviado");
+            return;
+        };
+        let email: Option<String> =
+            sqlx::query_scalar("SELECT email FROM auth_credential WHERE citizen_id = $1")
+                .bind(citizen_id)
+                .fetch_optional(&db)
+                .await
+                .ok()
+                .flatten();
+        let Some(email) = email else {
+            return; // sem credencial/e-mail: nada a enviar
+        };
+
+        let mut vars: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
+        let key = match &notice {
+            RoleNotice::PartyAdmin(sigla) => {
+                vars.insert("party", sigla.clone());
+                vars.insert(
+                    "party_url",
+                    format!("https://democracia.social.br/partidos/{}", sigla.to_lowercase()),
+                );
+                "role_party_admin"
+            }
+            RoleNotice::PartyModerador(sigla) => {
+                vars.insert("party", sigla.clone());
+                vars.insert(
+                    "party_url",
+                    format!("https://democracia.social.br/partidos/{}", sigla.to_lowercase()),
+                );
+                "role_party_moderador"
+            }
+            RoleNotice::Platform(role) => {
+                let label = match role.as_str() {
+                    "owner" => "proprietário(a)",
+                    "auditor" => "auditor(a)",
+                    _ => "administrador(a)",
+                };
+                vars.insert("role_label", label.to_string());
+                vars.insert("admin_url", "https://democracia.social.br/admin".to_string());
+                "role_platform"
+            }
+        };
+
+        let Some((subject, body)) = dsoc_db::email_templates::render(&db, key, &vars).await else {
+            tracing::warn!(key, "template de designação ausente; e-mail não enviado");
+            return;
+        };
+        if let Err(err) = crate::mailer::send_html(&cfg, &email, &subject, &body).await {
+            tracing::error!(?err, "e-mail de designação de papel falhou");
+        }
+    });
+}
+
 async fn set_platform_role(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -442,6 +520,8 @@ async fn set_platform_role(
         if let Err(err) = tx.commit().await {
             return storage_resp(err);
         }
+        // Avisa a pessoa por e-mail (background, best-effort).
+        notify_role_bg(&state.db, citizen_id, RoleNotice::Platform(body.role.clone()));
     } else {
         return (
             StatusCode::BAD_REQUEST,
@@ -553,6 +633,13 @@ async fn set_party_role(
         if let Err(err) = tx.commit().await {
             return storage_resp(err);
         }
+        // Avisa a pessoa por e-mail (background, best-effort).
+        let notice = if body.role == "admin" {
+            RoleNotice::PartyAdmin(party.to_string())
+        } else {
+            RoleNotice::PartyModerador(party.to_string())
+        };
+        notify_role_bg(&state.db, citizen_id, notice);
     } else {
         return (
             StatusCode::BAD_REQUEST,
