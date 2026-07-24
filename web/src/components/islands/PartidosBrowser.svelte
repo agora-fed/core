@@ -5,7 +5,7 @@
   // a fatia B vai formalizar. Clicar leva a /partidos/{sigla}. CSR pra refletir novos seeds
   // sem rebuild.
   import { onMount } from 'svelte';
-  import { getAllMandates, DEFAULT_ORG_ID, type MandateDto } from '../../lib/api';
+  import { getParties, type PartyDto } from '../../lib/api';
   import { partySlug, partyColor } from '../../lib/parties';
 
   interface PartyAgg {
@@ -14,31 +14,28 @@
     federal: number;
     estadual: number;
     municipal: number;
-    ufs: Set<string>;
   }
 
   let loading = $state(true);
-  let mandates = $state<MandateDto[]>([]);
+  let raw = $state<PartyDto[]>([]);
   let loadError = $state<string | null>(null);
   let search = $state('');
   let activeSphere = $state<'todos' | 'federal' | 'estadual' | 'municipal'>('todos');
 
   let parties = $derived.by<PartyAgg[]>(() => {
-    const map = new Map<string, PartyAgg>();
-    for (const m of mandates) {
-      if (!m.party) continue;
-      const sphere = m.sphere ?? 'federal';
-      if (activeSphere !== 'todos' && sphere !== activeSphere) continue;
-      let agg = map.get(m.party);
-      if (!agg) {
-        agg = { sigla: m.party, total: 0, federal: 0, estadual: 0, municipal: 0, ufs: new Set() };
-        map.set(m.party, agg);
-      }
-      agg.total += 1;
-      agg[sphere] += 1;
-      if (m.uf) agg.ufs.add(m.uf);
+    // Contagens já vêm do backend (/api/v1/parties) — nada de baixar 69k mandatos.
+    let list: PartyAgg[] = raw.map((p) => ({
+      sigla: p.sigla,
+      total: p.mandate_count,
+      federal: p.federal_count,
+      estadual: p.estadual_count,
+      municipal: p.municipal_count,
+    }));
+    if (activeSphere !== 'todos') {
+      list = list
+        .map((p) => ({ ...p, total: p[activeSphere] }))
+        .filter((p) => p.total > 0);
     }
-    let list = Array.from(map.values());
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter((p) => p.sigla.toLowerCase().includes(q));
@@ -49,10 +46,10 @@
   let totalPoliticos = $derived(parties.reduce((n, p) => n + p.total, 0));
 
   onMount(async () => {
-    const res = await getAllMandates(DEFAULT_ORG_ID);
+    const res = await getParties();
     loading = false;
     if (res.ok && res.data) {
-      mandates = res.data;
+      raw = res.data;
     } else {
       loadError = res.error ?? 'Não foi possível carregar os partidos.';
     }

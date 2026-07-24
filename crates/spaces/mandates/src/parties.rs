@@ -38,8 +38,12 @@ pub struct PartyDto {
     pub tse_number: Option<i32>,
     pub logo_url: Option<String>,
     pub founded_year: Option<i32>,
-    /// Mandates currently attributed to this sigla in the org (derived).
+    /// Mandates currently attributed to this sigla in the org (derived, não-ocultos).
     pub mandate_count: i64,
+    /// Contagem por esfera — evita a página baixar todos os mandatos pra derivar.
+    pub federal_count: i64,
+    pub estadual_count: i64,
+    pub municipal_count: i64,
 }
 
 /// Public view of a subnational directory of a party.
@@ -436,13 +440,16 @@ async fn list_directory_members(
 // SQL (runtime queries — no `.sqlx/` cache regeneration needed)
 // ---------------------------------------------------------------------------
 
-/// (sigla, name, tse_number, logo_url, founded_year, mandate_count)
+/// (sigla, name, tse_number, logo_url, founded_year, mandate_count, federal, estadual, municipal)
 type PartyRow = (
     String,
     String,
     Option<i32>,
     Option<String>,
     Option<i32>,
+    Option<i64>,
+    Option<i64>,
+    Option<i64>,
     Option<i64>,
 );
 /// (id, party_sigla, esfera, uf, municipio, name, parent_directory_id)
@@ -477,11 +484,15 @@ async fn load_parties(db: &sqlx::PgPool, org_id: Uuid) -> Result<Vec<PartyDto>, 
                    p.tse_number,
                    p.logo_url,
                    p.founded_year,
-                   COUNT(m.id) AS mandate_count
+                   COUNT(m.id) AS mandate_count,
+                   COUNT(m.id) FILTER (WHERE m.sphere = 'federal')   AS federal,
+                   COUNT(m.id) FILTER (WHERE m.sphere = 'estadual')  AS estadual,
+                   COUNT(m.id) FILTER (WHERE m.sphere = 'municipal') AS municipal
               FROM party p
               LEFT JOIN mandate m
                      ON m.org_id = p.org_id
                     AND m.party  = p.sigla
+                    AND m.hidden_at IS NULL
              WHERE p.org_id = $1
              GROUP BY p.sigla, p.name, p.tse_number, p.logo_url, p.founded_year
              ORDER BY COUNT(m.id) DESC, p.sigla ASC
@@ -493,14 +504,19 @@ async fn load_parties(db: &sqlx::PgPool, org_id: Uuid) -> Result<Vec<PartyDto>, 
 
     Ok(rows
         .into_iter()
-        .map(|(sigla, name, tse, logo, year, count)| PartyDto {
-            sigla,
-            name,
-            tse_number: tse,
-            logo_url: logo,
-            founded_year: year,
-            mandate_count: count.unwrap_or(0),
-        })
+        .map(
+            |(sigla, name, tse, logo, year, count, fed, est, mun)| PartyDto {
+                sigla,
+                name,
+                tse_number: tse,
+                logo_url: logo,
+                founded_year: year,
+                mandate_count: count.unwrap_or(0),
+                federal_count: fed.unwrap_or(0),
+                estadual_count: est.unwrap_or(0),
+                municipal_count: mun.unwrap_or(0),
+            },
+        )
         .collect())
 }
 
@@ -517,11 +533,15 @@ async fn load_party_detail(
                    p.tse_number,
                    p.logo_url,
                    p.founded_year,
-                   COUNT(m.id) AS mandate_count
+                   COUNT(m.id) AS mandate_count,
+                   COUNT(m.id) FILTER (WHERE m.sphere = 'federal')   AS federal,
+                   COUNT(m.id) FILTER (WHERE m.sphere = 'estadual')  AS estadual,
+                   COUNT(m.id) FILTER (WHERE m.sphere = 'municipal') AS municipal
               FROM party p
               LEFT JOIN mandate m
                      ON m.org_id = p.org_id
                     AND m.party  = p.sigla
+                    AND m.hidden_at IS NULL
              WHERE p.org_id = $1 AND p.sigla = $2
              GROUP BY p.sigla, p.name, p.tse_number, p.logo_url, p.founded_year
             ",
@@ -531,7 +551,7 @@ async fn load_party_detail(
     .fetch_optional(db)
     .await?;
 
-    let Some((s, name, tse, logo, year, count)) = party_row else {
+    let Some((s, name, tse, logo, year, count, fed, est, mun)) = party_row else {
         return Ok(None);
     };
     let party = PartyDto {
@@ -541,6 +561,9 @@ async fn load_party_detail(
         logo_url: logo,
         founded_year: year,
         mandate_count: count.unwrap_or(0),
+        federal_count: fed.unwrap_or(0),
+        estadual_count: est.unwrap_or(0),
+        municipal_count: mun.unwrap_or(0),
     };
 
     // 2) Directories (any esfera). Ordered federal → estadual → municipal by natural sort.
@@ -691,6 +714,9 @@ mod tests {
             logo_url: None,
             founded_year: Some(1980),
             mandate_count: 42,
+            federal_count: 10,
+            estadual_count: 20,
+            municipal_count: 12,
         };
         let json = serde_json::to_value(&dto).unwrap();
         assert_eq!(json["sigla"], "PT");
@@ -727,6 +753,9 @@ mod tests {
                 logo_url: None,
                 founded_year: None,
                 mandate_count: 3,
+                federal_count: 3,
+                estadual_count: 0,
+                municipal_count: 0,
             },
             directories: Vec::new(),
             administrators: Vec::new(),

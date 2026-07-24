@@ -156,8 +156,11 @@ export interface PartyDto {
   tse_number: number | null;
   logo_url: string | null;
   founded_year: number | null;
-  /** Mandates currently attributed to this sigla in the org (derived). */
+  /** Mandates currently attributed to this sigla in the org (derived, não-ocultos). */
   mandate_count: number;
+  federal_count: number;
+  estadual_count: number;
+  municipal_count: number;
 }
 
 /** Public view of a subnational directory of a party. */
