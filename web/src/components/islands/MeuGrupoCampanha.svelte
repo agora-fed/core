@@ -30,8 +30,9 @@
   );
 
   async function reload() {
+    // Tudo aqui passa por apiGetCredentialed/apiPost → shape { success, data, error:{message} }.
     const res = await getMyCampaignGroup();
-    if (res.ok && res.data) {
+    if (res.success && res.data) {
       data = res.data;
       if (data.group) {
         name = data.group.name;
@@ -47,8 +48,8 @@
     groupError = null;
     const res = await upsertCampaignGroup(name.trim(), description.trim() || undefined);
     savingGroup = false;
-    if (res.ok) await reload();
-    else groupError = res.error ?? 'Não foi possível salvar.';
+    if (res.success) await reload();
+    else groupError = res.error?.message ?? 'Não foi possível salvar.';
   }
 
   async function publish(e: SubmitEvent) {
@@ -58,11 +59,11 @@
     postError = null;
     const res = await postCampaignGroupUpdate(postBody.trim());
     posting = false;
-    if (res.ok) {
+    if (res.success) {
       postBody = '';
       await reload();
     } else {
-      postError = res.error ?? 'Não foi possível publicar.';
+      postError = res.error?.message ?? 'Não foi possível publicar.';
     }
   }
 

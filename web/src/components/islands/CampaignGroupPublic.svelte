@@ -18,9 +18,11 @@
   const fmtDate = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
 
   async function load(id: string) {
+    // getCampaignGroup/join/leave passam por apiGetCredentialed/apiPost →
+    // shape { success, data, error:{message} } (não o { ok } do apiGet cru).
     const res = await getCampaignGroup(id);
-    if (res.ok && res.data) group = res.data;
-    else error = res.error ?? 'Grupo não encontrado.';
+    if (res.success && res.data) group = res.data;
+    else error = res.error?.message ?? 'Grupo não encontrado.';
   }
 
   async function toggleMembership() {
@@ -34,7 +36,7 @@
       ? await leaveCampaignGroup(group.id)
       : await joinCampaignGroup(group.id);
     busy = false;
-    if (res.ok) await load(group.id);
+    if (res.success) await load(group.id);
   }
 
   onMount(async () => {

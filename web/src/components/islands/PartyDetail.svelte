@@ -106,23 +106,24 @@
     };
     const res = await createPartyDirectory(sigla, fields);
     submitting = false;
-    if (res.ok) {
+    // createPartyDirectory/deletePartyDirectory → apiPost/parseEnvelope, shape { success, error:{message} }.
+    if (res.success) {
       fName = '';
       fMunicipio = '';
       showForm = false;
       await loadDirectories();
     } else {
-      formError = res.error ?? 'Não foi possível criar o diretório.';
+      formError = res.error?.message ?? 'Não foi possível criar o diretório.';
     }
   }
 
   async function removeDirectory(d: PartyDirectoryDto) {
     if (!window.confirm(`Remover "${d.name}"?`)) return;
     const res = await deletePartyDirectory(sigla, d.id);
-    if (res.ok) {
+    if (res.success) {
       await loadDirectories();
     } else {
-      window.alert(res.error ?? 'Não foi possível remover.');
+      window.alert(res.error?.message ?? 'Não foi possível remover.');
     }
   }
 
