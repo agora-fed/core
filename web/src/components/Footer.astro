@@ -54,7 +54,10 @@ const pillars = [
 
     <div class="foot-bar">
       <div class="foot-brand">
-        <img src="/logo.png" width="140" height="94" alt="DemocraciaBR" />
+        <a href="/" class="brand-line">
+          <img src="/emblem.png" width="28" height="26" alt="" />
+          <span>DemocraciaBR</span>
+        </a>
         <p class="tagline">Diferentes ideias, um só Brasil.</p>
       </div>
       <nav aria-label="Rodapé" class="foot-nav">
@@ -140,23 +143,26 @@ const pillars = [
     padding-block: var(--sp-5);
     border-top: 1px solid var(--border-subtle);
   }
-  .foot-brand img {
-    height: 34px;
-    width: auto;
+  .brand-line {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    text-decoration: none;
+    color: var(--text-1);
+    font-weight: var(--fw-semibold, 600);
+    font-size: var(--fs-lg);
+  }
+  .brand-line img {
+    display: block;
   }
   .tagline {
     margin: var(--sp-1) 0 0;
     font-size: var(--fs-sm);
     color: var(--text-3);
   }
-  .foot-nav.institutional {
-    margin-top: 0.75rem;
-    padding-top: 0.75rem;
-    border-top: 1px solid var(--c-border, rgba(0, 0, 0, 0.08));
-  }
   .foot-nav.institutional a {
-    font-size: 0.85rem;
-    color: var(--c-text-muted);
+    font-size: var(--fs-xs);
+    color: var(--text-3);
   }
   .foot-nav {
     display: flex;
