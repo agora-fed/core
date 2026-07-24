@@ -1,12 +1,8 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import ProposeForm from '../../components/islands/ProposeForm.svelte';
+import ProposalsList from '../../components/islands/ProposalsList.svelte';
 import ColorBar from '../../components/illustrations/ColorBar.astro';
-import { getProposals, DEFAULT_ORG_ID } from '../../lib/api';
-import { formatDate } from '../../lib/format';
-
-const proposals = await getProposals(DEFAULT_ORG_ID, 30);
-const items = proposals.ok && proposals.data ? proposals.data : [];
 
 const description =
   'Propostas cívicas direcionadas a mandatos e candidaturas. Apoie, debata e acompanhe quais cruzaram o limiar e iniciaram o prazo de resposta.';
@@ -32,50 +28,7 @@ const jsonLd = {
         </p>
       </header>
 
-      {
-        !proposals.ok && (
-          <div class="card state" role="alert">
-            <h2>Não foi possível carregar as propostas</h2>
-            <p class="muted">{proposals.error}</p>
-          </div>
-        )
-      }
-
-      {
-        proposals.ok && items.length === 0 && (
-          <div class="card state">
-            <h2>Seja o primeiro a propor</h2>
-            <p class="muted">
-              Ainda não há propostas publicadas. Use o formulário abaixo para
-              começar.
-            </p>
-          </div>
-        )
-      }
-
-      {
-        items.length > 0 && (
-          <ul class="list grid grid-2">
-            {items.map((p) => (
-              <li class="card prop">
-                <a class="prop-link" href={`/propostas/${p.id}`}>
-                  <h2 class="prop-title">{p.title}</h2>
-                  <p class="prop-body muted">{p.body}</p>
-                  <div class="prop-foot">
-                    <span class="support">
-                      <strong>{p.support_count.toLocaleString('pt-BR')}</strong>{' '}
-                      {p.support_count === 1 ? 'apoio' : 'apoios'}
-                    </span>
-                    <time datetime={p.created_at} class="muted">
-                      {formatDate(p.created_at)}
-                    </time>
-                  </div>
-                </a>
-              </li>
-            ))}
-          </ul>
-        )
-      }
+      <ProposalsList client:load />
 
       <section class="propose-block" aria-labelledby="propose-h">
         <h2 id="propose-h">Enviar uma nova proposta</h2>

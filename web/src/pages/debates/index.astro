@@ -1,11 +1,7 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import { getDebates, DEFAULT_ORG_ID } from '../../lib/api';
-import { formatDate } from '../../lib/format';
 import CreateDebateForm from '../../components/islands/CreateDebateForm.svelte';
-
-const debates = await getDebates(DEFAULT_ORG_ID, 30);
-const items = debates.ok && debates.data ? debates.data : [];
+import DebatesList from '../../components/islands/DebatesList.svelte';
 
 const description =
   'Debates abertos da DemocraciaBR: espaços plurais onde diferentes ideias se encontram e qualificam as demandas da população.';
@@ -23,44 +19,7 @@ const description =
       </header>
 
       <CreateDebateForm client:load />
-
-      {
-        !debates.ok && (
-          <div class="card state" role="alert">
-            <h2>Não foi possível carregar os debates</h2>
-            <p class="muted">{debates.error}</p>
-          </div>
-        )
-      }
-
-      {
-        debates.ok && items.length === 0 && (
-          <div class="card state">
-            <h2>Nenhum debate em aberto</h2>
-            <p class="muted">Novos debates aparecerão aqui assim que abertos.</p>
-          </div>
-        )
-      }
-
-      {
-        items.length > 0 && (
-          <ul class="list grid grid-2">
-            {items.map((d) => (
-              <li class="card item">
-                <a class="item-link" href={`/debate/?id=${d.id}`}>
-                  <h2 class="item-title">{d.title}</h2>
-                  {d.framing && <p class="muted clamp">{d.framing}</p>}
-                  {d.created_at && (
-                    <time datetime={d.created_at} class="muted small">
-                      {formatDate(d.created_at)}
-                    </time>
-                  )}
-                </a>
-              </li>
-            ))}
-          </ul>
-        )
-      }
+      <DebatesList client:load />
     </div>
   </section>
 </BaseLayout>
@@ -72,38 +31,5 @@ const description =
   }
   .lede {
     font-size: 1.1rem;
-  }
-  .list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-  .item-link {
-    display: block;
-    text-decoration: none;
-    color: inherit;
-  }
-  .item:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.07);
-    transition: transform 100ms ease, box-shadow 100ms ease;
-  }
-  .item-title {
-    font-size: 1.15rem;
-    margin: 0 0 0.4rem;
-  }
-  .clamp {
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-  .small {
-    font-size: 0.85rem;
-  }
-  .state {
-    text-align: center;
-    padding: 3rem 1.5rem;
   }
 </style>
