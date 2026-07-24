@@ -1,5 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
+import BrandLine from '../components/BrandLine.astro';
 import PasswordResetConfirmForm from '../components/islands/PasswordResetConfirmForm.svelte';
 
 const description =
@@ -10,13 +11,7 @@ const description =
   <section class="section">
     <div class="container auth-shell">
       <div class="auth-card card">
-        <img
-          src="/logo.png"
-          width="180"
-          height="120"
-          alt="DemocraciaBR"
-          class="logo"
-        />
+        <BrandLine size={34} class="logo" />
         <h1>Redefinir senha</h1>
         <p class="muted">
           Escolha uma senha forte (mínimo 8 caracteres). Vamos encerrar suas

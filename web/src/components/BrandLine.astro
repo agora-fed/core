@@ -1,0 +1,40 @@
+---
+// Marca horizontal tema-consciente: emblema colorido (sempre legível) +
+// wordmark em texto que segue --text-1. Substitui o logo.png raster nos
+// contextos onde o fundo muda de tema — o wordmark azul-marinho do PNG
+// desaparece em dark mode (pente-fino 2026-07-24).
+interface Props {
+  /** Altura do emblema em px; o texto escala junto. */
+  size?: number;
+  class?: string;
+}
+const { size = 28, class: className } = Astro.props;
+const width = Math.round(size * (340 / 316));
+const fontSize = Math.round(size * 0.68);
+---
+
+<span class:list={['brand-line', className]} style={`--brand-fs:${fontSize}px`}>
+  <img src="/emblem.png" width={width} height={size} alt="" />
+  <span class="brand-word">Democracia<span class="brand-br">BR</span></span>
+</span>
+
+<style>
+  .brand-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45em;
+    font-size: var(--brand-fs);
+  }
+  .brand-line img {
+    display: block;
+  }
+  .brand-word {
+    font-weight: 700;
+    color: var(--text-1);
+    letter-spacing: -0.01em;
+    line-height: 1;
+  }
+  .brand-br {
+    color: var(--accent-strong, #15803d);
+  }
+</style>

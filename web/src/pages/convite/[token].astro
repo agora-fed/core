@@ -16,6 +16,7 @@
 // SSR entrar em cena (Node/Cloudflare/etc.), baste remover o `getStaticPaths` vazio e ligar
 // `prerender = false` — a ilha já sabe ler o path segment.
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import BrandLine from '../../components/BrandLine.astro';
 import AcceptMandateInvite from '../../components/islands/AcceptMandateInvite.svelte';
 
 export async function getStaticPaths() {
@@ -31,13 +32,7 @@ const description =
   <section class="section">
     <div class="container auth-shell">
       <div class="auth-card card">
-        <img
-          src="/logo.png"
-          width="180"
-          height="120"
-          alt="DemocraciaBR"
-          class="logo"
-        />
+        <BrandLine size={34} class="logo" />
         <h1>Aceitar convite</h1>
         <p class="muted">
           Você foi convidado(a) a assumir um mandato na plataforma cidadã de

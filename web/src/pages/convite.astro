@@ -7,6 +7,7 @@
 // Quando um adapter SSR for adotado, o gêmeo dinâmico `convite/[token].astro` passa a atender
 // `/convite/<token>` sem mudança de ilha (que já lê os dois formatos).
 import BaseLayout from '../layouts/BaseLayout.astro';
+import BrandLine from '../components/BrandLine.astro';
 import AcceptMandateInvite from '../components/islands/AcceptMandateInvite.svelte';
 
 const description =
@@ -17,13 +18,7 @@ const description =
   <section class="section">
     <div class="container auth-shell">
       <div class="auth-card card">
-        <img
-          src="/logo.png"
-          width="180"
-          height="120"
-          alt="DemocraciaBR"
-          class="logo"
-        />
+        <BrandLine size={34} class="logo" />
         <h1>Aceitar convite</h1>
         <p class="muted">
           Você foi convidado(a) a assumir um mandato na plataforma cidadã de

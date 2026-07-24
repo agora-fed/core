@@ -3,6 +3,7 @@
 // semantic tokens (--surface-*/--text-*/--accent) so it Just Works in dark
 // mode. Political nav only; social/fediverse lives inside AuthMenu.
 import AuthMenu from './islands/AuthMenu.svelte';
+import BrandLine from './BrandLine.astro';
 
 const path = Astro.url.pathname;
 const isActive = (href: string) =>
@@ -25,13 +26,7 @@ const links: Array<{ href: string; label: string; cta?: boolean }> = [
 <header class="site-header">
   <div class="container bar">
     <a href="/" class="brand" aria-label="DemocraciaBR — página inicial">
-      <img
-        src="/logo.png"
-        width="160"
-        height="107"
-        alt="DemocraciaBR"
-        class="brand-logo"
-      />
+      <BrandLine size={30} />
     </a>
 
     <input id="menu-toggle" class="menu-toggle" type="checkbox" aria-hidden="true" />
@@ -87,10 +82,6 @@ const links: Array<{ href: string; label: string; cta?: boolean }> = [
     display: inline-flex;
     align-items: center;
     flex-shrink: 0;
-  }
-  .brand-logo {
-    height: 38px;
-    width: auto;
   }
 
   .menu-toggle,

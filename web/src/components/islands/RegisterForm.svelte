@@ -345,7 +345,7 @@
         />
         <Input
           id="r-cand-number"
-          label="Número de urna (opcional)"
+          label="Número (opcional)"
           type="text"
           inputmode="numeric"
           bind:value={candNumber}
@@ -598,16 +598,28 @@
     margin-bottom: var(--sp-2);
     padding: 0;
   }
+  /* 3 papéis num card de 32rem: linhas empilhadas (lado a lado estourava). */
   .role-tabs {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: 1fr;
     gap: var(--sp-2);
   }
+  .role-tab span:last-child {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 var(--sp-2);
+  }
+  /* minmax(0,…): inputs têm min-width intrínseco e estouram colunas fr puras. */
   .cand-grid {
     display: grid;
-    grid-template-columns: 2fr 1fr;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
     gap: var(--sp-3);
     margin-top: var(--sp-3);
+  }
+  .cand-grid :global(input) {
+    min-width: 0;
+    width: 100%;
   }
   .cand-select {
     display: block;
