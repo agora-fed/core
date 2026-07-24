@@ -1,0 +1,26 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import ProfileNudgePanel from '../../components/islands/ProfileNudgePanel.svelte';
+---
+
+<AdminLayout
+  title="Completar perfil (admin)"
+  description="Convide cidadãos com perfil incompleto a completar: veja quem está sem nome/@usuário e dispare o e-mail em lotes controlados."
+>
+  <header class="head">
+    <h1>Convite pra completar o perfil</h1>
+    <p class="muted">
+      Cidadãos que se cadastraram mas nunca preencheram o perfil (sem nome de
+      exibição ou @usuário) ficam invisíveis quando apoiam, debatem ou respondem.
+      Selecione quem convidar e dispare o e-mail — cada envio é uma ação sua, e
+      ninguém recebe o convite duas vezes sem você mandar de novo.
+    </p>
+  </header>
+  <ProfileNudgePanel client:load />
+</AdminLayout>
+
+<style>
+  .head { margin-bottom: var(--sp-5); }
+  h1 { margin: 0 0 var(--sp-1); }
+  .head p { max-width: 46rem; }
+</style>

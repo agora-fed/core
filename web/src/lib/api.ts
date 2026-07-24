@@ -158,6 +158,15 @@ export async function apiPatch<T>(
   return apiBody<T>('PATCH', path, payload, init);
 }
 
+/** Client-side PUT returning the parsed envelope. */
+export async function apiPut<T>(
+  path: string,
+  payload: unknown,
+  init?: RequestInit,
+): Promise<ApiResponse<T>> {
+  return apiBody<T>('PUT', path, payload, init);
+}
+
 /** Client-side GET that uses the same defensive parsing as POST/PATCH and includes the cookie. */
 export async function apiGetCredentialed<T>(
   path: string,
@@ -795,6 +804,40 @@ export const getPromises = (mandateId: string) =>
     `/api/v1/scorecards/${encodeURIComponent(mandateId)}/promises`,
   );
 
+// --- Convite pra completar o perfil (0.49.0, admin) ---------------------------
+
+export interface ProfileNudgeOverview {
+  total: number;
+  incomplete: number;
+  incomplete_not_nudged: number;
+}
+export interface ProfileNudgeCandidate {
+  citizen_id: string;
+  display_name: string | null;
+  handle: string | null;
+  email: string;
+  created_at: string;
+  nudged_at: string | null;
+}
+export interface ProfileNudgeResult {
+  sent: number;
+  skipped: number;
+  failed: number;
+}
+
+export const getProfileNudgeOverview = () =>
+  apiGetCredentialed<ProfileNudgeOverview>('/api/v1/admin/profile-nudge/overview');
+
+export const getProfileNudgeCandidates = (limit = 500) =>
+  apiGetCredentialed<ProfileNudgeCandidate[]>(
+    `/api/v1/admin/profile-nudge/candidates?limit=${limit}`,
+  );
+
+export const sendProfileNudge = (citizenIds: string[]) =>
+  apiPost<ProfileNudgeResult>('/api/v1/admin/profile-nudge/send', {
+    citizen_ids: citizenIds,
+  });
+
 /** O parlamentar registra uma promessa pública (gate MIN_OFFICIAL_LEVEL no backend). */
 export const recordPromise = (mandateId: string, text: string) =>
   apiPost<PromiseDto>(
@@ -1106,14 +1149,14 @@ export const setPlatformRole = (
   citizen_id: string,
   role: 'owner' | 'admin' | 'auditor' | 'none',
 ) =>
-  apiPost<null>(`/api/v1/admin/users/${citizen_id}/platform-role`, { role });
+  apiPut<null>(`/api/v1/admin/users/${citizen_id}/platform-role`, { role });
 
 export const setPartyRole = (
   citizen_id: string,
   role: 'admin' | 'moderador' | 'none',
   party_sigla?: string,
 ) =>
-  apiPost<null>(`/api/v1/admin/users/${citizen_id}/party-role`, {
+  apiPut<null>(`/api/v1/admin/users/${citizen_id}/party-role`, {
     role,
     party_sigla: role === 'none' ? undefined : party_sigla,
   });
