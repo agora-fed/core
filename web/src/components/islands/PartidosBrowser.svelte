@@ -14,6 +14,7 @@
     federal: number;
     estadual: number;
     municipal: number;
+    logo: string | null;
   }
 
   let loading = $state(true);
@@ -30,6 +31,7 @@
       federal: p.federal_count,
       estadual: p.estadual_count,
       municipal: p.municipal_count,
+      logo: p.logo_url,
     }));
     if (activeSphere !== 'todos') {
       list = list
@@ -89,7 +91,11 @@
       {#each parties as p (p.sigla)}
         <li class="card" style={`--party-accent:${partyColor(p.sigla)}`}>
           <a class="link" href={`/partidos/${partySlug(p.sigla)}`}>
-            <span class="crest" aria-hidden="true">{p.sigla.slice(0, 3)}</span>
+            {#if p.logo}
+              <img class="crest crest-logo" src={p.logo} alt={`Logo ${p.sigla}`} loading="lazy" />
+            {:else}
+              <span class="crest" aria-hidden="true">{p.sigla.slice(0, 3)}</span>
+            {/if}
             <div class="meta">
               <strong class="name">{p.sigla}</strong>
               <span class="muted total">{p.total} representante{p.total === 1 ? '' : 's'}</span>
@@ -176,6 +182,12 @@
     font-size: 0.9rem;
     flex-shrink: 0;
     letter-spacing: -0.02em;
+  }
+  .crest-logo {
+    background: #fff;
+    object-fit: contain;
+    padding: 5px;
+    border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   }
   .meta { display: grid; gap: 0.2rem; min-width: 0; }
   .name { font-size: 1.1rem; }
