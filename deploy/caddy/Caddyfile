@@ -1,5 +1,7 @@
 # DemocraciaBR reverse proxy — automatic HTTPS (Let's Encrypt over IPv6) on the sovereign VM.
 # The gateway serves BOTH the static site and /api/v1, so everything is one origin (no CORS).
+# /media/* is served by MinIO (sovereign object storage, ADR-0010 W1.2) — public-read bucket
+# 'dsoc-media' under the dsoc account, avatars/covers/etc. live there.
 democracia.social.br {
 	encode zstd gzip
 
@@ -10,8 +12,29 @@ democracia.social.br {
 	@nocache {
 		not path /_astro/*
 		not path /api/*
+		not path /media/*
 	}
 	header @nocache Cache-Control "no-cache"
 
-	reverse_proxy [::1]:8080
+	# Media: MinIO public-read bucket. The /media/ prefix maps to /dsoc-media/ inside MinIO.
+	# Uploaded objects are immutable (the upload path embeds a random suffix) so cache hard.
+	@media path /media/*
+	header @media Cache-Control "public, max-age=31536000, immutable"
+	handle_path /media/* {
+		reverse_proxy [::1]:9000 {
+			header_up Host {upstream_hostport}
+			rewrite /dsoc-media{uri}
+		}
+	}
+
+	reverse_proxy [::1]:8080 {
+		# SECURITY (2026-07-24): the gateway trusts x-dsoc-citizen-id / x-dsoc-org-id /
+		# x-citizen-id as the authenticated caller (its own inject_identity sets them from the
+		# session cookie). A client MUST NOT supply them — otherwise anyone spoofs any citizen
+		# (incl. admin). Strip them from every inbound request here; the gateway also strips
+		# them defensively in inject_identity (crates/gateway/src/lib.rs).
+		header_up -X-Dsoc-Citizen-Id
+		header_up -X-Dsoc-Org-Id
+		header_up -X-Citizen-Id
+	}
 }

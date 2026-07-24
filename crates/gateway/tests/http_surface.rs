@@ -204,6 +204,33 @@ async fn expired_session_is_rejected() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
+/// SECURITY (2026-07-24 regressão): a identidade do caller vem dos headers
+/// `x-dsoc-citizen-id`/`x-dsoc-org-id`/`x-citizen-id`, que o `inject_identity`
+/// só pode setar a partir de uma sessão/bearer REAL. Um cliente que os injeta
+/// direto (sem cookie) NÃO pode ser aceito — senão personifica qualquer
+/// cidadão, inclusive admin. Antes do fix este request retornava 200 com os
+/// stats de admin; agora os headers são apagados e cai em 401.
+#[tokio::test]
+async fn spoofed_identity_headers_are_stripped() {
+    let (app, st) = app().await;
+    let (org, citizen, _cookie) = seed_session(&st.db).await;
+    grant_admin(&st.db, org, citizen).await;
+    // Sem cookie, mas forjando os headers de identidade do admin recém-criado.
+    let req = Request::builder()
+        .uri("/api/v1/admin/stats")
+        .header("x-dsoc-citizen-id", citizen.to_string())
+        .header("x-citizen-id", citizen.to_string())
+        .header("x-dsoc-org-id", org.to_string())
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::UNAUTHORIZED,
+        "headers de identidade forjados pelo cliente devem ser ignorados"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // SECURITY — authorization (admin) gates
 // ---------------------------------------------------------------------------

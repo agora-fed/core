@@ -81,6 +81,18 @@ async fn openapi() -> Json<serde_json::Value> {
 /// (`x-dsoc-citizen-id` / `x-dsoc-org-id`, plus `x-citizen-id` for admin).
 /// Anonymous requests pass through with no headers added.
 async fn inject_identity(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
+    // SECURITY (2026-07-24): estes headers SÃO o sinal de caller autenticado lá embaixo
+    // (CallerId em crates/app/src/caller.rs e require_admin leem eles). Um cliente NUNCA pode
+    // fornecê-los — senão qualquer um personifica qualquer cidadão (inclusive admin). Apaga
+    // toda cópia vinda do cliente ANTES de resolver a sessão; só um cookie/bearer real volta a
+    // setá-los abaixo. Defesa em profundidade: o ingress Caddy também os remove
+    // (deploy/caddy/Caddyfile).
+    {
+        let headers = req.headers_mut();
+        headers.remove("x-dsoc-citizen-id");
+        headers.remove("x-dsoc-org-id");
+        headers.remove("x-citizen-id");
+    }
     // First: cookie session (the site's own flow); resolved async below.
     let mut resolved: Option<(Uuid, Uuid)> = None;
     if let Some(sid) = req

@@ -962,8 +962,9 @@ async fn send_mandate_invite(
     axum::extract::Path(mandate_id): axum::extract::Path<Uuid>,
     Json(body): Json<SendMandateInviteBody>,
 ) -> Response {
-    // TODO(auth): gate `send` to admin role. For now, any authenticated CallerId reaches here
-    // (the extractor already enforced a live session).
+    // Authorization: `MandateInviteService::send` enforces `invite_authorized` (platform
+    // owner/admin OR admin of the mandate's party; `moderador` does NOT qualify) and returns
+    // Forbidden otherwise. The CallerId extractor already proved a live session.
     let svc = MandateInviteService::from_state(&state, build_service(&state));
     match svc
         .send(caller.org, caller.citizen, mandate_id, &body.email)
