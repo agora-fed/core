@@ -1,10 +1,7 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import { getConsultations, DEFAULT_ORG_ID } from '../../lib/api';
-import { formatDate } from '../../lib/format';
-
-const consultations = await getConsultations(DEFAULT_ORG_ID, 30);
-const items = consultations.ok && consultations.data ? consultations.data : [];
+import ConsultasList from '../../components/islands/ConsultasList.svelte';
+import CreateConsultaForm from '../../components/islands/CreateConsultaForm.svelte';
 
 const description =
   'Consultas públicas da DemocraciaBR: a população é ouvida diretamente sobre as decisões que afetam o seu dia a dia.';
@@ -16,48 +13,13 @@ const description =
       <header class="page-head">
         <h1>Consultas públicas</h1>
         <p class="muted lede">
-          Perguntas abertas à população. Cada resposta é um sinal direto para
-          quem decide.
+          Perguntas abertas à população. Você responde concordo, neutro ou
+          discordo — e cada resposta é um sinal direto para quem decide.
         </p>
       </header>
 
-      {
-        !consultations.ok && (
-          <div class="card state" role="alert">
-            <h2>Não foi possível carregar as consultas</h2>
-            <p class="muted">{consultations.error}</p>
-          </div>
-        )
-      }
-
-      {
-        consultations.ok && items.length === 0 && (
-          <div class="card state">
-            <h2>Nenhuma consulta aberta</h2>
-            <p class="muted">
-              Novas consultas públicas aparecerão aqui assim que publicadas.
-            </p>
-          </div>
-        )
-      }
-
-      {
-        items.length > 0 && (
-          <ul class="list grid grid-2">
-            {items.map((c) => (
-              <li class="card item">
-                <h2 class="item-title">{c.title}</h2>
-                {c.body && <p class="muted clamp">{c.body}</p>}
-                {c.created_at && (
-                  <time datetime={c.created_at} class="muted small">
-                    {formatDate(c.created_at)}
-                  </time>
-                )}
-              </li>
-            ))}
-          </ul>
-        )
-      }
+      <CreateConsultaForm client:load />
+      <ConsultasList client:load />
     </div>
   </section>
 </BaseLayout>
@@ -69,28 +31,5 @@ const description =
   }
   .lede {
     font-size: 1.1rem;
-  }
-  .list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-  .item-title {
-    font-size: 1.15rem;
-    margin: 0 0 0.4rem;
-  }
-  .clamp {
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-  .small {
-    font-size: 0.85rem;
-  }
-  .state {
-    text-align: center;
-    padding: 3rem 1.5rem;
   }
 </style>

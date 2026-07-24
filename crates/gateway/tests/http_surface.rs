@@ -2146,3 +2146,154 @@ async fn admin_hard_delete_requires_force() {
         .unwrap();
     assert_eq!(gone, 0, "mandato apagado");
 }
+
+// ---------------------------------------------------------------------------
+// CONSULTAS PARTICIPATIVAS (Fase 3.3, migration 0531)
+// ---------------------------------------------------------------------------
+
+fn consulta_create_body() -> String {
+    let opens = Utc::now().to_rfc3339();
+    let closes = (Utc::now() + Duration::days(7)).to_rfc3339();
+    format!(
+        r#"{{"title":"Prioridades 2027","opens_at":"{opens}","closes_at":"{closes}",
+             "questions":["Transporte deve ser gratuito?","Mais creches?"]}}"#
+    )
+}
+
+#[tokio::test]
+async fn consultas_anonymous_cannot_create_or_respond() {
+    let (app, _) = app().await;
+    // Criar sem sessão → 401.
+    let resp = app
+        .clone()
+        .oneshot(json_req("POST", "/api/v1/consultas", None, &consulta_create_body()))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    // Responder sem sessão → 401.
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/consultas/{}/responder", Uuid::now_v7()),
+            None,
+            r#"{"answers":[]}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn consultas_plain_citizen_cannot_create() {
+    let (app, st) = app().await;
+    let (_org, _citizen, cookie) = seed_session(&st.db).await;
+    // Cidadão comum (sem admin, sem mandato) → 403.
+    let resp = app
+        .oneshot(json_req("POST", "/api/v1/consultas", Some(&cookie), &consulta_create_body()))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn consultas_full_participation_flow() {
+    let (app, st) = app().await;
+    let (org, citizen, cookie) = seed_session(&st.db).await;
+    grant_admin(&st.db, org, citizen).await;
+
+    // 1. Admin cria a consulta.
+    let resp = app
+        .clone()
+        .oneshot(json_req("POST", "/api/v1/consultas", Some(&cookie), &consulta_create_body()))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let created = body_json(resp).await;
+    let cid = created["data"]["id"].as_str().unwrap().to_owned();
+
+    // 2. Leitura PÚBLICA (sem cookie): 2 perguntas, agregados zerados.
+    let resp = app
+        .clone()
+        .oneshot(get(&format!("/api/v1/consultas/{cid}")))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let detail = body_json(resp).await;
+    let questions = detail["data"]["questions"].as_array().unwrap();
+    assert_eq!(questions.len(), 2);
+    assert_eq!(questions[0]["tally"]["total"].as_i64().unwrap(), 0);
+    assert!(questions[0]["my_answer"].is_null());
+    let q0 = questions[0]["id"].as_str().unwrap().to_owned();
+
+    // 3. Cidadão logado responde à primeira pergunta.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/consultas/{cid}/responder"),
+            Some(&cookie),
+            &format!(r#"{{"answers":[{{"question_id":"{q0}","answer":"concordo"}}]}}"#),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // 4. Detalhe credenciado: minha resposta aparece + agregado conta 1.
+    let resp = app
+        .clone()
+        .oneshot(get_with_cookie(&format!("/api/v1/consultas/{cid}"), &cookie))
+        .await
+        .unwrap();
+    let detail = body_json(resp).await;
+    let q0v = &detail["data"]["questions"][0];
+    assert_eq!(q0v["my_answer"].as_str().unwrap(), "concordo");
+    assert_eq!(q0v["tally"]["concordo"].as_i64().unwrap(), 1);
+    assert_eq!(q0v["tally"]["total"].as_i64().unwrap(), 1);
+
+    // 5. Reenvio (upsert): muda para discordo, total continua 1.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/consultas/{cid}/responder"),
+            Some(&cookie),
+            &format!(r#"{{"answers":[{{"question_id":"{q0}","answer":"discordo"}}]}}"#),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp = app
+        .clone()
+        .oneshot(get_with_cookie(&format!("/api/v1/consultas/{cid}"), &cookie))
+        .await
+        .unwrap();
+    let detail = body_json(resp).await;
+    let q0v = &detail["data"]["questions"][0];
+    assert_eq!(q0v["my_answer"].as_str().unwrap(), "discordo");
+    assert_eq!(q0v["tally"]["discordo"].as_i64().unwrap(), 1);
+    assert_eq!(q0v["tally"]["concordo"].as_i64().unwrap(), 0);
+    assert_eq!(q0v["tally"]["total"].as_i64().unwrap(), 1);
+
+    // 6. Encerrada: novas respostas são recusadas (409).
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/consultas/{cid}/close"),
+            Some(&cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/consultas/{cid}/responder"),
+            Some(&cookie),
+            &format!(r#"{{"answers":[{{"question_id":"{q0}","answer":"neutro"}}]}}"#),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+}

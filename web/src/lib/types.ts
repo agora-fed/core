@@ -158,6 +158,45 @@ export interface ConsultationDto {
   created_at?: string;
 }
 
+// --- Consultas participativas (Fase 3.3, migration 0531) ----------------------
+
+/** Item da lista pública de consultas. */
+export interface ConsultaSummary {
+  id: string;
+  title: string;
+  status: 'open' | 'closed';
+  opens_at: string;
+  closes_at: string;
+  question_count: number;
+}
+
+/** Agregado das respostas de uma pergunta. */
+export interface ConsultaTally {
+  concordo: number;
+  neutro: number;
+  discordo: number;
+  total: number;
+}
+
+/** Pergunta de uma consulta, com agregado e a resposta do caller (se logado). */
+export interface ConsultaQuestion {
+  id: string;
+  prompt: string;
+  position: number;
+  tally: ConsultaTally;
+  my_answer: 'concordo' | 'neutro' | 'discordo' | null;
+}
+
+/** Detalhe público de uma consulta. */
+export interface ConsultaDetail {
+  id: string;
+  title: string;
+  status: 'open' | 'closed';
+  opens_at: string;
+  closes_at: string;
+  questions: ConsultaQuestion[];
+}
+
 // --- Parties (Fase 2B, migration 0204) ----------------------------------------
 
 /** Public view of a political party. */

@@ -20,6 +20,7 @@ pub mod announcements;
 pub mod attestations;
 pub mod audience;
 pub mod campaign_groups;
+pub mod consultas_ext;
 pub mod campanha;
 pub mod civic_notify;
 pub mod contact;
@@ -214,6 +215,7 @@ pub fn api_router(state: AppState) -> Router {
         .merge(campanha::routes(state.clone()))
         // Grupos de campanha — canal proativo campanha→eleitor (0.39, Fase 2.3).
         .merge(campaign_groups::routes(state.clone()))
+        .merge(consultas_ext::routes(state.clone()))
         // Formulário de contato público — nenhum e-mail exposto no site.
         .merge(contact::routes(state.clone()))
         .merge(webhooks::routes(state.clone()))

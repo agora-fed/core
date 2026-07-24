@@ -6,6 +6,8 @@ import type {
   ApiResponse,
   BoostResultDto,
   ConsultationDto,
+  ConsultaSummary,
+  ConsultaDetail,
   DebateDto,
   ContributionDto,
   ApiResponse,
@@ -830,6 +832,43 @@ export const contributeToDebate = (
 export const getConsultations = (orgId = DEFAULT_ORG_ID, limit = 30) =>
   apiGet<ConsultationDto[]>(
     `/api/v1/surveys${orgQuery(orgId, `&limit=${limit}`)}`,
+  );
+
+// --- Consultas participativas (Fase 3.3, migration 0531) ----------------------
+// Superfície pública: leitura sem login, resposta com login (concordo/neutro/discordo).
+
+/** Lista pública de consultas (título, status, janela, nº perguntas). */
+export const getConsultas = () => apiGet<ConsultaSummary[]>('/api/v1/consultas');
+
+/** Detalhe público de uma consulta. Credenciado: quando logado traz `my_answer`. */
+export const getConsulta = (id: string) =>
+  apiGetCredentialed<ConsultaDetail>(
+    `/api/v1/consultas/${encodeURIComponent(id)}`,
+  );
+
+/** O cidadão logado envia/atualiza respostas (concordo/neutro/discordo). */
+export const responderConsulta = (
+  id: string,
+  answers: { question_id: string; answer: string }[],
+) =>
+  apiPost<{ saved: number }>(
+    `/api/v1/consultas/${encodeURIComponent(id)}/responder`,
+    { answers },
+  );
+
+/** Cria uma consulta (admin ou político). Perguntas são prompts livres. */
+export const createConsulta = (input: {
+  title: string;
+  opens_at: string;
+  closes_at: string;
+  questions: string[];
+}) => apiPost<{ id: string }>('/api/v1/consultas', input);
+
+/** Encerra uma consulta aberta (admin ou político). */
+export const closeConsulta = (id: string) =>
+  apiPost<{ status: string }>(
+    `/api/v1/consultas/${encodeURIComponent(id)}/close`,
+    {},
   );
 
 // --- Auth: centralized so the org_id (required by the backend Register/LoginRequest) can NEVER be
