@@ -135,6 +135,22 @@ async fn webfinger_handler(
     if !resource_host.eq_ignore_ascii_case(&host) {
         return StatusCode::NOT_FOUND.into_response();
     }
+    // Ator de instância (0539): instâncias em modo seguro validam nosso fetch assinado
+    // resolvendo `acct:instance@<host>` — sem esta resposta o keyId não verifica e o
+    // remoto devolve 401 (visto ao vivo com wetdry.world).
+    if user.eq_ignore_ascii_case("instance") {
+        let jrd = json!({
+            "subject": query.resource,
+            "links": [
+                { "rel": "self", "type": ACTIVITY_JSON,
+                  "href": format!("https://{host}/actors/instance") }
+            ]
+        });
+        return match serde_json::to_string(&jrd) {
+            Ok(body) => ([(header::CONTENT_TYPE, JRD_JSON)], body).into_response(),
+            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        };
+    }
     let svc = ProfileService::from_state(&state);
     let org = OrgId::from_uuid(DEFAULT_ORG_UUID);
     if svc.find_public_by_handle(org, user).await.is_err() {
