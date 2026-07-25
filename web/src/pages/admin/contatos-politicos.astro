@@ -1,0 +1,25 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PoliticoContactsPanel from '../../components/islands/PoliticoContactsPanel.svelte';
+---
+
+<AdminLayout
+  title="Contatos dos políticos (admin)"
+  description="E-mail de cada mandato com selo real vs placeholder — quem é alcançável por proposta/convite."
+>
+  <header class="head">
+    <h1>Contatos dos políticos</h1>
+    <p class="muted">
+      O e-mail de cada político e se ele é <strong>real</strong> (a proposta/convite
+      chega) ou <strong>placeholder</strong> (cai num endereço nosso e não entrega).
+      Filtre por cargo, UF e status, ou busque por nome/município.
+    </p>
+  </header>
+  <PoliticoContactsPanel client:load />
+</AdminLayout>
+
+<style>
+  .head { margin-bottom: var(--sp-5); }
+  h1 { margin: 0 0 var(--sp-1); }
+  .head p { max-width: 48rem; }
+</style>

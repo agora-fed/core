@@ -838,6 +838,51 @@ export const sendProfileNudge = (citizenIds: string[]) =>
     citizen_ids: citizenIds,
   });
 
+// --- Contatos dos políticos (0.51.0, admin) -----------------------------------
+
+export interface PoliticoContactOverviewRow {
+  cargo: string;
+  total: number;
+  com_email: number;
+  placeholder: number;
+}
+export interface PoliticoContact {
+  id: string;
+  display_name: string;
+  office: string;
+  party: string | null;
+  uf: string | null;
+  municipio: string | null;
+  public_email: string;
+  email_real: boolean;
+}
+export interface PoliticoContactsResult {
+  total: number;
+  limit: number;
+  offset: number;
+  items: PoliticoContact[];
+}
+
+export const getPoliticoContactsOverview = () =>
+  apiGetCredentialed<PoliticoContactOverviewRow[]>('/api/v1/admin/politico-contacts/overview');
+
+export const getPoliticoContacts = (params: {
+  cargo?: string;
+  uf?: string;
+  status?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
+}) => {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== '' && v !== null) qs.set(k, String(v));
+  }
+  return apiGetCredentialed<PoliticoContactsResult>(
+    `/api/v1/admin/politico-contacts?${qs.toString()}`,
+  );
+};
+
 /** O parlamentar registra uma promessa pública (gate MIN_OFFICIAL_LEVEL no backend). */
 export const recordPromise = (mandateId: string, text: string) =>
   apiPost<PromiseDto>(

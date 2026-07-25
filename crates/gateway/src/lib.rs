@@ -22,6 +22,7 @@ pub mod audience;
 pub mod campaign_groups;
 pub mod consultas_ext;
 pub mod profile_nudge;
+pub mod politico_contacts;
 pub mod mailer;
 pub mod campanha;
 pub mod civic_notify;
@@ -219,6 +220,7 @@ pub fn api_router(state: AppState) -> Router {
         .merge(campaign_groups::routes(state.clone()))
         .merge(consultas_ext::routes(state.clone()))
         .merge(profile_nudge::routes(state.clone()))
+        .merge(politico_contacts::routes(state.clone()))
         // Formulário de contato público — nenhum e-mail exposto no site.
         .merge(contact::routes(state.clone()))
         .merge(webhooks::routes(state.clone()))
