@@ -4,12 +4,17 @@
   import { onMount } from 'svelte';
   import {
     apiPost,
+    browsePoliticos,
     DEFAULT_ORG_ID,
     getAllMandates,
     getThresholdPreview,
+    listMunicipios,
     type MandateDto,
+    type MunicipioRow,
+    type PoliticoRow,
     type ThresholdPreviewDto,
   } from '../../lib/api';
+  import { UFS } from '../../lib/ufs';
   import type { ProposalDto } from '../../lib/types';
 
   let title = $state('');
@@ -26,6 +31,89 @@
   let mandates = $state<MandateDto[]>([]);
   let mandatesLoading = $state(true);
   let mandatesError = $state<string | null>(null);
+
+  // Esfera municipal (follow-up do 0537): 68k mandatos municipais não cabem num
+  // dropdown — cascata UF → município carrega só os vereadores/prefeito do lugar.
+  // Federal + estadual continuam no dropdown único (lista cacheada).
+  let esfera = $state<'federal-estadual' | 'municipal'>('federal-estadual');
+  let fedEstMandates: MandateDto[] = [];
+  let ufSel = $state('');
+  let municipioSel = $state('');
+  let municipios = $state<MunicipioRow[]>([]);
+  let municipiosLoading = $state(false);
+
+  // browse retorna PoliticoRow; o form trabalha com o shape MandateDto.
+  function asMandate(r: PoliticoRow): MandateDto {
+    return {
+      id: r.id,
+      office: r.office,
+      display_name: r.display_name,
+      is_candidate: r.is_candidate,
+      onboarded: false,
+      party: r.party,
+      uf: r.uf,
+      house: (r.house as MandateDto['house']) ?? null,
+      avatar_url: r.avatar_url,
+      sphere: r.sphere,
+    };
+  }
+
+  function switchEsfera(next: 'federal-estadual' | 'municipal') {
+    if (esfera === next) return;
+    esfera = next;
+    mandateId = '';
+    extraIds = [];
+    coSearch = '';
+    if (next === 'federal-estadual') {
+      mandates = fedEstMandates;
+      mandatesError = null;
+    } else {
+      mandates = [];
+      ufSel = '';
+      municipioSel = '';
+      municipios = [];
+    }
+  }
+
+  async function onUfChange() {
+    municipioSel = '';
+    mandates = [];
+    mandateId = '';
+    extraIds = [];
+    municipios = [];
+    if (!ufSel) return;
+    municipiosLoading = true;
+    const res = await listMunicipios(ufSel);
+    municipiosLoading = false;
+    if (res.success && res.data) {
+      municipios = res.data;
+    } else {
+      mandatesError = 'Não foi possível carregar os municípios dessa UF.';
+    }
+  }
+
+  async function onMunicipioChange() {
+    mandates = [];
+    mandateId = '';
+    extraIds = [];
+    if (!ufSel || !municipioSel) return;
+    mandatesLoading = true;
+    const res = await browsePoliticos({
+      sphere: 'municipal',
+      uf: ufSel,
+      municipio: municipioSel,
+      limit: 200,
+    });
+    mandatesLoading = false;
+    if (res.success && res.data) {
+      mandates = res.data.items.map(asMandate);
+      mandatesError = null;
+      if (mandates.length === 1) mandateId = mandates[0].id;
+    } else {
+      mandatesError =
+        res.error?.message ?? 'Não foi possível carregar os políticos do município.';
+    }
+  }
 
   // Multi-destinatário (0537): co-destinatários da MESMA esfera do principal.
   // O servidor valida de novo; aqui o filtro é só UX.
@@ -115,6 +203,7 @@
       ];
       // Reuse the same res shape below.
       const res = { ok: true as const, data: merged, error: null };
+      fedEstMandates = res.data;
       mandates = res.data;
       // Pre-select when the URL carries `?mandate=<id>` (linked from /politicos/<id>).
       try {
@@ -203,16 +292,79 @@
     {/if}
   </div>
 
+  <div class="field">
+    <span class="label-like">Esfera do destinatário</span>
+    <div class="esfera-toggle" role="radiogroup" aria-label="Esfera do destinatário">
+      <label>
+        <input
+          type="radio"
+          name="esfera"
+          checked={esfera === 'federal-estadual'}
+          onchange={() => switchEsfera('federal-estadual')}
+        />
+        Federal e Estadual
+      </label>
+      <label>
+        <input
+          type="radio"
+          name="esfera"
+          checked={esfera === 'municipal'}
+          onchange={() => switchEsfera('municipal')}
+        />
+        Municipal (vereadores e prefeitos)
+      </label>
+    </div>
+  </div>
+
+  {#if esfera === 'municipal'}
+    <div class="row row-2">
+      <div class="field">
+        <label for="p-uf">Estado (UF)</label>
+        <select id="p-uf" class="input" bind:value={ufSel} onchange={onUfChange}>
+          <option value="" disabled>Escolha a UF…</option>
+          {#each UFS as u (u.code)}
+            <option value={u.code}>{u.name}</option>
+          {/each}
+        </select>
+      </div>
+      <div class="field">
+        <label for="p-municipio">Município</label>
+        {#if municipiosLoading}
+          <p class="hint muted">Carregando municípios…</p>
+        {:else}
+          <select
+            id="p-municipio"
+            class="input"
+            bind:value={municipioSel}
+            onchange={onMunicipioChange}
+            disabled={!ufSel}
+          >
+            <option value="" disabled>
+              {ufSel ? 'Escolha o município…' : 'Escolha a UF primeiro'}
+            </option>
+            {#each municipios as m (m.nome)}
+              <option value={m.nome}>{m.nome}</option>
+            {/each}
+          </select>
+        {/if}
+      </div>
+    </div>
+  {/if}
+
   <div class="row">
     <div class="field">
       <label for="p-mandate">Político destinatário</label>
-      {#if mandatesLoading}
+      {#if esfera === 'municipal' && !municipioSel}
+        <p class="hint muted">Escolha a UF e o município acima.</p>
+      {:else if mandatesLoading}
         <p class="hint muted">Carregando lista de políticos…</p>
       {:else if mandatesError}
         <p class="hint hint-error">{mandatesError}</p>
       {:else if mandates.length === 0}
         <p class="hint muted">
-          Ainda não há políticos cadastrados nesta plataforma.
+          {esfera === 'municipal'
+            ? 'Nenhum vereador ou prefeito cadastrado neste município.'
+            : 'Ainda não há políticos cadastrados nesta plataforma.'}
         </p>
       {:else}
         <select
@@ -339,6 +491,24 @@
   @media (min-width: 640px) {
     .row {
       grid-template-columns: 1fr 10rem;
+    }
+  }
+  .esfera-toggle {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.25rem;
+    margin: 0.35rem 0 0.5rem;
+  }
+  .esfera-toggle label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: pointer;
+    font-size: 0.95rem;
+  }
+  @media (min-width: 640px) {
+    .row-2 {
+      grid-template-columns: 1fr 1fr;
     }
   }
   .co-block {
