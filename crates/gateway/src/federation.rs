@@ -3868,3 +3868,61 @@ fn absolutize(host: &str, url: &str) -> String {
         format!("https://{host}/{url}")
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    fn test_key() -> InstanceKey {
+        let kp = dsoc_federation::generate_actor_keypair().expect("keypair");
+        InstanceKey {
+            key_id: "https://example.org/actors/instance#main-key".to_owned(),
+            actor_id: "https://example.org/actors/instance".to_owned(),
+            private_pem: kp.private_pem,
+            public_pem: kp.public_pem,
+        }
+    }
+
+    #[test]
+    fn sign_get_headers_covers_target_host_date() {
+        let key = test_key();
+        let (host, date, signature) =
+            sign_get_headers("https://wetdry.world/users/luana", &key).expect("sign");
+        assert_eq!(host, "wetdry.world");
+        assert!(date.ends_with("GMT"), "Date em formato HTTP: {date}");
+        assert!(signature.contains("keyId=\"https://example.org/actors/instance#main-key\""));
+        assert!(signature.contains("algorithm=\"rsa-sha256\""));
+        assert!(signature.contains("headers=\"(request-target) host date\""));
+        assert!(signature.contains("signature=\""));
+    }
+
+    #[test]
+    fn sign_get_headers_keeps_port_and_query() {
+        let key = test_key();
+        let (host, _, _) = sign_get_headers("https://example.org:8443/x?y=1", &key).expect("sign");
+        assert_eq!(host, "example.org:8443", "porta explícita entra no host");
+    }
+
+    #[test]
+    fn sign_get_headers_rejects_bad_url() {
+        let key = test_key();
+        assert!(sign_get_headers("not-a-url", &key).is_err());
+    }
+
+    #[test]
+    fn absolutize_passes_absolute_and_roots_relative() {
+        assert_eq!(
+            absolutize("h.br", "https://cdn.x/y.png"),
+            "https://cdn.x/y.png"
+        );
+        assert_eq!(
+            absolutize("h.br", "/media/a.png"),
+            "https://h.br/media/a.png"
+        );
+        assert_eq!(
+            absolutize("h.br", "media/a.png"),
+            "https://h.br/media/a.png"
+        );
+    }
+}

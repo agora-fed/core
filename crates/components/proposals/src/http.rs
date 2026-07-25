@@ -364,6 +364,55 @@ mod tests {
     }
 
     #[test]
+    fn proposal_dto_maps_targets_in_order() {
+        let row = ProposalRow {
+            id: Uuid::now_v7(),
+            org_id: Uuid::now_v7(),
+            mandate_id: Uuid::now_v7(),
+            cluster_id: None,
+            title: "t".to_string(),
+            body: "b".to_string(),
+            status: "draft".to_string(),
+            support_count: 0,
+            threshold: 10,
+            threshold_crossed_at: None,
+            published_at: None,
+            author_citizen_id: None,
+            author_handle: None,
+            author_avatar_object_key: None,
+            urgencia: "comum".to_owned(),
+            notified_author_at: None,
+            notified_mandate_at: None,
+            created_at: Utc::now(),
+        };
+        let m1 = Uuid::now_v7();
+        let m2 = Uuid::now_v7();
+        let targets = vec![
+            crate::queries::TargetRow {
+                mandate_id: m1,
+                display_name: "Deputada A".to_owned(),
+                office: "deputado_federal".to_owned(),
+                sphere: "federal".to_owned(),
+                notified_at: Some(Utc::now()),
+            },
+            crate::queries::TargetRow {
+                mandate_id: m2,
+                display_name: "Senador B".to_owned(),
+                office: "senador".to_owned(),
+                sphere: "federal".to_owned(),
+                notified_at: None,
+            },
+        ];
+        let dto = proposal_dto(row, targets);
+        assert_eq!(dto.targets.len(), 2);
+        assert_eq!(dto.targets[0].mandate_id, m1, "ordem preservada");
+        assert_eq!(dto.targets[0].display_name, "Deputada A");
+        assert!(dto.targets[0].notified_at.is_some());
+        assert_eq!(dto.targets[1].mandate_id, m2);
+        assert!(dto.targets[1].notified_at.is_none());
+    }
+
+    #[test]
     fn revision_dto_from_row_round_trips() {
         let row = RevisionRow {
             id: Uuid::now_v7(),
