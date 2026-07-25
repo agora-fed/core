@@ -63,11 +63,19 @@ fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
 }
 
 fn unauthorized() -> Response {
-    fail(StatusCode::UNAUTHORIZED, "unauthorized", "Autenticação necessária.")
+    fail(
+        StatusCode::UNAUTHORIZED,
+        "unauthorized",
+        "Autenticação necessária.",
+    )
 }
 
 fn storage_error() -> Response {
-    fail(StatusCode::INTERNAL_SERVER_ERROR, "storage_error", "Erro interno.")
+    fail(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "storage_error",
+        "Erro interno.",
+    )
 }
 
 /// Gate de gestão: admin de plataforma (owner/admin) OU conta vinculada a
@@ -191,7 +199,11 @@ async fn list(State(state): State<AppState>) -> Response {
 // GET /consultas/{id} — detalhe público com agregado + minha resposta
 // ---------------------------------------------------------------------------
 
-async fn detail(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<Uuid>) -> Response {
+async fn detail(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Response {
     let head: Option<(String, String, DateTime<Utc>, DateTime<Utc>)> = match sqlx::query_as(
         "SELECT title, status, opens_at, closes_at FROM consultations_consultation WHERE id = $1",
     )
@@ -206,7 +218,11 @@ async fn detail(State(state): State<AppState>, headers: HeaderMap, Path(id): Pat
         }
     };
     let Some((title, status, opens_at, closes_at)) = head else {
-        return fail(StatusCode::NOT_FOUND, "not_found", "Consulta não encontrada.");
+        return fail(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "Consulta não encontrada.",
+        );
     };
 
     let questions: Vec<(Uuid, String, i32)> = match sqlx::query_as(
@@ -278,7 +294,12 @@ async fn detail(State(state): State<AppState>, headers: HeaderMap, Path(id): Pat
                 id: qid,
                 prompt,
                 position,
-                tally: Tally { concordo: c, neutro: n, discordo: d, total: c + n + d },
+                tally: Tally {
+                    concordo: c,
+                    neutro: n,
+                    discordo: d,
+                    total: c + n + d,
+                },
                 my_answer: mine.get(&qid).cloned(),
             }
         })
@@ -312,10 +333,18 @@ async fn create(
     }
     let title = body.title.trim();
     if title.is_empty() || title.chars().count() > MAX_TITLE {
-        return fail(StatusCode::BAD_REQUEST, "invalid_title", "Título de 1 a 200 caracteres.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_title",
+            "Título de 1 a 200 caracteres.",
+        );
     }
     if body.opens_at >= body.closes_at {
-        return fail(StatusCode::BAD_REQUEST, "invalid_window", "A abertura deve ser antes do fechamento.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_window",
+            "A abertura deve ser antes do fechamento.",
+        );
     }
     let prompts: Vec<String> = body
         .questions
@@ -324,10 +353,18 @@ async fn create(
         .filter(|q| !q.is_empty())
         .collect();
     if prompts.is_empty() || prompts.len() > MAX_QUESTIONS {
-        return fail(StatusCode::BAD_REQUEST, "invalid_questions", "Informe de 1 a 20 perguntas.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_questions",
+            "Informe de 1 a 20 perguntas.",
+        );
     }
     if prompts.iter().any(|p| p.chars().count() > MAX_PROMPT) {
-        return fail(StatusCode::BAD_REQUEST, "invalid_prompt", "Pergunta longa demais (máx. 500).");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_prompt",
+            "Pergunta longa demais (máx. 500).",
+        );
     }
 
     let mut tx = match state.db.begin().await {
@@ -374,7 +411,11 @@ async fn create(
         tracing::error!(?err, "consultas create: commit");
         return storage_error();
     }
-    (StatusCode::CREATED, Json(ApiResponse::ok(serde_json::json!({ "id": cid })))).into_response()
+    (
+        StatusCode::CREATED,
+        Json(ApiResponse::ok(serde_json::json!({ "id": cid }))),
+    )
+        .into_response()
 }
 
 // ---------------------------------------------------------------------------
@@ -391,7 +432,11 @@ async fn responder(
         return unauthorized();
     };
     if body.answers.is_empty() {
-        return fail(StatusCode::BAD_REQUEST, "no_answers", "Envie ao menos uma resposta.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "no_answers",
+            "Envie ao menos uma resposta.",
+        );
     }
 
     // A consulta existe e está aberta?
@@ -408,10 +453,20 @@ async fn responder(
             }
         };
     match status.as_deref() {
-        None => return fail(StatusCode::NOT_FOUND, "not_found", "Consulta não encontrada."),
+        None => {
+            return fail(
+                StatusCode::NOT_FOUND,
+                "not_found",
+                "Consulta não encontrada.",
+            )
+        }
         Some("open") => {}
         Some(_) => {
-            return fail(StatusCode::CONFLICT, "closed", "Esta consulta está encerrada.")
+            return fail(
+                StatusCode::CONFLICT,
+                "closed",
+                "Esta consulta está encerrada.",
+            )
         }
     }
 
@@ -431,10 +486,18 @@ async fn responder(
     };
     for a in &body.answers {
         if !ANSWERS.contains(&a.answer.as_str()) {
-            return fail(StatusCode::BAD_REQUEST, "invalid_answer", "Resposta inválida.");
+            return fail(
+                StatusCode::BAD_REQUEST,
+                "invalid_answer",
+                "Resposta inválida.",
+            );
         }
         if !valid.contains(&a.question_id) {
-            return fail(StatusCode::BAD_REQUEST, "unknown_question", "Pergunta não pertence à consulta.");
+            return fail(
+                StatusCode::BAD_REQUEST,
+                "unknown_question",
+                "Pergunta não pertence à consulta.",
+            );
         }
     }
 
@@ -468,7 +531,9 @@ async fn responder(
     }
     (
         StatusCode::OK,
-        Json(ApiResponse::ok(serde_json::json!({ "saved": body.answers.len() }))),
+        Json(ApiResponse::ok(
+            serde_json::json!({ "saved": body.answers.len() }),
+        )),
     )
         .into_response()
 }
@@ -477,7 +542,11 @@ async fn responder(
 // POST /consultas/{id}/close — encerra
 // ---------------------------------------------------------------------------
 
-async fn close(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<Uuid>) -> Response {
+async fn close(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Response {
     if let Err(resp) = require_manager(&state.db, &headers).await {
         return resp;
     }
@@ -488,10 +557,16 @@ async fn close(State(state): State<AppState>, headers: HeaderMap, Path(id): Path
     .execute(&state.db)
     .await;
     match res {
-        Ok(r) if r.rows_affected() == 1 => {
-            (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "status": "closed" })))).into_response()
-        }
-        Ok(_) => fail(StatusCode::NOT_FOUND, "not_found", "Consulta aberta não encontrada."),
+        Ok(r) if r.rows_affected() == 1 => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(serde_json::json!({ "status": "closed" }))),
+        )
+            .into_response(),
+        Ok(_) => fail(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "Consulta aberta não encontrada.",
+        ),
         Err(err) => {
             tracing::error!(?err, "consultas close");
             storage_error()

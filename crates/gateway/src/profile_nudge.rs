@@ -55,13 +55,21 @@ fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
 }
 
 fn storage_error() -> Response {
-    fail(StatusCode::INTERNAL_SERVER_ERROR, "storage_error", "Erro interno.")
+    fail(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "storage_error",
+        "Erro interno.",
+    )
 }
 
 /// Gate owner/admin. Retorna Err(resposta pronta) quando não passa.
 async fn require_admin(db: &PgPool, headers: &HeaderMap) -> Result<Uuid, Response> {
     let Some(citizen) = caller_citizen(headers) else {
-        return Err(fail(StatusCode::UNAUTHORIZED, "unauthorized", "Autenticação necessária."));
+        return Err(fail(
+            StatusCode::UNAUTHORIZED,
+            "unauthorized",
+            "Autenticação necessária.",
+        ));
     };
     let is_admin: bool = sqlx::query_scalar(
         r"SELECT EXISTS(
@@ -75,7 +83,11 @@ async fn require_admin(db: &PgPool, headers: &HeaderMap) -> Result<Uuid, Respons
     if is_admin {
         Ok(citizen)
     } else {
-        Err(fail(StatusCode::FORBIDDEN, "forbidden", "Requer administrador."))
+        Err(fail(
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            "Requer administrador.",
+        ))
     }
 }
 
@@ -138,7 +150,11 @@ async fn overview(State(state): State<AppState>, headers: HeaderMap) -> Response
     match row {
         Ok((total, incomplete, incomplete_not_nudged)) => (
             StatusCode::OK,
-            Json(ApiResponse::ok(Overview { total, incomplete, incomplete_not_nudged })),
+            Json(ApiResponse::ok(Overview {
+                total,
+                incomplete,
+                incomplete_not_nudged,
+            })),
         )
             .into_response(),
         Err(err) => {
@@ -160,7 +176,10 @@ async fn candidates(
     if let Err(resp) = require_admin(&state.db, &headers).await {
         return resp;
     }
-    let limit = params.limit.unwrap_or(CANDIDATES_LIMIT).clamp(1, CANDIDATES_LIMIT);
+    let limit = params
+        .limit
+        .unwrap_or(CANDIDATES_LIMIT)
+        .clamp(1, CANDIDATES_LIMIT);
     let rows: Result<Vec<Candidate>, sqlx::Error> = sqlx::query_as(&format!(
         r"SELECT c.id AS citizen_id, c.display_name, c.handle, ac.email,
                  c.created_at, c.profile_nudge_sent_at AS nudged_at
@@ -186,12 +205,20 @@ async fn candidates(
 // POST /admin/profile-nudge/send
 // ---------------------------------------------------------------------------
 
-async fn send(State(state): State<AppState>, headers: HeaderMap, Json(body): Json<SendBody>) -> Response {
+async fn send(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<SendBody>,
+) -> Response {
     if let Err(resp) = require_admin(&state.db, &headers).await {
         return resp;
     }
     if body.citizen_ids.is_empty() || body.citizen_ids.len() > MAX_BATCH {
-        return fail(StatusCode::BAD_REQUEST, "invalid_batch", "Selecione de 1 a 50 cidadãos.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_batch",
+            "Selecione de 1 a 50 cidadãos.",
+        );
     }
     let Some(cfg) = smtp_from_env() else {
         return fail(
@@ -247,10 +274,11 @@ async fn send(State(state): State<AppState>, headers: HeaderMap, Json(body): Jso
 
         match send_mail(&cfg, &email, subject, &text).await {
             Ok(()) => {
-                let _ = sqlx::query("UPDATE citizen SET profile_nudge_sent_at = now() WHERE id = $1")
-                    .bind(id)
-                    .execute(&state.db)
-                    .await;
+                let _ =
+                    sqlx::query("UPDATE citizen SET profile_nudge_sent_at = now() WHERE id = $1")
+                        .bind(id)
+                        .execute(&state.db)
+                        .await;
                 sent += 1;
             }
             Err(err) => {
@@ -260,7 +288,15 @@ async fn send(State(state): State<AppState>, headers: HeaderMap, Json(body): Jso
         }
     }
 
-    (StatusCode::OK, Json(ApiResponse::ok(SendResult { sent, skipped, failed }))).into_response()
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(SendResult {
+            sent,
+            skipped,
+            failed,
+        })),
+    )
+        .into_response()
 }
 
 /// Envia um e-mail de texto simples pelo relay SMTP soberano (mesmo transporte

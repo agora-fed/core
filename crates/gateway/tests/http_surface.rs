@@ -1967,7 +1967,10 @@ async fn campaign_group_full_flow() {
     assert_eq!(body["data"]["member_count"], serde_json::json!(1));
     assert_eq!(body["data"]["sou_membro"], serde_json::json!(true));
     assert_eq!(body["data"]["posts"].as_array().unwrap().len(), 1);
-    assert_eq!(body["data"]["name"], serde_json::json!("Campanha da Fulana"));
+    assert_eq!(
+        body["data"]["name"],
+        serde_json::json!("Campanha da Fulana")
+    );
 
     // 5) O eleitor sai; contagem volta a zero.
     let resp = app
@@ -2039,7 +2042,10 @@ async fn campaign_group_poll_flow() {
         ))
         .await
         .unwrap();
-    let gid = body_json(resp).await["data"]["id"].as_str().unwrap().to_owned();
+    let gid = body_json(resp).await["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
 
     // Abre uma enquete dirigida.
     let resp = app
@@ -2053,7 +2059,10 @@ async fn campaign_group_poll_flow() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
-    let pid = body_json(resp).await["data"]["id"].as_str().unwrap().to_owned();
+    let pid = body_json(resp).await["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
 
     // Um eleitor responde.
     let (_, _, voter) = seed_session_in_org(&st.db, org).await;
@@ -2072,7 +2081,10 @@ async fn campaign_group_poll_flow() {
     // Página pública (cookie do eleitor): agregado conta 1 + minha resposta.
     let resp = app
         .clone()
-        .oneshot(get_with_cookie(&format!("/api/v1/campaign-groups/{gid}"), &voter))
+        .oneshot(get_with_cookie(
+            &format!("/api/v1/campaign-groups/{gid}"),
+            &voter,
+        ))
         .await
         .unwrap();
     let body = body_json(resp).await;
@@ -2262,7 +2274,12 @@ async fn consultas_anonymous_cannot_create_or_respond() {
     // Criar sem sessão → 401.
     let resp = app
         .clone()
-        .oneshot(json_req("POST", "/api/v1/consultas", None, &consulta_create_body()))
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/consultas",
+            None,
+            &consulta_create_body(),
+        ))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
@@ -2285,7 +2302,12 @@ async fn consultas_plain_citizen_cannot_create() {
     let (_org, _citizen, cookie) = seed_session(&st.db).await;
     // Cidadão comum (sem admin, sem mandato) → 403.
     let resp = app
-        .oneshot(json_req("POST", "/api/v1/consultas", Some(&cookie), &consulta_create_body()))
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/consultas",
+            Some(&cookie),
+            &consulta_create_body(),
+        ))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
@@ -2300,7 +2322,12 @@ async fn consultas_full_participation_flow() {
     // 1. Admin cria a consulta.
     let resp = app
         .clone()
-        .oneshot(json_req("POST", "/api/v1/consultas", Some(&cookie), &consulta_create_body()))
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/consultas",
+            Some(&cookie),
+            &consulta_create_body(),
+        ))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
@@ -2337,7 +2364,10 @@ async fn consultas_full_participation_flow() {
     // 4. Detalhe credenciado: minha resposta aparece + agregado conta 1.
     let resp = app
         .clone()
-        .oneshot(get_with_cookie(&format!("/api/v1/consultas/{cid}"), &cookie))
+        .oneshot(get_with_cookie(
+            &format!("/api/v1/consultas/{cid}"),
+            &cookie,
+        ))
         .await
         .unwrap();
     let detail = body_json(resp).await;
@@ -2360,7 +2390,10 @@ async fn consultas_full_participation_flow() {
     assert_eq!(resp.status(), StatusCode::OK);
     let resp = app
         .clone()
-        .oneshot(get_with_cookie(&format!("/api/v1/consultas/{cid}"), &cookie))
+        .oneshot(get_with_cookie(
+            &format!("/api/v1/consultas/{cid}"),
+            &cookie,
+        ))
         .await
         .unwrap();
     let detail = body_json(resp).await;

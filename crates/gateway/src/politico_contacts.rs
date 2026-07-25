@@ -29,17 +29,28 @@ pub fn routes(state: AppState) -> Router<()> {
 }
 
 fn caller_citizen(headers: &HeaderMap) -> Option<Uuid> {
-    headers.get("x-dsoc-citizen-id").and_then(|v| v.to_str().ok()).and_then(|s| s.parse().ok())
+    headers
+        .get("x-dsoc-citizen-id")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse().ok())
 }
 fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
     (status, axum::Json(ApiResponse::<()>::fail(code, msg))).into_response()
 }
 fn storage_error() -> Response {
-    fail(StatusCode::INTERNAL_SERVER_ERROR, "storage_error", "Erro interno.")
+    fail(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "storage_error",
+        "Erro interno.",
+    )
 }
 async fn require_admin(db: &PgPool, headers: &HeaderMap) -> Result<(), Response> {
     let Some(citizen) = caller_citizen(headers) else {
-        return Err(fail(StatusCode::UNAUTHORIZED, "unauthorized", "Autenticação necessária."));
+        return Err(fail(
+            StatusCode::UNAUTHORIZED,
+            "unauthorized",
+            "Autenticação necessária.",
+        ));
     };
     let is_admin: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM admin_role_binding WHERE citizen_id=$1 AND role IN ('owner','admin'))",
@@ -48,14 +59,24 @@ async fn require_admin(db: &PgPool, headers: &HeaderMap) -> Result<(), Response>
     .fetch_one(db)
     .await
     .unwrap_or(false);
-    if is_admin { Ok(()) } else { Err(fail(StatusCode::FORBIDDEN, "forbidden", "Requer administrador.")) }
+    if is_admin {
+        Ok(())
+    } else {
+        Err(fail(
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            "Requer administrador.",
+        ))
+    }
 }
 
 /// Fragmento SQL FIXO (seguro, não vem do usuário) para o filtro de cargo.
 fn cargo_clause(cargo: &str) -> Option<&'static str> {
     match cargo {
         "vereador" => Some("office ILIKE 'Vereador%'"),
-        "dep_estadual" => Some("(office ILIKE 'Deputado(a) Estadual%' OR office ILIKE 'Deputado(a) Distrital%')"),
+        "dep_estadual" => {
+            Some("(office ILIKE 'Deputado(a) Estadual%' OR office ILIKE 'Deputado(a) Distrital%')")
+        }
         "dep_federal" => Some("office ILIKE 'Deputado(a) Federal%'"),
         "senador" => Some("office ILIKE 'Senador%'"),
         "governador" => Some("office ILIKE 'Governador%'"),
@@ -151,7 +172,9 @@ fn push_where(
     status: Option<&str>,
     q: &Option<String>,
 ) {
-    qb.push(" WHERE org_id = ").push_bind(DEFAULT_ORG_UUID).push(" AND hidden_at IS NULL");
+    qb.push(" WHERE org_id = ")
+        .push_bind(DEFAULT_ORG_UUID)
+        .push(" AND hidden_at IS NULL");
     if let Some(c) = cargo {
         qb.push(" AND ").push(c);
     }
@@ -160,7 +183,8 @@ fn push_where(
     }
     match status {
         Some("real") => {
-            qb.push(" AND public_email NOT ILIKE ").push_bind(PLACEHOLDER);
+            qb.push(" AND public_email NOT ILIKE ")
+                .push_bind(PLACEHOLDER);
         }
         Some("placeholder") => {
             qb.push(" AND public_email ILIKE ").push_bind(PLACEHOLDER);
@@ -168,22 +192,42 @@ fn push_where(
         _ => {}
     }
     if let Some(pat) = q {
-        qb.push(" AND (display_name ILIKE ").push_bind(pat.clone())
-            .push(" OR municipio ILIKE ").push_bind(pat.clone())
-            .push(" OR office ILIKE ").push_bind(pat.clone())
+        qb.push(" AND (display_name ILIKE ")
+            .push_bind(pat.clone())
+            .push(" OR municipio ILIKE ")
+            .push_bind(pat.clone())
+            .push(" OR office ILIKE ")
+            .push_bind(pat.clone())
             .push(")");
     }
 }
 
-async fn list(State(state): State<AppState>, headers: HeaderMap, Query(p): Query<ListParams>) -> Response {
+async fn list(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(p): Query<ListParams>,
+) -> Response {
     if let Err(r) = require_admin(&state.db, &headers).await {
         return r;
     }
     let limit = p.limit.unwrap_or(50).clamp(1, 200);
     let offset = p.offset.unwrap_or(0).max(0);
-    let uf = p.uf.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(|s| s.to_uppercase());
-    let q = p.q.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(|s| format!("%{s}%"));
-    let cargo = p.cargo.as_deref().map(str::trim).filter(|s| !s.is_empty()).and_then(cargo_clause);
+    let uf =
+        p.uf.as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_uppercase());
+    let q =
+        p.q.as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| format!("%{s}%"));
+    let cargo = p
+        .cargo
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .and_then(cargo_clause);
     let status = p.status.as_deref();
 
     // total
@@ -201,9 +245,13 @@ async fn list(State(state): State<AppState>, headers: HeaderMap, Query(p): Query
     let mut lb = sqlx::QueryBuilder::<sqlx::Postgres>::new(
         "SELECT id, display_name, office, party, uf, municipio, public_email, (public_email NOT ILIKE ",
     );
-    lb.push_bind(PLACEHOLDER).push(") AS email_real FROM mandate");
+    lb.push_bind(PLACEHOLDER)
+        .push(") AS email_real FROM mandate");
     push_where(&mut lb, cargo, &uf, status, &q);
-    lb.push(" ORDER BY office, display_name LIMIT ").push_bind(limit).push(" OFFSET ").push_bind(offset);
+    lb.push(" ORDER BY office, display_name LIMIT ")
+        .push_bind(limit)
+        .push(" OFFSET ")
+        .push_bind(offset);
     let items: Vec<ContactRow> = match lb.build_query_as().fetch_all(&state.db).await {
         Ok(v) => v,
         Err(err) => {
@@ -212,5 +260,14 @@ async fn list(State(state): State<AppState>, headers: HeaderMap, Query(p): Query
         }
     };
 
-    (StatusCode::OK, axum::Json(ApiResponse::ok(ListResult { total, limit, offset, items }))).into_response()
+    (
+        StatusCode::OK,
+        axum::Json(ApiResponse::ok(ListResult {
+            total,
+            limit,
+            offset,
+            items,
+        })),
+    )
+        .into_response()
 }
