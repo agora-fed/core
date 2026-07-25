@@ -9,7 +9,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
-use dsoc_api_contract::{ApiResponse, PageMeta, ProposalDto};
+use dsoc_api_contract::{ApiResponse, PageMeta, ProposalDto, ProposalTargetDto};
 use dsoc_core::ids::{MandateId, OrgId, ProposalId};
 use dsoc_core::{Error, VerificationLevel};
 use serde::{Deserialize, Serialize};
@@ -25,8 +25,14 @@ use crate::service::ProposalService;
 /// directed at.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CreateProposalRequest {
-    /// The mandate this proposal is directed at.
+    /// The mandate this proposal is directed at (the PRINCIPAL target).
     pub mandate_id: Uuid,
+    /// Co-destinatários (0537 — multi-gabinete): mandatos adicionais que também recebem a
+    /// proposta. Devem existir e ser da MESMA esfera federativa do principal; duplicatas são
+    /// ignoradas; total (principal incluído) limitado a
+    /// [`crate::domain::MAX_PROPOSAL_TARGETS`]. Aditivo: clientes velhos omitem o campo.
+    #[serde(default)]
+    pub additional_mandate_ids: Vec<Uuid>,
     /// Title (Portuguese civic content).
     pub title: String,
     /// Body / description.
@@ -79,7 +85,7 @@ impl From<RevisionRow> for RevisionDto {
 /// `MEDIA_BASE_URL` (or `/media` for same-origin default) + the stored object key — same
 /// convention the mandate DTO uses. The `author_public_handle` always travels when there IS an
 /// author so the UI can fall back to "u-xxxx" if the citizen never picked a `@handle`.
-fn proposal_dto(row: ProposalRow) -> ProposalDto {
+fn proposal_dto(row: ProposalRow, targets: Vec<crate::queries::TargetRow>) -> ProposalDto {
     let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
     let media_base = media_base.trim_end_matches('/').to_owned();
     let author_avatar_url = row
@@ -106,6 +112,16 @@ fn proposal_dto(row: ProposalRow) -> ProposalDto {
         published_at: row.published_at,
         notified_author_at: row.notified_author_at,
         notified_mandate_at: row.notified_mandate_at,
+        targets: targets
+            .into_iter()
+            .map(|t| ProposalTargetDto {
+                mandate_id: t.mandate_id,
+                display_name: t.display_name,
+                office: t.office,
+                sphere: t.sphere,
+                notified_at: t.notified_at,
+            })
+            .collect(),
         created_at: row.created_at,
     }
 }
@@ -163,21 +179,30 @@ async fn create(
         Ok(n) => n,
         Err(e) => return error_response::<ProposalDto>(&e),
     };
+    // Multi-destinatário (0537): principal primeiro, co-destinatários deduplicados e limitados.
+    let targets =
+        match crate::domain::normalize_targets(req.mandate_id, &req.additional_mandate_ids) {
+            Ok(t) => t,
+            Err(e) => return error_response::<ProposalDto>(&e),
+        };
+    let targets: Vec<MandateId> = targets.into_iter().map(MandateId::from_uuid).collect();
     let svc = ProposalService::from_state(&state);
     match svc
-        .create(
-            caller.org,
-            MandateId::from_uuid(req.mandate_id),
-            Some(caller.citizen),
-            &new,
-        )
+        .create_targets(caller.org, &targets, Some(caller.citizen), &new)
         .await
     {
-        Ok(row) => (
-            StatusCode::CREATED,
-            Json(ApiResponse::ok(proposal_dto(row))),
-        )
-            .into_response(),
+        Ok(row) => {
+            // Best-effort: o detalhe re-busca; uma falha aqui não pode derrubar o 201.
+            let targets = svc
+                .targets(ProposalId::from_uuid(row.id))
+                .await
+                .unwrap_or_default();
+            (
+                StatusCode::CREATED,
+                Json(ApiResponse::ok(proposal_dto(row, targets))),
+            )
+                .into_response()
+        }
         Err(e) => error_response::<ProposalDto>(&e),
     }
 }
@@ -186,7 +211,17 @@ async fn create(
 async fn get_one(State(state): State<dsoc_app::AppState>, Path(id): Path<Uuid>) -> Response {
     let svc = ProposalService::from_state(&state);
     match svc.get(ProposalId::from_uuid(id)).await {
-        Ok(row) => (StatusCode::OK, Json(ApiResponse::ok(proposal_dto(row)))).into_response(),
+        Ok(row) => {
+            let targets = svc
+                .targets(ProposalId::from_uuid(row.id))
+                .await
+                .unwrap_or_default();
+            (
+                StatusCode::OK,
+                Json(ApiResponse::ok(proposal_dto(row, targets))),
+            )
+                .into_response()
+        }
         Err(e) => error_response::<ProposalDto>(&e),
     }
 }
@@ -202,7 +237,11 @@ async fn list(
     let limit = params.limit.unwrap_or(20);
     match svc.list(org, after, limit).await {
         Ok((rows, total)) => {
-            let dtos: Vec<ProposalDto> = rows.into_iter().map(proposal_dto).collect();
+            // Listagem leve: targets só no detalhe/create (evita N+1 por página).
+            let dtos: Vec<ProposalDto> = rows
+                .into_iter()
+                .map(|row| proposal_dto(row, Vec::new()))
+                .collect();
             let meta = PageMeta {
                 total: u64::try_from(total).unwrap_or_default(),
                 limit: u32::try_from(limit.clamp(1, 100)).unwrap_or(20),
@@ -314,7 +353,7 @@ mod tests {
             notified_mandate_at: None,
             created_at: Utc::now(),
         };
-        let dto = proposal_dto(row.clone());
+        let dto = proposal_dto(row.clone(), Vec::new());
         assert_eq!(dto.id, row.id);
         assert_eq!(dto.mandate_id, row.mandate_id);
         assert_eq!(dto.cluster_id, row.cluster_id);

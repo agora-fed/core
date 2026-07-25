@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::domain::{crossing_fires, merge_support, NewProposal, NewRevision};
 use crate::events;
-use crate::queries::{self, ProposalRow, RevisionRow};
+use crate::queries::{self, ProposalRow, RevisionRow, TargetRow};
 
 /// The outcome of consuming one inbound event. Returned so callers (and tests) can assert exactly
 /// what a delivery did without re-reading the database.
@@ -90,10 +90,55 @@ impl ProposalService {
         author: Option<CitizenId>,
         new: &NewProposal,
     ) -> Result<ProposalRow> {
+        self.create_targets(org, &[mandate], author, new).await
+    }
+
+    /// Create a proposal directed at one or more mandates — the first is the PRINCIPAL target
+    /// (drives the consequence loop and the legacy `proposal.mandate_id`); every target gets a
+    /// `proposal_target` row for per-gabinete delivery. All targets must exist and belong to the
+    /// SAME federative sphere (`mandate.sphere`, migration 0203) — a proposal cannot mix, say,
+    /// deputados federais with vereadores. The caller has already deduplicated and capped the
+    /// list via [`crate::domain::normalize_targets`].
+    ///
+    /// # Errors
+    /// - [`Error::Validation`] when `targets` is empty or spans more than one sphere.
+    /// - [`Error::Conflict`] when any target mandate (or the org) does not exist.
+    /// - [`Error::Storage`] on any other persistence failure.
+    pub async fn create_targets(
+        &self,
+        org: OrgId,
+        targets: &[MandateId],
+        author: Option<CitizenId>,
+        new: &NewProposal,
+    ) -> Result<ProposalRow> {
+        let [mandate, ..] = targets else {
+            return Err(Error::Validation(
+                "a proposta precisa de ao menos um destinatário".to_string(),
+            ));
+        };
+        let mandate = *mandate;
         let now = self.clock.now();
         let proposal = ProposalId::new();
+        let target_uuids: Vec<Uuid> = targets.iter().map(|m| m.as_uuid()).collect();
 
         let mut tx = self.db.begin().await.map_err(map_sqlx)?;
+
+        // Esfera única (0537): todos os destinatários existem e pertencem à mesma esfera.
+        let check = queries::check_target_spheres(&mut *tx, &target_uuids)
+            .await
+            .map_err(map_sqlx)?;
+        if check.found != i64::try_from(target_uuids.len()).unwrap_or(i64::MAX) {
+            return Err(Error::Conflict(
+                "referenced org or mandate does not exist".to_string(),
+            ));
+        }
+        if check.spheres > 1 {
+            return Err(Error::Validation(
+                "todos os destinatários devem ser da mesma esfera (federal, estadual ou municipal)"
+                    .to_string(),
+            ));
+        }
+
         let row = queries::insert_proposal(
             &mut *tx,
             proposal.as_uuid(),
@@ -108,6 +153,12 @@ impl ProposalService {
         .await
         .map_err(map_sqlx)?;
 
+        for target in &target_uuids {
+            queries::insert_target(&mut *tx, proposal.as_uuid(), *target, now)
+                .await
+                .map_err(map_sqlx)?;
+        }
+
         let envelope = events::envelope(
             &self.clock,
             org,
@@ -118,6 +169,16 @@ impl ProposalService {
             .map_err(map_sqlx)?;
         tx.commit().await.map_err(map_sqlx)?;
         Ok(row)
+    }
+
+    /// List a proposal's targets (principal first) with the mandate display data joined.
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on a persistence failure.
+    pub async fn targets(&self, id: ProposalId) -> Result<Vec<TargetRow>> {
+        queries::list_targets(&self.db, id.as_uuid())
+            .await
+            .map_err(map_sqlx)
     }
 
     /// Fetch a single proposal.

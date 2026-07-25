@@ -135,6 +135,7 @@ mod tests {
             published_at: None,
             notified_author_at: None,
             notified_mandate_at: None,
+            targets: Vec::new(),
             created_at: DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
         }
     }

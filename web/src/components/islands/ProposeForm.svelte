@@ -27,6 +27,54 @@
   let mandatesLoading = $state(true);
   let mandatesError = $state<string | null>(null);
 
+  // Multi-destinatário (0537): co-destinatários da MESMA esfera do principal.
+  // O servidor valida de novo; aqui o filtro é só UX.
+  const MAX_TARGETS = 10;
+  let extraIds = $state<string[]>([]);
+  let coSearch = $state('');
+
+  let primary = $derived(mandates.find((m) => m.id === mandateId) ?? null);
+  let primarySphere = $derived(primary?.sphere ?? 'federal');
+  let coCandidates = $derived(
+    primary
+      ? mandates.filter(
+          (m) =>
+            m.id !== primary.id &&
+            (m.sphere ?? 'federal') === primarySphere &&
+            (coSearch.trim().length < 2 ||
+              m.display_name
+                .toLocaleLowerCase('pt-BR')
+                .includes(coSearch.trim().toLocaleLowerCase('pt-BR'))),
+        )
+      : [],
+  );
+  let extras = $derived(
+    extraIds
+      .map((id) => mandates.find((m) => m.id === id))
+      .filter((m): m is MandateDto => Boolean(m)),
+  );
+
+  // Troca de principal (ou de esfera): descarta co-destinatários incompatíveis.
+  // Só reatribui quando algo mudou — atribuição incondicional re-dispararia o effect.
+  $effect(() => {
+    const sphere = primarySphere;
+    const pid = mandateId;
+    const kept = extraIds.filter((id) => {
+      if (id === pid) return false;
+      const m = mandates.find((x) => x.id === id);
+      return m ? (m.sphere ?? 'federal') === sphere : false;
+    });
+    if (kept.length !== extraIds.length) extraIds = kept;
+  });
+
+  function toggleExtra(id: string) {
+    if (extraIds.includes(id)) {
+      extraIds = extraIds.filter((x) => x !== id);
+    } else if (extraIds.length < MAX_TARGETS - 1) {
+      extraIds = [...extraIds, id];
+    }
+  }
+
   let titleValid = $derived(title.trim().length >= 8);
   let bodyValid = $derived(body.trim().length >= 20);
   let mandateValid = $derived(/^[0-9a-f-]{36}$/i.test(mandateId.trim()));
@@ -103,6 +151,7 @@
     const res = await apiPost<ProposalDto>('/api/v1/proposals', {
       org_id: DEFAULT_ORG_ID,
       mandate_id: mandateId.trim(),
+      additional_mandate_ids: extraIds,
       title: title.trim(),
       body: body.trim(),
       // Sobrescrito no servidor pela política do território (0.30.1) —
@@ -201,6 +250,69 @@
     {/if}
   </div>
 
+  {#if primary}
+    <div class="field co-block">
+      <span class="label-like">
+        Enviar também para outros gabinetes
+          <span class="muted">
+            (opcional — mesma esfera: {primarySphere === 'federal'
+              ? 'deputados federais e senadores'
+              : primarySphere === 'estadual'
+                ? 'deputados estaduais e governadores'
+                : 'vereadores e prefeitos'})
+          </span>
+        </span>
+        {#if extras.length > 0}
+          <ul class="co-chips">
+            {#each extras as m (m.id)}
+              <li>
+                <button
+                  type="button"
+                  class="co-chip"
+                  title="Remover destinatário"
+                  onclick={() => toggleExtra(m.id)}
+                >
+                  {m.display_name} ✕
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        {#if extraIds.length >= MAX_TARGETS - 1}
+          <p class="hint muted">
+            Limite de {MAX_TARGETS} destinatários por proposta atingido.
+          </p>
+        {:else}
+          <input
+            class="input"
+            type="search"
+            placeholder="Buscar político pelo nome…"
+            bind:value={coSearch}
+          />
+          {#if coSearch.trim().length >= 2}
+            {#if coCandidates.length === 0}
+              <p class="hint muted">Nenhum político dessa esfera com esse nome.</p>
+            {:else}
+              <ul class="co-results">
+                {#each coCandidates.slice(0, 12) as m (m.id)}
+                  <li>
+                    <label class="co-option">
+                      <input
+                        type="checkbox"
+                        checked={extraIds.includes(m.id)}
+                        onchange={() => toggleExtra(m.id)}
+                      />
+                      {m.display_name} — {m.office}{m.party ? ` (${m.party}/${m.uf ?? ''})` : ''}
+                    </label>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          {/if}
+        {/if}
+    </div>
+  {/if}
+
   <button class="btn btn-primary btn-lg" type="submit" disabled={!valid || busy}>
     {busy ? 'Enviando…' : 'Enviar proposta'}
   </button>
@@ -228,6 +340,43 @@
     .row {
       grid-template-columns: 1fr 10rem;
     }
+  }
+  .co-block {
+    margin: 0.75rem 0 1rem;
+  }
+  .co-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    list-style: none;
+    margin: 0.4rem 0 0.6rem;
+    padding: 0;
+  }
+  .co-chip {
+    border: 1px solid var(--c-border, #ccc);
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+    padding: 0.2rem 0.7rem;
+    font-size: 0.88rem;
+    cursor: pointer;
+  }
+  .co-results {
+    list-style: none;
+    margin: 0.4rem 0 0;
+    padding: 0.25rem 0;
+    max-height: 14rem;
+    overflow-y: auto;
+    border: 1px solid var(--c-border, #ccc);
+    border-radius: 0.5rem;
+  }
+  .co-option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.6rem;
+    font-size: 0.92rem;
+    cursor: pointer;
   }
   .note {
     margin: 0.75rem 0 0;

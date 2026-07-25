@@ -22,6 +22,16 @@ export interface ApiResponse<T> {
   meta: PageMeta | null;
 }
 
+/** Um destinatário da proposta (0537 — multi-gabinete). O primeiro é o principal. */
+export interface ProposalTargetDto {
+  mandate_id: string;
+  display_name: string;
+  office: string;
+  sphere: 'federal' | 'estadual' | 'municipal';
+  /** Recibo de entrega a ESTE gabinete (e-mail saiu do relay). `null` = ainda não. */
+  notified_at: string | null;
+}
+
 /** Public view of a proposal. */
 export interface ProposalDto {
   id: string;
@@ -38,6 +48,13 @@ export interface ProposalDto {
   author_public_handle: string | null;
   /** Author avatar URL (already composed with MEDIA_BASE). `null` ⇒ render initials. */
   author_avatar_url: string | null;
+  /** Recibo de entrega ao autor (0.25.0). */
+  notified_author_at?: string | null;
+  /** Recibo de entrega ao gabinete PRINCIPAL (legado 0303). */
+  notified_mandate_at?: string | null;
+  /** Destinatários (0537 — multi-gabinete), principal primeiro. Populado no detalhe;
+   *  vazio nas listagens. */
+  targets?: ProposalTargetDto[];
   created_at: string;
 }
 

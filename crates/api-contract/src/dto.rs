@@ -6,6 +6,22 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+/// Um destinatário da proposta (0537 — multi-gabinete). O primeiro da lista é o
+/// destinatário PRINCIPAL (o mesmo de `ProposalDto::mandate_id`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct ProposalTargetDto {
+    /// Mandato destinatário.
+    pub mandate_id: Uuid,
+    /// Nome público do mandato.
+    pub display_name: String,
+    /// Cargo (ex.: `deputado_federal`).
+    pub office: String,
+    /// Esfera federativa (`federal` | `estadual` | `municipal`).
+    pub sphere: String,
+    /// Recibo de entrega a ESTE gabinete (e-mail saiu do relay), se já saiu.
+    pub notified_at: Option<DateTime<Utc>>,
+}
+
 /// Public view of a proposal.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ProposalDto {
@@ -51,6 +67,10 @@ pub struct ProposalDto {
     /// foi entregue ao relay SMTP; `None` = ainda não (ou mandato sem e-mail).
     #[serde(default)]
     pub notified_mandate_at: Option<DateTime<Utc>>,
+    /// Destinatários da proposta (0537 — multi-gabinete), principal primeiro. Populado
+    /// no detalhe (`GET /proposals/{id}`) e no create; vazio nas listagens (leves).
+    #[serde(default)]
+    pub targets: Vec<ProposalTargetDto>,
     /// Creation time.
     pub created_at: DateTime<Utc>,
 }

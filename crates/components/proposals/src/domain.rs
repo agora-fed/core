@@ -3,11 +3,15 @@
 //! here is unit-testable in isolation, which is where this crate earns its coverage (TESTING.md).
 
 use dsoc_core::{Error, Result};
+use uuid::Uuid;
 
 /// Maximum length of a proposal title (defensive bound at the boundary).
 pub const MAX_TITLE_LEN: usize = 200;
 /// Maximum length of a proposal body.
 pub const MAX_BODY_LEN: usize = 20_000;
+/// Máximo de destinatários por proposta (principal + co-destinatários). Evita que uma
+/// proposta vire mala-direta pros 513 gabinetes da Câmara de uma vez.
+pub const MAX_PROPOSAL_TARGETS: usize = 10;
 
 /// The proposal lifecycle status. The authoritative facts are the dedicated timestamp/cluster
 /// columns (`published_at`, `cluster_id`, `threshold_crossed_at`); `status` is the human-facing
@@ -120,6 +124,27 @@ impl NewRevision {
             body: np.body,
         })
     }
+}
+
+/// Normalise the full target list of a proposal: the primary mandate first, then the
+/// additional ones in the order given, with duplicates (including of the primary) dropped.
+///
+/// # Errors
+/// [`Error::Validation`] when the deduplicated list exceeds [`MAX_PROPOSAL_TARGETS`].
+pub fn normalize_targets(primary: Uuid, additional: &[Uuid]) -> Result<Vec<Uuid>> {
+    let mut targets = Vec::with_capacity(1 + additional.len());
+    targets.push(primary);
+    for id in additional {
+        if !targets.contains(id) {
+            targets.push(*id);
+        }
+    }
+    if targets.len() > MAX_PROPOSAL_TARGETS {
+        return Err(Error::Validation(format!(
+            "a proposta pode ter no máximo {MAX_PROPOSAL_TARGETS} destinatários"
+        )));
+    }
+    Ok(targets)
 }
 
 /// The **threshold-crossing policy** — the heart of the accountability thesis.
@@ -245,6 +270,40 @@ mod tests {
         // Duplicate at-least-once vote signals must never re-fire the accountability signal.
         assert!(!crossing_fires(true, 100, 100, true));
         assert!(!crossing_fires(true, 999, 1, true));
+    }
+
+    // --- multi-destinatário (0537) ---
+
+    #[test]
+    fn normalize_targets_keeps_primary_first_and_dedupes() {
+        let primary = Uuid::now_v7();
+        let extra = Uuid::now_v7();
+        let targets = normalize_targets(primary, &[extra, primary, extra]).unwrap();
+        assert_eq!(targets, vec![primary, extra]);
+    }
+
+    #[test]
+    fn normalize_targets_accepts_primary_only() {
+        let primary = Uuid::now_v7();
+        assert_eq!(normalize_targets(primary, &[]).unwrap(), vec![primary]);
+    }
+
+    #[test]
+    fn normalize_targets_rejects_over_cap() {
+        let primary = Uuid::now_v7();
+        let extras: Vec<Uuid> = (0..MAX_PROPOSAL_TARGETS).map(|_| Uuid::now_v7()).collect();
+        let err = normalize_targets(primary, &extras).unwrap_err();
+        assert_eq!(err.code(), "invalid_input");
+    }
+
+    #[test]
+    fn normalize_targets_accepts_exactly_cap() {
+        let primary = Uuid::now_v7();
+        let extras: Vec<Uuid> = (0..MAX_PROPOSAL_TARGETS - 1)
+            .map(|_| Uuid::now_v7())
+            .collect();
+        let targets = normalize_targets(primary, &extras).unwrap();
+        assert_eq!(targets.len(), MAX_PROPOSAL_TARGETS);
     }
 
     #[test]

@@ -9,8 +9,8 @@ pub mod dto;
 pub mod envelope;
 
 pub use dto::{
-    MandateDto, MyMandateDto, ProfileDto, ProfileUpdateDto, ProposalDto, ScorecardDto,
-    SessionInfoDto, SlaStatus,
+    MandateDto, MyMandateDto, ProfileDto, ProfileUpdateDto, ProposalDto, ProposalTargetDto,
+    ScorecardDto, SessionInfoDto, SlaStatus,
 };
 pub use envelope::{ApiError, ApiResponse, PageMeta};
 
@@ -26,6 +26,7 @@ use utoipa::OpenApi;
     ),
     components(schemas(
         dto::ProposalDto,
+        dto::ProposalTargetDto,
         dto::MandateDto,
         dto::MyMandateDto,
         dto::ProfileDto,

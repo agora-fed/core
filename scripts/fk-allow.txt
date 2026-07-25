@@ -2,3 +2,10 @@
 # Format: <migration-file-basename> <table> [<table>...]
 # amendment/proposal_revision live in the proposals crate, same as proposal.
 0501_proposal_amendments.sql proposal
+# proposal_target lives in the proposals crate, same as proposal (multi-destinatário 0537).
+0537_proposal_targets.sql proposal
+# Intra-crate FKs que faltavam no allowlist (pré-existentes; check falhava na main):
+# respostas referenciam a pergunta da própria crate consultations (0531);
+# polls referenciam campaign_group da própria feature de grupos de campanha (0532).
+0531_consultation_responses.sql consultations_consultation_question
+0532_campaign_group_polls.sql campaign_group

@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT pt.mandate_id, pt.notified_at,\n                  m.display_name, m.office, m.sphere\n           FROM proposal_target pt\n           JOIN mandate m ON m.id = pt.mandate_id\n           WHERE pt.proposal_id = $1\n           ORDER BY pt.created_at, pt.mandate_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "mandate_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "notified_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "office",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "sphere",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "42e691c37b26bf2896902d2a49ec35337c514f1cfff93354bd5320d919990b6b"
+}

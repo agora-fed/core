@@ -698,3 +698,105 @@ async fn missing_proposal_is_not_found() {
     let err = svc.get(ProposalId::new()).await.expect_err("absent");
     assert_eq!(err.code(), "not_found");
 }
+
+// --- multi-destinatário (0537) ---
+
+/// Seed a mandate with an explicit federative sphere (`mandate.sphere`, migration 0203).
+async fn seed_mandate_sphere(db: &PgPool, org: OrgId, sphere: &str) -> MandateId {
+    let mandate = MandateId::new();
+    sqlx::query(
+        "INSERT INTO mandate (id, org_id, office, display_name, public_email, sphere, created_at) \
+         VALUES ($1, $2, 'deputado_federal', 'Deputada de Teste', 'gabinete@example.org', $3, now())",
+    )
+    .bind(mandate.as_uuid())
+    .bind(org.as_uuid())
+    .bind(sphere)
+    .execute(db)
+    .await
+    .expect("seed mandate with sphere");
+    mandate
+}
+
+#[tokio::test]
+async fn create_targets_persists_every_gabinete_same_sphere() {
+    let db = pool().await;
+    let svc = service(db.clone());
+    let org = seed_org(&db).await;
+    let m1 = seed_mandate_sphere(&db, org, "federal").await;
+    let m2 = seed_mandate_sphere(&db, org, "federal").await;
+    let m3 = seed_mandate_sphere(&db, org, "federal").await;
+
+    let row = svc
+        .create_targets(org, &[m1, m2, m3], None, &proposal_text())
+        .await
+        .expect("create multi-target proposal");
+
+    // O principal continua sendo o primeiro da lista (compat com o loop de consequência).
+    assert_eq!(row.mandate_id, m1.as_uuid());
+
+    let targets = svc
+        .targets(ProposalId::from_uuid(row.id))
+        .await
+        .expect("list targets");
+    assert_eq!(targets.len(), 3, "todas as linhas de proposal_target");
+    assert_eq!(targets[0].mandate_id, m1.as_uuid(), "principal primeiro");
+    assert!(targets.iter().all(|t| t.notified_at.is_none()));
+    assert!(targets.iter().all(|t| t.sphere == "federal"));
+
+    // Um único evento ProposalCreated (a entrega multi-gabinete é do worker, não do outbox).
+    assert_eq!(
+        outbox_event_types(&db, org).await,
+        vec!["proposals.created"]
+    );
+}
+
+#[tokio::test]
+async fn create_targets_rejects_mixed_spheres() {
+    let db = pool().await;
+    let svc = service(db.clone());
+    let org = seed_org(&db).await;
+    let federal = seed_mandate_sphere(&db, org, "federal").await;
+    let municipal = seed_mandate_sphere(&db, org, "municipal").await;
+
+    let err = svc
+        .create_targets(org, &[federal, municipal], None, &proposal_text())
+        .await
+        .expect_err("mixed spheres must be rejected");
+    assert_eq!(err.code(), "invalid_input");
+    assert!(outbox_event_types(&db, org).await.is_empty());
+}
+
+#[tokio::test]
+async fn create_targets_rejects_unknown_co_mandate() {
+    let db = pool().await;
+    let svc = service(db.clone());
+    let org = seed_org(&db).await;
+    let real = seed_mandate_sphere(&db, org, "federal").await;
+
+    let err = svc
+        .create_targets(org, &[real, MandateId::new()], None, &proposal_text())
+        .await
+        .expect_err("unknown co-mandate must be rejected");
+    assert_eq!(err.code(), "conflict");
+    assert!(outbox_event_types(&db, org).await.is_empty());
+}
+
+#[tokio::test]
+async fn legacy_single_create_still_writes_one_target_row() {
+    let db = pool().await;
+    let svc = service(db.clone());
+    let org = seed_org(&db).await;
+    let mandate = seed_mandate(&db, org).await;
+
+    let row = svc
+        .create(org, mandate, None, &proposal_text())
+        .await
+        .expect("create single-target proposal");
+
+    let targets = svc
+        .targets(ProposalId::from_uuid(row.id))
+        .await
+        .expect("list targets");
+    assert_eq!(targets.len(), 1);
+    assert_eq!(targets[0].mandate_id, mandate.as_uuid());
+}

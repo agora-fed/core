@@ -403,6 +403,16 @@
       </a>
     {/if}
 
+    <!-- Multi-destinatário (0537): co-gabinetes além do principal. -->
+    {#if proposal.targets && proposal.targets.length > 1}
+      <p class="co-targets">
+        <span class="muted">Também dirigida a:</span>
+        {#each proposal.targets.slice(1) as t (t.mandate_id)}
+          <a href={`/politicos/${t.mandate_id}`}>{t.display_name}</a>
+        {/each}
+      </p>
+    {/if}
+
     <h1>{proposal.title}</h1>
 
     {#if isAdmin}
@@ -414,9 +424,23 @@
       </div>
     {/if}
 
-    {#if isAuthor && (proposal.notified_author_at || proposal.notified_mandate_at)}
+    {#if isAuthor && (proposal.notified_author_at || proposal.notified_mandate_at || (proposal.targets ?? []).some((t) => t.notified_at))}
       <aside class="receipt" aria-label="Recibo de entrega">
-        {#if proposal.notified_mandate_at}
+        {#if proposal.targets && proposal.targets.some((t) => t.notified_at)}
+          <!-- Recibo por gabinete (0537). -->
+          {#each proposal.targets.filter((t) => t.notified_at) as t (t.mandate_id)}
+            <p>
+              ✉️ E-mail entregue ao gabinete
+              <strong>{t.display_name}</strong>
+              em <time datetime={t.notified_at}>
+                {new Date(t.notified_at ?? '').toLocaleString('pt-BR', {
+                  dateStyle: 'short',
+                  timeStyle: 'short',
+                })}
+              </time>
+            </p>
+          {/each}
+        {:else if proposal.notified_mandate_at}
           <p>
             ✉️ E-mail entregue ao gabinete
             {#if mandate}
@@ -751,6 +775,16 @@
   .target-name {
     display: block;
     font-size: 1.05rem;
+  }
+  .co-targets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.6rem;
+    margin: 0.35rem 0 0.9rem;
+    font-size: var(--fs-sm, 0.9rem);
+  }
+  .co-targets a {
+    text-decoration: underline;
   }
   h1 {
     font-size: 1.7rem;

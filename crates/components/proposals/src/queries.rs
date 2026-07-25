@@ -51,6 +51,31 @@ pub struct ProposalRow {
     pub created_at: DateTime<Utc>,
 }
 
+/// Um destinatário da proposta (0537) com os dados de exibição do mandato (JOIN).
+#[derive(Debug, Clone)]
+pub struct TargetRow {
+    /// Mandato destinatário.
+    pub mandate_id: Uuid,
+    /// Nome público do mandato.
+    pub display_name: String,
+    /// Cargo (ex.: `deputado_federal`).
+    pub office: String,
+    /// Esfera federativa (`federal` | `estadual` | `municipal`).
+    pub sphere: String,
+    /// Recibo de entrega ao gabinete (e-mail saiu do relay), se já saiu.
+    pub notified_at: Option<DateTime<Utc>>,
+}
+
+/// Verificação de esfera dos destinatários: quantos dos ids existem e quantas
+/// esferas distintas eles cobrem. O serviço exige `found == pedidos` e `spheres == 1`.
+#[derive(Debug, Clone, Copy)]
+pub struct SphereCheck {
+    /// Quantos dos mandatos pedidos existem.
+    pub found: i64,
+    /// Quantas esferas distintas o conjunto cobre.
+    pub spheres: i64,
+}
+
 /// An append-only revision row.
 #[derive(Debug, Clone)]
 pub struct RevisionRow {
@@ -123,6 +148,82 @@ pub async fn insert_proposal(
         notified_mandate_at: row.notified_mandate_at,
         created_at: row.created_at,
     })
+}
+
+/// Conta os mandatos existentes e as esferas distintas de um conjunto de ids (0537).
+///
+/// # Errors
+/// Propagates the underlying `sqlx::Error`.
+pub async fn check_target_spheres(
+    executor: impl sqlx::PgExecutor<'_>,
+    mandate_ids: &[Uuid],
+) -> Result<SphereCheck, sqlx::Error> {
+    let row = sqlx::query!(
+        r#"SELECT count(*) AS "found!: i64", count(DISTINCT sphere) AS "spheres!: i64"
+           FROM mandate WHERE id = ANY($1)"#,
+        mandate_ids,
+    )
+    .fetch_one(executor)
+    .await?;
+    Ok(SphereCheck {
+        found: row.found,
+        spheres: row.spheres,
+    })
+}
+
+/// Insere um destinatário da proposta (0537). Idempotente sob a PK composta não é
+/// necessário aqui: o serviço só insere no create, dentro da mesma transação.
+///
+/// # Errors
+/// Propagates the underlying `sqlx::Error`.
+pub async fn insert_target(
+    executor: impl sqlx::PgExecutor<'_>,
+    proposal_id: Uuid,
+    mandate_id: Uuid,
+    created_at: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"INSERT INTO proposal_target (proposal_id, mandate_id, created_at)
+           VALUES ($1, $2, $3)"#,
+        proposal_id,
+        mandate_id,
+        created_at,
+    )
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
+/// Lista os destinatários de uma proposta com os dados de exibição do mandato,
+/// principal primeiro (ordem de inserção via created_at, desempate por mandate_id).
+///
+/// # Errors
+/// Propagates the underlying `sqlx::Error`.
+pub async fn list_targets(
+    executor: impl sqlx::PgExecutor<'_>,
+    proposal_id: Uuid,
+) -> Result<Vec<TargetRow>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT pt.mandate_id, pt.notified_at,
+                  m.display_name, m.office, m.sphere
+           FROM proposal_target pt
+           JOIN mandate m ON m.id = pt.mandate_id
+           WHERE pt.proposal_id = $1
+           ORDER BY pt.created_at, pt.mandate_id"#,
+        proposal_id,
+    )
+    .fetch_all(executor)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| TargetRow {
+            mandate_id: row.mandate_id,
+            display_name: row.display_name,
+            office: row.office,
+            sphere: row.sphere,
+            notified_at: row.notified_at,
+        })
+        .collect())
 }
 
 /// Fetch a single proposal by id.
