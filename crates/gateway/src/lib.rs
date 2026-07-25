@@ -13,6 +13,7 @@
 
 pub mod admin_content;
 pub mod admin_ext;
+pub mod admin_forums;
 pub mod admin_reports;
 pub mod admin_users;
 pub mod amendments;
@@ -31,6 +32,7 @@ pub mod embed;
 pub mod federation;
 pub mod federation_feed;
 pub mod fediverso_admin;
+mod forum_mailer;
 pub mod govbr_oidc;
 pub mod invitations;
 pub mod invite_campaign;
@@ -45,7 +47,7 @@ pub mod notification_receipts;
 pub mod notifications;
 pub mod og_cards;
 pub mod parlamentar_activity;
-pub mod politico_contacts;
+mod politico_contacts;
 pub mod politicos_ext;
 pub mod polls;
 pub mod preferences;
@@ -224,6 +226,7 @@ pub fn api_router(state: AppState) -> Router {
         .merge(consultas_ext::routes(state.clone()))
         .merge(profile_nudge::routes(state.clone()))
         .merge(politico_contacts::routes(state.clone()))
+        .merge(admin_forums::routes(state.clone()))
         // Formulário de contato público — nenhum e-mail exposto no site.
         .merge(contact::routes(state.clone()))
         .merge(webhooks::routes(state.clone()))
@@ -300,16 +303,6 @@ pub fn api_router(state: AppState) -> Router {
         .fallback_service(static_site)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn health_router_builds() {
-        let _app: Router<()> = Router::new().route("/health", get(health));
-    }
-}
-
 /// Serve o shell SPA dos fóruns (WEB_ROOT/f/index.html) pra qualquer /f/*.
 async fn forums_spa() -> axum::response::Response {
     use axum::response::IntoResponse;
@@ -324,5 +317,15 @@ async fn forums_spa() -> axum::response::Response {
         )
             .into_response(),
         Err(_) => axum::http::StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn health_router_builds() {
+        let _app: Router<()> = Router::new().route("/health", get(health));
     }
 }

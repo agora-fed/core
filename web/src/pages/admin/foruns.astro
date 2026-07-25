@@ -1,0 +1,27 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminForumsPanel from '../../components/islands/AdminForumsPanel.svelte';
+---
+
+<AdminLayout
+  title="Fóruns (admin)"
+  description="Curadoria dos fóruns institucionais: e-mail responsável, patamares de envio e moderadores."
+>
+  <header class="head">
+    <h1>Fóruns institucionais</h1>
+    <p class="muted">
+      Configure o <strong>e-mail responsável</strong> de cada fórum (comissão,
+      ministério, secretaria), os <strong>patamares</strong> de interações que
+      disparam o envio (ex.: 1000, 10000, 100000) e os
+      <strong>moderadores</strong>. Envio errado é pior que nenhum — confirme o
+      endereço na fonte oficial antes de salvar.
+    </p>
+  </header>
+  <AdminForumsPanel client:load />
+</AdminLayout>
+
+<style>
+  .head { margin-bottom: var(--sp-5); }
+  h1 { margin: 0 0 var(--sp-1); }
+  .head p { max-width: 48rem; }
+</style>

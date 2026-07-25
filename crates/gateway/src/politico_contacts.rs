@@ -21,7 +21,7 @@ use uuid::Uuid;
 const DEFAULT_ORG_UUID: Uuid = uuid::uuid!("11111111-1111-1111-1111-111111111111");
 const PLACEHOLDER: &str = "%@parlamento.democracia.social.br";
 
-pub fn routes(state: AppState) -> Router<()> {
+pub(crate) fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/admin/politico-contacts/overview", get(overview))
         .route("/admin/politico-contacts", get(list))

@@ -78,9 +78,8 @@ async fn whoami(State(state): State<AppState>, headers: HeaderMap) -> Response {
         return unauthorized();
     };
     // O middleware injeta org junto com o citizen; sem ela, cai no org default single-tenant.
-    let org_id = header_uuid(&headers, "x-dsoc-org-id").unwrap_or_else(|| {
-        Uuid::parse_str("11111111-1111-1111-1111-111111111111").expect("org uuid literal")
-    });
+    let org_id = header_uuid(&headers, "x-dsoc-org-id")
+        .unwrap_or_else(|| uuid::uuid!("11111111-1111-1111-1111-111111111111"));
     let citizen = CitizenId::from_uuid(citizen_id);
     let org = OrgId::from_uuid(org_id);
 

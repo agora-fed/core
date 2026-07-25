@@ -2858,3 +2858,59 @@ export const commentForumTopic = (id: string, body: string) =>
     `/api/v1/f/topics/${encodeURIComponent(id)}/comments`,
     { body },
   );
+
+/** Linha do painel admin de fóruns (F3). */
+export interface AdminForumDto {
+  id: string;
+  full_path: string;
+  name: string;
+  kind: string;
+  esfera: string | null;
+  contact_email: string | null;
+  thresholds: number[];
+  moderator_count: number;
+  pending_dispatches: number;
+  topic_count: number;
+}
+
+export interface ForumModeratorDto {
+  citizen_id: string;
+  handle: string | null;
+  display_name: string | null;
+}
+
+export const adminListForums = (q = '', offset = 0, limit = 50) =>
+  apiGetCredentialed<AdminForumDto[]>(
+    `/api/v1/admin/forums?q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`,
+  );
+
+export const adminUpdateForum = (
+  id: string,
+  payload: { contact_email?: string; thresholds?: number[] },
+) => apiPatch<{ ok: true }>(`/api/v1/admin/forums/${encodeURIComponent(id)}`, payload);
+
+export const adminForumModerators = (id: string) =>
+  apiGetCredentialed<ForumModeratorDto[]>(
+    `/api/v1/admin/forums/${encodeURIComponent(id)}/moderators`,
+  );
+
+export const adminForumAddModerator = (id: string, handle: string) =>
+  apiPost<{ citizen_id: string }>(
+    `/api/v1/admin/forums/${encodeURIComponent(id)}/moderators`,
+    { handle },
+  );
+
+export async function adminForumRemoveModerator(
+  id: string,
+  citizenId: string,
+): Promise<boolean> {
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/v1/admin/forums/${encodeURIComponent(id)}/moderators/${encodeURIComponent(citizenId)}`,
+      { method: 'DELETE', credentials: 'include' },
+    );
+    return res.ok;
+  } catch {
+    return false;
+  }
+}

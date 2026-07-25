@@ -394,6 +394,21 @@ pub fn spawn(state: AppState) {
         });
     }
 
+    // Carteiro dos fóruns (F3): envia os dispatches de patamar pendentes (1/min).
+    {
+        let db = state.db.clone();
+        let origin = std::env::var("PUBLIC_ORIGIN")
+            .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
+        tokio::spawn(async move {
+            let mut ticker = interval(Duration::from_millis(60_000));
+            ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+            loop {
+                ticker.tick().await;
+                crate::forum_mailer::sweep(&db, &origin).await;
+            }
+        });
+    }
+
     let subs = subscriptions(&state);
     let count = subs.len();
     for subscription in subs {
