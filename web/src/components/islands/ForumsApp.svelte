@@ -77,30 +77,32 @@
     loading = true;
     error = null;
     formMsg = null;
+    // apiGet devolve o shape `Fetched` ({ok, data, error:string}) — diferente do
+    // apiPost ({success, error:{message}}). Confundir os dois foi o bug do 1º deploy.
     if (view === 'home') {
       const res = await getForumTree();
       loading = false;
-      if (res.success && res.data) roots = res.data.children;
-      else error = res.error?.message ?? 'Não foi possível carregar os fóruns.';
+      if (res.ok && res.data) roots = res.data.children;
+      else error = res.error ?? 'Não foi possível carregar os fóruns.';
     } else if (view === 'forum') {
       const [t, tp] = await Promise.all([
         getForumTree(path),
         getForumTopics(path, sort),
       ]);
       loading = false;
-      if (t.success && t.data) {
+      if (t.ok && t.data) {
         forum = t.data.forum;
         children = t.data.children;
       } else {
-        error = t.error?.message ?? 'Fórum não encontrado.';
+        error = t.error ?? 'Fórum não encontrado.';
         return;
       }
-      topics = tp.success && tp.data ? tp.data.topics : [];
+      topics = tp.ok && tp.data ? tp.data.topics : [];
     } else {
       const res = await getForumTopic(topicId);
       loading = false;
-      if (res.success && res.data) detail = res.data;
-      else error = res.error?.message ?? 'Tópico não encontrado.';
+      if (res.ok && res.data) detail = res.data;
+      else error = res.error ?? 'Tópico não encontrado.';
     }
   }
 
