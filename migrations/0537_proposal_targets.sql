@@ -39,4 +39,8 @@ ON CONFLICT (proposal_id, mandate_id) DO NOTHING;
 COMMENT ON TABLE proposal_target IS
     'Destinatários da proposta (0537): conjunto completo de gabinetes, principal incluído; recibo de entrega por gabinete.';
 
+-- Em prod as migrations rodam como `postgres`, mas o gateway conecta como `dsoc`
+-- (gotcha documentado em deployment-workflow: 0106/0107/0111/0151).
+ALTER TABLE proposal_target OWNER TO dsoc;
+
 COMMIT;
