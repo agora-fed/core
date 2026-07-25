@@ -75,8 +75,9 @@ impl ConsequenceService {
 
     /// Start an SLA clock against an official for a clustered proposal that crossed its threshold.
     ///
-    /// Idempotent per `(proposal, cluster)`: a duplicate `proposals.threshold.crossed` (at-least-once
-    /// delivery) cannot start a second clock. The first call inserts the row, emits
+    /// Idempotent per `(proposal, cluster, mandate)` — desde a 0538 o relógio é POR GABINETE — so a
+    /// duplicate `proposals.threshold.crossed` (at-least-once delivery) cannot start a second clock
+    /// against the same official. The first call inserts the row, emits
     /// `consequence.sla.started` carrying the due time through the outbox, and returns
     /// `newly_started = true`. A duplicate finds the existing row, emits nothing, and returns the REAL
     /// stored row with `newly_started = false`.
@@ -134,6 +135,7 @@ impl ConsequenceService {
                     &mut *tx,
                     threshold.proposal.as_uuid(),
                     threshold.cluster.as_uuid(),
+                    threshold.mandate.as_uuid(),
                 )
                 .await
                 .map_err(map_sqlx)?;
@@ -146,19 +148,27 @@ impl ConsequenceService {
         }
     }
 
-    /// Consume a `proposals.threshold.crossed` envelope, starting an SLA for the demand it carries.
-    /// Non-matching envelopes are ignored (idempotent no-op), returning `None`.
+    /// Consume a `proposals.threshold.crossed` envelope, starting ONE SLA PER GABINETE
+    /// (0537 multi-destinatário): o evento carrega todos os mandatos da proposta e cada um
+    /// ganha seu próprio relógio, escada de avisos e registro de silêncio. Eventos antigos
+    /// (sem a lista) caem pro mandato principal — comportamento pré-0537. Non-matching
+    /// envelopes are ignored (idempotent no-op), returning an empty vec.
     ///
     /// # Errors
-    /// Mirrors [`Self::start_sla`].
+    /// Mirrors [`Self::start_sla`]; a falha em um gabinete interrompe e propaga (o redelivery
+    /// at-least-once completa os restantes — cada início é idempotente por si).
     pub async fn consume(
         &self,
         envelope: &dsoc_core::events::EventEnvelope,
-    ) -> Result<Option<StartedSla>> {
-        match events::threshold_crossed(envelope) {
-            Some(threshold) => Ok(Some(self.start_sla(envelope.org, threshold).await?)),
-            None => Ok(None),
+    ) -> Result<Vec<StartedSla>> {
+        let Some(crossings) = events::threshold_crossed_all(envelope) else {
+            return Ok(Vec::new());
+        };
+        let mut started = Vec::with_capacity(crossings.len());
+        for threshold in crossings {
+            started.push(self.start_sla(envelope.org, threshold).await?);
         }
+        Ok(started)
     }
 
     /// Record an official's response to an SLA. The state machine decides the terminal status

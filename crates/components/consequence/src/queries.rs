@@ -48,9 +48,10 @@ pub struct ExpiredCandidate {
     pub due_at: DateTime<Utc>,
 }
 
-/// Idempotently insert an SLA clock. On a duplicate `(proposal_id, cluster_id)` the insert is a no-op
-/// and this returns `None` — the caller re-selects the real stored row via
-/// [`get_sla_by_proposal_cluster`]. When `Some`, the row was freshly inserted (emit `started`).
+/// Idempotently insert an SLA clock. On a duplicate `(proposal_id, cluster_id, mandate_id)` — desde
+/// a 0538 o relógio é POR GABINETE — the insert is a no-op and this returns `None`; the caller
+/// re-selects the real stored row via [`get_sla_by_proposal_cluster`]. When `Some`, the row was
+/// freshly inserted (emit `started`).
 ///
 /// # Errors
 /// Propagates the underlying `sqlx::Error`.
@@ -70,7 +71,7 @@ pub async fn insert_sla_idempotent(
         r#"INSERT INTO consequence_sla
                (id, org_id, mandate_id, cluster_id, proposal_id, started_at, due_at, status, created_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8)
-           ON CONFLICT (proposal_id, cluster_id) DO NOTHING
+           ON CONFLICT (proposal_id, cluster_id, mandate_id) DO NOTHING
            RETURNING id, org_id, mandate_id, cluster_id, proposal_id, started_at, due_at, status, created_at"#,
         id,
         org_id,
@@ -96,8 +97,9 @@ pub async fn insert_sla_idempotent(
     }))
 }
 
-/// Re-select the SLA stored for a `(proposal_id, cluster_id)` pair after an idempotent-insert
-/// conflict, so the caller returns the REAL stored id rather than a phantom one.
+/// Re-select the SLA stored for a `(proposal_id, cluster_id, mandate_id)` triple after an
+/// idempotent-insert conflict, so the caller returns the REAL stored id rather than a phantom one.
+/// Desde a 0538 o relógio é POR GABINETE — a mesma demanda abre um SLA pra cada destinatário.
 ///
 /// # Errors
 /// Propagates the underlying `sqlx::Error` (including `RowNotFound`).
@@ -105,13 +107,15 @@ pub async fn get_sla_by_proposal_cluster(
     executor: impl sqlx::PgExecutor<'_>,
     proposal_id: Uuid,
     cluster_id: Uuid,
+    mandate_id: Uuid,
 ) -> Result<SlaRow, sqlx::Error> {
     let r = sqlx::query!(
         r#"SELECT id, org_id, mandate_id, cluster_id, proposal_id, started_at, due_at, status, created_at
            FROM consequence_sla
-           WHERE proposal_id = $1 AND cluster_id = $2"#,
+           WHERE proposal_id = $1 AND cluster_id = $2 AND mandate_id = $3"#,
         proposal_id,
         cluster_id,
+        mandate_id,
     )
     .fetch_one(executor)
     .await?;

@@ -43,11 +43,44 @@ pub fn threshold_crossed(envelope: &EventEnvelope) -> Option<ThresholdCrossed> {
             proposal,
             cluster,
             mandate,
+            ..
         } => Some(ThresholdCrossed {
             proposal,
             cluster,
             mandate,
         }),
+        _ => None,
+    }
+}
+
+/// Extract ONE [`ThresholdCrossed`] per destinatário (0537 multi-gabinete): the event's
+/// `mandates` list expands into per-gabinete crossings sharing the same proposal/cluster.
+/// Eventos antigos (lista vazia) caem pro `mandate` principal — exatamente o comportamento
+/// pré-0537. `None` para qualquer outro tipo de evento.
+#[must_use]
+pub fn threshold_crossed_all(envelope: &EventEnvelope) -> Option<Vec<ThresholdCrossed>> {
+    match &envelope.event {
+        Event::ProposalThresholdCrossed {
+            proposal,
+            cluster,
+            mandate,
+            mandates,
+        } => {
+            let list: Vec<MandateId> = if mandates.is_empty() {
+                vec![*mandate]
+            } else {
+                mandates.clone()
+            };
+            Some(
+                list.into_iter()
+                    .map(|m| ThresholdCrossed {
+                        proposal: *proposal,
+                        cluster: *cluster,
+                        mandate: m,
+                    })
+                    .collect(),
+            )
+        }
         _ => None,
     }
 }
@@ -75,6 +108,7 @@ mod tests {
             proposal,
             cluster,
             mandate,
+            mandates: Vec::new(),
         });
         assert_eq!(
             threshold_crossed(&e),
@@ -84,6 +118,36 @@ mod tests {
                 mandate
             })
         );
+        // Evento antigo (mandates vazio): a expansão cai pro principal.
+        assert_eq!(
+            threshold_crossed_all(&e),
+            Some(vec![ThresholdCrossed {
+                proposal,
+                cluster,
+                mandate
+            }])
+        );
+    }
+
+    #[test]
+    fn expands_one_crossing_per_gabinete() {
+        let proposal = ProposalId::new();
+        let cluster = ClusterId::new();
+        let m1 = MandateId::new();
+        let m2 = MandateId::new();
+        let e = env(Event::ProposalThresholdCrossed {
+            proposal,
+            cluster,
+            mandate: m1,
+            mandates: vec![m1, m2],
+        });
+        let all = threshold_crossed_all(&e).expect("threshold event");
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].mandate, m1);
+        assert_eq!(all[1].mandate, m2);
+        assert!(all
+            .iter()
+            .all(|t| t.proposal == proposal && t.cluster == cluster));
     }
 
     #[test]

@@ -489,6 +489,18 @@ impl ProposalService {
             // Lost the race to another transaction; the crossing already fired exactly once.
             return Ok(false);
         }
+        // Multi-destinatário (0537): o sinal de consequência carrega TODOS os gabinetes,
+        // pro consequence abrir um SLA por gabinete. Fallback pro principal se a lista
+        // estiver vazia (proposta anterior ao backfill — não deve acontecer).
+        let mut mandates: Vec<MandateId> = queries::target_mandate_ids(&mut **tx, row.id)
+            .await
+            .map_err(map_sqlx)?
+            .into_iter()
+            .map(MandateId::from_uuid)
+            .collect();
+        if mandates.is_empty() {
+            mandates.push(MandateId::from_uuid(row.mandate_id));
+        }
         let envelope = events::envelope(
             &self.clock,
             org,
@@ -496,6 +508,7 @@ impl ProposalService {
                 proposal: ProposalId::from_uuid(row.id),
                 cluster: ClusterId::from_uuid(cluster_uuid),
                 mandate: MandateId::from_uuid(row.mandate_id),
+                mandates,
             },
         );
         dsoc_db::outbox::publish_tx(&mut **tx, &envelope)

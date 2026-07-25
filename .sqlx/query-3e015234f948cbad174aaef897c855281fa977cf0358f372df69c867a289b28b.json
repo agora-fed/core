@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, org_id, mandate_id, cluster_id, proposal_id, started_at, due_at, status, created_at\n           FROM consequence_sla\n           WHERE proposal_id = $1 AND cluster_id = $2",
+  "query": "SELECT id, org_id, mandate_id, cluster_id, proposal_id, started_at, due_at, status, created_at\n           FROM consequence_sla\n           WHERE proposal_id = $1 AND cluster_id = $2 AND mandate_id = $3",
   "describe": {
     "columns": [
       {
@@ -52,6 +52,7 @@
     "parameters": {
       "Left": [
         "Uuid",
+        "Uuid",
         "Uuid"
       ]
     },
@@ -67,5 +68,5 @@
       false
     ]
   },
-  "hash": "79670a956cdc90f8587303e0c9680d0589ea8bc7e13cce32638504abcf9611a3"
+  "hash": "3e015234f948cbad174aaef897c855281fa977cf0358f372df69c867a289b28b"
 }

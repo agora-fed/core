@@ -231,6 +231,7 @@ pub fn plan_for_event(event: &Event) -> Option<NotificationPlan> {
             proposal,
             cluster,
             mandate,
+            ..
         } => Some(NotificationPlan {
             channel: ChannelKind::Push,
             payload: json!({

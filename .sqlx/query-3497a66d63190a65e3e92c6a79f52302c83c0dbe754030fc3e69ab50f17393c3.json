@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO consequence_sla\n               (id, org_id, mandate_id, cluster_id, proposal_id, started_at, due_at, status, created_at)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8)\n           ON CONFLICT (proposal_id, cluster_id) DO NOTHING\n           RETURNING id, org_id, mandate_id, cluster_id, proposal_id, started_at, due_at, status, created_at",
+  "query": "INSERT INTO consequence_sla\n               (id, org_id, mandate_id, cluster_id, proposal_id, started_at, due_at, status, created_at)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8)\n           ON CONFLICT (proposal_id, cluster_id, mandate_id) DO NOTHING\n           RETURNING id, org_id, mandate_id, cluster_id, proposal_id, started_at, due_at, status, created_at",
   "describe": {
     "columns": [
       {
@@ -73,5 +73,5 @@
       false
     ]
   },
-  "hash": "770a56ebd828b0e18c6b3528b3b236bf497a38fcdce6861a577f060c197440ad"
+  "hash": "3497a66d63190a65e3e92c6a79f52302c83c0dbe754030fc3e69ab50f17393c3"
 }

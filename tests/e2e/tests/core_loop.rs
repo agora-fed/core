@@ -29,6 +29,7 @@ fn consequence_loop_events() -> Vec<Event> {
             proposal,
             cluster,
             mandate,
+            mandates: vec![mandate],
         },
         Event::ConsequenceSlaStarted {
             sla,

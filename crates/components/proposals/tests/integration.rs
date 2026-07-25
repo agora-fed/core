@@ -323,10 +323,16 @@ async fn clustered_proposal_crosses_threshold_exactly_once_with_cluster_id() {
             proposal: p,
             cluster: c,
             mandate: m,
+            mandates: ms,
         } => {
             assert_eq!(*p, proposal);
             assert_eq!(*c, cluster, "the one signal carries the ClusterId");
             assert_eq!(*m, mandate);
+            assert_eq!(
+                ms,
+                &vec![mandate],
+                "single-target: mandates carries just the principal"
+            );
         }
         other => panic!("expected ProposalThresholdCrossed, got {other:?}"),
     }

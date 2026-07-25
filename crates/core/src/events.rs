@@ -74,7 +74,12 @@ pub enum Event {
     ProposalThresholdCrossed {
         proposal: ProposalId,
         cluster: ClusterId,
+        /// The PRINCIPAL target (kept for wire/back-compat with events already in the log).
         mandate: MandateId,
+        /// TODOS os destinatários da proposta, principal incluído (0537 multi-gabinete).
+        /// Vazio em eventos antigos — consumidores caem pra `vec![mandate]`.
+        #[serde(default)]
+        mandates: Vec<MandateId>,
     },
 
     // --- votes ---

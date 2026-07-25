@@ -358,21 +358,59 @@ async fn consume_threshold_crossed_starts_an_sla() {
             proposal: ProposalId::new(),
             cluster: ClusterId::new(),
             mandate,
+            mandates: Vec::new(),
         },
     };
 
-    let started = svc
-        .consume(&envelope)
-        .await
-        .expect("consume succeeds")
-        .expect("threshold.crossed yields a started SLA");
-    assert!(started.newly_started);
-    assert_eq!(started.sla.mandate_id, mandate.as_uuid());
+    let started = svc.consume(&envelope).await.expect("consume succeeds");
+    assert_eq!(started.len(), 1, "evento antigo (sem lista) = 1 SLA");
+    assert!(started[0].newly_started);
+    assert_eq!(started[0].sla.mandate_id, mandate.as_uuid());
 
     assert_eq!(
         outbox_event_types(&db, org).await,
         vec!["consequence.sla.started".to_string()]
     );
+}
+
+#[tokio::test]
+async fn consume_threshold_crossed_starts_one_sla_per_gabinete() {
+    let db = pool().await;
+    let org = seed_org(&db).await;
+    let m1 = seed_mandate(&db, org).await;
+    let m2 = seed_mandate(&db, org).await;
+    let m3 = seed_mandate(&db, org).await;
+    let svc = service(db.clone(), t0());
+
+    let envelope = EventEnvelope {
+        id: EventId::new(),
+        org,
+        at: t0(),
+        event: Event::ProposalThresholdCrossed {
+            proposal: ProposalId::new(),
+            cluster: ClusterId::new(),
+            mandate: m1,
+            mandates: vec![m1, m2, m3],
+        },
+    };
+
+    let started = svc.consume(&envelope).await.expect("consume succeeds");
+    assert_eq!(started.len(), 3, "um SLA por gabinete");
+    assert!(started.iter().all(|s| s.newly_started));
+    let mandates: Vec<_> = started.iter().map(|s| s.sla.mandate_id).collect();
+    assert_eq!(mandates, vec![m1.as_uuid(), m2.as_uuid(), m3.as_uuid()]);
+
+    assert_eq!(
+        outbox_event_types(&db, org).await,
+        vec!["consequence.sla.started".to_string(); 3],
+        "cada gabinete ganha seu próprio sla.started"
+    );
+
+    // Redelivery do MESMO evento: nenhum relógio novo, nenhuma emissão nova.
+    let again = svc.consume(&envelope).await.expect("redelivery succeeds");
+    assert_eq!(again.len(), 3);
+    assert!(again.iter().all(|s| !s.newly_started));
+    assert_eq!(outbox_event_types(&db, org).await.len(), 3);
 }
 
 #[tokio::test]
@@ -392,7 +430,7 @@ async fn consume_ignores_unrelated_events() {
     };
 
     let result = svc.consume(&envelope).await.expect("consume succeeds");
-    assert!(result.is_none(), "non-threshold events are ignored");
+    assert!(result.is_empty(), "non-threshold events are ignored");
     assert!(
         outbox_event_types(&db, org).await.is_empty(),
         "ignored events produce no SLA and no outbox emission"

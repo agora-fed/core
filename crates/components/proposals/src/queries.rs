@@ -226,6 +226,25 @@ pub async fn list_targets(
         .collect())
 }
 
+/// Só os ids dos mandatos destinatários (principal primeiro) — versão leve de
+/// [`list_targets`] pra uso sob o row lock do crossing (sem JOIN de exibição).
+///
+/// # Errors
+/// Propagates the underlying `sqlx::Error`.
+pub async fn target_mandate_ids(
+    executor: impl sqlx::PgExecutor<'_>,
+    proposal_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT mandate_id FROM proposal_target
+           WHERE proposal_id = $1
+           ORDER BY created_at, mandate_id"#,
+        proposal_id,
+    )
+    .fetch_all(executor)
+    .await
+}
+
 /// Fetch a single proposal by id.
 ///
 /// # Errors

@@ -27,7 +27,9 @@
   let loading = $state(true);
   let proposal = $state<ProposalDto | null>(null);
   let mandate = $state<MandateDto | null>(null);
-  let sla = $state<SlaDto | null>(null);
+  // SLA por gabinete (0538): uma proposta multi-destinatário abre um relógio por mandato.
+  let slas = $state<SlaDto[]>([]);
+  let sla = $derived(slas[0] ?? null);
   let loadError = $state<string | null>(null);
   // Prova de notificação (0.29): timeline pública dos avisos ao gabinete.
   let receipts = $state<DeliveryReceiptDto[]>([]);
@@ -159,7 +161,7 @@
     proposal = pr.data;
     count = proposal.support_count;
     if (slr.ok && slr.data) {
-      sla = slr.data.find((s) => s.proposal_id === proposalId) ?? null;
+      slas = slr.data.filter((s) => s.proposal_id === proposalId);
     }
     const mr = await getMandate(proposal.mandate_id);
     if (mr.ok && mr.data) mandate = mr.data;
@@ -571,17 +573,27 @@
       {/if}
     </section>
 
-    <!-- SLA clock quando o limiar já foi cruzado -->
-    {#if sla}
+    <!-- SLA clock quando o limiar já foi cruzado — um relógio POR GABINETE (0538) -->
+    {#if slas.length > 0}
       <section class="sla-block">
         <h2>⏰ Prazo de resposta</h2>
-        <SlaClock
-          dueAt={sla.due_at}
-          status={sla.status as SlaStatus}
-        />
+        {#each slas as s (s.id)}
+          {@const gabinete =
+            proposal.targets?.find((t) => t.mandate_id === s.mandate_id)
+              ?.display_name ??
+            (mandate && mandate.id === s.mandate_id ? mandate.display_name : null)}
+          {#if slas.length > 1 && gabinete}
+            <p class="sla-gabinete"><strong>{gabinete}</strong></p>
+          {/if}
+          <SlaClock
+            dueAt={s.due_at}
+            status={s.status as SlaStatus}
+          />
+        {/each}
         <p class="muted">
           Se o prazo expirar sem resposta, fica como <strong>silêncio público</strong>
-          permanente no placar do(a) parlamentar.
+          permanente no placar
+          {slas.length > 1 ? 'de cada parlamentar.' : 'do(a) parlamentar.'}
         </p>
       </section>
     {/if}
@@ -785,6 +797,10 @@
   }
   .co-targets a {
     text-decoration: underline;
+  }
+  .sla-gabinete {
+    margin: 0.6rem 0 0.15rem;
+    font-size: var(--fs-sm, 0.9rem);
   }
   h1 {
     font-size: 1.7rem;

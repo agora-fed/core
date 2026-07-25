@@ -107,6 +107,7 @@ mod tests {
             proposal: ProposalId::new(),
             cluster: ClusterId::new(),
             mandate: m,
+            mandates: vec![m],
         });
         assert_eq!(mandate_for(&e.event), Some(m));
     }
