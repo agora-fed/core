@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO forum_topic_vote (topic_id, citizen_id, value, created_at)\n           VALUES ($1, $2, $3, $4)\n           ON CONFLICT (topic_id, citizen_id) DO UPDATE SET value = EXCLUDED.value",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int2",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ad894353e0e93ca070fd0a72f285cb6363383840398c3a60753fdea959dc7f4c"
+}

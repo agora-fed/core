@@ -1,0 +1,85 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, forum_id, author_id, title, body, interaction_count,\n                  federated_interaction_count, score, comment_count,\n                  next_threshold_idx, created_at\n           FROM forum_topic\n           WHERE forum_id = $1 AND hidden_at IS NULL\n           ORDER BY CASE WHEN $2 THEN score END DESC NULLS LAST, id DESC\n           LIMIT $3 OFFSET $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "forum_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "author_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "body",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "interaction_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "federated_interaction_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "score",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "comment_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "next_threshold_idx",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "5691d21a7e0309586ed87283257b4dadb3011b51ab0652c20d967fbf0508484b"
+}

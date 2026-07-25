@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH RECURSIVE chain AS (\n             SELECT id, parent_id, contact_email, 0 AS depth FROM forum WHERE id = $1\n             UNION ALL\n             SELECT f.id, f.parent_id, f.contact_email, chain.depth + 1\n               FROM forum f JOIN chain ON f.id = chain.parent_id\n              WHERE chain.depth < 4\n           )\n           SELECT contact_email FROM chain\n           WHERE contact_email IS NOT NULL ORDER BY depth LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "contact_email",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "050a80a04259b113d001c261f16a05b5d84f4a04b747fefe2c9cb9ee74a33638"
+}

@@ -181,6 +181,7 @@ pub fn api_router(state: AppState) -> Router {
         .merge(dsoc_votes::routes(state.clone()))
         .merge(dsoc_comments::routes(state.clone()))
         .merge(dsoc_debates::routes(state.clone()))
+        .merge(dsoc_forums::routes(state.clone()))
         .merge(dsoc_meetings::routes(state.clone()))
         .merge(dsoc_budgets::routes(state.clone()))
         .merge(dsoc_surveys::routes(state.clone()))

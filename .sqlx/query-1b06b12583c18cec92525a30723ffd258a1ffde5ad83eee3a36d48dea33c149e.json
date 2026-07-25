@@ -1,0 +1,101 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, org_id, parent_id, slug, full_path, name, description, kind,\n                  esfera, uf, municipio, contact_email, thresholds, created_at\n           FROM forum WHERE org_id = $1 AND full_path = $2 AND hidden_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "org_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "parent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "full_path",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "esfera",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "uf",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "municipio",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "contact_email",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "thresholds",
+        "type_info": "Int4Array"
+      },
+      {
+        "ordinal": 13,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "1b06b12583c18cec92525a30723ffd258a1ffde5ad83eee3a36d48dea33c149e"
+}

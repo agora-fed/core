@@ -1,0 +1,32 @@
+[package]
+name = "dsoc-forums"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Fóruns institucionais hierárquicos (/f/<caminho>) com patamares de envio às instituições."
+
+[lints]
+workspace = true
+
+[dependencies]
+dsoc-core = { path = "../../core" }
+dsoc-db = { path = "../../db" }
+dsoc-api-contract = { path = "../../api-contract" }
+dsoc-app = { path = "../../app" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+axum = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+utoipa = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+chrono = { workspace = true }
+sqlx = { workspace = true }

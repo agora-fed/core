@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO forum (id, org_id, parent_id, slug, full_path, name, kind,\n                              esfera, uf, municipio, created_at)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())\n           ON CONFLICT (org_id, full_path) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "89cf0d367da2bb9203f58aa845a1a56085ae0e349d162dcf39f0740f02676adc"
+}

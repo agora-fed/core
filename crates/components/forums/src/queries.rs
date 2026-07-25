@@ -1,0 +1,611 @@
+//! Persistência dos fóruns. Todo statement é `sqlx::query!` compile-time-checked
+//! (PLAN.md princípio 3): sem ORM, keyset pagination, UPDATEs guardados por estado
+//! esperado para idempotência sob at-least-once.
+
+use chrono::{DateTime, Utc};
+use uuid::Uuid;
+
+/// Uma linha de fórum.
+#[derive(Debug, Clone)]
+pub struct ForumRow {
+    /// Id do fórum.
+    pub id: Uuid,
+    /// Organização dona.
+    pub org_id: Uuid,
+    /// Pai na hierarquia, se houver.
+    pub parent_id: Option<Uuid>,
+    /// Segmento do caminho.
+    pub slug: String,
+    /// Caminho completo (`sp/santos/saude`).
+    pub full_path: String,
+    /// Nome de exibição.
+    pub name: String,
+    /// Descrição.
+    pub description: String,
+    /// `institucional` | `governanca` | `comunitario`.
+    pub kind: String,
+    /// Esfera federativa, se territorial.
+    pub esfera: Option<String>,
+    /// UF, se territorial.
+    pub uf: Option<String>,
+    /// Município, se territorial.
+    pub municipio: Option<String>,
+    /// E-mail responsável (herda do pai quando NULL).
+    pub contact_email: Option<String>,
+    /// Patamares de envio (interações contáveis), ordem crescente.
+    pub thresholds: Vec<i32>,
+    /// Criação.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Uma linha de tópico.
+#[derive(Debug, Clone)]
+pub struct TopicRow {
+    /// Id do tópico.
+    pub id: Uuid,
+    /// Fórum dono.
+    pub forum_id: Uuid,
+    /// Autor (cidadão local — criação é sempre local).
+    pub author_id: Uuid,
+    /// Título.
+    pub title: String,
+    /// Corpo.
+    pub body: String,
+    /// Interações contáveis (votos + comentários locais).
+    pub interaction_count: i64,
+    /// Interações federadas (nunca disparam patamar).
+    pub federated_interaction_count: i64,
+    /// Soma dos votos ±1.
+    pub score: i64,
+    /// Total de comentários aprovados.
+    pub comment_count: i64,
+    /// Próximo patamar a disparar (índice em `forum.thresholds`).
+    pub next_threshold_idx: i32,
+    /// Criação.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Um comentário (local ou federado).
+#[derive(Debug, Clone)]
+pub struct CommentRow {
+    /// Id.
+    pub id: Uuid,
+    /// Tópico dono.
+    pub topic_id: Uuid,
+    /// Autor local, se local.
+    pub author_id: Option<Uuid>,
+    /// Handle do ator remoto, se federado.
+    pub remote_handle: Option<String>,
+    /// Federado?
+    pub federated: bool,
+    /// Corpo.
+    pub body: String,
+    /// Criação.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Um recibo de envio institucional por patamar.
+#[derive(Debug, Clone)]
+pub struct DispatchRow {
+    /// Id.
+    pub id: Uuid,
+    /// Patamar cruzado.
+    pub threshold: i32,
+    /// Destino do envio.
+    pub contact_email: String,
+    /// Quando o e-mail saiu (NULL = pendente do worker).
+    pub sent_at: Option<DateTime<Utc>>,
+    /// Criação (momento do cruzamento).
+    pub created_at: DateTime<Utc>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn map_forum(
+    id: Uuid,
+    org_id: Uuid,
+    parent_id: Option<Uuid>,
+    slug: String,
+    full_path: String,
+    name: String,
+    description: String,
+    kind: String,
+    esfera: Option<String>,
+    uf: Option<String>,
+    municipio: Option<String>,
+    contact_email: Option<String>,
+    thresholds: Vec<i32>,
+    created_at: DateTime<Utc>,
+) -> ForumRow {
+    ForumRow {
+        id,
+        org_id,
+        parent_id,
+        slug,
+        full_path,
+        name,
+        description,
+        kind,
+        esfera,
+        uf,
+        municipio,
+        contact_email,
+        thresholds,
+        created_at,
+    }
+}
+
+/// Busca um fórum pelo caminho completo.
+///
+/// # Errors
+/// Propaga o `sqlx::Error` (incluindo `RowNotFound`).
+pub async fn get_forum_by_path(
+    executor: impl sqlx::PgExecutor<'_>,
+    org_id: Uuid,
+    full_path: &str,
+) -> Result<ForumRow, sqlx::Error> {
+    let r = sqlx::query!(
+        r#"SELECT id, org_id, parent_id, slug, full_path, name, description, kind,
+                  esfera, uf, municipio, contact_email, thresholds, created_at
+           FROM forum WHERE org_id = $1 AND full_path = $2 AND hidden_at IS NULL"#,
+        org_id,
+        full_path,
+    )
+    .fetch_one(executor)
+    .await?;
+    Ok(map_forum(
+        r.id,
+        r.org_id,
+        r.parent_id,
+        r.slug,
+        r.full_path,
+        r.name,
+        r.description,
+        r.kind,
+        r.esfera,
+        r.uf,
+        r.municipio,
+        r.contact_email,
+        r.thresholds,
+        r.created_at,
+    ))
+}
+
+/// Lista os filhos diretos de um fórum (ou raízes por esfera quando `parent_id` é NULL).
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn list_children(
+    executor: impl sqlx::PgExecutor<'_>,
+    org_id: Uuid,
+    parent_id: Option<Uuid>,
+    esfera: Option<&str>,
+    limit: i64,
+) -> Result<Vec<ForumRow>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT id, org_id, parent_id, slug, full_path, name, description, kind,
+                  esfera, uf, municipio, contact_email, thresholds, created_at
+           FROM forum
+           WHERE org_id = $1 AND hidden_at IS NULL
+             AND parent_id IS NOT DISTINCT FROM $2
+             AND ($3::text IS NULL OR esfera = $3)
+           ORDER BY slug
+           LIMIT $4"#,
+        org_id,
+        parent_id,
+        esfera,
+        limit,
+    )
+    .fetch_all(executor)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            map_forum(
+                r.id,
+                r.org_id,
+                r.parent_id,
+                r.slug,
+                r.full_path,
+                r.name,
+                r.description,
+                r.kind,
+                r.esfera,
+                r.uf,
+                r.municipio,
+                r.contact_email,
+                r.thresholds,
+                r.created_at,
+            )
+        })
+        .collect())
+}
+
+/// Insere um fórum (materialização preguiçosa das seções territoriais).
+/// Idempotente sob corrida: `ON CONFLICT (org_id, full_path) DO NOTHING`.
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+#[allow(clippy::too_many_arguments)]
+pub async fn insert_forum_idempotent(
+    executor: impl sqlx::PgExecutor<'_>,
+    id: Uuid,
+    org_id: Uuid,
+    parent_id: Option<Uuid>,
+    slug: &str,
+    full_path: &str,
+    name: &str,
+    kind: &str,
+    esfera: Option<&str>,
+    uf: Option<&str>,
+    municipio: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"INSERT INTO forum (id, org_id, parent_id, slug, full_path, name, kind,
+                              esfera, uf, municipio, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
+           ON CONFLICT (org_id, full_path) DO NOTHING"#,
+        id,
+        org_id,
+        parent_id,
+        slug,
+        full_path,
+        name,
+        kind,
+        esfera,
+        uf,
+        municipio,
+    )
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
+/// Insere um tópico.
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn insert_topic(
+    executor: impl sqlx::PgExecutor<'_>,
+    id: Uuid,
+    forum_id: Uuid,
+    author_id: Uuid,
+    title: &str,
+    body: &str,
+    created_at: DateTime<Utc>,
+) -> Result<TopicRow, sqlx::Error> {
+    let r = sqlx::query!(
+        r#"INSERT INTO forum_topic (id, forum_id, author_id, title, body, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id, forum_id, author_id, title, body, interaction_count,
+                     federated_interaction_count, score, comment_count,
+                     next_threshold_idx, created_at"#,
+        id,
+        forum_id,
+        author_id,
+        title,
+        body,
+        created_at,
+    )
+    .fetch_one(executor)
+    .await?;
+    Ok(TopicRow {
+        id: r.id,
+        forum_id: r.forum_id,
+        author_id: r.author_id,
+        title: r.title,
+        body: r.body,
+        interaction_count: r.interaction_count,
+        federated_interaction_count: r.federated_interaction_count,
+        score: r.score,
+        comment_count: r.comment_count,
+        next_threshold_idx: r.next_threshold_idx,
+        created_at: r.created_at,
+    })
+}
+
+/// Tranca um tópico `FOR UPDATE` (janela TOCTOU dos contadores/patamares).
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn lock_topic(
+    executor: impl sqlx::PgExecutor<'_>,
+    id: Uuid,
+) -> Result<Option<TopicRow>, sqlx::Error> {
+    let r = sqlx::query!(
+        r#"SELECT id, forum_id, author_id, title, body, interaction_count,
+                  federated_interaction_count, score, comment_count,
+                  next_threshold_idx, created_at
+           FROM forum_topic WHERE id = $1 AND hidden_at IS NULL FOR UPDATE"#,
+        id,
+    )
+    .fetch_optional(executor)
+    .await?;
+    Ok(r.map(|r| TopicRow {
+        id: r.id,
+        forum_id: r.forum_id,
+        author_id: r.author_id,
+        title: r.title,
+        body: r.body,
+        interaction_count: r.interaction_count,
+        federated_interaction_count: r.federated_interaction_count,
+        score: r.score,
+        comment_count: r.comment_count,
+        next_threshold_idx: r.next_threshold_idx,
+        created_at: r.created_at,
+    }))
+}
+
+/// Lista tópicos de um fórum: `hot` (score desc) ou recentes (id desc).
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn list_topics(
+    executor: impl sqlx::PgExecutor<'_>,
+    forum_id: Uuid,
+    hot: bool,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<TopicRow>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT id, forum_id, author_id, title, body, interaction_count,
+                  federated_interaction_count, score, comment_count,
+                  next_threshold_idx, created_at
+           FROM forum_topic
+           WHERE forum_id = $1 AND hidden_at IS NULL
+           ORDER BY CASE WHEN $2 THEN score END DESC NULLS LAST, id DESC
+           LIMIT $3 OFFSET $4"#,
+        forum_id,
+        hot,
+        limit,
+        offset,
+    )
+    .fetch_all(executor)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| TopicRow {
+            id: r.id,
+            forum_id: r.forum_id,
+            author_id: r.author_id,
+            title: r.title,
+            body: r.body,
+            interaction_count: r.interaction_count,
+            federated_interaction_count: r.federated_interaction_count,
+            score: r.score,
+            comment_count: r.comment_count,
+            next_threshold_idx: r.next_threshold_idx,
+            created_at: r.created_at,
+        })
+        .collect())
+}
+
+/// Upsert do voto ±1 do cidadão (uma linha por par tópico-cidadão).
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn upsert_vote(
+    executor: impl sqlx::PgExecutor<'_>,
+    topic_id: Uuid,
+    citizen_id: Uuid,
+    value: i16,
+    created_at: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"INSERT INTO forum_topic_vote (topic_id, citizen_id, value, created_at)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (topic_id, citizen_id) DO UPDATE SET value = EXCLUDED.value"#,
+        topic_id,
+        citizen_id,
+        value,
+        created_at,
+    )
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
+/// Insere um comentário LOCAL (aprovado de nascença).
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn insert_local_comment(
+    executor: impl sqlx::PgExecutor<'_>,
+    id: Uuid,
+    topic_id: Uuid,
+    author_id: Uuid,
+    body: &str,
+    created_at: DateTime<Utc>,
+) -> Result<CommentRow, sqlx::Error> {
+    let r = sqlx::query!(
+        r#"INSERT INTO forum_topic_comment (id, topic_id, author_id, federated, body, created_at)
+           VALUES ($1, $2, $3, false, $4, $5)
+           RETURNING id, topic_id, author_id, remote_handle, federated, body, created_at"#,
+        id,
+        topic_id,
+        author_id,
+        body,
+        created_at,
+    )
+    .fetch_one(executor)
+    .await?;
+    Ok(CommentRow {
+        id: r.id,
+        topic_id: r.topic_id,
+        author_id: r.author_id,
+        remote_handle: r.remote_handle,
+        federated: r.federated,
+        body: r.body,
+        created_at: r.created_at,
+    })
+}
+
+/// Lista comentários APROVADOS de um tópico (mais antigos primeiro, keyset).
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn list_comments(
+    executor: impl sqlx::PgExecutor<'_>,
+    topic_id: Uuid,
+    after: Option<Uuid>,
+    limit: i64,
+) -> Result<Vec<CommentRow>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT id, topic_id, author_id, remote_handle, federated, body, created_at
+           FROM forum_topic_comment
+           WHERE topic_id = $1 AND moderation = 'approved'
+             AND ($2::uuid IS NULL OR id > $2)
+           ORDER BY id
+           LIMIT $3"#,
+        topic_id,
+        after,
+        limit,
+    )
+    .fetch_all(executor)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| CommentRow {
+            id: r.id,
+            topic_id: r.topic_id,
+            author_id: r.author_id,
+            remote_handle: r.remote_handle,
+            federated: r.federated,
+            body: r.body,
+            created_at: r.created_at,
+        })
+        .collect())
+}
+
+/// Recalcula os contadores do tópico a partir das tabelas-fonte (sob o row lock):
+/// score = soma dos votos; interações contáveis = votos + comentários locais aprovados;
+/// federadas = comentários federados aprovados. Retorna (interactions, federated).
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn refresh_topic_counters(
+    executor: impl sqlx::PgExecutor<'_>,
+    topic_id: Uuid,
+) -> Result<(i64, i64), sqlx::Error> {
+    let r = sqlx::query!(
+        r#"UPDATE forum_topic t SET
+             score = v."score!",
+             comment_count = c."local!" + c."fede!",
+             interaction_count = v."votes!" + c."local!",
+             federated_interaction_count = c."fede!"
+           FROM
+             (SELECT COALESCE(SUM(value), 0) AS "score!", COUNT(*) AS "votes!"
+                FROM forum_topic_vote WHERE topic_id = $1) v,
+             (SELECT COUNT(*) FILTER (WHERE NOT federated) AS "local!",
+                     COUNT(*) FILTER (WHERE federated) AS "fede!"
+                FROM forum_topic_comment
+               WHERE topic_id = $1 AND moderation = 'approved') c
+           WHERE t.id = $1
+           RETURNING t.interaction_count, t.federated_interaction_count"#,
+        topic_id,
+    )
+    .fetch_one(executor)
+    .await?;
+    Ok((r.interaction_count, r.federated_interaction_count))
+}
+
+/// Avança o índice de patamar, **guardado** pelo valor anterior esperado (1x por
+/// patamar mesmo sob corrida). Retorna linhas afetadas (0 = já avançado).
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn advance_threshold_idx(
+    executor: impl sqlx::PgExecutor<'_>,
+    topic_id: Uuid,
+    expected_idx: i32,
+    new_idx: i32,
+) -> Result<u64, sqlx::Error> {
+    let res = sqlx::query!(
+        r#"UPDATE forum_topic SET next_threshold_idx = $3
+           WHERE id = $1 AND next_threshold_idx = $2"#,
+        topic_id,
+        expected_idx,
+        new_idx,
+    )
+    .execute(executor)
+    .await?;
+    Ok(res.rows_affected())
+}
+
+/// Registra o recibo de envio de um patamar (UNIQUE topic+threshold ⇒ 1x).
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn insert_dispatch(
+    executor: impl sqlx::PgExecutor<'_>,
+    id: Uuid,
+    topic_id: Uuid,
+    threshold: i32,
+    contact_email: &str,
+    created_at: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"INSERT INTO forum_dispatch (id, topic_id, threshold, contact_email, created_at)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (topic_id, threshold) DO NOTHING"#,
+        id,
+        topic_id,
+        threshold,
+        contact_email,
+        created_at,
+    )
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
+/// Lista os recibos de envio de um tópico (transparência pública).
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn list_dispatches(
+    executor: impl sqlx::PgExecutor<'_>,
+    topic_id: Uuid,
+) -> Result<Vec<DispatchRow>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT id, threshold, contact_email, sent_at, created_at
+           FROM forum_dispatch WHERE topic_id = $1 ORDER BY threshold"#,
+        topic_id,
+    )
+    .fetch_all(executor)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| DispatchRow {
+            id: r.id,
+            threshold: r.threshold,
+            contact_email: r.contact_email,
+            sent_at: r.sent_at,
+            created_at: r.created_at,
+        })
+        .collect())
+}
+
+/// E-mail efetivo do fórum: o próprio ou, quando NULL, o do ancestral mais próximo.
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn effective_contact_email(
+    executor: impl sqlx::PgExecutor<'_>,
+    forum_id: Uuid,
+) -> Result<Option<String>, sqlx::Error> {
+    let r = sqlx::query!(
+        r#"WITH RECURSIVE chain AS (
+             SELECT id, parent_id, contact_email, 0 AS depth FROM forum WHERE id = $1
+             UNION ALL
+             SELECT f.id, f.parent_id, f.contact_email, chain.depth + 1
+               FROM forum f JOIN chain ON f.id = chain.parent_id
+              WHERE chain.depth < 4
+           )
+           SELECT contact_email FROM chain
+           WHERE contact_email IS NOT NULL ORDER BY depth LIMIT 1"#,
+        forum_id,
+    )
+    .fetch_optional(executor)
+    .await?;
+    Ok(r.and_then(|r| r.contact_email))
+}
