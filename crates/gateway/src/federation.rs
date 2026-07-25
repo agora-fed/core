@@ -61,6 +61,9 @@ const REMOTE_DELIVERY_TIMEOUT_SECS: u64 = 10;
 pub fn public_routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/.well-known/webfinger", get(webfinger_handler))
+        // Ator de instância (0539): rota ESTÁTICA tem precedência sobre a captura
+        // `{handle}` no axum — o handle "instance" fica reservado pra plataforma.
+        .route("/actors/instance", get(instance_actor_handler))
         .route("/actors/{handle}", get(actor_handler))
         .route("/actors/{handle}/objects/{id}", get(object_handler))
         .route(
@@ -3196,9 +3199,27 @@ async fn fetch_remote_actor(url: &str) -> Result<Value, FederationError> {
         .user_agent("DemocraciaBR/0.4 (+https://democracia.social.br)")
         .build()
         .map_err(|e| FederationError::Http(e.to_string()))?;
-    let resp = client
+    let mut req = client
         .get(url)
-        .header(reqwest::header::ACCEPT, ACTIVITY_JSON)
+        .header(reqwest::header::ACCEPT, ACTIVITY_JSON);
+    // Fetch ASSINADO com a chave do ator de instância (0539): instâncias em modo
+    // seguro (AUTHORIZED_FETCH, ex. wetdry.world) devolvem 401 pra GET sem assinatura.
+    // Chave ainda não primada (boot) ou falha ao assinar → segue sem assinatura,
+    // que é o suficiente pra maioria das instâncias (comportamento pré-0539).
+    if let Some(key) = INSTANCE_KEY.get() {
+        match sign_get_headers(url, key) {
+            Ok((host, date, signature)) => {
+                req = req
+                    .header(reqwest::header::HOST, host)
+                    .header("Date", date)
+                    .header("Signature", signature);
+            }
+            Err(err) => {
+                tracing::warn!(error = %err, url, "signed fetch: falha ao assinar; indo sem assinatura");
+            }
+        }
+    }
+    let resp = req
         .send()
         .await
         .map_err(|e| FederationError::Http(e.to_string()))?;
@@ -3211,6 +3232,164 @@ async fn fetch_remote_actor(url: &str) -> Result<Value, FederationError> {
     resp.json::<Value>()
         .await
         .map_err(|e| FederationError::Http(format!("json: {e}")))
+}
+
+/// Monta os headers de um GET assinado — `(request-target) host date` cobertos, mesma
+/// receita que o Mastodon emite/aceita em AUTHORIZED_FETCH. Retorna (host, date, signature).
+fn sign_get_headers(url: &str, key: &InstanceKey) -> Result<(String, String, String), String> {
+    let parsed = reqwest::Url::parse(url).map_err(|e| format!("bad url: {e}"))?;
+    let host = match (parsed.host_str(), parsed.port()) {
+        (Some(h), Some(p)) => format!("{h}:{p}"),
+        (Some(h), None) => h.to_owned(),
+        _ => return Err("url has no host".to_owned()),
+    };
+    let path = match parsed.query() {
+        Some(q) => format!("{}?{}", parsed.path(), q),
+        None => parsed.path().to_owned(),
+    };
+    let date = chrono::Utc::now()
+        .format("%a, %d %b %Y %H:%M:%S GMT")
+        .to_string();
+    let signing_headers = vec![
+        ("Host".to_owned(), host.clone()),
+        ("Date".to_owned(), date.clone()),
+    ];
+    let covered = ["(request-target)", "host", "date"];
+    let signing_string = build_signing_string("get", &path, &signing_headers, &covered)
+        .map_err(|e| format!("signing string: {e}"))?;
+    let signature_b64 =
+        sign_with_pem(&key.private_pem, &signing_string).map_err(|e| format!("sign: {e}"))?;
+    let signature = signature_header_value(&key.key_id, &covered, &signature_b64);
+    Ok((host, date, signature))
+}
+
+// ---------------------------------------------------------------------------
+// Ator de instância (0539) — identidade da PLATAFORMA no fediverso, usada pra
+// assinar fetches (AUTHORIZED_FETCH). Mesmo papel do actor `Application` do
+// Mastodon. A chave vive em `federation_instance_key` (linha única) e é primada
+// no boot pelo worker; até lá os fetches saem sem assinatura.
+// ---------------------------------------------------------------------------
+
+/// Chave + identidade do ator de instância, primada uma vez no boot.
+pub(crate) struct InstanceKey {
+    /// `https://<host>/actors/instance#main-key` — o keyId que os remotos dereferenciam.
+    key_id: String,
+    /// `https://<host>/actors/instance` — id do actor.
+    actor_id: String,
+    private_pem: String,
+    public_pem: String,
+}
+
+static INSTANCE_KEY: std::sync::OnceLock<InstanceKey> = std::sync::OnceLock::new();
+
+/// Carrega (ou gera e persiste) a chave do ator de instância e prima o cache do
+/// processo. Chamado no boot do worker; falha aqui NÃO derruba o gateway — só
+/// deixa os fetches sem assinatura (e loga por quê).
+pub(crate) async fn prime_instance_key(db: &sqlx::PgPool, public_origin: &str) {
+    let origin = public_origin.trim_end_matches('/');
+    let row: Option<(String, String)> = match sqlx::query_as(
+        "SELECT public_key_pem, private_key_pem FROM federation_instance_key WHERE id = 1",
+    )
+    .fetch_optional(db)
+    .await
+    {
+        Ok(r) => r,
+        Err(err) => {
+            tracing::warn!(
+                ?err,
+                "instance key: leitura falhou; fetches seguem sem assinatura"
+            );
+            return;
+        }
+    };
+    let (public_pem, private_pem) = match row {
+        Some(pair) => pair,
+        None => {
+            let kp =
+                match tokio::task::spawn_blocking(dsoc_federation::generate_actor_keypair).await {
+                    Ok(Ok(kp)) => kp,
+                    other => {
+                        tracing::warn!(?other, "instance key: geração falhou");
+                        return;
+                    }
+                };
+            // Corrida entre réplicas: só uma INSERE; todas relêem a linha vencedora.
+            if let Err(err) = sqlx::query(
+                "INSERT INTO federation_instance_key (id, public_key_pem, private_key_pem)
+                 VALUES (1, $1, $2) ON CONFLICT (id) DO NOTHING",
+            )
+            .bind(&kp.public_pem)
+            .bind(&kp.private_pem)
+            .execute(db)
+            .await
+            {
+                tracing::warn!(?err, "instance key: insert falhou");
+                return;
+            }
+            match sqlx::query_as::<_, (String, String)>(
+                "SELECT public_key_pem, private_key_pem FROM federation_instance_key WHERE id = 1",
+            )
+            .fetch_one(db)
+            .await
+            {
+                Ok(pair) => pair,
+                Err(err) => {
+                    tracing::warn!(?err, "instance key: releitura falhou");
+                    return;
+                }
+            }
+        }
+    };
+    let actor_id = format!("{origin}/actors/instance");
+    let _ = INSTANCE_KEY.set(InstanceKey {
+        key_id: format!("{actor_id}#main-key"),
+        actor_id,
+        private_pem,
+        public_pem,
+    });
+    tracing::info!("instance key primada — fetches ActivityPub saem assinados");
+}
+
+/// `GET /actors/instance` — o actor `Application` da plataforma, com a publicKey que
+/// os remotos dereferenciam pra verificar nossos fetches assinados.
+async fn instance_actor_handler(headers: HeaderMap) -> Response {
+    let Some(key) = INSTANCE_KEY.get() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let wants_activitypub = headers
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|accept| {
+            accept.contains("application/activity+json") || accept.contains("application/ld+json")
+        });
+    if !wants_activitypub {
+        return (StatusCode::FOUND, [(header::LOCATION, "/sobre")]).into_response();
+    }
+    let doc = json!({
+        "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+        "id": key.actor_id,
+        "type": "Application",
+        "preferredUsername": "instance",
+        "name": "DemocraciaBR",
+        "summary": "Ator de instância da DemocraciaBR — assina fetches ActivityPub.",
+        "inbox": format!("{}/inbox", key.actor_id),
+        "outbox": format!("{}/outbox", key.actor_id),
+        "manuallyApprovesFollowers": true,
+        "publicKey": {
+            "id": key.key_id,
+            "owner": key.actor_id,
+            "publicKeyPem": key.public_pem,
+        },
+    });
+    (
+        StatusCode::OK,
+        [(
+            header::CONTENT_TYPE,
+            "application/activity+json; charset=utf-8",
+        )],
+        Json(doc),
+    )
+        .into_response()
 }
 
 /// Sign and POST an activity to a remote inbox. The covered headers are

@@ -7,7 +7,7 @@
 # paste (RUSTSEC-2024-0436) is UNMAINTAINED, not vulnerable: a compile-time
 # proc-macro (no runtime surface) pulled by the candle ML stack (0.27.0
 # embeddings). Drop the ignore when candle replaces it upstream.
-ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2024-0436"]
+ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2024-0436", "RUSTSEC-2026-0192"] # 0192: ttf-parser unmaintained — via ab_glyph (og_cards); trocar quando ab_glyph migrar
 yanked = "deny"
 [bans]
 multiple-versions = "warn"

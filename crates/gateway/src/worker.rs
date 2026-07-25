@@ -383,6 +383,17 @@ pub fn spawn(state: AppState) {
     let dispatch_ms = env_ms("WORKER_DISPATCH_MS", DEFAULT_DISPATCH_MS);
     let sweep_ms = env_ms("WORKER_SWEEP_MS", DEFAULT_SWEEP_MS);
 
+    // Ator de instância (0539): prima a chave que assina os fetches ActivityPub
+    // (AUTHORIZED_FETCH). Best-effort — sem ela, fetches saem sem assinatura.
+    {
+        let db = state.db.clone();
+        let origin = std::env::var("PUBLIC_ORIGIN")
+            .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
+        tokio::spawn(async move {
+            crate::federation::prime_instance_key(&db, &origin).await;
+        });
+    }
+
     let subs = subscriptions(&state);
     let count = subs.len();
     for subscription in subs {
