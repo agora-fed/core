@@ -11,7 +11,6 @@
 // complexity lint is accepted crate-wide here (domain crates keep it denied).
 #![allow(clippy::type_complexity)]
 
-pub mod whoami;
 pub mod admin_content;
 pub mod admin_ext;
 pub mod admin_reports;
@@ -62,6 +61,7 @@ pub mod threshold_policy;
 pub mod titulo_eleitor;
 pub mod web_push;
 pub mod webhooks;
+pub mod whoami;
 pub mod worker;
 
 use axum::extract::{Request, State};
@@ -292,6 +292,11 @@ pub fn api_router(state: AppState) -> Router {
         // gov.br OIDC — start/callback na raiz porque o gov.br exige que
         // `redirect_uri` seja exatamente `<origin>/auth/govbr/callback`.
         .merge(govbr_oidc::root_routes(state.clone()))
+        // Fóruns (/f/*): SPA-fallback — o front roteia client-side; qualquer caminho
+        // serve o mesmo f/index.html (fóruns/tópicos criados em runtime nunca 404am).
+        .route("/f", get(forums_spa))
+        .route("/f/", get(forums_spa))
+        .route("/f/{*path}", get(forums_spa))
         .fallback_service(static_site)
 }
 
@@ -302,5 +307,22 @@ mod tests {
     #[test]
     fn health_router_builds() {
         let _app: Router<()> = Router::new().route("/health", get(health));
+    }
+}
+
+/// Serve o shell SPA dos fóruns (WEB_ROOT/f/index.html) pra qualquer /f/*.
+async fn forums_spa() -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let web_root = std::env::var("WEB_ROOT").unwrap_or_else(|_| "/srv/web".to_string());
+    match tokio::fs::read(format!("{web_root}/f/index.html")).await {
+        Ok(bytes) => (
+            [
+                (axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8"),
+                (axum::http::header::CACHE_CONTROL, "no-cache"),
+            ],
+            bytes,
+        )
+            .into_response(),
+        Err(_) => axum::http::StatusCode::NOT_FOUND.into_response(),
     }
 }

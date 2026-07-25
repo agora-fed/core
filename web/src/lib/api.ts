@@ -2759,3 +2759,102 @@ export const getCampanhaPublica = (handle: string) =>
   apiGetCredentialed<CampanhaPublicaDto>(
     `/api/v1/campanha/${encodeURIComponent(handle)}`,
   );
+
+// ---------------------------------------------------------------------------
+// Fóruns institucionais (/f/<caminho>, crate dsoc-forums, 0540)
+// ---------------------------------------------------------------------------
+
+/** Um fórum da malha institucional. */
+export interface ForumDto {
+  id: string;
+  full_path: string;
+  slug: string;
+  name: string;
+  description: string;
+  kind: 'institucional' | 'governanca' | 'comunitario';
+  esfera: 'federal' | 'estadual' | 'municipal' | null;
+  uf: string | null;
+  municipio: string | null;
+  has_contact_email: boolean;
+  thresholds: number[];
+}
+
+/** Filho na árvore — real ou seção padrão ainda não materializada. */
+export interface ForumChildDto {
+  slug: string;
+  full_path: string;
+  name: string;
+  virtual_section: boolean;
+}
+
+export interface ForumTreeDto {
+  forum: ForumDto | null;
+  children: ForumChildDto[];
+}
+
+/** Tópico de fórum: interações contáveis × federadas. */
+export interface ForumTopicDto {
+  id: string;
+  forum_id: string;
+  title: string;
+  body: string;
+  author_public_handle: string;
+  interactions: number;
+  federated_interactions: number;
+  score: number;
+  comment_count: number;
+  created_at: string;
+}
+
+export interface ForumTopicListDto {
+  forum: ForumDto;
+  topics: ForumTopicDto[];
+}
+
+export interface ForumCommentItemDto {
+  id: string;
+  author: string;
+  federated: boolean;
+  body: string;
+  created_at: string;
+}
+
+/** Recibo público do envio institucional por patamar. */
+export interface ForumDispatchDto {
+  threshold: number;
+  sent_at: string | null;
+  crossed_at: string;
+}
+
+export interface ForumTopicDetailDto {
+  topic: ForumTopicDto;
+  comments: ForumCommentItemDto[];
+  dispatches: ForumDispatchDto[];
+}
+
+export const getForumTree = (path?: string) =>
+  apiGet<ForumTreeDto>(
+    `/api/v1/f/tree${path ? `?path=${encodeURIComponent(path)}` : ''}`,
+  );
+
+export const getForumTopics = (path: string, sort: 'hot' | 'new' = 'hot') =>
+  apiGet<ForumTopicListDto>(
+    `/api/v1/f/topics?path=${encodeURIComponent(path)}&sort=${sort}`,
+  );
+
+export const getForumTopic = (id: string) =>
+  apiGet<ForumTopicDetailDto>(`/api/v1/f/topics/${encodeURIComponent(id)}`);
+
+export const createForumTopic = (path: string, title: string, body: string) =>
+  apiPost<ForumTopicDto>('/api/v1/f/topics', { path, title, body });
+
+export const voteForumTopic = (id: string, value: 1 | -1) =>
+  apiPost<ForumTopicDto>(`/api/v1/f/topics/${encodeURIComponent(id)}/vote`, {
+    value,
+  });
+
+export const commentForumTopic = (id: string, body: string) =>
+  apiPost<ForumTopicDto>(
+    `/api/v1/f/topics/${encodeURIComponent(id)}/comments`,
+    { body },
+  );

@@ -1,0 +1,19 @@
+---
+// Fóruns institucionais — página ÚNICA que atende /f/* inteiro: o gateway
+// serve este f/index.html pra qualquer caminho /f/... (SPA-fallback) e a ilha
+// roteia client-side (home | fórum | tópico). Assim fóruns materializados em
+// runtime e tópicos novos nunca caem no 404 de build do SSG.
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import ForumsApp from '../../components/islands/ForumsApp.svelte';
+
+const description =
+  'Fóruns institucionais: debata com a sociedade e leve o resultado ao Senado, à Câmara, aos ministérios, estados e municípios — com recibo público.';
+---
+
+<BaseLayout title="Fóruns" {description}>
+  <section class="section">
+    <div class="container">
+      <ForumsApp client:load />
+    </div>
+  </section>
+</BaseLayout>
