@@ -1,6 +1,6 @@
 <script lang="ts">
   // /convites — cria e lista convites do próprio cidadão. Link pra
-  // compartilhar é montado no cliente (`/convite?token=…`), com botão
+  // compartilhar é montado no cliente (`/cadastrar?convite=…`), com botão
   // Copiar. Sem paginação (limit=200 no backend basta pro escopo).
   import { onMount } from 'svelte';
   import {
@@ -42,8 +42,11 @@
   onMount(reload);
 
   function inviteLink(token: string): string {
-    if (typeof window === 'undefined') return `/convite?token=${token}`;
-    return `${window.location.origin}/convite?token=${token}`;
+    // Aponta pro cadastro de cidadão (`/cadastrar?convite=…`), NÃO pro fluxo de
+    // mandato (`/convite`). O RegisterForm guarda o token e o ConfirmSignupForm
+    // credita o referral (associateInvitation) quando a conta é ativada.
+    if (typeof window === 'undefined') return `/cadastrar?convite=${token}`;
+    return `${window.location.origin}/cadastrar?convite=${token}`;
   }
 
   async function onCreate(e: SubmitEvent) {

@@ -7,12 +7,14 @@
   //
   // 0.17.0: form fields now use ui/Input, ui/Button, ui/Alert, ui/Avatar,
   // ui/Icon. Role picker and mandate picker keep custom layouts but use tokens.
+  import { onMount } from 'svelte';
   import {
     register,
     registerPolitician,
     registerCandidate,
     registerResend,
     getAllMandates,
+    previewInvitation,
     DEFAULT_ORG_ID,
     type MandateDto,
   } from '../../lib/api';
@@ -37,6 +39,31 @@
   // e-mail" nesse caso, ao invés de já redirecionar pra /bem-vinda.
   let verificationSentTo = $state<string | null>(null);
   let resendState = $state<'idle' | 'busy' | 'sent'>('idle');
+
+  // Convite de referral (feature /convites). O link é `/cadastrar?convite=TOKEN`.
+  // Guardamos o token em localStorage; o ConfirmSignupForm o consome
+  // (associateInvitation) depois que a conta é ativada e a sessão nasce.
+  let inviterName = $state<string | null>(null);
+  onMount(async () => {
+    let token = '';
+    try {
+      token = new URLSearchParams(window.location.search).get('convite') ?? '';
+    } catch {
+      /* SSR safety net */
+    }
+    if (!token) return;
+    try {
+      localStorage.setItem('dsoc_invitation', token);
+    } catch {
+      /* storage bloqueado — segue sem crédito de referral */
+    }
+    const res = await previewInvitation(token);
+    if (res.ok && res.data?.valid) {
+      inviterName =
+        res.data.invited_by_display_name ??
+        (res.data.invited_by_handle ? `@${res.data.invited_by_handle}` : null);
+    }
+  });
 
   async function resendLink() {
     if (!verificationSentTo || resendState === 'busy') return;
@@ -224,6 +251,11 @@
     </div>
   </section>
 {:else}
+{#if inviterName}
+  <div class="invited-by" role="status">
+    <strong>{inviterName}</strong> te convidou pra DemocraciaBR. Crie sua conta abaixo.
+  </div>
+{/if}
 <section class="rules" aria-label="Regras da conta">
   <h2>Antes de criar sua conta</h2>
   <ul>
@@ -543,6 +575,14 @@
     gap: var(--sp-2);
     justify-content: center;
     flex-wrap: wrap;
+  }
+  .invited-by {
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    border-radius: var(--r-base);
+    padding: var(--sp-3) var(--sp-4);
+    margin-bottom: var(--sp-4);
+    font-size: var(--fs-sm);
   }
   .rules {
     background: var(--surface-2);

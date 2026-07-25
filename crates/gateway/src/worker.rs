@@ -429,6 +429,19 @@ pub fn spawn(state: AppState) {
     // 1 tick por hora — barato, indexed. Não bloqueia outros loops.
     tokio::spawn(auto_delete_notes_loop(state.clone()));
 
+    // Retry de entrega de proposta: reenvia os e-mails (autor/gabinete) que NÃO
+    // saíram porque o SMTP falhou na 1ª tentativa — o envio é fire-and-forget e o
+    // cursor do evento avança mesmo em falha, então sem isto o e-mail some. Idempotente
+    // (só reenvia o lado com notified_*_at NULL). Reusa a cadência do sweep de SLA.
+    tokio::spawn(proposal_delivery_retry_loop(
+        crate::proposal_delivery::ProposalDeliverySub {
+            db: state.db.clone(),
+            public_origin: std::env::var("PUBLIC_ORIGIN")
+                .unwrap_or_else(|_| "https://democracia.social.br".to_owned()),
+        },
+        sweep_ms,
+    ));
+
     // 0.28.4 (fatia 2a): re-embeda o backlog da era do stub FNV — rows de
     // consensus_embedding sem text_sample ganham vetor real + assinatura de
     // direção + amostra NLI, e o centroide do cluster é recomputado. Some
@@ -654,6 +667,20 @@ async fn auto_delete_notes_loop(state: AppState) {
 
 /// Loop de cleanup do `auth_pending_signup` + `auth_login_attempt`. Faz
 /// dois DELETEs por tick (barato, indexed); nunca falha o processo.
+/// Reenvia a entrega de propostas cujo e-mail não confirmou (`notified_*_at` NULL).
+/// Ver [`crate::proposal_delivery::ProposalDeliverySub::sweep_undelivered`].
+async fn proposal_delivery_retry_loop(
+    sub: crate::proposal_delivery::ProposalDeliverySub,
+    period_ms: u64,
+) {
+    let mut ticker = interval(Duration::from_millis(period_ms));
+    ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    loop {
+        ticker.tick().await;
+        sub.sweep_undelivered().await;
+    }
+}
+
 async fn signup_cleanup_loop(state: AppState, period_ms: u64, cutoff_days: i64) {
     let mut ticker = interval(Duration::from_millis(period_ms));
     ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);

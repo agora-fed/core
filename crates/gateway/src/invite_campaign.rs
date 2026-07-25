@@ -133,7 +133,8 @@ async fn overview(
             count(*) FILTER (WHERE has_email AND NOT bound AND NOT pending AND NOT accepted)
           FROM (
             SELECT
-              m.public_email IS NOT NULL AND position('@' in COALESCE(m.public_email,'')) > 1 AS has_email,
+              m.public_email IS NOT NULL AND position('@' in COALESCE(m.public_email,'')) > 1
+                AND m.public_email NOT ILIKE '%@parlamento.democracia.social.br' AS has_email,
               EXISTS (SELECT 1 FROM mandate_identity_binding b WHERE b.mandate_id = m.id) AS bound,
               EXISTS (SELECT 1 FROM mandate_invite i WHERE i.mandate_id = m.id
                         AND i.accepted_at IS NULL AND i.revoked_at IS NULL
@@ -225,6 +226,7 @@ async fn send_batch(
            WHERE {FILTER_SQL}
              AND m.public_email IS NOT NULL
              AND position('@' in m.public_email) > 1
+             AND m.public_email NOT ILIKE '%@parlamento.democracia.social.br'
              AND NOT EXISTS (SELECT 1 FROM mandate_identity_binding b
                               WHERE b.mandate_id = m.id)
              AND NOT EXISTS (SELECT 1 FROM mandate_invite i

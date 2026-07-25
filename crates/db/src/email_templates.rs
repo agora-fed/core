@@ -100,18 +100,38 @@ fn body_to_html(text: &str) -> String {
         if i > 0 {
             out.push_str("<br>\n");
         }
-        let mut rest = line;
-        while let Some(pos) = match (rest.find("http://"), rest.find("https://")) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        } {
-            // http:// nunca aparece nos nossos e-mails, mas o caçador cobre.
-            let (before, url_and_rest) = rest.split_at(pos);
-            out.push_str(&esc(before));
-            let end = url_and_rest
-                .find(|c: char| c.is_whitespace())
-                .unwrap_or(url_and_rest.len());
-            let (mut url, tail) = url_and_rest.split_at(end);
+        render_inline(line, &mut out);
+    }
+    out
+}
+
+/// Renderiza uma linha: escapa o texto, transforma `[rótulo](url)` em link com o
+/// rótulo visível (nome-vira-link) e URLs http(s) nuas em link com a própria URL.
+fn render_inline(line: &str, out: &mut String) {
+    let bytes = line.as_bytes();
+    let mut i = 0;
+    let mut plain_start = 0;
+    while i < line.len() {
+        // 1) Link markdown [rótulo](url)
+        if bytes[i] == b'[' {
+            if let Some((label, url, consumed)) = parse_md_link(&line[i..]) {
+                out.push_str(&esc(&line[plain_start..i]));
+                out.push_str(&format!(
+                    "<a href=\"{}\" style=\"color:#15803d;font-weight:600;\">{}</a>",
+                    esc(url),
+                    esc(label)
+                ));
+                i += consumed;
+                plain_start = i;
+                continue;
+            }
+        }
+        // 2) URL nua http(s):// — o link mostra a própria URL.
+        let tail = &line[i..];
+        if tail.starts_with("http://") || tail.starts_with("https://") {
+            out.push_str(&esc(&line[plain_start..i]));
+            let end = tail.find(|c: char| c.is_whitespace()).unwrap_or(tail.len());
+            let mut url = &tail[..end];
             while let Some(last) = url.chars().last() {
                 if matches!(last, '.' | ',' | ';' | ':' | '!' | '?' | ')') {
                     url = &url[..url.len() - last.len_utf8()];
@@ -119,16 +139,56 @@ fn body_to_html(text: &str) -> String {
                     break;
                 }
             }
-            let trimmed_tail = &url_and_rest[url.len()..end];
             out.push_str(&format!(
                 "<a href=\"{0}\" style=\"color:#15803d;font-weight:600;\">{0}</a>",
                 esc(url)
             ));
-            out.push_str(&esc(trimmed_tail));
-            rest = tail;
+            i += url.len();
+            plain_start = i;
+            continue;
         }
-        out.push_str(&esc(rest));
+        // Avança um char UTF-8.
+        i += tail.chars().next().map_or(1, char::len_utf8);
     }
+    out.push_str(&esc(&line[plain_start..]));
+}
+
+/// `[rótulo](http…url)` → `(rótulo, url, bytes_consumidos)`. `None` se malformado
+/// ou se a URL não for http(s) — assim `[x](foo)` fica literal (retrocompatível).
+fn parse_md_link(s: &str) -> Option<(&str, &str, usize)> {
+    let close = s.find("](")?;
+    let label = &s[1..close];
+    if label.is_empty() || label.contains('[') || label.contains(']') {
+        return None;
+    }
+    let after = &s[close + 2..];
+    let end_paren = after.find(')')?;
+    let url = &after[..end_paren];
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return None;
+    }
+    Some((label, url, close + 2 + end_paren + 1))
+}
+
+/// Versão texto-puro do corpo: `[rótulo](url)` → `rótulo (url)`; o resto intacto.
+/// Usada no part `text/plain` do multipart, pra não vazar sintaxe markdown crua.
+pub fn body_to_plain(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(pos) = rest.find('[') {
+        if let Some((label, url, consumed)) = parse_md_link(&rest[pos..]) {
+            out.push_str(&rest[..pos]);
+            out.push_str(label);
+            out.push_str(" (");
+            out.push_str(url);
+            out.push(')');
+            rest = &rest[pos + consumed..];
+        } else {
+            out.push_str(&rest[..=pos]);
+            rest = &rest[pos + 1..];
+        }
+    }
+    out.push_str(rest);
     out
 }
 
@@ -189,6 +249,29 @@ mod tests {
         let html = body_to_html("Link:\nhttps://x.dev/a?b=c\ntchau");
         assert!(html.contains("<a href=\"https://x.dev/a?b=c\""));
         assert!(html.ends_with("tchau"));
+    }
+
+    #[test]
+    fn body_to_html_markdown_link_name_becomes_anchor() {
+        // O nome vira link; o texto ao redor (inclusive parênteses e "(a)") fica intacto.
+        let html = body_to_html(
+            "Perfil: [Enfermeira Nelci](https://democracia.social.br/politicos/?id=abc) (PDT/SP — Vereador(a)).",
+        );
+        assert!(html.contains(
+            "<a href=\"https://democracia.social.br/politicos/?id=abc\" style=\"color:#15803d;font-weight:600;\">Enfermeira Nelci</a>"
+        ));
+        assert!(html.contains("(PDT/SP — Vereador(a))."));
+        // Rótulo com < é escapado.
+        let evil = body_to_html("[<b>x</b>](https://a.b)");
+        assert!(evil.contains(">&lt;b&gt;x&lt;/b&gt;</a>"));
+    }
+
+    #[test]
+    fn body_to_plain_unwraps_markdown_links() {
+        assert_eq!(
+            body_to_plain("Oi [Nelci](https://a.b/c) tudo bem [x](nao-url)?"),
+            "Oi Nelci (https://a.b/c) tudo bem [x](nao-url)?"
+        );
     }
 
     #[test]

@@ -164,6 +164,47 @@ async fn anonymous_cannot_export_lgpd_data() {
 }
 
 #[tokio::test]
+async fn anonymous_cannot_whoami() {
+    let (app, _) = app().await;
+    let resp = app.oneshot(get("/api/v1/me/whoami")).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// `GET /me/whoami` (mobile): um cidadão comum logado retorna civic_type=cidadao,
+/// sem papel de admin/partido e sem mandato. Verifica a composição consolidada.
+#[tokio::test]
+async fn whoami_for_plain_citizen_is_cidadao() {
+    let (app, st) = app().await;
+    let (_org, _citizen, cookie) = seed_session(&st.db).await;
+    let resp = app
+        .oneshot(get_with_cookie("/api/v1/me/whoami", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let v = body_json(resp).await;
+    assert_eq!(v["data"]["civic_type"], "cidadao");
+    assert_eq!(v["data"]["is_admin"], false);
+    assert_eq!(v["data"]["verification_level"], "email");
+    assert!(v["data"]["mandate"].is_null());
+    assert!(v["data"]["platform_role"].is_null());
+}
+
+/// Admin logado: whoami reflete platform_role=owner/admin e is_admin=true.
+#[tokio::test]
+async fn whoami_flags_admin() {
+    let (app, st) = app().await;
+    let (org, citizen, cookie) = seed_session(&st.db).await;
+    grant_admin(&st.db, org, citizen).await;
+    let resp = app
+        .oneshot(get_with_cookie("/api/v1/me/whoami", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let v = body_json(resp).await;
+    assert_eq!(v["data"]["is_admin"], true);
+}
+
+#[tokio::test]
 async fn forged_session_cookie_is_anonymous() {
     // A syntactically valid but unknown session id must not resolve to anyone.
     let (app, _) = app().await;

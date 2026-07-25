@@ -11,6 +11,7 @@
 // complexity lint is accepted crate-wide here (domain crates keep it denied).
 #![allow(clippy::type_complexity)]
 
+pub mod whoami;
 pub mod admin_content;
 pub mod admin_ext;
 pub mod admin_reports;
@@ -150,6 +151,7 @@ pub fn api_router(state: AppState) -> Router {
     let api = Router::new()
         // platform
         .merge(dsoc_auth::routes(state.clone()))
+        .merge(whoami::routes(state.clone()))
         .merge(dsoc_notify::routes(state.clone()))
         .merge(dsoc_events::routes(state.clone()))
         .merge(dsoc_consensus::routes(state.clone()))

@@ -216,7 +216,8 @@ impl MandateInviteService {
             mandate_id = %mandate_id,
             "mandate-invite dispatched"
         );
-        self.deliver_email(&email, &accept_url, &summary).await;
+        self.deliver_email(&email, &accept_url, mandate_id, &summary)
+            .await;
 
         Ok(SentInvite { id, expires_at })
     }
@@ -432,7 +433,13 @@ impl MandateInviteService {
         Ok(())
     }
 
-    async fn deliver_email(&self, to: &str, accept_url: &str, summary: &MandateSummary) {
+    async fn deliver_email(
+        &self,
+        to: &str,
+        accept_url: &str,
+        mandate_id: Uuid,
+        summary: &MandateSummary,
+    ) {
         let Some(smtp) = &self.smtp else {
             tracing::info!(
                 target: "auth::mandate_invite",
@@ -450,19 +457,28 @@ impl MandateInviteService {
         );
         // Template editável pelo admin (0.32.0, key `mandate_invite`);
         // fallback = versão curta do texto original.
+        // Nomes do TSE vêm em CAIXA ALTA; suavizamos pra Title Case no e-mail.
+        let display_name = title_case(&summary.display_name);
+        // Idem pro município no cargo ("Vereador(a) — SÃO PAULO/SP" -> "… São Paulo/SP"),
+        // mantendo a sigla da UF em maiúscula.
+        let office = format_office(&summary.office);
+        // Página pública do mandato — o template usa `[{{mandate_name}}]({{profile_url}})`
+        // pra o nome virar link (renderizado por `body_to_html`).
+        let profile_url = format!("{}/politicos/?id={}", self.public_web_base, mandate_id);
         let mut ctx: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
-        ctx.insert("mandate_name", summary.display_name.clone());
+        ctx.insert("mandate_name", display_name.clone());
         ctx.insert("party_uf", party_uf.clone());
-        ctx.insert("office", summary.office.clone());
+        ctx.insert("office", office.clone());
         ctx.insert("hours", hours.to_string());
         ctx.insert("accept_url", accept_url.to_owned());
+        ctx.insert("profile_url", profile_url);
         let (subject, body) = dsoc_db::email_templates::render(&self.db, "mandate_invite", &ctx)
             .await
             .unwrap_or_else(|| {
                 (
                     format!(
                         "DemocraciaBR — convite para assumir o mandato de {}",
-                        summary.display_name
+                        display_name
                     ),
                     format!(
                         "Olá,\n\n\
@@ -472,9 +488,9 @@ impl MandateInviteService {
                          {accept_url}\n\n\
                          Se você não reconhece este convite, ignore este e-mail.\n\n\
                          — DemocraciaBR",
-                        name = summary.display_name,
+                        name = display_name,
                         party_uf = party_uf,
-                        office = summary.office,
+                        office = office,
                         hours = hours,
                         accept_url = accept_url,
                     ),
@@ -596,11 +612,47 @@ async fn send_email(
         .subject(subject)
         // 0.32.1: texto puro como fallback + HTML com a marca (html_wrap).
         .multipart(lettre::message::MultiPart::alternative_plain_html(
-            body.to_owned(),
+            dsoc_db::email_templates::body_to_plain(body),
             dsoc_db::email_templates::html_wrap(body),
         ))?;
     mailer.send(email).await?;
     Ok(())
+}
+
+/// Nomes do TSE vêm em CAIXA ALTA. Converte pra Title Case mantendo conectores
+/// ("de", "da", "dos"…) minúsculos quando não são a primeira palavra.
+fn title_case(name: &str) -> String {
+    const LOWER: &[&str] = &[
+        "de", "da", "do", "das", "dos", "e", "di", "du", "van", "von",
+    ];
+    name.split_whitespace()
+        .enumerate()
+        .map(|(i, w)| {
+            let lw = w.to_lowercase();
+            if i > 0 && LOWER.contains(&lw.as_str()) {
+                lw
+            } else {
+                let mut chars = lw.chars();
+                match chars.next() {
+                    Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                    None => String::new(),
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// "Vereador(a) — SÃO PAULO/SP" -> "Vereador(a) — São Paulo/SP" (município em Title
+/// Case, sigla da UF preservada). Cargos sem município ("Deputado(a) Estadual — MA")
+/// ficam intactos.
+fn format_office(office: &str) -> String {
+    if let Some((cargo, loc)) = office.split_once(" — ") {
+        if let Some((mun, uf)) = loc.rsplit_once('/') {
+            return format!("{} — {}/{}", cargo, title_case(mun), uf);
+        }
+    }
+    office.to_owned()
 }
 
 fn generate_token() -> String {
@@ -666,6 +718,26 @@ mod tests {
         assert_eq!(sha256("abc"), sha256("abc"));
         assert_ne!(sha256("abc"), sha256("abd"));
         assert_eq!(sha256("").len(), 32);
+    }
+
+    #[test]
+    fn title_case_softens_tse_caps() {
+        assert_eq!(title_case("ENFERMEIRA NELCI"), "Enfermeira Nelci");
+        assert_eq!(title_case("SANTANA DE PARNAÍBA"), "Santana de Parnaíba");
+        assert_eq!(title_case("FLORÊNCIO NETO"), "Florêncio Neto");
+    }
+
+    #[test]
+    fn format_office_titlecases_only_the_municipio() {
+        assert_eq!(
+            format_office("Vereador(a) — SÃO PAULO/SP"),
+            "Vereador(a) — São Paulo/SP"
+        );
+        // Sem município (estadual/federal) fica intacto.
+        assert_eq!(
+            format_office("Deputado(a) Estadual — MA"),
+            "Deputado(a) Estadual — MA"
+        );
     }
 
     #[test]

@@ -21,7 +21,15 @@
   let loading = $state(true);
   let loadError = $state<string | null>(null);
 
-  // Filtros do lote. Esfera federal por padrão — a campanha da janela.
+  // Filtros do lote. Default 'estadual': federal já foi 100% convidado; estadual
+  // é o conjunto com e-mail real ainda por convidar. 'todas' varre tudo.
+  const SPHERES = [
+    { v: 'estadual', label: 'Estadual (dep. estaduais)' },
+    { v: 'federal', label: 'Federal (câmara/senado)' },
+    { v: 'municipal', label: 'Municipal (vereadores)' },
+    { v: 'todas', label: 'Todas as esferas' },
+  ];
+  let sphere = $state('estadual');
   let uf = $state('');
   let party = $state('');
   let batchSize = $state(20);
@@ -36,10 +44,13 @@
   let rowsLoading = $state(false);
 
   const filter = () => ({
-    sphere: 'federal',
+    sphere,
     uf: uf.trim() || undefined,
     party: party.trim() || undefined,
   });
+
+  const sphereLabel = () =>
+    SPHERES.find((s) => s.v === sphere)?.label ?? sphere;
 
   async function refreshOverview() {
     loading = true;
@@ -66,6 +77,7 @@
     if (
       !confirm(
         `Enviar convites REAIS para os próximos ${n} gabinetes elegíveis` +
+          ` — ${sphereLabel()}` +
           `${uf.trim() ? ` (UF ${uf.trim().toUpperCase()})` : ''}` +
           `${party.trim() ? ` (${party.trim().toUpperCase()})` : ''}?`,
       )
@@ -111,7 +123,7 @@
 </script>
 
 <Card>
-  <h2>Funil — parlamentares federais</h2>
+  <h2>Funil — {sphereLabel()}</h2>
   {#if loading}
     <Skeleton width="60%" />
   {:else if loadError}
@@ -152,6 +164,12 @@
     <code>mandate_invite</code> (editável em Templates de e-mail).
   </p>
   <div class="batch-form">
+    <label>
+      <span>Esfera</span>
+      <select class="input" bind:value={sphere} onchange={refreshOverview}>
+        {#each SPHERES as s (s.v)}<option value={s.v}>{s.label}</option>{/each}
+      </select>
+    </label>
     <label>
       <span>UF (opcional)</span>
       <input class="input" maxlength="2" placeholder="ex.: SP" bind:value={uf} />
