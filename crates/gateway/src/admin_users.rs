@@ -412,7 +412,10 @@ fn notify_role_bg(db: &PgPool, citizen_id: Uuid, notice: RoleNotice) {
                 vars.insert("party", sigla.clone());
                 vars.insert(
                     "party_url",
-                    format!("https://democracia.social.br/partidos/{}", sigla.to_lowercase()),
+                    format!(
+                        "https://democracia.social.br/partidos/{}",
+                        sigla.to_lowercase()
+                    ),
                 );
                 "role_party_admin"
             }
@@ -420,7 +423,10 @@ fn notify_role_bg(db: &PgPool, citizen_id: Uuid, notice: RoleNotice) {
                 vars.insert("party", sigla.clone());
                 vars.insert(
                     "party_url",
-                    format!("https://democracia.social.br/partidos/{}", sigla.to_lowercase()),
+                    format!(
+                        "https://democracia.social.br/partidos/{}",
+                        sigla.to_lowercase()
+                    ),
                 );
                 "role_party_moderador"
             }
@@ -431,7 +437,10 @@ fn notify_role_bg(db: &PgPool, citizen_id: Uuid, notice: RoleNotice) {
                     _ => "administrador(a)",
                 };
                 vars.insert("role_label", label.to_string());
-                vars.insert("admin_url", "https://democracia.social.br/admin".to_string());
+                vars.insert(
+                    "admin_url",
+                    "https://democracia.social.br/admin".to_string(),
+                );
                 "role_platform"
             }
         };
@@ -521,7 +530,11 @@ async fn set_platform_role(
             return storage_resp(err);
         }
         // Avisa a pessoa por e-mail (background, best-effort).
-        notify_role_bg(&state.db, citizen_id, RoleNotice::Platform(body.role.clone()));
+        notify_role_bg(
+            &state.db,
+            citizen_id,
+            RoleNotice::Platform(body.role.clone()),
+        );
     } else {
         return (
             StatusCode::BAD_REQUEST,

@@ -305,10 +305,18 @@ impl ScorecardService {
                 self.authz
                     .require(OrgId::from_uuid(org), actor, MIN_OFFICIAL_LEVEL)
                     .await?;
-                let id = queries::upsert_scorecard(&self.db, Uuid::now_v7(), org, mandate.as_uuid(), now)
+                let id = queries::upsert_scorecard(
+                    &self.db,
+                    Uuid::now_v7(),
+                    org,
+                    mandate.as_uuid(),
+                    now,
+                )
+                .await
+                .map_err(map_storage)?;
+                queries::get_scorecard(&self.db, id)
                     .await
-                    .map_err(map_storage)?;
-                queries::get_scorecard(&self.db, id).await.map_err(map_storage)?
+                    .map_err(map_storage)?
             }
         };
 

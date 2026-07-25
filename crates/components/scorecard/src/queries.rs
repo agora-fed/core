@@ -220,12 +220,9 @@ pub async fn get_scorecard_by_mandate(
 /// # Errors
 /// Propagates the underlying `sqlx::Error`.
 pub async fn get_mandate_org(db: &Db, mandate_id: Uuid) -> Result<Option<Uuid>, Error> {
-    let row = sqlx::query_scalar!(
-        r#"SELECT org_id FROM mandate WHERE id = $1"#,
-        mandate_id,
-    )
-    .fetch_optional(db)
-    .await?;
+    let row = sqlx::query_scalar!(r#"SELECT org_id FROM mandate WHERE id = $1"#, mandate_id,)
+        .fetch_optional(db)
+        .await?;
     Ok(row)
 }
 

@@ -42,7 +42,10 @@ pub fn routes(state: AppState) -> Router<()> {
         .route("/me/campaign-group/polls/{poll_id}/close", post(close_poll))
         .route("/campaign-groups/{id}", get(public_view))
         .route("/campaign-groups/{id}/join", post(join).delete(leave))
-        .route("/campaign-groups/{id}/polls/{poll_id}/respond", post(respond_poll))
+        .route(
+            "/campaign-groups/{id}/polls/{poll_id}/respond",
+            post(respond_poll),
+        )
         .with_state(state)
 }
 
@@ -58,11 +61,19 @@ fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
 }
 
 fn unauthorized() -> Response {
-    fail(StatusCode::UNAUTHORIZED, "unauthorized", "Autenticação necessária.")
+    fail(
+        StatusCode::UNAUTHORIZED,
+        "unauthorized",
+        "Autenticação necessária.",
+    )
 }
 
 fn storage_error() -> Response {
-    fail(StatusCode::INTERNAL_SERVER_ERROR, "storage_error", "Erro interno.")
+    fail(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "storage_error",
+        "Erro interno.",
+    )
 }
 
 /// O mandato do político logado (o vínculo mais recente). `None` = não é político.
@@ -190,7 +201,11 @@ async fn upsert_group(
     };
     let name = body.name.trim();
     if name.is_empty() || name.chars().count() > MAX_NAME {
-        return fail(StatusCode::BAD_REQUEST, "invalid_name", "Nome de 1 a 80 caracteres.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_name",
+            "Nome de 1 a 80 caracteres.",
+        );
     }
     let description = body
         .description
@@ -200,7 +215,11 @@ async fn upsert_group(
         .map(str::to_owned);
     if let Some(d) = &description {
         if d.chars().count() > MAX_DESCRICAO {
-            return fail(StatusCode::BAD_REQUEST, "invalid_description", "Descrição longa demais.");
+            return fail(
+                StatusCode::BAD_REQUEST,
+                "invalid_description",
+                "Descrição longa demais.",
+            );
         }
     }
 
@@ -221,9 +240,11 @@ async fn upsert_group(
     .await;
 
     match id {
-        Ok(id) => {
-            (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "id": id })))).into_response()
-        }
+        Ok(id) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(serde_json::json!({ "id": id }))),
+        )
+            .into_response(),
         Err(err) => {
             tracing::error!(?err, "campaign_group upsert: insert");
             storage_error()
@@ -319,7 +340,11 @@ async fn add_post(
     };
     let text = body.body.trim();
     if text.is_empty() || text.chars().count() > MAX_POST {
-        return fail(StatusCode::BAD_REQUEST, "invalid_post", "Post de 1 a 2000 caracteres.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_post",
+            "Post de 1 a 2000 caracteres.",
+        );
     }
     // Só o dono do grupo posta: acha o grupo pelo mandato do caller.
     let group_id: Option<Uuid> = match sqlx::query_scalar::<_, Uuid>(
@@ -483,7 +508,11 @@ async fn join(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<
     }
 }
 
-async fn leave(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<Uuid>) -> Response {
+async fn leave(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Response {
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized();
     };
@@ -560,7 +589,11 @@ async fn create_poll(
     };
     let question = body.question.trim();
     if question.is_empty() || question.chars().count() > MAX_QUESTION {
-        return fail(StatusCode::BAD_REQUEST, "invalid_question", "Pergunta de 1 a 300 caracteres.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_question",
+            "Pergunta de 1 a 300 caracteres.",
+        );
     }
     let group_id = match owner_group(&state.db, citizen).await {
         Ok(Some(g)) => g,
@@ -608,7 +641,11 @@ async fn close_poll(
     let group_id = match owner_group(&state.db, citizen).await {
         Ok(Some(g)) => g,
         Ok(None) => {
-            return fail(StatusCode::FORBIDDEN, "no_group", "Você não tem um grupo de campanha.")
+            return fail(
+                StatusCode::FORBIDDEN,
+                "no_group",
+                "Você não tem um grupo de campanha.",
+            )
         }
         Err(err) => {
             tracing::error!(?err, "campaign_group poll close: owner");
@@ -629,7 +666,11 @@ async fn close_poll(
             Json(ApiResponse::ok(serde_json::json!({ "status": "closed" }))),
         )
             .into_response(),
-        Ok(_) => fail(StatusCode::NOT_FOUND, "not_found", "Enquete aberta não encontrada."),
+        Ok(_) => fail(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "Enquete aberta não encontrada.",
+        ),
         Err(err) => {
             tracing::error!(?err, "campaign_group poll close");
             storage_error()
@@ -648,7 +689,11 @@ async fn respond_poll(
         return unauthorized();
     };
     if !ANSWERS.contains(&body.answer.as_str()) {
-        return fail(StatusCode::BAD_REQUEST, "invalid_answer", "Resposta inválida.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_answer",
+            "Resposta inválida.",
+        );
     }
     // A enquete existe, pertence ao grupo e está aberta?
     let status: Option<String> = match sqlx::query_scalar(
@@ -666,9 +711,21 @@ async fn respond_poll(
         }
     };
     match status.as_deref() {
-        None => return fail(StatusCode::NOT_FOUND, "not_found", "Enquete não encontrada."),
+        None => {
+            return fail(
+                StatusCode::NOT_FOUND,
+                "not_found",
+                "Enquete não encontrada.",
+            )
+        }
         Some("open") => {}
-        Some(_) => return fail(StatusCode::CONFLICT, "closed", "Esta enquete está encerrada."),
+        Some(_) => {
+            return fail(
+                StatusCode::CONFLICT,
+                "closed",
+                "Esta enquete está encerrada.",
+            )
+        }
     }
     let res = sqlx::query(
         r"INSERT INTO campaign_group_poll_response (poll_id, citizen_id, answer)
