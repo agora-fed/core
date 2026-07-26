@@ -16,6 +16,7 @@
     getForumTree,
     getRecentForumTopics,
     postNote,
+    voteForumComment,
     voteForumTopic,
     type ForumStance,
     type RecentForumTopicDto,
@@ -260,9 +261,31 @@
   ];
   function columnComments(stance: ForumStance): ForumCommentItemDto[] {
     if (!detail) return [];
-    return detail.comments.filter((c) =>
-      c.federated ? false : (c.stance ?? 'ponderacao') === stance,
-    );
+    // Estilo StackOverflow: dentro da coluna, o argumento mais votado sobe.
+    return detail.comments
+      .filter((c) => (c.federated ? false : (c.stance ?? 'ponderacao') === stance))
+      .toSorted((a, b) => b.favor - b.contra - (a.favor - a.contra) || (a.id < b.id ? -1 : 1));
+  }
+
+  async function voteArg(c: ForumCommentItemDto, stance: ForumStance) {
+    if (!detail || busy) return;
+    if (!isLogged()) {
+      formMsg = 'Entre na sua conta para votar num argumento.';
+      return;
+    }
+    busy = true;
+    const res = await voteForumComment(c.id, stance);
+    busy = false;
+    const data = res.success ? res.data : null;
+    if (data) {
+      detail = {
+        ...detail,
+        topic: data.topic,
+        comments: detail.comments.map((x) => (x.id === c.id ? data.comment : x)),
+      };
+    } else {
+      formMsg = res.error?.message ?? 'Não foi possível votar no argumento.';
+    }
   }
   let federatedComments = $derived(
     detail ? detail.comments.filter((c) => c.federated) : [],
@@ -664,6 +687,11 @@
                       {@html mdToHtml(c.body)}
                     </div>
                     <span class="muted small">{c.author} · {fmtDate(c.created_at)}</span>
+                    <div class="f-arg-votes" role="group" aria-label="Votar neste argumento">
+                      <button type="button" class="f-argv f-argv-favor" title="Concordo com este argumento" onclick={() => voteArg(c, 'favor')} disabled={busy}>▲ {c.favor}</button>
+                      <button type="button" class="f-argv f-argv-contra" title="Discordo deste argumento" onclick={() => voteArg(c, 'contra')} disabled={busy}>▼ {c.contra}</button>
+                      <button type="button" class="f-argv f-argv-ponde" title="Pondero este argumento" onclick={() => voteArg(c, 'ponderacao')} disabled={busy}>~ {c.ponderacao}</button>
+                    </div>
                   </div>
                 {/each}
               </div>
@@ -804,6 +832,14 @@
     padding: 0.6rem 0.8rem; margin-bottom: 0.6rem;
   }
   .f-arg .f-topic-text { margin: 0 0 0.4rem; }
+  .f-arg-votes { display: flex; gap: 0.4rem; margin-top: 0.45rem; }
+  .f-argv {
+    border: 1px solid var(--c-border, #ccc); background: none; color: inherit;
+    border-radius: 999px; padding: 0.1rem 0.6rem; cursor: pointer; font-size: 0.82rem;
+  }
+  .f-argv-favor:hover { border-color: #2a9d54; color: #2a9d54; }
+  .f-argv-contra:hover { border-color: #d64545; color: #d64545; }
+  .f-argv-ponde:hover { border-color: #8892a6; }
   .f-topic-body { flex: 1; min-width: 0; }
   .f-topic-text { white-space: pre-wrap; margin: 0.75rem 0 1rem; }
   .f-share { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.75rem 0; }

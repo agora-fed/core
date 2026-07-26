@@ -2793,6 +2793,9 @@ export interface ForumCommentItemDto {
   author: string;
   federated: boolean;
   stance: ForumStance | null;
+  favor: number;
+  contra: number;
+  ponderacao: number;
   body: string;
   created_at: string;
 }
@@ -2839,6 +2842,13 @@ export const commentForumTopic = (
   apiPost<ForumTopicDto>(
     `/api/v1/f/topics/${encodeURIComponent(id)}/comments`,
     { body, stance: stance ?? null },
+  );
+
+/** Voto num argumento (estilo StackOverflow) — devolve argumento + tópico atualizados. */
+export const voteForumComment = (id: string, stance: ForumStance) =>
+  apiPost<{ comment: ForumCommentItemDto; topic: ForumTopicDto }>(
+    `/api/v1/f/comments/${encodeURIComponent(id)}/vote`,
+    { stance },
   );
 
 /** Linha do painel admin de fóruns (F3). */

@@ -90,6 +90,12 @@ pub struct CommentRow {
     pub federated: bool,
     /// Posição declarada junto do argumento (NULL = sem posição / federado).
     pub stance: Option<String>,
+    /// Votos a favor DESTE argumento (0545).
+    pub favor_count: i64,
+    /// Votos contra.
+    pub contra_count: i64,
+    /// Ponderações.
+    pub ponderacao_count: i64,
     /// Corpo.
     pub body: String,
     /// Criação.
@@ -521,7 +527,8 @@ pub async fn insert_local_comment(
         r#"INSERT INTO forum_topic_comment
                (id, topic_id, author_id, federated, stance, body, created_at)
            VALUES ($1, $2, $3, false, $4, $5, $6)
-           RETURNING id, topic_id, author_id, remote_handle, federated, stance, body, created_at"#,
+           RETURNING id, topic_id, author_id, remote_handle, federated, stance,
+                     favor_count, contra_count, ponderacao_count, body, created_at"#,
         id,
         topic_id,
         author_id,
@@ -538,6 +545,9 @@ pub async fn insert_local_comment(
         remote_handle: r.remote_handle,
         federated: r.federated,
         stance: r.stance,
+        favor_count: r.favor_count,
+        contra_count: r.contra_count,
+        ponderacao_count: r.ponderacao_count,
         body: r.body,
         created_at: r.created_at,
     })
@@ -554,7 +564,8 @@ pub async fn list_comments(
     limit: i64,
 ) -> Result<Vec<CommentRow>, sqlx::Error> {
     let rows = sqlx::query!(
-        r#"SELECT id, topic_id, author_id, remote_handle, federated, stance, body, created_at
+        r#"SELECT id, topic_id, author_id, remote_handle, federated, stance,
+                  favor_count, contra_count, ponderacao_count, body, created_at
            FROM forum_topic_comment
            WHERE topic_id = $1 AND moderation = 'approved'
              AND ($2::uuid IS NULL OR id > $2)
@@ -575,15 +586,100 @@ pub async fn list_comments(
             remote_handle: r.remote_handle,
             federated: r.federated,
             stance: r.stance,
+            favor_count: r.favor_count,
+            contra_count: r.contra_count,
+            ponderacao_count: r.ponderacao_count,
             body: r.body,
             created_at: r.created_at,
         })
         .collect())
 }
 
+/// Busca um comentário aprovado (para votar num argumento).
+///
+/// # Errors
+/// Propaga o `sqlx::Error` (incluindo `RowNotFound`).
+pub async fn get_comment(
+    executor: impl sqlx::PgExecutor<'_>,
+    id: Uuid,
+) -> Result<CommentRow, sqlx::Error> {
+    let r = sqlx::query!(
+        r#"SELECT id, topic_id, author_id, remote_handle, federated, stance,
+                  favor_count, contra_count, ponderacao_count, body, created_at
+           FROM forum_topic_comment WHERE id = $1 AND moderation = 'approved'"#,
+        id,
+    )
+    .fetch_one(executor)
+    .await?;
+    Ok(CommentRow {
+        id: r.id,
+        topic_id: r.topic_id,
+        author_id: r.author_id,
+        remote_handle: r.remote_handle,
+        federated: r.federated,
+        stance: r.stance,
+        favor_count: r.favor_count,
+        contra_count: r.contra_count,
+        ponderacao_count: r.ponderacao_count,
+        body: r.body,
+        created_at: r.created_at,
+    })
+}
+
+/// Upsert da posição do cidadão num ARGUMENTO (0545) — uma por par, mutável.
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn upsert_comment_vote(
+    executor: impl sqlx::PgExecutor<'_>,
+    comment_id: Uuid,
+    citizen_id: Uuid,
+    stance: &str,
+    created_at: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"INSERT INTO forum_comment_vote (comment_id, citizen_id, stance, created_at)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (comment_id, citizen_id) DO UPDATE SET stance = EXCLUDED.stance"#,
+        comment_id,
+        citizen_id,
+        stance,
+        created_at,
+    )
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
+/// Recalcula os contadores de um ARGUMENTO a partir dos votos (0545).
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn refresh_comment_counters(
+    executor: impl sqlx::PgExecutor<'_>,
+    comment_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"UPDATE forum_topic_comment c SET
+             favor_count = v."favor!",
+             contra_count = v."contra!",
+             ponderacao_count = v."ponde!"
+           FROM (SELECT COUNT(*) FILTER (WHERE stance = 'favor') AS "favor!",
+                        COUNT(*) FILTER (WHERE stance = 'contra') AS "contra!",
+                        COUNT(*) FILTER (WHERE stance = 'ponderacao') AS "ponde!"
+                   FROM forum_comment_vote WHERE comment_id = $1) v
+           WHERE c.id = $1"#,
+        comment_id,
+    )
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
 /// Recalcula os contadores do tópico a partir das tabelas-fonte (sob o row lock):
 /// posições por stance, score = favor - contra; interações contáveis = votos +
-/// comentários locais aprovados; federadas = comentários federados aprovados.
+/// comentários locais aprovados + votos em argumentos (todos locais por FK);
+/// federadas = comentários federados aprovados.
 /// Retorna (interactions, federated).
 ///
 /// # Errors
@@ -599,7 +695,7 @@ pub async fn refresh_topic_counters(
              ponderacao_count = v."ponde!",
              score = v."favor!" - v."contra!",
              comment_count = c."local!" + c."fede!",
-             interaction_count = v."votes!" + c."local!",
+             interaction_count = v."votes!" + c."local!" + cv."cvotes!",
              federated_interaction_count = c."fede!"
            FROM
              (SELECT COUNT(*) FILTER (WHERE stance = 'favor') AS "favor!",
@@ -610,7 +706,11 @@ pub async fn refresh_topic_counters(
              (SELECT COUNT(*) FILTER (WHERE NOT federated) AS "local!",
                      COUNT(*) FILTER (WHERE federated) AS "fede!"
                 FROM forum_topic_comment
-               WHERE topic_id = $1 AND moderation = 'approved') c
+               WHERE topic_id = $1 AND moderation = 'approved') c,
+             (SELECT COUNT(*) AS "cvotes!"
+                FROM forum_comment_vote fcv
+                JOIN forum_topic_comment fc ON fc.id = fcv.comment_id
+               WHERE fc.topic_id = $1) cv
            WHERE t.id = $1
            RETURNING t.interaction_count, t.federated_interaction_count"#,
         topic_id,

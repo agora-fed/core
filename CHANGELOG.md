@@ -8,6 +8,12 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.57.0-votos-argumentos — votar no argumento, não só no tópico** (estilo
+  StackOverflow): às vezes o comentário vale mais que o tópico. Cada argumento
+  aceita a favor/contra/ponderação (uma posição por cidadão, mutável; local
+  por construção — migration `0545_forum_comment_votes`), mostra contadores
+  no card e sobe na coluna pelo saldo. Voto em argumento é interação contável
+  (entra nos patamares). `POST /f/comments/{id}/vote`.
 - **0.56.0-fusao-debates — DEBATE e FÓRUM viram uma coisa só** (issue #19):
   a dualidade acabou — a estrutura organizacional dos Fóruns fica, e o tópico
   de fórum adota o modelo funcional consolidado do Debate. (1) **Posições**:

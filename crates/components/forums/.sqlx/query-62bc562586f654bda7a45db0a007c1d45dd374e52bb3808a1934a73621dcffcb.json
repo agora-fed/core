@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, topic_id, author_id, remote_handle, federated, stance, body, created_at\n           FROM forum_topic_comment\n           WHERE topic_id = $1 AND moderation = 'approved'\n             AND ($2::uuid IS NULL OR id > $2)\n           ORDER BY id\n           LIMIT $3",
+  "query": "SELECT id, topic_id, author_id, remote_handle, federated, stance,\n                  favor_count, contra_count, ponderacao_count, body, created_at\n           FROM forum_topic_comment\n           WHERE topic_id = $1 AND moderation = 'approved'\n             AND ($2::uuid IS NULL OR id > $2)\n           ORDER BY id\n           LIMIT $3",
   "describe": {
     "columns": [
       {
@@ -35,11 +35,26 @@
       },
       {
         "ordinal": 6,
+        "name": "favor_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "contra_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "ponderacao_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
         "name": "body",
         "type_info": "Text"
       },
       {
-        "ordinal": 7,
+        "ordinal": 10,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
@@ -59,8 +74,11 @@
       false,
       true,
       false,
+      false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "7bac3e73d7b9a9303cbfb382c4262a27b5c36b88a5052c3c4a59572ca392113a"
+  "hash": "62bc562586f654bda7a45db0a007c1d45dd374e52bb3808a1934a73621dcffcb"
 }

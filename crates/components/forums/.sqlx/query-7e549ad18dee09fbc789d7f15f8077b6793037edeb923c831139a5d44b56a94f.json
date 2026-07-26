@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE forum_topic_comment c SET\n             favor_count = v.\"favor!\",\n             contra_count = v.\"contra!\",\n             ponderacao_count = v.\"ponde!\"\n           FROM (SELECT COUNT(*) FILTER (WHERE stance = 'favor') AS \"favor!\",\n                        COUNT(*) FILTER (WHERE stance = 'contra') AS \"contra!\",\n                        COUNT(*) FILTER (WHERE stance = 'ponderacao') AS \"ponde!\"\n                   FROM forum_comment_vote WHERE comment_id = $1) v\n           WHERE c.id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7e549ad18dee09fbc789d7f15f8077b6793037edeb923c831139a5d44b56a94f"
+}

@@ -329,6 +329,52 @@ impl ForumService {
         Ok(updated)
     }
 
+    /// Posição num ARGUMENTO (0545, estilo StackOverflow) — upsert; recalcula
+    /// os contadores do argumento e do tópico (voto em argumento é interação
+    /// contável) e dispara patamares pendentes.
+    ///
+    /// # Errors
+    /// [`Error::NotFound`]/[`Error::Storage`].
+    pub async fn vote_comment(
+        &self,
+        comment_id: Uuid,
+        citizen: CitizenId,
+        stance: Stance,
+    ) -> Result<(queries::CommentRow, TopicRow)> {
+        let now = self.clock.now();
+        let mut tx = self.db.begin().await.map_err(map_sqlx)?;
+        let comment = queries::get_comment(&mut *tx, comment_id)
+            .await
+            .map_err(|e| match e {
+                sqlx::Error::RowNotFound => Error::NotFound("argumento não encontrado".to_owned()),
+                other => map_sqlx(other),
+            })?;
+        let Some(topic) = queries::lock_topic(&mut *tx, comment.topic_id)
+            .await
+            .map_err(map_sqlx)?
+        else {
+            return Err(Error::NotFound("tópico não encontrado".to_owned()));
+        };
+        queries::upsert_comment_vote(
+            &mut *tx,
+            comment_id,
+            citizen.as_uuid(),
+            stance.as_str(),
+            now,
+        )
+        .await
+        .map_err(map_sqlx)?;
+        queries::refresh_comment_counters(&mut *tx, comment_id)
+            .await
+            .map_err(map_sqlx)?;
+        let updated_topic = Self::after_interaction(&mut tx, &topic, now).await?;
+        let updated_comment = queries::get_comment(&mut *tx, comment_id)
+            .await
+            .map_err(map_sqlx)?;
+        tx.commit().await.map_err(map_sqlx)?;
+        Ok((updated_comment, updated_topic))
+    }
+
     /// Pós-interação (sob o row lock): recontagem + patamares. O índice de patamar
     /// só avança quando o recibo é criado — fórum SEM e-mail curado fica pendente
     /// e dispara retroativamente quando a curadoria preencher o e-mail.

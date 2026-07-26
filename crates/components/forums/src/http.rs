@@ -117,6 +117,12 @@ pub struct ForumCommentDto {
     pub federated: bool,
     /// Posição declarada com o argumento (`favor`|`contra`|`ponderacao`|null).
     pub stance: Option<String>,
+    /// Votos a favor deste argumento (0545).
+    pub favor: i64,
+    /// Votos contra.
+    pub contra: i64,
+    /// Ponderações.
+    pub ponderacao: i64,
     /// Corpo.
     pub body: String,
     /// Criação.
@@ -251,6 +257,9 @@ fn comment_dto(r: CommentRow) -> ForumCommentDto {
         author,
         federated: r.federated,
         stance: r.stance,
+        favor: r.favor_count,
+        contra: r.contra_count,
+        ponderacao: r.ponderacao_count,
         body: r.body,
         created_at: r.created_at,
     }
@@ -282,6 +291,7 @@ pub fn routes(state: dsoc_app::AppState) -> Router<()> {
         .route("/f/topics/{id}", get(get_topic))
         .route("/f/topics/{id}/vote", post(vote))
         .route("/f/topics/{id}/comments", post(comment))
+        .route("/f/comments/{id}/vote", post(vote_comment))
         .with_state(state)
 }
 
@@ -484,6 +494,47 @@ async fn comment(
     match svc.comment(id, caller.citizen, &req.body, stance).await {
         Ok(row) => (StatusCode::CREATED, Json(ApiResponse::ok(topic_dto(row)))).into_response(),
         Err(e) => error_response::<TopicDto>(&e),
+    }
+}
+
+/// Resposta do voto num argumento: o argumento e o tópico atualizados.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct CommentVoteDto {
+    /// O argumento com contadores novos.
+    pub comment: ForumCommentDto,
+    /// O tópico com contadores/interações novos.
+    pub topic: TopicDto,
+}
+
+/// `POST /f/comments/{id}/vote` — posição num argumento (estilo StackOverflow;
+/// upsert; SÓ cidadão local, por construção).
+async fn vote_comment(
+    State(state): State<dsoc_app::AppState>,
+    caller: dsoc_app::CallerId,
+    Path(id): Path<Uuid>,
+    Json(req): Json<VoteRequest>,
+) -> Response {
+    if let Err(e) = state
+        .authz
+        .require(caller.org, caller.citizen, VerificationLevel::Email)
+        .await
+    {
+        return error_response::<CommentVoteDto>(&e);
+    }
+    let stance = match req.stance() {
+        Ok(s) => s,
+        Err(e) => return error_response::<CommentVoteDto>(&e),
+    };
+    let svc = ForumService::from_state(&state);
+    match svc.vote_comment(id, caller.citizen, stance).await {
+        Ok((comment, topic)) => {
+            let dto = CommentVoteDto {
+                comment: comment_dto(comment),
+                topic: topic_dto(topic),
+            };
+            (StatusCode::OK, Json(ApiResponse::ok(dto))).into_response()
+        }
+        Err(e) => error_response::<CommentVoteDto>(&e),
     }
 }
 
