@@ -143,6 +143,9 @@ struct RoleBody {
 }
 
 /// Valida chaves contra o catálogo (não deixa gravar chave inexistente) e normaliza.
+// Fn síncrona (as `async fn` deste módulo escapam do lint por retornarem Future);
+// o Err carrega uma Response pronta pro handler — boxar só pioraria os call sites.
+#[allow(clippy::result_large_err)]
 fn validate_permissions(input: &[String]) -> Result<Vec<String>, Response> {
     let catalog: std::collections::BTreeSet<String> = crate::module_catalog::permission_catalog()
         .into_iter()

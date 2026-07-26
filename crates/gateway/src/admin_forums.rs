@@ -395,6 +395,11 @@ async fn topic_remove(
     let Some(forum_id) = forum_id else {
         return fail(StatusCode::NOT_FOUND, "not_found", "Tópico não encontrado.");
     };
+    // Se a org desligou o módulo de fóruns, a rota "não existe" (R0.5).
+    if let Err(r) = crate::module_gate::require_module(&state, caller.org.as_uuid(), "forums").await
+    {
+        return r;
+    }
     if !can_moderate_forum(&state, caller, forum_id).await {
         return fail(
             StatusCode::FORBIDDEN,
@@ -455,6 +460,10 @@ async fn comment_remove(
             "Argumento não encontrado.",
         );
     };
+    if let Err(r) = crate::module_gate::require_module(&state, caller.org.as_uuid(), "forums").await
+    {
+        return r;
+    }
     if !can_moderate_forum(&state, caller, forum_id).await {
         return fail(
             StatusCode::FORBIDDEN,

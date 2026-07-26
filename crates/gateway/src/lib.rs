@@ -46,6 +46,7 @@ pub mod mastodon_dto;
 pub mod mastodon_oauth;
 pub mod me_settings;
 pub mod module_catalog;
+pub mod module_gate;
 pub mod note_media;
 pub mod notification_receipts;
 pub mod notifications;
@@ -165,6 +166,7 @@ pub fn api_router(state: AppState) -> Router {
         .merge(dsoc_admin::routes(state.clone()))
         .merge(crate::authz_ext::routes(state.clone()))
         .merge(crate::admin_roles::routes(state.clone()))
+        .merge(crate::module_gate::routes(state.clone()))
         .merge(admin_ext::routes(state.clone()))
         // Super-admin: editar/ocultar/apagar mandato, proposta, partido (0.40, SOCRATES).
         .merge(admin_content::routes(state.clone()))

@@ -378,6 +378,12 @@ pub static CATALOG: &[ModuleManifest] = &[
     },
 ];
 
+/// Find a manifest by id.
+#[must_use]
+pub fn find(id: &str) -> Option<&'static ModuleManifest> {
+    CATALOG.iter().find(|m| m.id == id)
+}
+
 /// Every permission declared across the catalog, deduped by key, for the R4 matrix.
 #[must_use]
 pub fn permission_catalog() -> Vec<PermissionDef> {
