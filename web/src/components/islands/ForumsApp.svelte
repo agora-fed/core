@@ -16,6 +16,7 @@
     getForumTree,
     getRecentForumTopics,
     postNote,
+    reportNote,
     voteForumComment,
     voteForumTopic,
     type ForumStance,
@@ -27,6 +28,9 @@
     type ForumTopicDto,
   } from '../../lib/api';
   import { mdToHtml, titleSlug } from '../../lib/markdown';
+  import { toast } from '../../lib/toasts';
+  import Modal from '../ui/Modal.svelte';
+  import Button from '../ui/Button.svelte';
 
   type View = 'home' | 'forum' | 'topic';
 
@@ -57,6 +61,12 @@
   let busy = $state(false);
   let formMsg = $state<string | null>(null);
   let showPreview = $state(false);
+  // Denúncia (issue #20) — reusa POST /me/reports, que é genérico por object_uri.
+  let reportOpen = $state(false);
+  let reportTarget = $state<{ object_uri: string; author_actor_url: string } | null>(null);
+  let reportCategory = $state<'spam' | 'violation' | 'other'>('spam');
+  let reportReason = $state('');
+  let reportBusy = $state(false);
   // Admin inline (a capacidade é provada pela própria API admin responder).
   let isAdmin = $state(false);
   let admForumId = $state('');
@@ -287,6 +297,64 @@
       formMsg = res.error?.message ?? 'Não foi possível votar no argumento.';
     }
   }
+  // URL do ator a partir do handle: local → /actors/{h}; federado (user@host) →
+  // convenção Mastodon https://{host}/users/{user} (mesma heurística do backend).
+  function actorUrlFromAuthor(handle: string): string {
+    const h = handle.replace(/^@/, '');
+    const at = h.lastIndexOf('@');
+    if (at > 0) return `https://${h.slice(at + 1)}/users/${h.slice(0, at)}`;
+    return `${location.origin}/actors/${h}`;
+  }
+
+  function askReportTopic() {
+    if (!detail) return;
+    if (!isLogged()) {
+      formMsg = 'Entre para denunciar.';
+      return;
+    }
+    reportTarget = {
+      object_uri: `${location.origin}/f/topico/${detail.topic.id}`,
+      author_actor_url: actorUrlFromAuthor(detail.topic.author_public_handle),
+    };
+    reportCategory = 'spam';
+    reportReason = '';
+    reportOpen = true;
+  }
+
+  function askReportComment(c: ForumCommentItemDto) {
+    if (!detail) return;
+    if (!isLogged()) {
+      formMsg = 'Entre para denunciar.';
+      return;
+    }
+    reportTarget = {
+      object_uri: `${location.origin}/f/topico/${detail.topic.id}#arg-${c.id}`,
+      author_actor_url: actorUrlFromAuthor(c.author),
+    };
+    reportCategory = 'spam';
+    reportReason = '';
+    reportOpen = true;
+  }
+
+  async function submitReport() {
+    if (!reportTarget || reportBusy) return;
+    reportBusy = true;
+    const res = await reportNote({
+      object_uri: reportTarget.object_uri,
+      author_actor_url: reportTarget.author_actor_url,
+      category: reportCategory,
+      reason: reportReason.trim() || undefined,
+    });
+    reportBusy = false;
+    if (res.success) {
+      toast.success('Denúncia enviada à moderação.');
+      reportOpen = false;
+      reportTarget = null;
+    } else {
+      toast.error(res.error?.message ?? 'Falha ao enviar denúncia.');
+    }
+  }
+
   let federatedComments = $derived(
     detail ? detail.comments.filter((c) => c.federated) : [],
   );
@@ -640,6 +708,7 @@
           {shareState === 'sending' ? 'Publicando…' : '🌐 Compartilhar no fediverso'}
         </button>
         <button type="button" class="btn" onclick={copyLink}>🔗 Copiar link</button>
+        <button type="button" class="btn" title="Denunciar este tópico à moderação" onclick={askReportTopic}>⚑ Denunciar</button>
         {#if shareState === 'sent'}
           <span class="muted small">
             ✅ Publicado — seus seguidores (aqui e no fediverso) receberam. <a href="/feed">Ver no feed</a>
@@ -686,7 +755,10 @@
                       <!-- eslint-disable-next-line svelte/no-at-html-tags — mdToHtml escapa TODO o input antes das regras -->
                       {@html mdToHtml(c.body)}
                     </div>
-                    <span class="muted small">{c.author} · {fmtDate(c.created_at)}</span>
+                    <span class="muted small">
+                      {c.author} · {fmtDate(c.created_at)}
+                      · <button type="button" class="f-linklike" title="Denunciar este argumento à moderação" onclick={() => askReportComment(c)}>⚑ denunciar</button>
+                    </span>
                     <div class="f-arg-votes" role="group" aria-label="Votar neste argumento">
                       <button type="button" class="f-argv f-argv-favor" title="Concordo com este argumento" onclick={() => voteArg(c, 'favor')} disabled={busy}>▲ {c.favor}</button>
                       <button type="button" class="f-argv f-argv-contra" title="Discordo deste argumento" onclick={() => voteArg(c, 'contra')} disabled={busy}>▼ {c.contra}</button>
@@ -702,7 +774,10 @@
             <ul>
               {#each federatedComments as c (c.id)}
                 <li>
-                  <span class="muted small">🌐 {c.author} · {fmtDate(c.created_at)}</span>
+                  <span class="muted small">
+                    🌐 {c.author} · {fmtDate(c.created_at)}
+                    · <button type="button" class="f-linklike" title="Denunciar este comentário à moderação" onclick={() => askReportComment(c)}>⚑ denunciar</button>
+                  </span>
                   <div class="f-topic-text">
                     <!-- eslint-disable-next-line svelte/no-at-html-tags — mdToHtml escapa TODO o input antes das regras -->
                     {@html mdToHtml(c.body)}
@@ -732,10 +807,55 @@
       </section>
     </div>
   </article>
+
+  <Modal
+    bind:open={reportOpen}
+    title="Denunciar à moderação"
+    onclose={() => (reportOpen = false)}
+  >
+    <div class="report-form">
+      <label class="rf-lbl">
+        Motivo
+        <select bind:value={reportCategory} class="rf-sel">
+          <option value="spam">Spam</option>
+          <option value="violation">Violação das regras da comunidade</option>
+          <option value="other">Outro</option>
+        </select>
+      </label>
+      <label class="rf-lbl">
+        Detalhes (opcional, até 2000 caracteres)
+        <textarea
+          bind:value={reportReason}
+          maxlength={2000}
+          rows="4"
+          placeholder="Descreva o que aconteceu para a moderação humana avaliar."
+          class="rf-ta"
+        ></textarea>
+      </label>
+      <p class="muted rf-hint">
+        A denúncia vai pra fila de moderação da instância. A conta denunciada
+        não é notificada. Uma denúncia por item por cidadão.
+      </p>
+    </div>
+    {#snippet footer()}
+      <Button variant="ghost" onclick={() => (reportOpen = false)}>Cancelar</Button>
+      <Button variant="danger" onclick={submitReport} loading={reportBusy}>
+        Enviar denúncia
+      </Button>
+    {/snippet}
+  </Modal>
 {/if}
 
 <style>
   .f-head { margin-bottom: 1.25rem; }
+  .report-form { display: flex; flex-direction: column; gap: 0.75rem; }
+  .rf-lbl { display: flex; flex-direction: column; gap: 0.3rem; font-weight: 600; }
+  .rf-sel, .rf-ta {
+    font: inherit; font-weight: 400; color: inherit;
+    background: transparent; border: 1px solid var(--c-border, #444);
+    border-radius: 0.5rem; padding: 0.45rem 0.6rem;
+  }
+  .rf-hint { margin: 0; }
   .f-home { display: grid; grid-template-columns: 1fr; gap: 1.25rem; }
   @media (min-width: 860px) {
     .f-home { grid-template-columns: 20rem 1fr; align-items: start; }
