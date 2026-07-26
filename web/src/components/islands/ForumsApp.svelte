@@ -15,6 +15,7 @@
     getForumTopics,
     getForumTree,
     getRecentForumTopics,
+    postNote,
     voteForumTopic,
     type RecentForumTopicDto,
     type ForumChildDto,
@@ -239,6 +240,37 @@
     busy = false;
     if (res.success && res.data) detail = { ...detail, topic: res.data };
     else formMsg = res.error?.message ?? 'Não foi possível votar.';
+  }
+
+  let shareState = $state<'idle' | 'sending' | 'sent' | 'copied' | 'failed'>('idle');
+
+  function topicUrl(): string {
+    return window.location.origin + window.location.pathname;
+  }
+
+  /// Compartilha pelo PRÓPRIO ator federado do usuário: publica uma Note pública
+  /// com o link — seguidores em Mastodon/Lemmy/etc. recebem; o link abre com
+  /// preview (OG). Fase F4 (fórum como ator Group próprio) vem depois.
+  async function shareFediverso() {
+    if (!detail || shareState === 'sending') return;
+    if (!isLogged()) {
+      formMsg = 'Entre na sua conta para compartilhar no fediverso.';
+      return;
+    }
+    shareState = 'sending';
+    const res = await postNote(
+      `📣 "${detail.topic.title}"\n\nDebate público aberto na DemocraciaBR — participe:\n${topicUrl()}`,
+    );
+    shareState = res.success ? 'sent' : 'failed';
+  }
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(topicUrl());
+      shareState = 'copied';
+    } catch {
+      shareState = 'failed';
+    }
   }
 
   async function submitComment(event: SubmitEvent) {
@@ -515,6 +547,20 @@
         {@html mdToHtml(detail.topic.body)}
       </div>
 
+      <div class="f-share">
+        <button type="button" class="btn" onclick={shareFediverso} disabled={shareState === 'sending'}>
+          {shareState === 'sending' ? 'Publicando…' : '🌐 Compartilhar no fediverso'}
+        </button>
+        <button type="button" class="btn" onclick={copyLink}>🔗 Copiar link</button>
+        {#if shareState === 'sent'}
+          <span class="muted small">✅ Publicado no seu perfil — seus seguidores (aqui e no fediverso) receberam. <a href="/feed">Ver no feed</a></span>
+        {:else if shareState === 'copied'}
+          <span class="muted small">✅ Link copiado.</span>
+        {:else if shareState === 'failed'}
+          <span class="muted small">Não deu — tente de novo.</span>
+        {/if}
+      </div>
+
       {#if detail.dispatches.length > 0}
         <aside class="f-receipts" aria-label="Envios à instituição">
           {#each detail.dispatches as d (d.threshold)}
@@ -641,6 +687,7 @@
   .f-score-big { font-weight: 800; }
   .f-topic-body { flex: 1; min-width: 0; }
   .f-topic-text { white-space: pre-wrap; margin: 0.75rem 0 1rem; }
+  .f-share { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.75rem 0; }
   .f-receipts {
     padding: 0.6rem 0.9rem; margin: 0.75rem 0;
     background: var(--c-green-soft, #e6f7ed);
