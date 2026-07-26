@@ -22,6 +22,7 @@
 pub mod domain;
 pub mod events;
 pub mod http;
+pub mod permissions;
 pub mod service;
 
 mod queries;

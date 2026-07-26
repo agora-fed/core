@@ -22,3 +22,14 @@ migrations in parallel without collisions, each crate owns a **10-wide range**. 
 
 Rule: a migration may `REFERENCES` another crate's table ONLY for the core identity tables
 (`org`, `citizen`, `mandate`). Enforced by `scripts/check-fk-targets.sh`.
+
+## Faixa CORE 0600–0649 (ADR-0011, R0.8)
+
+A faixa histórica 0001 do baseline não tinha continuação, então migrações de `citizen`/core
+vazaram pra faixas de auth/admin/05xx. A partir do ADR-0011, **0600–0649 é reservada pra
+base/core** (identidade, papéis, org). Módulos ganham faixas de 50 a partir de 0650 quando o
+manifesto (R0.1) declarar posse. Já usadas:
+
+| Range | Escopo |
+|------:|--------|
+| 0600  | base/core — `user_role` + `citizen_role_binding` (papéis flexíveis, ADR-0011) |
