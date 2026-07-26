@@ -364,6 +364,17 @@ async fn forums_spa(
                         o = origin.trim_end_matches('/'),
                         p = esc(&p),
                     );
+                    // Remove as OG genéricas do shell — plataformas usam a PRIMEIRA
+                    // og:title que encontram; a nossa precisa ser a única.
+                    for prop in ["og:title", "og:description", "og:url", "og:type"] {
+                        let needle = format!("<meta property=\"{prop}\"");
+                        while let Some(a) = html.find(&needle) {
+                            let Some(off) = html[a..].find('>') else {
+                                break;
+                            };
+                            html.replace_range(a..a + off + 1, "");
+                        }
+                    }
                     html = html.replacen("</head>", &format!("{tags}</head>"), 1);
                     if let (Some(a), Some(b)) = (html.find("<title>"), html.find("</title>")) {
                         if a < b {
