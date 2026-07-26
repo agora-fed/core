@@ -32,6 +32,7 @@ pub mod embed;
 pub mod federation;
 pub mod federation_feed;
 pub mod fediverso_admin;
+mod forum_federation;
 mod forum_mailer;
 pub mod govbr_oidc;
 pub mod invitations;

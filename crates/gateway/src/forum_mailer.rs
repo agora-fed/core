@@ -27,6 +27,8 @@ struct PendingDispatch {
 
 /// Um passe do carteiro: processa até 10 pendências (o loop do worker repete).
 pub(crate) async fn sweep(db: &PgPool, public_origin: &str) {
+    // F4: mesmo tick também varre os Announce federados dos fóruns.
+    crate::forum_federation::announce_sweep(db, public_origin).await;
     let rows: Vec<PendingDispatch> = match sqlx::query_as(
         r"SELECT d.id, d.topic_id, d.threshold, d.contact_email,
                  t.title, t.interaction_count, t.score,

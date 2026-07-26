@@ -154,6 +154,17 @@ async fn webfinger_handler(
     let svc = ProfileService::from_state(&state);
     let org = OrgId::from_uuid(DEFAULT_ORG_UUID);
     if svc.find_public_by_handle(org, user).await.is_err() {
+        // F4: handle de FÓRUM (Group) — @sp, @santos.sp, @ministerio-educacao…
+        if crate::forum_federation::lookup_by_handle(&state.db, user)
+            .await
+            .is_some()
+        {
+            let jrd = crate::forum_federation::webfinger_jrd(&host, user, &query.resource);
+            return match serde_json::to_string(&jrd) {
+                Ok(body) => ([(header::CONTENT_TYPE, JRD_JSON)], body).into_response(),
+                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            };
+        }
         return StatusCode::NOT_FOUND.into_response();
     }
     let actor_url = actor_id(&host, user);
@@ -193,7 +204,26 @@ async fn object_handler(
     .await;
     let payload = match row {
         Ok(Some((p,))) => p,
-        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Ok(None) => {
+            // F4: pode ser o objeto de um TÓPICO de fórum (/actors/<forum>/objects/<topic>).
+            if let Ok(topic_id) = uuid::Uuid::parse_str(&id) {
+                if let Some(note) =
+                    crate::forum_federation::topic_object_json(&state.db, &host, &handle, topic_id)
+                        .await
+                {
+                    return (
+                        StatusCode::OK,
+                        [(
+                            header::CONTENT_TYPE,
+                            "application/activity+json; charset=utf-8",
+                        )],
+                        axum::Json(note),
+                    )
+                        .into_response();
+                }
+            }
+            return StatusCode::NOT_FOUND.into_response();
+        }
         Err(err) => {
             tracing::error!(error = ?err, "object_handler DB");
             return server_error();
@@ -315,8 +345,31 @@ async fn actor_handler(
     };
     let svc = ProfileService::from_state(&state);
     let org = OrgId::from_uuid(DEFAULT_ORG_UUID);
-    let Ok(profile) = svc.find_public_by_handle(org, &handle).await else {
-        return StatusCode::NOT_FOUND.into_response();
+    let profile = match svc.find_public_by_handle(org, &handle).await {
+        Ok(p) => p,
+        // F4: handle pode ser um FÓRUM (Group) — @sp, @santos.sp, @ccj.senado…
+        Err(_) => {
+            if let Some(forum) = crate::forum_federation::lookup_by_handle(&state.db, &handle).await
+            {
+                let Some((public_pem, _)) =
+                    crate::forum_federation::ensure_forum_keys(&state.db, forum.id).await
+                else {
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                };
+                let doc =
+                    crate::forum_federation::group_actor_json(&host, &handle, &forum, &public_pem);
+                return (
+                    StatusCode::OK,
+                    [(
+                        header::CONTENT_TYPE,
+                        "application/activity+json; charset=utf-8",
+                    )],
+                    axum::Json(doc),
+                )
+                    .into_response();
+            }
+            return StatusCode::NOT_FOUND.into_response();
+        }
     };
     let Ok(public_pem) = svc
         .ensure_actor_public_key(CitizenId::from_uuid(profile.citizen_id))
@@ -374,8 +427,22 @@ async fn inbox_post(
     };
     let svc = ProfileService::from_state(&state);
     let org = OrgId::from_uuid(DEFAULT_ORG_UUID);
-    let Ok(profile) = svc.find_public_by_handle(org, &handle).await else {
-        return StatusCode::NOT_FOUND.into_response();
+    let profile = match svc.find_public_by_handle(org, &handle).await {
+        Ok(p) => p,
+        // F4: inbox de FÓRUM (Group) — Follow/Undo tratados no módulo dedicado.
+        Err(_) => {
+            if let Some(forum) = crate::forum_federation::lookup_by_handle(&state.db, &handle).await
+            {
+                let Ok(activity) = serde_json::from_slice::<Value>(&body) else {
+                    return StatusCode::BAD_REQUEST.into_response();
+                };
+                let status =
+                    crate::forum_federation::inbox(&state.db, &host, &handle, &forum, &activity)
+                        .await;
+                return status.into_response();
+            }
+            return StatusCode::NOT_FOUND.into_response();
+        }
     };
     let citizen = CitizenId::from_uuid(profile.citizen_id);
 
@@ -3209,7 +3276,7 @@ async fn followers_get(
 
 /// Fetch a remote ActivityPub Actor document (Mastodon, Pleroma, etc.). Returns the parsed
 /// JSON; the caller picks the fields it needs (publicKey, inbox, etc.).
-async fn fetch_remote_actor(url: &str) -> Result<Value, FederationError> {
+pub(crate) async fn fetch_remote_actor(url: &str) -> Result<Value, FederationError> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(REMOTE_FETCH_TIMEOUT_SECS))
         .user_agent("DemocraciaBR/0.4 (+https://democracia.social.br)")
