@@ -105,7 +105,8 @@ SELECT pg_temp.set_email('trf-3', 'ouvidoria@trf3.jus.br');
 SELECT pg_temp.set_email('trf-4', 'ouvidoria@trf4.jus.br');
 SELECT pg_temp.set_email('trf-5', 'ouvidoria@trf5.jus.br');
 SELECT pg_temp.set_email('trf-6', 'ouvidoria@trf6.jus.br');
--- cnj: só formulário. trf-1: e-mail restrito a acesso SEI — ficam NULL.
+SELECT pg_temp.set_email('trf-1', 'presi@trf1.jus.br'); -- Presidência (trf1.jus.br/trf1/enderecos-e-telefones — página achada pelo usuário; ouvidoria: nuouv@trf1.jus.br)
+-- cnj: só formulário — fica NULL.
 
 COMMIT;
 
