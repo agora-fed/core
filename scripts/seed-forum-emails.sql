@@ -41,11 +41,26 @@ SELECT pg_temp.set_email('ministerio-transportes',          'ouvidoria@transport
 SELECT pg_temp.set_email('ministerio-turismo',              'ouvidoria@turismo.gov.br');
 SELECT pg_temp.set_email('ministerio-direitos-humanos',     'ouvidoria@mdh.gov.br');
 SELECT pg_temp.set_email('ministerio-povos-indigenas',      'mpi.ouv@povosindigenas.gov.br');
--- SEM e-mail público (só Fala.BR/formulário — ficam NULL de propósito):
--- fazenda, justica, defesa, saude (OuvSUS/136), trabalho, agricultura,
--- desenvolvimento-agrario, desenvolvimento-social, industria-comercio,
--- esporte, minas-energia, pesca, planejamento, gestao, igualdade-racial,
--- mulheres, empreendedorismo.
+-- GABINETES (páginas "Quem é quem" do gov.br — correção 2026-07-26: ouvidoria
+-- não é o único canal; o gabinete é o destinatário representativo):
+SELECT pg_temp.set_email('ministerio-saude', 'gabinetedoministro@saude.gov.br'); -- gov.br/saude/pt-br/composicao/quem-e-quem (confirmado pelo usuário)
+SELECT pg_temp.set_email('ministerio-fazenda',                'gabinete.ministro@fazenda.gov.br');    -- gov.br/fazenda .../quem-e-quem
+SELECT pg_temp.set_email('ministerio-justica',                'chefiadegabinete@mj.gov.br');          -- gov.br/mj .../gabinete-do-ministro-1
+SELECT pg_temp.set_email('ministerio-defesa',                 'chefe.gabinete@defesa.gov.br');        -- gov.br/defesa .../quem-e-quem
+SELECT pg_temp.set_email('ministerio-trabalho',               'agendaministro@trabalho.gov.br');      -- gov.br/trabalho-e-emprego (caixa institucional do gabinete)
+SELECT pg_temp.set_email('ministerio-agricultura',            'gm@agro.gov.br');                      -- gov.br/agricultura .../ministro-e-staff
+SELECT pg_temp.set_email('ministerio-desenvolvimento-agrario','gab.mda@mda.gov.br');                  -- gov.br/mda .../gabinete-da-ministra
+SELECT pg_temp.set_email('ministerio-industria-comercio',     'mdic.gab@mdic.gov.br');                -- gov.br/mdic .../quem-e-quem
+SELECT pg_temp.set_email('ministerio-esporte',                'agenda.esporte@esporte.gov.br');       -- gov.br/esporte .../Gabinete-do-Ministro
+SELECT pg_temp.set_email('ministerio-minas-energia',          'gabinete@mme.gov.br');                 -- gov.br/mme .../quem-e-quem
+SELECT pg_temp.set_email('ministerio-pesca',                  'gab.gm@mpa.gov.br');                   -- gov.br/mpa .../gabinete-do-ministro
+SELECT pg_temp.set_email('ministerio-planejamento',           'agenda.gabinete@planejamento.gov.br'); -- gov.br/planejamento .../gabinete-da-ministra
+SELECT pg_temp.set_email('ministerio-gestao',                 'agenda.mgi@gestao.gov.br');            -- gov.br/gestao .../quem-e-quem
+SELECT pg_temp.set_email('ministerio-igualdade-racial',       'agenda.gab@igualdaderacial.gov.br');   -- gov.br/igualdaderacial .../quem-e-quem
+SELECT pg_temp.set_email('ministerio-mulheres',               'agenda@mulheres.gov.br');              -- gov.br/mulheres .../ministra
+SELECT pg_temp.set_email('ministerio-empreendedorismo',       'gabineteministro@memp.gov.br');        -- gov.br/memp .../gabinete-do-ministro
+-- desenvolvimento-social (MDS): páginas só listam e-mails NOMINAIS de pessoas —
+-- não usamos e-mail pessoal para envio automatizado; fica pendente.
 
 -- ============ JUDICIÁRIO — ouvidorias (fontes: portais oficiais de cada tribunal)
 SELECT pg_temp.set_email('stf',   'ouvidoria@stf.jus.br');
