@@ -15,6 +15,7 @@ pub mod admin_content;
 pub mod admin_ext;
 pub mod admin_forums;
 pub mod admin_reports;
+pub mod admin_roles;
 pub mod admin_users;
 pub mod amendments;
 pub mod announcements;
@@ -163,6 +164,7 @@ pub fn api_router(state: AppState) -> Router {
         .merge(dsoc_moderation::routes(state.clone()))
         .merge(dsoc_admin::routes(state.clone()))
         .merge(crate::authz_ext::routes(state.clone()))
+        .merge(crate::admin_roles::routes(state.clone()))
         .merge(admin_ext::routes(state.clone()))
         // Super-admin: editar/ocultar/apagar mandato, proposta, partido (0.40, SOCRATES).
         .merge(admin_content::routes(state.clone()))

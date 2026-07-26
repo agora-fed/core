@@ -1,0 +1,25 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminRolesPanel from '../../components/islands/AdminRolesPanel.svelte';
+---
+
+<AdminLayout
+  title="Papéis & permissões (admin)"
+  description="Crie papéis configuráveis e defina, por categoria, o que cada um pode fazer — estilo Mastodon."
+>
+  <header class="head">
+    <h1>Papéis & permissões</h1>
+    <p class="muted">
+      Crie quantos papéis quiser e marque, na matriz, o que cada um pode fazer.
+      A <strong>posição</strong> define a hierarquia: você só gerencia papéis
+      abaixo da sua. As permissões disponíveis vêm dos <strong>módulos ativos</strong>.
+    </p>
+  </header>
+  <AdminRolesPanel client:load />
+</AdminLayout>
+
+<style>
+  .head { margin-bottom: var(--sp-5); }
+  h1 { margin: 0 0 var(--sp-1); }
+  .head p { max-width: 48rem; }
+</style>

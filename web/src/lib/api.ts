@@ -164,6 +164,13 @@ export async function apiPut<T>(
   return apiBody<T>('PUT', path, payload, init);
 }
 
+export async function apiDelete<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<ApiResponse<T>> {
+  return apiBody<T>('DELETE', path, undefined, init);
+}
+
 /** Client-side GET that uses the same defensive parsing as POST/PATCH and includes the cookie. */
 export async function apiGetCredentialed<T>(
   path: string,
@@ -185,7 +192,7 @@ export async function apiGetCredentialed<T>(
 }
 
 async function apiBody<T>(
-  method: 'POST' | 'PATCH' | 'PUT',
+  method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   path: string,
   payload: unknown,
   init?: RequestInit,
@@ -2964,4 +2971,55 @@ export const moderateRemoveComment = (id: string, reason?: string) =>
   apiPost<{ removed: true }>(
     `/api/v1/f/comments/${encodeURIComponent(id)}/remove`,
     { reason },
+  );
+
+// --- Papéis & permissões (R4 /admin/papeis) --------------------------------
+export interface PermissionCatalogItem {
+  key: string;
+  label: string;
+  category: string;
+  category_label: string;
+}
+export interface RoleDto {
+  id: string;
+  name: string;
+  color: string | null;
+  position: number;
+  permissions: string[];
+  highlighted: boolean;
+}
+export interface RoleMemberDto {
+  citizen_id: string;
+  handle: string | null;
+  display_name: string | null;
+}
+export interface RoleInput {
+  name: string;
+  color?: string | null;
+  position: number;
+  permissions: string[];
+  highlighted: boolean;
+}
+
+export const getPermissionCatalog = () =>
+  apiGetCredentialed<PermissionCatalogItem[]>('/api/v1/admin/permission-catalog');
+export const listRoles = () => apiGetCredentialed<RoleDto[]>('/api/v1/admin/roles');
+export const createRole = (body: RoleInput) =>
+  apiPost<{ ok: true }>('/api/v1/admin/roles', body);
+export const updateRole = (id: string, body: RoleInput) =>
+  apiPut<{ ok: true }>(`/api/v1/admin/roles/${encodeURIComponent(id)}`, body);
+export const deleteRole = (id: string) =>
+  apiDelete<{ ok: true }>(`/api/v1/admin/roles/${encodeURIComponent(id)}`);
+export const listRoleMembers = (id: string) =>
+  apiGetCredentialed<RoleMemberDto[]>(
+    `/api/v1/admin/roles/${encodeURIComponent(id)}/members`,
+  );
+export const addRoleMember = (id: string, handle: string) =>
+  apiPost<{ ok: true }>(
+    `/api/v1/admin/roles/${encodeURIComponent(id)}/members`,
+    { handle },
+  );
+export const removeRoleMember = (id: string, citizenId: string) =>
+  apiDelete<{ ok: true }>(
+    `/api/v1/admin/roles/${encodeURIComponent(id)}/members/${encodeURIComponent(citizenId)}`,
   );
