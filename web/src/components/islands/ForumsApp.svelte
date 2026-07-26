@@ -243,6 +243,7 @@
   }
 
   let shareState = $state<'idle' | 'sending' | 'sent' | 'copied' | 'failed'>('idle');
+  let shareApUrl = $state('');
 
   function topicUrl(): string {
     return window.location.origin + window.location.pathname;
@@ -262,6 +263,12 @@
       `📣 "${detail.topic.title}"\n\nDebate público aberto na DemocraciaBR — participe:\n${topicUrl()}`,
     );
     shareState = res.success ? 'sent' : 'failed';
+    // URL AP do objeto: seguidores recebem sozinhos; pra IMPORTAR/impulsionar de
+    // uma conta Mastodon que ainda não seguia, cola-se esta URL na busca de lá.
+    shareApUrl =
+      res.success && res.data
+        ? res.data.activity_id.replace('/activities/note-', '/objects/')
+        : '';
   }
 
   async function copyLink() {
@@ -553,7 +560,14 @@
         </button>
         <button type="button" class="btn" onclick={copyLink}>🔗 Copiar link</button>
         {#if shareState === 'sent'}
-          <span class="muted small">✅ Publicado no seu perfil — seus seguidores (aqui e no fediverso) receberam. <a href="/feed">Ver no feed</a></span>
+          <span class="muted small">
+            ✅ Publicado — seus seguidores (aqui e no fediverso) receberam. <a href="/feed">Ver no feed</a>
+            {#if shareApUrl}
+              · Pra impulsionar de uma conta Mastodon que ainda não te segue:
+              <button type="button" class="f-linklike" onclick={() => navigator.clipboard.writeText(shareApUrl)}>copiar link ActivityPub</button>
+              e colar na busca de lá.
+            {/if}
+          </span>
         {:else if shareState === 'copied'}
           <span class="muted small">✅ Link copiado.</span>
         {:else if shareState === 'failed'}
