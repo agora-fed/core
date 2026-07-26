@@ -4,7 +4,7 @@
 //! (ADR-0004 — the gateway owns the IPv6 bind).
 
 use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -186,12 +186,59 @@ impl ListParams {
     }
 }
 
+// --- autorização (hotfix 2026-07-26) ------------------------------------------------
+// Toda a superfície nasceu SEM gate (achado da revisão ADR-0011): anônimo criava regra
+// e resolvia apelação. Gate mínimo até o RequirePermission do roadmap R0/R2: o
+// middleware de sessão do gateway injeta x-dsoc-citizen-id/x-dsoc-org-id; mutações e
+// leituras de decisão exigem admin (binding owner/admin), apelar exige cidadão logado.
+// A leitura cross-crate de admin_role_binding é débito registrado no roadmap.
+
+fn caller_citizen(headers: &HeaderMap) -> Option<Uuid> {
+    headers
+        .get("x-dsoc-citizen-id")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse().ok())
+}
+
+fn caller_org(headers: &HeaderMap) -> Option<Uuid> {
+    headers
+        .get("x-dsoc-org-id")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse().ok())
+}
+
+async fn require_admin(state: &AppState, headers: &HeaderMap) -> Result<Uuid, ApiFailure> {
+    let Some(citizen) = caller_citizen(headers) else {
+        return Err(Error::Unauthorized.into());
+    };
+    let Some(org) = caller_org(headers) else {
+        return Err(Error::Unauthorized.into());
+    };
+    let is_admin: bool = sqlx::query_scalar(
+        r"SELECT EXISTS(
+            SELECT 1 FROM admin_role_binding
+             WHERE org_id = $1 AND citizen_id = $2 AND role IN ('owner','admin'))",
+    )
+    .bind(org)
+    .bind(citizen)
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(false);
+    if is_admin {
+        Ok(citizen)
+    } else {
+        Err(Error::Forbidden("requer administrador".to_owned()).into())
+    }
+}
+
 // --- handlers -----------------------------------------------------------------------
 
 async fn create_rule(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<CreateRuleRequest>,
 ) -> Result<(StatusCode, Json<ApiResponse<RuleDto>>), ApiFailure> {
+    require_admin(&state, &headers).await?;
     let kind = parse_field::<RuleKind>(&req.kind)?;
     let action = parse_field::<RuleAction>(&req.action)?;
     let rule = service(&state)
@@ -220,8 +267,10 @@ async fn list_rules(
 
 async fn list_decisions(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(params): Query<ListParams>,
 ) -> Result<Json<ApiResponse<Vec<DecisionDto>>>, ApiFailure> {
+    require_admin(&state, &headers).await?;
     let decisions = service(&state)
         .list_decisions(
             OrgId::from_uuid(params.org_id),
@@ -235,16 +284,23 @@ async fn list_decisions(
 
 async fn get_decision(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<DecisionDto>>, ApiFailure> {
+    require_admin(&state, &headers).await?;
     let decision = service(&state).get_decision(id).await?;
     Ok(Json(ApiResponse::ok(DecisionDto::from(decision))))
 }
 
 async fn file_appeal(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<FileAppealRequest>,
 ) -> Result<(StatusCode, Json<ApiResponse<AppealDto>>), ApiFailure> {
+    // Apelar exige estar logado (o afetado apela); resolver exige admin.
+    if caller_citizen(&headers).is_none() {
+        return Err(Error::Unauthorized.into());
+    }
     let appeal = service(&state)
         .file_appeal(req.decision_id, &req.reason)
         .await?;
@@ -256,9 +312,11 @@ async fn file_appeal(
 
 async fn resolve_appeal(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(id): Path<Uuid>,
     Json(req): Json<ResolveAppealRequest>,
 ) -> Result<Json<ApiResponse<AppealDto>>, ApiFailure> {
+    require_admin(&state, &headers).await?;
     let to = parse_field::<AppealStatus>(&req.status)?;
     let appeal = service(&state).resolve_appeal(id, to).await?;
     Ok(Json(ApiResponse::ok(AppealDto::from(appeal))))
