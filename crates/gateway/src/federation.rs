@@ -970,21 +970,7 @@ async fn lookup_remote(
         }
     };
     // Step 2: pull the `self` link → ActivityStreams Actor URL.
-    let self_url = jrd
-        .get("links")
-        .and_then(Value::as_array)
-        .and_then(|links| {
-            links.iter().find_map(|l| {
-                let rel = l.get("rel").and_then(Value::as_str)?;
-                let typ = l.get("type").and_then(Value::as_str)?;
-                if rel == "self" && typ.contains("activity") {
-                    l.get("href").and_then(Value::as_str)
-                } else {
-                    None
-                }
-            })
-        });
-    let Some(actor_url) = self_url else {
+    let Some(actor_url) = jrd_self_link(&jrd) else {
         return upstream_error("instância não expõe um perfil ActivityPub para esse usuário");
     };
     // Step 3: fetch the Actor doc.
@@ -1465,12 +1451,17 @@ async fn post_my_note(
         public_origin.trim_end_matches('/'),
         me.handle.as_deref().unwrap_or(&me.public_handle)
     );
+    // Resolve remote @mentions BEFORE persisting: the authoritative actor ids go into
+    // tag[]/cc and their inboxes into the delivery queue (Mastodon only notifies a
+    // mention it actually receives).
+    let resolved_mentions = resolve_remote_mentions(&body.content, &public_origin).await;
     match svc
         .create_public_note(
             caller.citizen,
             &me_url,
             &public_origin,
             &body.content,
+            &resolved_mentions,
             body.in_reply_to_uri.as_deref(),
             body.sensitive,
             body.spoiler_text.as_deref(),
@@ -3274,6 +3265,84 @@ async fn followers_get(
 
 // --- Helpers ----------------------------------------------------------------------------------
 
+/// Pull the `self` link (the ActivityStreams Actor URL) out of a WebFinger JRD.
+fn jrd_self_link(jrd: &Value) -> Option<&str> {
+    jrd.get("links")
+        .and_then(Value::as_array)
+        .and_then(|links| {
+            links.iter().find_map(|l| {
+                let rel = l.get("rel").and_then(Value::as_str)?;
+                let typ = l.get("type").and_then(Value::as_str)?;
+                if rel == "self" && typ.contains("activity") {
+                    l.get("href").and_then(Value::as_str)
+                } else {
+                    None
+                }
+            })
+        })
+}
+
+/// Resolve the remote `@user@host` mentions in `content` to their authoritative actors:
+/// WebFinger → `self` link → Actor fetch (for the inbox). Best-effort per mention — an
+/// unreachable instance just yields no entry and the service layer falls back to the
+/// conventional `https://host/users/user` guess without direct delivery (pre-fix behavior).
+/// Local mentions (bare `@user` or `@user@our-host`) are skipped; the service resolves them.
+pub(crate) async fn resolve_remote_mentions(
+    content: &str,
+    public_origin: &str,
+) -> Vec<dsoc_federation::ResolvedMention> {
+    let our_host = reqwest::Url::parse(public_origin)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_owned));
+    let mut out: Vec<dsoc_federation::ResolvedMention> = Vec::new();
+    for m in dsoc_federation::extract_mentions(content) {
+        let Some(host) = m.host.clone() else {
+            continue;
+        };
+        if our_host
+            .as_deref()
+            .is_some_and(|h| h.eq_ignore_ascii_case(&host))
+        {
+            continue;
+        }
+        let webfinger_url = format!(
+            "https://{host}/.well-known/webfinger?resource=acct:{}@{host}",
+            m.user
+        );
+        let jrd = match fetch_remote_actor(&webfinger_url).await {
+            Ok(v) => v,
+            Err(err) => {
+                tracing::warn!(error = ?err, handle = %m.handle,
+                    "mention webfinger falhou; seguindo com URL por convenção");
+                continue;
+            }
+        };
+        let Some(actor_url) = jrd_self_link(&jrd) else {
+            tracing::warn!(handle = %m.handle, "webfinger sem link self ActivityPub");
+            continue;
+        };
+        // Inbox is what direct delivery needs; a fetch failure still keeps the resolved
+        // actor id (better href/cc than the guess, just no direct delivery row).
+        let inbox_url = match fetch_remote_actor(actor_url).await {
+            Ok(actor) => actor
+                .get("inbox")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            Err(err) => {
+                tracing::warn!(error = ?err, handle = %m.handle,
+                    "actor fetch da menção falhou; sem entrega direta");
+                None
+            }
+        };
+        out.push(dsoc_federation::ResolvedMention {
+            handle: m.handle,
+            actor_url: actor_url.to_owned(),
+            inbox_url,
+        });
+    }
+    out
+}
+
 /// Fetch a remote ActivityPub Actor document (Mastodon, Pleroma, etc.). Returns the parsed
 /// JSON; the caller picks the fields it needs (publicKey, inbox, etc.).
 pub(crate) async fn fetch_remote_actor(url: &str) -> Result<Value, FederationError> {
@@ -3991,5 +4060,33 @@ mod tests {
             absolutize("h.br", "media/a.png"),
             "https://h.br/media/a.png"
         );
+    }
+
+    #[test]
+    fn jrd_self_link_picks_activity_self_among_links() {
+        let jrd = serde_json::json!({
+            "subject": "acct:fulano@exemplo.social",
+            "links": [
+                {"rel": "http://webfinger.net/rel/profile-page", "type": "text/html",
+                 "href": "https://exemplo.social/@fulano"},
+                {"rel": "self", "type": "application/activity+json",
+                 "href": "https://exemplo.social/users/fulano"},
+            ]
+        });
+        assert_eq!(
+            jrd_self_link(&jrd),
+            Some("https://exemplo.social/users/fulano")
+        );
+    }
+
+    #[test]
+    fn jrd_self_link_none_without_activity_self() {
+        let jrd = serde_json::json!({
+            "links": [
+                {"rel": "self", "type": "text/html", "href": "https://x/@u"},
+            ]
+        });
+        assert_eq!(jrd_self_link(&jrd), None);
+        assert_eq!(jrd_self_link(&serde_json::json!({})), None);
     }
 }

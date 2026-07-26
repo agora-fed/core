@@ -828,12 +828,17 @@ async fn post_status(
         Some(id) if !id.is_empty() => resolve_status_id(&state.db, id).await.ok().flatten(),
         _ => None,
     };
+    // Mesma resolução de menções remotas do post_my_note — apps Mastodon (Tusky etc.)
+    // publicam por aqui e a menção precisa chegar na inbox do mencionado.
+    let resolved_mentions =
+        super::federation::resolve_remote_mentions(&body.status, &public_origin).await;
     match svc
         .create_public_note(
             caller.citizen,
             &me_url,
             &public_origin,
             &body.status,
+            &resolved_mentions,
             in_reply_to_uri.as_deref(),
             body.sensitive,
             body.spoiler_text.as_deref(),

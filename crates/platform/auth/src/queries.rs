@@ -919,6 +919,36 @@ pub(crate) async fn fanout_delivery_to_followers<'e, E: PgExecutor<'e>>(
     Ok(r.rows_affected())
 }
 
+/// Fan out an outbox entry to an explicit list of inboxes — the mentioned actors' personal
+/// inboxes, resolved by the gateway at publish time. Same UNIQUE as the follower fanout, so a
+/// mentioned actor who also follows the author gets exactly one delivery row.
+pub(crate) async fn fanout_delivery_to_inboxes<'e, E: PgExecutor<'e>>(
+    ex: E,
+    outbox_entry_id: Uuid,
+    inboxes: &[String],
+    now: DateTime<Utc>,
+) -> Result<u64, sqlx::Error> {
+    if inboxes.is_empty() {
+        return Ok(0);
+    }
+    let r = sqlx::query!(
+        r#"
+        INSERT INTO federation_delivery
+            (id, outbox_entry_id, recipient_inbox, attempts, next_attempt_at, delivered_at,
+             last_error, created_at)
+        SELECT gen_random_uuid(), $1, t.inbox, 0, $3, NULL, NULL, $3
+          FROM unnest($2::text[]) AS t(inbox)
+        ON CONFLICT (outbox_entry_id, recipient_inbox) DO NOTHING
+        "#,
+        outbox_entry_id,
+        inboxes,
+        now,
+    )
+    .execute(ex)
+    .await?;
+    Ok(r.rows_affected())
+}
+
 /// List a citizen's public outbox entries, newest first. Payload returned as-is so the Outbox
 /// endpoint can put the JSONB straight into the OrderedCollection.
 pub(crate) async fn list_public_outbox<'e, E: PgExecutor<'e>>(

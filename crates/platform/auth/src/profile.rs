@@ -292,7 +292,11 @@ impl ProfileService {
     /// queue asynchronously, so this call returns fast.
     ///
     /// 0.18.0 additions: `in_reply_to_uri`, `sensitive`, `spoiler_text` (CW). All optional.
-    /// `public_origin` is needed to build local mention/hashtag hrefs. Returns
+    /// `public_origin` is needed to build local mention/hashtag hrefs. `resolved_mentions`
+    /// carries the WebFinger-resolved actors for remote @mentions (gateway does the network
+    /// round-trips): their real actor ids go into the `tag[]` hrefs and `cc`, and their
+    /// inboxes get a direct delivery row — without a resolved entry a mention falls back to
+    /// the guessed URL and is delivered only to followers (pre-resolution behavior). Returns
     /// `(activity_id_url, fanout_count)`.
     ///
     /// # Errors
@@ -304,6 +308,7 @@ impl ProfileService {
         actor_url: &str,
         public_origin: &str,
         content: &str,
+        resolved_mentions: &[dsoc_federation::ResolvedMention],
         in_reply_to_uri: Option<&str>,
         sensitive: bool,
         spoiler_text: Option<&str>,
@@ -329,13 +334,27 @@ impl ProfileService {
         // note_mention index them locally for the future tag timeline and mention notifications.
         let mentions = dsoc_federation::extract_mentions(&trimmed);
         let hashtags = dsoc_federation::extract_hashtags(&trimmed);
+        // Authoritative actor URL when the gateway resolved the handle via WebFinger;
+        // conventional guess otherwise (unreachable instance, local mention).
+        let mention_href = |m: &dsoc_federation::Mention| -> String {
+            resolved_mentions
+                .iter()
+                .find(|r| r.handle == m.handle)
+                .map(|r| r.actor_url.clone())
+                .unwrap_or_else(|| m.best_actor_url(public_origin))
+        };
+        let mut mention_hrefs: Vec<String> = Vec::new();
         let mut tag_json: Vec<serde_json::Value> = Vec::new();
         for m in &mentions {
+            let href = mention_href(m);
             tag_json.push(serde_json::json!({
                 "type": "Mention",
-                "href": m.best_actor_url(public_origin),
+                "href": href,
                 "name": format!("@{}", m.handle),
             }));
+            if !mention_hrefs.contains(&href) {
+                mention_hrefs.push(href);
+            }
         }
         for h in &hashtags {
             tag_json.push(serde_json::json!({
@@ -349,6 +368,10 @@ impl ProfileService {
         let entry_id = uuid::Uuid::now_v7();
         let activity_id = format!("{actor_url}/activities/note-{entry_id}");
         let object_id = format!("{actor_url}/objects/{entry_id}");
+        // `cc` = followers + every mentioned actor. Mastodon only notifies a mention when
+        // the actor is addressed AND present in `tag[]` — the tag alone is not enough.
+        let mut cc: Vec<String> = vec![format!("{actor_url}/followers")];
+        cc.extend(mention_hrefs.iter().cloned());
         // Build the Note object. Optional AP fields (`inReplyTo`, `sensitive`, `summary`,
         // `tag`) are only added when they carry content — Mastodon skips them likewise.
         let mut note_object = serde_json::json!({
@@ -358,7 +381,7 @@ impl ProfileService {
             "published": now.to_rfc3339(),
             "content": trimmed,
             "to": ["https://www.w3.org/ns/activitystreams#Public"],
-            "cc": [format!("{actor_url}/followers")],
+            "cc": cc.clone(),
         });
         if let Some(reply) = in_reply_to_uri.filter(|s| !s.is_empty()) {
             note_object["inReplyTo"] = serde_json::Value::String(reply.to_owned());
@@ -379,7 +402,7 @@ impl ProfileService {
             "actor": actor_url,
             "published": now.to_rfc3339(),
             "to": ["https://www.w3.org/ns/activitystreams#Public"],
-            "cc": [format!("{actor_url}/followers")],
+            "cc": cc,
             "object": note_object,
         });
         // INSERT outbox + fanout — two statements; if the fanout fails we leave the outbox
@@ -406,7 +429,7 @@ impl ProfileService {
             let _ = queries::insert_note_mention(
                 &self.db,
                 &object_id,
-                &m.best_actor_url(public_origin),
+                &mention_href(m),
                 &m.handle,
                 now,
             )
@@ -421,7 +444,22 @@ impl ProfileService {
             queries::fanout_delivery_to_followers(&self.db, entry_id, citizen.as_uuid(), now)
                 .await
                 .map_err(map_sqlx)?;
-        Ok((activity_id, fanout))
+        // Direct delivery to each mentioned actor's inbox — without this, a mention only
+        // reaches instances that already follow the author and Mastodon never notifies.
+        // The UNIQUE on (entry, inbox) dedups against the follower fanout above.
+        let mut mention_inboxes: Vec<String> = Vec::new();
+        for r in resolved_mentions {
+            if let Some(inbox) = r.inbox_url.as_deref() {
+                if !mention_inboxes.iter().any(|i| i == inbox) {
+                    mention_inboxes.push(inbox.to_owned());
+                }
+            }
+        }
+        let mention_fanout =
+            queries::fanout_delivery_to_inboxes(&self.db, entry_id, &mention_inboxes, now)
+                .await
+                .map_err(map_sqlx)?;
+        Ok((activity_id, fanout + mention_fanout))
     }
 
     /// List the citizen's public outbox entries, newest first. Drives the `/actors/{handle}/

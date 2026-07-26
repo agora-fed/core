@@ -54,7 +54,7 @@ pub use objects::{ConsensusCluster, Create, Note, Proposal, Scorecard, Sla, Supp
 pub use signatures::{
     build_signing_string, PublicKey, SignatureAlgorithm, SignatureHeader, SignatureVerifier,
 };
-pub use text::{extract_hashtags, extract_mentions, Hashtag, Mention};
+pub use text::{extract_hashtags, extract_mentions, Hashtag, Mention, ResolvedMention};
 pub use vocab::{Context, ACCOUNTABILITY_NS, ACTIVITYSTREAMS_NS, SOFTWARE_NAME};
 pub use webfinger::{webfinger_jrd, WebFingerError};
 

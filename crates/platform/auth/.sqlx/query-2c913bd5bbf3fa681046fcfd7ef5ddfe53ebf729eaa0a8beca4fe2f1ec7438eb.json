@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO federation_delivery\n            (id, outbox_entry_id, recipient_inbox, attempts, next_attempt_at, delivered_at,\n             last_error, created_at)\n        SELECT gen_random_uuid(), $1, t.inbox, 0, $3, NULL, NULL, $3\n          FROM unnest($2::text[]) AS t(inbox)\n        ON CONFLICT (outbox_entry_id, recipient_inbox) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2c913bd5bbf3fa681046fcfd7ef5ddfe53ebf729eaa0a8beca4fe2f1ec7438eb"
+}

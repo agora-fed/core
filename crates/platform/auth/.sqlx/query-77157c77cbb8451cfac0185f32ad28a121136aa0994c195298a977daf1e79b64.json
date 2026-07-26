@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id AS citizen_id,\n               org_id,\n               handle,\n               display_name,\n               bio,\n               avatar_object_key,\n               cover_object_key,\n               is_public,\n               verification_level,\n               created_at\n          FROM citizen\n         WHERE org_id = $1 AND handle = $2 AND is_public = true\n        ",
+  "query": "\n        SELECT id AS citizen_id,\n               org_id,\n               handle,\n               display_name,\n               bio,\n               avatar_object_key,\n               cover_object_key,\n               is_public,\n               verification_level,\n               titulo_status,\n               created_at\n          FROM citizen\n         WHERE org_id = $1 AND handle = $2 AND is_public = true\n        ",
   "describe": {
     "columns": [
       {
@@ -50,6 +50,11 @@
       },
       {
         "ordinal": 9,
+        "name": "titulo_status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
@@ -70,8 +75,9 @@
       true,
       false,
       false,
+      true,
       false
     ]
   },
-  "hash": "36421a622bb8ff3a20f56a4028b228c951a0ec3841a1a81fc46b9ebb85053775"
+  "hash": "77157c77cbb8451cfac0185f32ad28a121136aa0994c195298a977daf1e79b64"
 }

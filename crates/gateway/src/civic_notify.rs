@@ -420,7 +420,16 @@ impl CivicNotifySub {
         let content = build_threshold_note(&title, &proposal_url);
         match self
             .profiles
-            .create_public_note(citizen, &actor_url, origin, &content, None, false, None)
+            .create_public_note(
+                citizen,
+                &actor_url,
+                origin,
+                &content,
+                &[],
+                None,
+                false,
+                None,
+            )
             .await
         {
             Ok((activity_id, fanout)) => {
@@ -512,7 +521,16 @@ impl CivicNotifySub {
         let content = build_silence_note(&title, &proposal_url, &receipts);
         match self
             .profiles
-            .create_public_note(citizen, &actor_url, origin, &content, None, false, None)
+            .create_public_note(
+                citizen,
+                &actor_url,
+                origin,
+                &content,
+                &[],
+                None,
+                false,
+                None,
+            )
             .await
         {
             Ok((activity_id, fanout)) => {

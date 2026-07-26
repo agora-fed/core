@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE citizen SET is_public = true, profile_updated_at = now() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ad3aaf10508b7936cd6c01639566828ef1f2e5a0d9ad98e6f4f6855f22479806"
+}

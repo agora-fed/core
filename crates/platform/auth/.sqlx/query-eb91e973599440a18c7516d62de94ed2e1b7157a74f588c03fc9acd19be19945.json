@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO mandate\n            (id, org_id, office, display_name, public_email, is_candidate,\n             onboarded_at, created_at, party, uf, sphere, source, source_external_id)\n        VALUES ($1, $2, $3, $4, $5, true, $10, $10, $6, $7, $8, 'self', $9)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eb91e973599440a18c7516d62de94ed2e1b7157a74f588c03fc9acd19be19945"
+}

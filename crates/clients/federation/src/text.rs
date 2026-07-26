@@ -55,7 +55,9 @@ impl Mention {
     /// Best-effort actor URL. Requires knowing our own `public_origin` to
     /// resolve a local mention. For remote mentions we can only guess an
     /// `https://{host}/users/{user}` shape (the Mastodon convention); the
-    /// authoritative URL comes from a WebFinger lookup, deferred until 0.19.0.
+    /// authoritative URL comes from a WebFinger lookup — see [`ResolvedMention`],
+    /// which the gateway produces at publish time; this guess is the fallback
+    /// when the remote instance is unreachable.
     #[must_use]
     pub fn best_actor_url(&self, public_origin: &str) -> String {
         match &self.host {
@@ -67,6 +69,23 @@ impl Mention {
             Some(h) => format!("https://{h}/users/{}", self.user),
         }
     }
+}
+
+/// A mention resolved to its authoritative actor via WebFinger + actor fetch.
+///
+/// Produced by the gateway (the only layer with network access) before a Note is
+/// persisted, so the service layer can put the real actor id in the `tag[]` href,
+/// address the actor in `cc`, and queue a delivery to its inbox. A mention that
+/// failed to resolve simply has no entry and falls back to
+/// [`Mention::best_actor_url`] — the pre-resolution behavior.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedMention {
+    /// The display handle as authored: `alice` (local) or `alice@remote.tld`.
+    pub handle: String,
+    /// The authoritative actor id URL (the WebFinger `self` link's target).
+    pub actor_url: String,
+    /// The actor's personal inbox — target for direct delivery, when exposed.
+    pub inbox_url: Option<String>,
 }
 
 /// Extract all hashtags from a source text, deduped by `normalized` in
