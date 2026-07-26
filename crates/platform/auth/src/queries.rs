@@ -309,6 +309,59 @@ pub(crate) async fn find_mandate_public_email<'e, E: PgExecutor<'e>>(
     Ok(row)
 }
 
+/// Define o @handle SÓ se ainda for NULL (onboarding: todo cidadão nasce com
+/// presença federada; a pessoa pode trocar depois nas configurações).
+///
+/// # Errors
+/// Propaga o `sqlx::Error` (colisão de unique inclusa — o caller decide retry).
+pub async fn set_handle_if_null(
+    executor: impl sqlx::PgExecutor<'_>,
+    citizen_id: Uuid,
+    handle: &str,
+) -> Result<u64, sqlx::Error> {
+    let res = sqlx::query!(
+        r#"UPDATE citizen SET handle = $2, profile_updated_at = now()
+           WHERE id = $1 AND handle IS NULL"#,
+        citizen_id,
+        handle,
+    )
+    .execute(executor)
+    .await?;
+    Ok(res.rows_affected())
+}
+
+/// Cria um follow LOCAL (outbound, aceito na hora — sem handshake) se ainda não
+/// existir. Onboarding: toda conta nova segue o perfil oficial da plataforma.
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn insert_local_follow_if_absent(
+    executor: impl sqlx::PgExecutor<'_>,
+    id: Uuid,
+    citizen_id: Uuid,
+    remote_actor_url: &str,
+    remote_inbox_url: &str,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"INSERT INTO federation_follow
+               (id, citizen_id, direction, remote_actor_url, remote_inbox_url, accepted_at, created_at)
+           SELECT $1, $2, 'outbound', $3, $4, $5, $5
+           WHERE NOT EXISTS (
+               SELECT 1 FROM federation_follow
+               WHERE citizen_id = $2 AND direction = 'outbound' AND remote_actor_url = $3
+           )"#,
+        id,
+        citizen_id,
+        remote_actor_url,
+        remote_inbox_url,
+        now,
+    )
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
 /// Force `is_public=true` on a citizen row. Called by the politician self-registration flow
 /// — mandate operators are always public (accountability transparency; not opt-out).
 pub(crate) async fn force_citizen_public<'e, E: PgExecutor<'e>>(

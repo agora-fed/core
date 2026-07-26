@@ -615,6 +615,18 @@ impl SignupVerifyService {
         )
         .await
         .map_err(map_register_sqlx)?;
+
+        // Onboarding federado (2026-07-26): TODO cidadão nasce com presença pública
+        // no fediverso — handle automático derivado do próprio id (único por
+        // construção; a pessoa troca depois nas configurações, ou fecha o perfil
+        // com is_public=false se quiser).
+        let auto_handle = format!(
+            "cidadao-{}",
+            &citizen.as_uuid().as_simple().to_string()[..8]
+        );
+        queries::set_handle_if_null(&mut *tx, citizen.as_uuid(), &auto_handle)
+            .await
+            .map_err(map_sqlx)?;
         queries::insert_credential(
             &mut *tx,
             Uuid::now_v7(),
@@ -751,9 +763,50 @@ impl SignupVerifyService {
         )
         .await?;
         tx.commit().await.map_err(map_sqlx)?;
+        // Onboarding federado pós-commit, best-effort (falha aqui NUNCA derruba o
+        // cadastro): chaves do ator (perfil resolvível no fediverso desde o 1º
+        // segundo) + follow automático do perfil oficial @socrates (comunicados).
+        self.federated_onboarding(citizen, now).await;
         // Boas-vindas só depois do commit — conta existe de fato.
         self.deliver_welcome(&row.email);
         Ok(ConfirmOutcome::Session(Box::new(session)))
+    }
+
+    /// Chaves do ator + auto-follow do @socrates. Best-effort com log.
+    async fn federated_onboarding(&self, citizen: CitizenId, now: chrono::DateTime<chrono::Utc>) {
+        match tokio::task::spawn_blocking(dsoc_federation::generate_actor_keypair).await {
+            Ok(Ok(kp)) => {
+                if let Err(err) = queries::insert_actor_keypair(
+                    &self.db,
+                    citizen.as_uuid(),
+                    &kp.private_pem,
+                    &kp.public_pem,
+                    now,
+                )
+                .await
+                {
+                    tracing::warn!(?err, "onboarding: keypair do ator falhou");
+                }
+            }
+            other => tracing::warn!(?other, "onboarding: geração de chave falhou"),
+        }
+        let origin = std::env::var("PUBLIC_ORIGIN")
+            .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
+        let origin = origin.trim_end_matches('/');
+        let socrates_actor = format!("{origin}/actors/socrates");
+        let socrates_inbox = format!("{socrates_actor}/inbox");
+        if let Err(err) = queries::insert_local_follow_if_absent(
+            &self.db,
+            Uuid::now_v7(),
+            citizen.as_uuid(),
+            &socrates_actor,
+            &socrates_inbox,
+            now,
+        )
+        .await
+        {
+            tracing::warn!(?err, "onboarding: auto-follow do socrates falhou");
+        }
     }
 
     async fn deliver_email(&self, to: &str, confirm_url: &str) {
