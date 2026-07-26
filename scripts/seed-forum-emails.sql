@@ -53,10 +53,13 @@ SELECT pg_temp.set_email('camara/pessoa-com-deficiencia',  'cpd@camara.leg.br');
 SELECT pg_temp.set_email('camara/amazonia',                'cpovos.decom@camara.leg.br');  -- REQ oficial 2023
 SELECT pg_temp.set_email('camara/administracao',           'casp.decom@camara.leg.br');    -- relatório 2025
 SELECT pg_temp.set_email('camara/etica',                   'cedpa@camara.leg.br');         -- página viva de contatos
--- Pendentes na Câmara: saude (comissão nova, sem e-mail publicado), meio-ambiente
--- (CMADS), defesa-consumidor (CDC), industria-comercio (CICS) — nada publicado;
--- desenvolvimento-urbano e direitos-humanos — só fontes de 2013 (velhas demais
--- pra envio automatizado).
+SELECT pg_temp.set_email('camara/defesa-consumidor',       'cdc.decom@camara.leg.br');     -- rodapé oficial CDC 2019 (Wayback; padrão .decom — confiança menor)
+SELECT pg_temp.set_email('camara/meio-ambiente',           'meioambiente@camara.leg.br');  -- rodapé oficial CMADS 2019 (Wayback; confiança menor)
+SELECT pg_temp.set_email('camara/direitos-humanos',        'cdh@camara.leg.br');           -- PDF oficial DECOM/CDHM v1.5 (2021, ainda no portal)
+-- Pendentes na Câmara: saude (só caixa de EVENTOS eventos.csaude@ confirmada — não é
+-- canal institucional; csaude@ só em bio de Instagram, não verificável),
+-- industria-comercio (CICS, criada 2023 — relatórios 2024/25 sem e-mail),
+-- desenvolvimento-urbano (CDU — nunca publicou e-mail; só telefone).
 
 -- ============ MINISTÉRIOS — ouvidorias com e-mail público (fonte: gov.br/<órgão>/canais_atendimento)
 SELECT pg_temp.set_email('ministerio-relacoes-exteriores',  'ouvidoria@itamaraty.gov.br');
@@ -91,8 +94,9 @@ SELECT pg_temp.set_email('ministerio-gestao',                 'agenda.mgi@gestao
 SELECT pg_temp.set_email('ministerio-igualdade-racial',       'agenda.gab@igualdaderacial.gov.br');   -- gov.br/igualdaderacial .../quem-e-quem
 SELECT pg_temp.set_email('ministerio-mulheres',               'agenda@mulheres.gov.br');              -- gov.br/mulheres .../ministra
 SELECT pg_temp.set_email('ministerio-empreendedorismo',       'gabineteministro@memp.gov.br');        -- gov.br/memp .../gabinete-do-ministro
--- desenvolvimento-social (MDS): páginas só listam e-mails NOMINAIS de pessoas —
--- não usamos e-mail pessoal para envio automatizado; fica pendente.
+-- MDS: gabinete só publica e-mails NOMINAIS; caixa institucional da
+-- Secretaria-Executiva (gov.br/mds .../secretaria-executiva):
+SELECT pg_temp.set_email('ministerio-desenvolvimento-social', 'cgaa.se@mds.gov.br');
 
 -- ============ JUDICIÁRIO — ouvidorias (fontes: portais oficiais de cada tribunal)
 SELECT pg_temp.set_email('stf',   'ouvidoria@stf.jus.br');
@@ -106,7 +110,7 @@ SELECT pg_temp.set_email('trf-4', 'ouvidoria@trf4.jus.br');
 SELECT pg_temp.set_email('trf-5', 'ouvidoria@trf5.jus.br');
 SELECT pg_temp.set_email('trf-6', 'ouvidoria@trf6.jus.br');
 SELECT pg_temp.set_email('trf-1', 'presi@trf1.jus.br'); -- Presidência (trf1.jus.br/trf1/enderecos-e-telefones — página achada pelo usuário; ouvidoria: nuouv@trf1.jus.br)
--- cnj: só formulário — fica NULL.
+SELECT pg_temp.set_email('cnj',   'presidencia@cnj.jus.br'); -- Gab. da Presidência (cnj.jus.br/telefones-uteis — mesmo padrão do TRF-1; secretaria-geral: secretariageralcnj@cnj.jus.br)
 
 COMMIT;
 
