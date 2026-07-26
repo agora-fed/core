@@ -297,27 +297,95 @@ pub fn api_router(state: AppState) -> Router {
         .merge(govbr_oidc::root_routes(state.clone()))
         // Fóruns (/f/*): SPA-fallback — o front roteia client-side; qualquer caminho
         // serve o mesmo f/index.html (fóruns/tópicos criados em runtime nunca 404am).
-        .route("/f", get(forums_spa))
-        .route("/f/", get(forums_spa))
-        .route("/f/{*path}", get(forums_spa))
+        .merge(forums_spa_routes(state.clone()))
         .fallback_service(static_site)
 }
 
+/// Rotas do shell SPA dos fóruns — com estado pra injetar OG tags de tópico.
+fn forums_spa_routes(state: AppState) -> Router<()> {
+    Router::new()
+        .route("/f", get(forums_spa))
+        .route("/f/", get(forums_spa))
+        .route("/f/{*path}", get(forums_spa))
+        .with_state(state)
+}
+
 /// Serve o shell SPA dos fóruns (WEB_ROOT/f/index.html) pra qualquer /f/*.
-async fn forums_spa() -> axum::response::Response {
+/// Pra /f/topico/<id>[/slug], injeta og:title/og:description/og:url do tópico
+/// no <head> — é o que Telegram/WhatsApp/Mastodon leem ao compartilhar.
+async fn forums_spa(
+    State(state): State<AppState>,
+    path: Option<axum::extract::Path<String>>,
+) -> axum::response::Response {
     use axum::response::IntoResponse;
     let web_root = std::env::var("WEB_ROOT").unwrap_or_else(|_| "/srv/web".to_string());
-    match tokio::fs::read(format!("{web_root}/f/index.html")).await {
-        Ok(bytes) => (
-            [
-                (axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8"),
-                (axum::http::header::CACHE_CONTROL, "no-cache"),
-            ],
-            bytes,
-        )
-            .into_response(),
-        Err(_) => axum::http::StatusCode::NOT_FOUND.into_response(),
+    let Ok(bytes) = tokio::fs::read(format!("{web_root}/f/index.html")).await else {
+        return axum::http::StatusCode::NOT_FOUND.into_response();
+    };
+    let mut html = String::from_utf8_lossy(&bytes).into_owned();
+
+    if let Some(axum::extract::Path(p)) = path {
+        if let Some(rest) = p.strip_prefix("topico/") {
+            let id_seg = rest.split('/').next().unwrap_or("");
+            if let Ok(id) = uuid::Uuid::parse_str(id_seg) {
+                let row: Option<(String, String, String)> = sqlx::query_as(
+                    "SELECT t.title, t.body, f.name FROM forum_topic t \
+                     JOIN forum f ON f.id = t.forum_id \
+                     WHERE t.id = $1 AND t.hidden_at IS NULL",
+                )
+                .bind(id)
+                .fetch_optional(&state.db)
+                .await
+                .unwrap_or(None);
+                if let Some((title, body, forum_name)) = row {
+                    let esc = |s: &str| {
+                        s.replace('&', "&amp;")
+                            .replace('<', "&lt;")
+                            .replace('>', "&gt;")
+                            .replace('"', "&quot;")
+                    };
+                    let desc: String = body.chars().take(200).collect::<String>()
+                        + if body.chars().count() > 200 {
+                            "…"
+                        } else {
+                            ""
+                        };
+                    let origin = std::env::var("PUBLIC_ORIGIN")
+                        .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
+                    let tags = format!(
+                        "<meta property=\"og:title\" content=\"{t}\"/>\
+                         <meta property=\"og:description\" content=\"{d}\"/>\
+                         <meta property=\"og:type\" content=\"article\"/>\
+                         <meta property=\"og:site_name\" content=\"DemocraciaBR\"/>\
+                         <meta property=\"og:url\" content=\"{o}/f/{p}\"/>\
+                         <meta name=\"twitter:card\" content=\"summary\"/>",
+                        t = esc(&format!("{title} — {forum_name}")),
+                        d = esc(&desc),
+                        o = origin.trim_end_matches('/'),
+                        p = esc(&p),
+                    );
+                    html = html.replacen("</head>", &format!("{tags}</head>"), 1);
+                    if let (Some(a), Some(b)) = (html.find("<title>"), html.find("</title>")) {
+                        if a < b {
+                            html.replace_range(
+                                a..b + "</title>".len(),
+                                &format!("<title>{} — DemocraciaBR</title>", esc(&title)),
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
+
+    (
+        [
+            (axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (axum::http::header::CACHE_CONTROL, "no-cache"),
+        ],
+        html,
+    )
+        .into_response()
 }
 
 #[cfg(test)]

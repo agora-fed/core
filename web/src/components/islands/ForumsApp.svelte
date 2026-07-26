@@ -7,6 +7,8 @@
   // materializados em runtime nunca dão 404 de build (lição das propostas).
   import { onMount } from 'svelte';
   import {
+    adminListForums,
+    adminUpdateForum,
     commentForumTopic,
     createForumTopic,
     getForumTopic,
@@ -18,6 +20,7 @@
     type ForumTopicDetailDto,
     type ForumTopicDto,
   } from '../../lib/api';
+  import { mdToHtml, titleSlug } from '../../lib/markdown';
 
   type View = 'home' | 'forum' | 'topic';
 
@@ -44,6 +47,52 @@
   let comment = $state('');
   let busy = $state(false);
   let formMsg = $state<string | null>(null);
+  let showPreview = $state(false);
+  // Admin inline (a capacidade é provada pela própria API admin responder).
+  let isAdmin = $state(false);
+  let admForumId = $state('');
+  let admEmail = $state('');
+  let admThresholds = $state('');
+  let admMsg = $state<string | null>(null);
+
+  async function loadAdminInline(fullPath: string) {
+    isAdmin = false;
+    admMsg = null;
+    const res = await adminListForums(fullPath, 0, 200);
+    if (res.success && res.data) {
+      const row = res.data.find((r) => r.full_path === fullPath);
+      if (row) {
+        isAdmin = true;
+        admForumId = row.id;
+        admEmail = row.contact_email ?? '';
+        admThresholds = row.thresholds.join(', ');
+      }
+    }
+  }
+
+  async function saveAdminInline() {
+    if (busy) return;
+    const parts = admThresholds
+      .split(/[,\s]+/)
+      .filter(Boolean)
+      .map(Number);
+    const ok =
+      parts.length > 0 &&
+      parts.every((n) => Number.isInteger(n) && n > 0) &&
+      parts.every((n, i) => i === 0 || n > parts[i - 1]);
+    if (!ok) {
+      admMsg = 'Patamares inválidos — inteiros crescentes (ex.: 1000, 10000, 100000).';
+      return;
+    }
+    busy = true;
+    const res = await adminUpdateForum(admForumId, {
+      contact_email: admEmail.trim(),
+      thresholds: parts,
+    });
+    busy = false;
+    admMsg = res.success ? '✅ Salvo.' : (res.error?.message ?? 'Falha ao salvar.');
+    if (res.success) void load();
+  }
 
   function isLogged(): boolean {
     try {
@@ -60,7 +109,8 @@
       path = '';
     } else if (raw.startsWith('topico/')) {
       view = 'topic';
-      topicId = raw.slice('topico/'.length);
+      // /f/topico/<uuid>[/<slug-do-titulo>] — o slug é cosmético/SEO, ignorado.
+      topicId = raw.split('/')[1] ?? '';
     } else {
       view = 'forum';
       path = raw;
@@ -98,6 +148,7 @@
         return;
       }
       topics = tp.ok && tp.data ? tp.data.topics : [];
+      void loadAdminInline(path);
     } else {
       const res = await getForumTopic(topicId);
       loading = false;
@@ -285,6 +336,24 @@
     {:else}
       <p class="f-badge muted">Patamares: {forum.thresholds.map((t) => t.toLocaleString('pt-BR')).join(' · ')} interações (e-mail institucional em curadoria)</p>
     {/if}
+    {#if isAdmin}
+      <details class="f-admin">
+        <summary>🛠️ Configurar este fórum (admin)</summary>
+        <div class="f-admin-form">
+          <label>
+            E-mail institucional
+            <input class="input" type="email" bind:value={admEmail} placeholder="ouvidoria@…" />
+          </label>
+          <label>
+            Patamares (interações)
+            <input class="input" type="text" bind:value={admThresholds} />
+          </label>
+          <button class="btn" type="button" onclick={saveAdminInline} disabled={busy}>Salvar</button>
+          {#if admMsg}<span class="note">{admMsg}</span>{/if}
+        </div>
+        <p class="muted small">Confirme o endereço na fonte oficial. Moderadores: em <a href="/admin/foruns">/admin/foruns</a>.</p>
+      </details>
+    {/if}
   </header>
 
   {#if isEstado}
@@ -328,7 +397,7 @@
     <ul class="f-topics">
       {#each topics as t (t.id)}
         <li>
-          <a class="f-topic" href={`/f/topico/${t.id}`} onclick={(e) => { e.preventDefault(); navigate(`/f/topico/${t.id}`); }}>
+          <a class="f-topic" href={`/f/topico/${t.id}/${titleSlug(t.title)}`} onclick={(e) => { e.preventDefault(); navigate(`/f/topico/${t.id}/${titleSlug(t.title)}`); }}>
             <span class="f-score" title="Saldo de votos">{t.score > 0 ? `+${t.score}` : t.score}</span>
             <span class="f-topic-main">
               <strong>{t.title}</strong>
@@ -354,8 +423,27 @@
         <input id="ft-title" class="input" type="text" maxlength="200" bind:value={title} placeholder="Ex.: Distribuição de vacinas nos postos" />
       </div>
       <div class="field">
-        <label for="ft-body">Descrição</label>
-        <textarea id="ft-body" class="input" rows="4" bind:value={body} placeholder="Contexto, problema e o que você propõe debater…"></textarea>
+        <div class="f-md-bar">
+          <label for="ft-body">Descrição</label>
+          <span class="muted small">
+            Markdown: **negrito** · *itálico* · `código` · [link](https://…) · - lista · # título
+          </span>
+          <button type="button" class="f-linklike" onclick={() => (showPreview = !showPreview)}>
+            {showPreview ? '✏️ Editar' : '👁 Visualizar'}
+          </button>
+        </div>
+        {#if showPreview}
+          <div class="input f-md-preview f-topic-text">
+            {#if body.trim()}
+              <!-- eslint-disable-next-line svelte/no-at-html-tags — mdToHtml escapa TODO o input antes das regras -->
+              {@html mdToHtml(body)}
+            {:else}
+              <span class="muted">Nada pra visualizar ainda…</span>
+            {/if}
+          </div>
+        {:else}
+          <textarea id="ft-body" class="input" rows="6" bind:value={body} placeholder="Contexto, problema e o que você propõe debater… (Markdown suportado)"></textarea>
+        {/if}
       </div>
       <button class="btn btn-primary" type="submit" disabled={busy || !title.trim() || !body.trim()}>
         {busy ? 'Enviando…' : 'Criar tópico'}
@@ -385,7 +473,10 @@
           · 🌐 {detail.topic.federated_interactions.toLocaleString('pt-BR')} federadas (não contam pro envio)
         {/if}
       </p>
-      <div class="f-topic-text">{detail.topic.body}</div>
+      <div class="f-topic-text">
+        <!-- eslint-disable-next-line svelte/no-at-html-tags — mdToHtml escapa TODO o input antes das regras -->
+        {@html mdToHtml(detail.topic.body)}
+      </div>
 
       {#if detail.dispatches.length > 0}
         <aside class="f-receipts" aria-label="Envios à instituição">
@@ -413,7 +504,10 @@
               <span class="muted small">
                 {c.federated ? `🌐 ${c.author}` : c.author} · {fmtDate(c.created_at)}
               </span>
-              <p>{c.body}</p>
+              <div class="f-topic-text">
+                <!-- eslint-disable-next-line svelte/no-at-html-tags — mdToHtml escapa TODO o input antes das regras -->
+                {@html mdToHtml(c.body)}
+              </div>
             </li>
           {/each}
         </ul>
@@ -496,6 +590,15 @@
   .f-comments ul { list-style: none; padding: 0; }
   .f-comments li { border-bottom: 1px solid var(--c-border, #e3e3e3); padding: 0.5rem 0; }
   .f-linklike { background: none; border: none; color: inherit; cursor: pointer; padding: 0; font-size: 0.9rem; text-decoration: underline; }
+  .f-admin { margin: 0.5rem 0; font-size: 0.92rem; }
+  .f-admin summary { cursor: pointer; }
+  .f-admin-form { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; margin: 0.5rem 0; }
+  .f-admin-form label { display: flex; flex-direction: column; gap: 0.2rem; min-width: 16rem; }
+  .f-md-bar { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: baseline; justify-content: space-between; }
+  .f-md-preview { min-height: 8rem; }
+  .f-topic-text :global(pre) { overflow-x: auto; padding: 0.5rem; border: 1px solid var(--c-border, #444); border-radius: 0.4rem; }
+  .f-topic-text :global(blockquote) { border-left: 3px solid var(--c-border, #666); margin: 0.4rem 0; padding-left: 0.7rem; opacity: 0.9; }
+  .f-topic-text :global(ul), .f-topic-text :global(ol) { padding-left: 1.4rem; }
   .note { margin-top: 0.5rem; font-size: 0.92rem; }
   .small { font-size: 0.85rem; }
 </style>
