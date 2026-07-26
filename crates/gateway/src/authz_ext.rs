@@ -10,12 +10,45 @@
 //! gates shipped in the security queue (0.59.2/0.59.3). Migration of existing call sites is
 //! incremental (R0.4 → R2).
 
+use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
+use axum::routing::get;
+use axum::{Json, Router};
 use dsoc_admin::AdminService;
 use dsoc_api_contract::ApiResponse;
 use dsoc_app::{AppState, CallerId};
+
+/// Mounts `GET /me/permissions` — the caller's effective permission keys, so the front can
+/// decide which management/moderation controls to render (it never gates on its own; the API
+/// re-checks every action).
+pub fn routes(state: AppState) -> Router<()> {
+    Router::new()
+        .route("/me/permissions", get(my_permissions))
+        .with_state(state)
+}
+
+async fn my_permissions(State(state): State<AppState>, caller: CallerId) -> Response {
+    let svc = AdminService::from_state(&state);
+    match svc.permissions_for(caller.org, caller.citizen).await {
+        Ok(perms) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(serde_json::json!({
+                "keys": perms.keys_sorted(),
+                "is_administrator": perms.is_administrator(),
+            }))),
+        )
+            .into_response(),
+        Err(err) => {
+            tracing::error!(error = ?err, "my_permissions lookup failed");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiResponse::<()>::fail("http_500", "Erro interno.")),
+            )
+                .into_response()
+        }
+    }
+}
 
 /// Assert the caller holds `key` in their org. `Ok(())` to proceed; `Err(response)` is a ready
 /// 403 (missing permission) or 500 (lookup failure) for the handler to return directly.

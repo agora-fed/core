@@ -567,7 +567,7 @@ pub async fn list_comments(
         r#"SELECT id, topic_id, author_id, remote_handle, federated, stance,
                   favor_count, contra_count, ponderacao_count, body, created_at
            FROM forum_topic_comment
-           WHERE topic_id = $1 AND moderation = 'approved'
+           WHERE topic_id = $1 AND moderation = 'approved' AND hidden_at IS NULL
              AND ($2::uuid IS NULL OR id > $2)
            ORDER BY id
            LIMIT $3"#,

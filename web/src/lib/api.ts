@@ -2942,3 +2942,26 @@ export interface RecentForumTopicDto {
 
 export const getRecentForumTopics = (limit = 25) =>
   apiGet<RecentForumTopicDto[]>(`/api/v1/f/recent?limit=${limit}`);
+
+/** Permissões efetivas do caller (chaves modulo.acao) — a UI decide o que mostrar. */
+export interface MyPermissions {
+  keys: string[];
+  is_administrator: boolean;
+}
+export const getMyPermissions = () =>
+  apiGetCredentialed<MyPermissions>('/api/v1/me/permissions');
+
+/** Remove (moderação) um tópico de fórum. Backend exige content.moderate/forums.moderate
+ *  ou ser moderador do fórum. */
+export const moderateRemoveTopic = (id: string, reason?: string) =>
+  apiPost<{ removed: true }>(
+    `/api/v1/f/topics/${encodeURIComponent(id)}/remove`,
+    { reason },
+  );
+
+/** Remove (moderação) um argumento/comentário de fórum. */
+export const moderateRemoveComment = (id: string, reason?: string) =>
+  apiPost<{ removed: true }>(
+    `/api/v1/f/comments/${encodeURIComponent(id)}/remove`,
+    { reason },
+  );

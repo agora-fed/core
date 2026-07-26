@@ -83,6 +83,12 @@ impl Permissions {
     pub fn is_empty(&self) -> bool {
         self.keys.is_empty()
     }
+
+    /// The held keys in sorted order — for exposing to the front (`GET /me/permissions`).
+    #[must_use]
+    pub fn keys_sorted(&self) -> Vec<String> {
+        self.keys.iter().cloned().collect()
+    }
 }
 
 #[cfg(test)]

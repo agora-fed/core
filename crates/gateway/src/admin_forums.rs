@@ -14,10 +14,10 @@
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, patch};
+use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use dsoc_api_contract::ApiResponse;
-use dsoc_app::AppState;
+use dsoc_app::{AppState, CallerId};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -31,6 +31,10 @@ pub fn routes(state: AppState) -> Router<()> {
             get(mods_list).post(mods_add),
         )
         .route("/admin/forums/{id}/moderators/{cid}", delete(mods_remove))
+        // Moderação de conteúdo (R3.1 #27): admin global (content.moderate) OU
+        // moderador do fórum removem tópico/argumento. Soft-delete + audit.
+        .route("/f/topics/{id}/remove", post(topic_remove))
+        .route("/f/comments/{id}/remove", post(comment_remove))
         .with_state(state)
 }
 
@@ -336,4 +340,176 @@ async fn mods_remove(
             storage_error()
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Moderação de conteúdo (R3.1 #27)
+// ---------------------------------------------------------------------------
+
+/// Corpo opcional com o motivo da remoção (vai pro audit e pra deletion_reason).
+#[derive(Debug, Default, Deserialize)]
+struct RemoveBody {
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+/// Pode moderar este fórum? Permissão global `content.moderate`/`forums.moderate`
+/// (via `require_permission`), OU moderador designado deste fórum (0541). É o ponto
+/// onde o papel Moderador configurável e o moderador-por-fórum convergem.
+async fn can_moderate_forum(state: &AppState, caller: CallerId, forum_id: Uuid) -> bool {
+    let svc = dsoc_admin::AdminService::from_state(state);
+    if let Ok(perms) = svc.permissions_for(caller.org, caller.citizen).await {
+        if perms.can("content.moderate") || perms.can("forums.moderate") {
+            return true;
+        }
+    }
+    sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM forum_moderator WHERE forum_id = $1 AND citizen_id = $2)",
+    )
+    .bind(forum_id)
+    .bind(caller.citizen.as_uuid())
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(false)
+}
+
+fn trim_reason(reason: Option<String>) -> Option<String> {
+    reason
+        .map(|s| s.trim().chars().take(2000).collect::<String>())
+        .filter(|s| !s.is_empty())
+}
+
+async fn topic_remove(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Path(id): Path<Uuid>,
+    body: Option<Json<RemoveBody>>,
+) -> Response {
+    let forum_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT forum_id FROM forum_topic WHERE id = $1 AND hidden_at IS NULL")
+            .bind(id)
+            .fetch_optional(&state.db)
+            .await
+            .ok()
+            .flatten();
+    let Some(forum_id) = forum_id else {
+        return fail(StatusCode::NOT_FOUND, "not_found", "Tópico não encontrado.");
+    };
+    if !can_moderate_forum(&state, caller, forum_id).await {
+        return fail(
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            "Você não pode moderar este fórum.",
+        );
+    }
+    let reason = trim_reason(body.map(|b| b.0).unwrap_or_default().reason);
+    let res = sqlx::query(
+        "UPDATE forum_topic SET hidden_at = now(), deleted_by = $2, deletion_reason = $3 \
+         WHERE id = $1",
+    )
+    .bind(id)
+    .bind(caller.citizen.as_uuid())
+    .bind(reason.as_deref())
+    .execute(&state.db)
+    .await;
+    if let Err(err) = res {
+        tracing::warn!(?err, "topic_remove falhou");
+        return storage_error();
+    }
+    let _ = audit_moderation(
+        &state.db,
+        caller,
+        "forum.topic.remove",
+        id,
+        reason.as_deref(),
+    )
+    .await;
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(serde_json::json!({"removed": true}))),
+    )
+        .into_response()
+}
+
+async fn comment_remove(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Path(id): Path<Uuid>,
+    body: Option<Json<RemoveBody>>,
+) -> Response {
+    // Descobre o fórum via o tópico do argumento.
+    let forum_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT t.forum_id FROM forum_topic_comment c \
+           JOIN forum_topic t ON t.id = c.topic_id \
+          WHERE c.id = $1 AND c.hidden_at IS NULL",
+    )
+    .bind(id)
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten();
+    let Some(forum_id) = forum_id else {
+        return fail(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "Argumento não encontrado.",
+        );
+    };
+    if !can_moderate_forum(&state, caller, forum_id).await {
+        return fail(
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            "Você não pode moderar este fórum.",
+        );
+    }
+    let reason = trim_reason(body.map(|b| b.0).unwrap_or_default().reason);
+    let res = sqlx::query(
+        "UPDATE forum_topic_comment SET hidden_at = now(), deleted_by = $2, deletion_reason = $3 \
+         WHERE id = $1",
+    )
+    .bind(id)
+    .bind(caller.citizen.as_uuid())
+    .bind(reason.as_deref())
+    .execute(&state.db)
+    .await;
+    if let Err(err) = res {
+        tracing::warn!(?err, "comment_remove falhou");
+        return storage_error();
+    }
+    let _ = audit_moderation(
+        &state.db,
+        caller,
+        "forum.comment.remove",
+        id,
+        reason.as_deref(),
+    )
+    .await;
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(serde_json::json!({"removed": true}))),
+    )
+        .into_response()
+}
+
+/// Registra a ação de moderação no `admin_audit` (mesma tabela dos admin_*).
+async fn audit_moderation(
+    db: &PgPool,
+    caller: CallerId,
+    action: &str,
+    target_id: Uuid,
+    reason: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r"INSERT INTO admin_audit
+            (id, admin_id, action, target_citizen_id, target_domain, target_id, detail)
+          VALUES ($1, $2, $3, NULL, 'forums', $4, $5)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(caller.citizen.as_uuid())
+    .bind(action)
+    .bind(target_id)
+    .bind(reason.map(|r| serde_json::json!({ "reason": r })))
+    .execute(db)
+    .await
+    .map(|_| ())
 }

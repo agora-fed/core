@@ -15,6 +15,9 @@
     getForumTopics,
     getForumTree,
     getRecentForumTopics,
+    getMyPermissions,
+    moderateRemoveTopic,
+    moderateRemoveComment,
     postNote,
     reportNote,
     voteForumComment,
@@ -61,6 +64,11 @@
   let busy = $state(false);
   let formMsg = $state<string | null>(null);
   let showPreview = $state(false);
+  // Moderação (R3.1 #27): mostra os botões de remover só pra quem pode moderar
+  // globalmente (content.moderate/forums.moderate/administrator). Moderador só-de-um-
+  // fórum ainda age via API mas não ganha o botão nesta fatia; o backend reenforça.
+  let canModerate = $state(false);
+
   // Denúncia (issue #20) — reusa POST /me/reports, que é genérico por object_uri.
   let reportOpen = $state(false);
   let reportTarget = $state<{ object_uri: string; author_actor_url: string } | null>(null);
@@ -189,11 +197,50 @@
   onMount(() => {
     parseLocation();
     void load();
+    void loadModeration();
     window.addEventListener('popstate', () => {
       parseLocation();
       void load();
     });
   });
+
+  async function loadModeration() {
+    if (!isLogged()) return;
+    const res = await getMyPermissions();
+    if (res.ok && res.data) {
+      const k = res.data.keys;
+      canModerate =
+        res.data.is_administrator ||
+        k.includes('content.moderate') ||
+        k.includes('forums.moderate');
+    }
+  }
+
+  async function removeTopic() {
+    if (!detail || !canModerate) return;
+    const reason =
+      window.prompt('Remover este tópico (moderação). Motivo (opcional):') ?? undefined;
+    const res = await moderateRemoveTopic(detail.topic.id, reason);
+    if (res.success) {
+      toast.success('Tópico removido.');
+      navigate(path ? `/f/${path}` : '/f/'); // volta pra lista do fórum
+    } else {
+      toast.error(res.error?.message ?? 'Não foi possível remover.');
+    }
+  }
+
+  async function removeComment(c: ForumCommentItemDto) {
+    if (!detail || !canModerate) return;
+    const reason =
+      window.prompt('Remover este argumento (moderação). Motivo (opcional):') ?? undefined;
+    const res = await moderateRemoveComment(c.id, reason);
+    if (res.success) {
+      toast.success('Argumento removido.');
+      detail = { ...detail, comments: detail.comments.filter((x) => x.id !== c.id) };
+    } else {
+      toast.error(res.error?.message ?? 'Não foi possível remover.');
+    }
+  }
 
   // --- home: agrupamento dos fóruns raiz ---
   const JUDICIARIO = new Set([
@@ -709,6 +756,9 @@
         </button>
         <button type="button" class="btn" onclick={copyLink}>🔗 Copiar link</button>
         <button type="button" class="btn" title="Denunciar este tópico à moderação" onclick={askReportTopic}>⚑ Denunciar</button>
+        {#if canModerate}
+          <button type="button" class="btn btn-danger" title="Remover este tópico (moderação)" onclick={removeTopic}>🗑 Remover</button>
+        {/if}
         {#if shareState === 'sent'}
           <span class="muted small">
             ✅ Publicado — seus seguidores (aqui e no fediverso) receberam. <a href="/feed">Ver no feed</a>
@@ -758,6 +808,9 @@
                     <span class="muted small">
                       {c.author} · {fmtDate(c.created_at)}
                       · <button type="button" class="f-linklike" title="Denunciar este argumento à moderação" onclick={() => askReportComment(c)}>⚑ denunciar</button>
+                      {#if canModerate}
+                        · <button type="button" class="f-linklike f-linklike-danger" title="Remover este argumento (moderação)" onclick={() => removeComment(c)}>🗑 remover</button>
+                      {/if}
                     </span>
                     <div class="f-arg-votes" role="group" aria-label="Votar neste argumento">
                       <button type="button" class="f-argv f-argv-favor" title="Concordo com este argumento" onclick={() => voteArg(c, 'favor')} disabled={busy}>▲ {c.favor}</button>
@@ -777,6 +830,9 @@
                   <span class="muted small">
                     🌐 {c.author} · {fmtDate(c.created_at)}
                     · <button type="button" class="f-linklike" title="Denunciar este comentário à moderação" onclick={() => askReportComment(c)}>⚑ denunciar</button>
+                    {#if canModerate}
+                      · <button type="button" class="f-linklike f-linklike-danger" title="Remover este comentário (moderação)" onclick={() => removeComment(c)}>🗑 remover</button>
+                    {/if}
                   </span>
                   <div class="f-topic-text">
                     <!-- eslint-disable-next-line svelte/no-at-html-tags — mdToHtml escapa TODO o input antes das regras -->
@@ -971,6 +1027,7 @@
   .f-comments ul { list-style: none; padding: 0; }
   .f-comments li { border-bottom: 1px solid var(--c-border, #e3e3e3); padding: 0.5rem 0; }
   .f-linklike { background: none; border: none; color: inherit; cursor: pointer; padding: 0; font-size: 0.9rem; text-decoration: underline; }
+  .f-linklike-danger { color: var(--danger, #dc2626); }
   .f-banner {
     height: 9rem; border-radius: 0.7rem; margin-bottom: 0.75rem;
     background-size: cover; background-position: center;
