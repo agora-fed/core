@@ -1522,25 +1522,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dsoc-debates"
-version = "0.1.0"
-dependencies = [
- "axum",
- "chrono",
- "dsoc-api-contract",
- "dsoc-app",
- "dsoc-core",
- "dsoc-db",
- "serde",
- "sqlx 0.8.6",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "utoipa",
- "uuid",
-]
-
-[[package]]
 name = "dsoc-events"
 version = "0.1.0"
 dependencies = [
@@ -1620,7 +1601,6 @@ dependencies = [
  "dsoc-consultations",
  "dsoc-core",
  "dsoc-db",
- "dsoc-debates",
  "dsoc-events",
  "dsoc-federation",
  "dsoc-forums",

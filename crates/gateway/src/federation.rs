@@ -3291,11 +3291,22 @@ pub(crate) async fn resolve_remote_mentions(
     content: &str,
     public_origin: &str,
 ) -> Vec<dsoc_federation::ResolvedMention> {
+    // Cada resolução custa até 2 fetches × REMOTE_FETCH_TIMEOUT_SECS dentro do handler de
+    // publicação — o teto impede que um post com dezenas de menções a hosts mortos segure a
+    // request. Menções além do teto ficam com a URL por convenção, sem entrega direta.
+    const MAX_RESOLVED_MENTIONS: usize = 10;
     let our_host = reqwest::Url::parse(public_origin)
         .ok()
         .and_then(|u| u.host_str().map(str::to_owned));
+    let all = dsoc_federation::extract_mentions(content);
+    if all.len() > MAX_RESOLVED_MENTIONS {
+        tracing::warn!(
+            total = all.len(),
+            "post com mais menções que o teto de resolução; excedente fica sem entrega direta"
+        );
+    }
     let mut out: Vec<dsoc_federation::ResolvedMention> = Vec::new();
-    for m in dsoc_federation::extract_mentions(content) {
+    for m in all.into_iter().take(MAX_RESOLVED_MENTIONS) {
         let Some(host) = m.host.clone() else {
             continue;
         };
