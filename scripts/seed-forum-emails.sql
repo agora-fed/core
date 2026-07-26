@@ -26,6 +26,38 @@ SELECT pg_temp.set_email('senado/transparencia',            'ctfc@senado.leg.br'
 SELECT pg_temp.set_email('senado/esporte',                  'cesp@senado.leg.br');  -- /2615
 SELECT pg_temp.set_email('senado/etica',                    'naot@senado.leg.br');  -- CEDP via NAOT (www25.senado.leg.br)
 
+-- ============ CÂMARA — comissões (fontes: relatórios anuais oficiais e páginas
+-- vivas em camara.leg.br — o portal removeu e-mails dos blocos de contato;
+-- confirmação por documento, string exata; padrão NÃO é uniforme)
+SELECT pg_temp.set_email('camara/ccjc',                    'ccjc.decom@camara.leg.br');    -- publicação oficial (bd.camara)
+SELECT pg_temp.set_email('camara/financas',                'cft@camara.leg.br');           -- relatório 2025
+SELECT pg_temp.set_email('camara/previdencia',             'cpasf@camara.leg.br');         -- relatório 2025
+SELECT pg_temp.set_email('camara/educacao',                'ce.decom@camara.leg.br');      -- relatório 2022
+SELECT pg_temp.set_email('camara/cultura',                 'ccult.decom@camara.leg.br');   -- relatório 2025
+SELECT pg_temp.set_email('camara/agricultura',             'capadr.decom@camara.leg.br');  -- relatório 2023
+SELECT pg_temp.set_email('camara/ciencia-tecnologia',      'ccti@camara.leg.br');          -- relatório 2025
+SELECT pg_temp.set_email('camara/comunicacao',             'ccom.decom@camara.leg.br');    -- relatório 2025
+SELECT pg_temp.set_email('camara/relacoes-exteriores',     'credn@camara.leg.br');         -- relatório 2024
+SELECT pg_temp.set_email('camara/minas-energia',           'cme@camara.leg.br');           -- relatório 2023
+SELECT pg_temp.set_email('camara/seguranca-publica',       'cspcco@camara.leg.br');        -- relatório 2023
+SELECT pg_temp.set_email('camara/trabalho',                'ctasp.decom@camara.leg.br');   -- relatório 2022 (sigla antiga CTASP)
+SELECT pg_temp.set_email('camara/viacao-transportes',      'cvt@camara.leg.br');           -- relatório 2023
+SELECT pg_temp.set_email('camara/turismo',                 'ctur.decom@camara.leg.br');    -- relatório 2018 (confiança menor)
+SELECT pg_temp.set_email('camara/esporte',                 'cespo.decom@camara.leg.br');   -- relatório 2025
+SELECT pg_temp.set_email('camara/fiscalizacao',            'cffc.decom@camara.leg.br');    -- relatório 2019 (confiança menor)
+SELECT pg_temp.set_email('camara/integracao-nacional',     'cindre@camara.leg.br');        -- relatório 2023
+SELECT pg_temp.set_email('camara/legislacao-participativa','clp.decom@camara.leg.br');     -- folder oficial CLP
+SELECT pg_temp.set_email('camara/mulheres',                'cmulher.decom@camara.leg.br'); -- portal 2024
+SELECT pg_temp.set_email('camara/idoso',                   'cidoso.decom@camara.leg.br');  -- relatório 2025
+SELECT pg_temp.set_email('camara/pessoa-com-deficiencia',  'cpd@camara.leg.br');           -- relatório 2022
+SELECT pg_temp.set_email('camara/amazonia',                'cpovos.decom@camara.leg.br');  -- REQ oficial 2023
+SELECT pg_temp.set_email('camara/administracao',           'casp.decom@camara.leg.br');    -- relatório 2025
+SELECT pg_temp.set_email('camara/etica',                   'cedpa@camara.leg.br');         -- página viva de contatos
+-- Pendentes na Câmara: saude (comissão nova, sem e-mail publicado), meio-ambiente
+-- (CMADS), defesa-consumidor (CDC), industria-comercio (CICS) — nada publicado;
+-- desenvolvimento-urbano e direitos-humanos — só fontes de 2013 (velhas demais
+-- pra envio automatizado).
+
 -- ============ MINISTÉRIOS — ouvidorias com e-mail público (fonte: gov.br/<órgão>/canais_atendimento)
 SELECT pg_temp.set_email('ministerio-relacoes-exteriores',  'ouvidoria@itamaraty.gov.br');
 SELECT pg_temp.set_email('ministerio-educacao',             'ouvidoria@mec.gov.br');
