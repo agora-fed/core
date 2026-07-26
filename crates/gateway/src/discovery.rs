@@ -28,7 +28,7 @@ pub struct HashtagHit {
     pub note_count: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct MentionHit {
     pub handle: String,
     pub display_name: Option<String>,
@@ -141,6 +141,65 @@ pub async fn mentions_matching(
             avatar_url,
         })
         .collect())
+}
+
+/// Quem o cidadão SEGUE, filtrado por substring da URL do ator — as sugestões
+/// mais prováveis de uma menção, incluindo contas remotas que a busca local
+/// nunca acharia (é o que faz `@pedroz…` sugerir `pedrozambarda@organica.social`).
+/// `display_name`/`avatar` ficam None pra remotos; o handler enriquece quando o
+/// mesmo ator também é cidadão local.
+pub async fn followed_mentions_matching(
+    db: &PgPool,
+    citizen_id: Uuid,
+    q: &str,
+    limit: i64,
+) -> Result<Vec<MentionHit>, sqlx::Error> {
+    let cleaned = q.trim().trim_start_matches('@');
+    if cleaned.is_empty() {
+        return Ok(Vec::new());
+    }
+    let pattern = format!("%{}%", cleaned.to_lowercase());
+    let rows: Vec<(String,)> = sqlx::query_as(
+        r"
+        SELECT f.remote_actor_url
+          FROM federation_follow f
+         WHERE f.citizen_id = $1
+           AND f.direction = 'outbound'
+           AND lower(f.remote_actor_url) LIKE $2
+         ORDER BY f.created_at DESC
+         LIMIT $3
+        ",
+    )
+    .bind(citizen_id)
+    .bind(&pattern)
+    .bind(limit)
+    .fetch_all(db)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|(actor_url,)| {
+            let handle = handle_from_actor_url(&actor_url)?;
+            Some(MentionHit {
+                handle,
+                display_name: None,
+                bio: None,
+                avatar_url: None,
+                actor_url,
+            })
+        })
+        .collect())
+}
+
+/// `https://host/users/nome` (ou `/actors/nome`) → `nome@host`. Convenção da
+/// fediverse pra derivar o handle exibível sem um fetch do ator.
+fn handle_from_actor_url(u: &str) -> Option<String> {
+    let rest = u.strip_prefix("https://")?;
+    let (host, path) = rest.split_once('/')?;
+    let user = path.trim_end_matches('/').rsplit('/').next()?;
+    if user.is_empty() || host.is_empty() {
+        return None;
+    }
+    Some(format!("{user}@{host}"))
 }
 
 pub async fn notes_matching(
@@ -373,4 +432,28 @@ pub async fn follow_suggestions(
             avatar_url,
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handle_from_actor_url;
+
+    #[test]
+    fn handle_from_mastodon_and_own_actor_urls() {
+        assert_eq!(
+            handle_from_actor_url("https://exemplo.social/users/fulano").as_deref(),
+            Some("fulano@exemplo.social")
+        );
+        assert_eq!(
+            handle_from_actor_url("https://democracia.social.br/actors/socrates").as_deref(),
+            Some("socrates@democracia.social.br")
+        );
+    }
+
+    #[test]
+    fn handle_from_bad_urls_is_none() {
+        assert_eq!(handle_from_actor_url("http://sem-tls/users/x"), None);
+        assert_eq!(handle_from_actor_url("https://sohost"), None);
+        assert_eq!(handle_from_actor_url("https://host/"), None);
+    }
 }

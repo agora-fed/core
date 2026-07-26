@@ -2196,26 +2196,66 @@ async fn search_hashtags(
     }
 }
 
-/// `GET /api/v1/search/mentions?q=` — autocomplete local `@handle`. Public.
+/// `GET /api/v1/search/mentions?q=` — autocomplete de menção. Público; quando o
+/// caller está logado, quem ele SEGUE (inclusive remotos) vem primeiro — sem
+/// isso o dropdown só achava cidadão local e "quem eu sigo" nunca aparecia.
 async fn search_mentions(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(query): Query<SearchQuery>,
 ) -> Response {
     let limit = query.limit.unwrap_or(8).clamp(1, 20);
     let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
-    match discovery::mentions_matching(&state.db, &query.q, &public_origin(), &media_base, limit)
-        .await
+    let locals = match discovery::mentions_matching(
+        &state.db,
+        &query.q,
+        &public_origin(),
+        &media_base,
+        limit,
+    )
+    .await
     {
-        Ok(items) => (
-            StatusCode::OK,
-            Json(ApiResponse::ok(json!({ "items": items }))),
-        )
-            .into_response(),
+        Ok(items) => items,
         Err(err) => {
             tracing::error!(error = ?err, "search mentions failed");
-            server_error()
+            return server_error();
+        }
+    };
+    let follows = match caller_citizen_opt(&headers) {
+        Some(cid) => discovery::followed_mentions_matching(&state.db, cid, &query.q, limit)
+            .await
+            .unwrap_or_default(),
+        None => Vec::new(),
+    };
+    // Follows primeiro (enriquecidos com os dados locais quando o ator é da
+    // casa), depois os locais restantes. Dedup por actor_url.
+    let mut items: Vec<discovery::MentionHit> = Vec::new();
+    for f in follows {
+        match locals.iter().find(|l| l.actor_url == f.actor_url) {
+            Some(l) => items.push(l.clone()),
+            None => items.push(f),
         }
     }
+    for l in locals {
+        if !items.iter().any(|i| i.actor_url == l.actor_url) {
+            items.push(l);
+        }
+    }
+    items.truncate(limit as usize);
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(json!({ "items": items }))),
+    )
+        .into_response()
+}
+
+/// Caller opcional a partir dos headers que o middleware de sessão injeta —
+/// endpoints públicos que só ENRIQUECEM a resposta pra quem está logado.
+fn caller_citizen_opt(headers: &HeaderMap) -> Option<uuid::Uuid> {
+    headers
+        .get("x-dsoc-citizen-id")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse().ok())
 }
 
 /// `GET /api/v1/search?q=` — unified search: accounts + hashtags + notes.
