@@ -117,12 +117,30 @@ async fn seed_citizen(db: &Db, org: OrgId) -> CitizenId {
     CitizenId::from_uuid(id)
 }
 
+/// Seed an `owner` binding for `citizen` in `org` — o mesmo root of trust via SQL que
+/// `scripts/bootstrap-admin.sh` provê em produção. Mutações exigem isso desde o fix de
+/// segurança de 2026-07-26 (só nível Directory não autoriza mais).
+async fn seed_admin(db: &Db, org: OrgId, citizen: CitizenId) {
+    sqlx::query!(
+        "INSERT INTO admin_role_binding (id, org_id, citizen_id, role, created_at) \
+         VALUES ($1, $2, $3, 'owner', $4)",
+        Uuid::now_v7(),
+        org.as_uuid(),
+        citizen.as_uuid(),
+        Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+    )
+    .execute(db)
+    .await
+    .expect("seed admin binding");
+}
+
 #[tokio::test]
 async fn create_org_then_bind_role() {
     let db = connect().await;
     let org = seed_org(&db).await;
     let actor = seed_citizen(&db, org).await;
     let member = seed_citizen(&db, org).await;
+    seed_admin(&db, org, actor).await;
     let (svc, bus) = service_with(
         db,
         fixed_clock("2026-02-01T12:00:00Z"),
@@ -164,6 +182,7 @@ async fn duplicate_role_binding_conflicts() {
     let org = seed_org(&db).await;
     let actor = seed_citizen(&db, org).await;
     let member = seed_citizen(&db, org).await;
+    seed_admin(&db, org, actor).await;
     let (svc, _bus) = service_with(
         db,
         fixed_clock("2026-02-01T12:00:00Z"),
@@ -185,6 +204,7 @@ async fn toggle_feature_flag_is_idempotent_and_audited() {
     let db = connect().await;
     let org = seed_org(&db).await;
     let actor = seed_citizen(&db, org).await;
+    seed_admin(&db, org, actor).await;
     let key = "proposals.clustering";
 
     // Enable at t1.
@@ -263,4 +283,32 @@ async fn unauthorized_mutation_is_forbidden() {
     // Nothing was persisted.
     let missing = svc.get_org(org).await.expect_err("org must not exist");
     assert_eq!(missing.code(), "not_found");
+}
+
+/// Regressão do fix de 2026-07-26: um cidadão nível Directory SEM binding admin
+/// não pode mais mutar (antes, `bind_role` deixava ele se autopromover a owner).
+#[tokio::test]
+async fn directory_without_admin_binding_is_forbidden() {
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    let actor = seed_citizen(&db, org).await; // Directory, mas sem binding.
+    let member = seed_citizen(&db, org).await;
+    let (svc, _bus) = service_with(
+        db,
+        fixed_clock("2026-02-01T12:00:00Z"),
+        VerificationLevel::Directory,
+    );
+
+    // Autopromoção bloqueada.
+    let err = svc
+        .bind_role(org, actor, member, AdminRole::Owner)
+        .await
+        .expect_err("sem binding admin, bind_role deve ser forbidden");
+    assert_eq!(err.code(), "forbidden");
+
+    let err2 = svc
+        .set_feature_flag(org, actor, "proposals.clustering", true)
+        .await
+        .expect_err("sem binding admin, set_feature_flag deve ser forbidden");
+    assert_eq!(err2.code(), "forbidden");
 }

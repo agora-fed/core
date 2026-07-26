@@ -81,8 +81,25 @@ impl AdminService {
     }
 
     /// Assert the caller may perform an administrative mutation in `org`.
+    ///
+    /// SECURITY (2026-07-26, fila de segurança R0.4 / ADR-0011): antes exigia só
+    /// `VerificationLevel::Directory` — QUALQUER cidadão verificado podia `bind_role` a si
+    /// mesmo o papel `owner`. Agora exige um binding `owner`|`admin` em `admin_role_binding`
+    /// (raiz de confiança: `scripts/bootstrap-admin.sh` semeia o primeiro owner via SQL).
+    /// O gate de nível de verificação permanece como defesa em profundidade. Gate interino
+    /// até o `RequirePermission`/`roles.manage` do R0.3.
     async fn authorize_mutation(&self, org: OrgId, actor: CitizenId) -> Result<()> {
-        self.authz.require(org, actor, MIN_MUTATION_LEVEL).await
+        self.authz.require(org, actor, MIN_MUTATION_LEVEL).await?;
+        let is_admin = queries::actor_has_admin_role(&self.db, org.as_uuid(), actor.as_uuid())
+            .await
+            .map_err(map_sqlx)?;
+        if is_admin {
+            Ok(())
+        } else {
+            Err(Error::Forbidden(
+                "requer papel de administrador nesta organização".to_owned(),
+            ))
+        }
     }
 
     /// Create the administrative extension for an existing baseline organization.

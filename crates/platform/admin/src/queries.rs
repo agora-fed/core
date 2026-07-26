@@ -92,6 +92,27 @@ pub(crate) async fn list_admin_orgs(
 
 /// Insert a role binding. A duplicate `(org_id, citizen_id, role)` raises a unique
 /// violation, which the service maps to [`dsoc_core::Error::Conflict`].
+/// Whether `citizen` holds a mutating administrative role (`owner`|`admin`) in `org`.
+/// The root of trust is `scripts/bootstrap-admin.sh`, which seeds the first owner via SQL.
+pub(crate) async fn actor_has_admin_role(
+    db: &Db,
+    org_id: Uuid,
+    citizen_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM admin_role_binding
+             WHERE org_id = $1 AND citizen_id = $2 AND role IN ('owner', 'admin')
+        ) AS "exists!"
+        "#,
+        org_id,
+        citizen_id,
+    )
+    .fetch_one(db)
+    .await
+}
+
 pub(crate) async fn insert_role_binding(
     db: &Db,
     id: Uuid,
