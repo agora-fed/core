@@ -1,0 +1,83 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.id, t.title, t.score, t.favor_count, t.contra_count,\n                  t.ponderacao_count, t.interaction_count, t.comment_count, t.created_at,\n                  f.full_path AS forum_path, f.name AS forum_name\n           FROM forum_topic t\n           JOIN forum f ON f.id = t.forum_id\n           WHERE t.hidden_at IS NULL AND f.hidden_at IS NULL AND f.org_id = $1\n           ORDER BY t.id DESC\n           LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "score",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "favor_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "contra_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "ponderacao_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "interaction_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "comment_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "forum_path",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "forum_name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "488a2c7d4f29611eda76bf113af94ce534c167d54e88028d7bb80c8e543024a9"
+}

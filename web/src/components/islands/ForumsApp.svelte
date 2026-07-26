@@ -17,8 +17,10 @@
     getRecentForumTopics,
     postNote,
     voteForumTopic,
+    type ForumStance,
     type RecentForumTopicDto,
     type ForumChildDto,
+    type ForumCommentItemDto,
     type ForumDto,
     type ForumTopicDetailDto,
     type ForumTopicDto,
@@ -49,6 +51,8 @@
   let title = $state('');
   let body = $state('');
   let comment = $state('');
+  // Posição escolhida no composer (modelo do debate: argumento + posição juntos).
+  let commentStance = $state<ForumStance>('ponderacao');
   let busy = $state(false);
   let formMsg = $state<string | null>(null);
   let showPreview = $state(false);
@@ -235,18 +239,34 @@
     }
   }
 
-  async function vote(value: 1 | -1) {
+  async function vote(stance: ForumStance) {
     if (!detail || busy) return;
     if (!isLogged()) {
-      formMsg = 'Entre na sua conta para votar.';
+      formMsg = 'Entre na sua conta para se posicionar.';
       return;
     }
     busy = true;
-    const res = await voteForumTopic(detail.topic.id, value);
+    const res = await voteForumTopic(detail.topic.id, stance);
     busy = false;
     if (res.success && res.data) detail = { ...detail, topic: res.data };
-    else formMsg = res.error?.message ?? 'Não foi possível votar.';
+    else formMsg = res.error?.message ?? 'Não foi possível registrar a posição.';
   }
+
+  // Colunas do debate: locais com posição; sem posição/legados caem em Ponderação.
+  const STANCES: { key: ForumStance; label: string }[] = [
+    { key: 'favor', label: 'A favor' },
+    { key: 'contra', label: 'Contra' },
+    { key: 'ponderacao', label: 'Ponderação' },
+  ];
+  function columnComments(stance: ForumStance): ForumCommentItemDto[] {
+    if (!detail) return [];
+    return detail.comments.filter((c) =>
+      c.federated ? false : (c.stance ?? 'ponderacao') === stance,
+    );
+  }
+  let federatedComments = $derived(
+    detail ? detail.comments.filter((c) => c.federated) : [],
+  );
 
   let shareState = $state<'idle' | 'sending' | 'sent' | 'copied' | 'failed'>('idle');
   let shareApUrl = $state('');
@@ -294,7 +314,7 @@
       return;
     }
     busy = true;
-    const res = await commentForumTopic(detail.topic.id, comment.trim());
+    const res = await commentForumTopic(detail.topic.id, comment.trim(), commentStance);
     busy = false;
     if (res.success) {
       comment = '';
@@ -385,7 +405,11 @@
         {#each recent as t (t.id)}
           <li>
             <a class="f-topic" href={`/f/topico/${t.id}/${titleSlug(t.title)}`} onclick={(e) => { e.preventDefault(); navigate(`/f/topico/${t.id}/${titleSlug(t.title)}`); }}>
-              <span class="f-score" title="Saldo de votos">{t.score > 0 ? `+${t.score}` : t.score}</span>
+              <span class="f-tally" title="A favor · Contra · Ponderações">
+                <span class="f-t-favor">{t.favor}</span>
+                <span class="f-t-contra">{t.contra}</span>
+                <span class="f-t-ponde">{t.ponderacao}</span>
+              </span>
               <span class="f-topic-main">
                 <strong>{t.title}</strong>
                 <span class="muted small">
@@ -496,7 +520,11 @@
       {#each topics as t (t.id)}
         <li>
           <a class="f-topic" href={`/f/topico/${t.id}/${titleSlug(t.title)}`} onclick={(e) => { e.preventDefault(); navigate(`/f/topico/${t.id}/${titleSlug(t.title)}`); }}>
-            <span class="f-score" title="Saldo de votos">{t.score > 0 ? `+${t.score}` : t.score}</span>
+            <span class="f-tally" title="A favor · Contra · Ponderações">
+              <span class="f-t-favor">{t.favor}</span>
+              <span class="f-t-contra">{t.contra}</span>
+              <span class="f-t-ponde">{t.ponderacao}</span>
+            </span>
             <span class="f-topic-main">
               <strong>{t.title}</strong>
               <span class="muted small">
@@ -557,11 +585,6 @@
   </nav>
 
   <article class="f-topic-page">
-    <div class="f-vote-col">
-      <button type="button" class="f-vote" aria-label="Voto a favor" onclick={() => vote(1)} disabled={busy}>▲</button>
-      <span class="f-score-big">{detail.topic.score > 0 ? `+${detail.topic.score}` : detail.topic.score}</span>
-      <button type="button" class="f-vote" aria-label="Voto contra" onclick={() => vote(-1)} disabled={busy}>▼</button>
-    </div>
     <div class="f-topic-body">
       <h1>{detail.topic.title}</h1>
       <p class="muted small">
@@ -574,6 +597,19 @@
       <div class="f-topic-text">
         <!-- eslint-disable-next-line svelte/no-at-html-tags — mdToHtml escapa TODO o input antes das regras -->
         {@html mdToHtml(detail.topic.body)}
+      </div>
+
+      <!-- Posições (fusão debates→fóruns): registrar/mudar a sua + contadores. -->
+      <div class="f-stances" role="group" aria-label="Sua posição">
+        <button type="button" class="f-stance f-stance-favor" onclick={() => vote('favor')} disabled={busy}>
+          A favor <strong>{detail.topic.favor.toLocaleString('pt-BR')}</strong>
+        </button>
+        <button type="button" class="f-stance f-stance-contra" onclick={() => vote('contra')} disabled={busy}>
+          Contra <strong>{detail.topic.contra.toLocaleString('pt-BR')}</strong>
+        </button>
+        <button type="button" class="f-stance f-stance-ponde" onclick={() => vote('ponderacao')} disabled={busy}>
+          Ponderação <strong>{detail.topic.ponderacao.toLocaleString('pt-BR')}</strong>
+        </button>
       </div>
 
       <div class="f-share">
@@ -613,30 +649,56 @@
       {/if}
 
       <section class="f-comments">
-        <h2>Comentários</h2>
+        <h2>Debate</h2>
         {#if detail.comments.length === 0}
-          <p class="muted">Nenhum comentário ainda.</p>
-        {/if}
-        <ul>
-          {#each detail.comments as c (c.id)}
-            <li>
-              <span class="muted small">
-                {c.federated ? `🌐 ${c.author}` : c.author} · {fmtDate(c.created_at)}
-              </span>
-              <div class="f-topic-text">
-                <!-- eslint-disable-next-line svelte/no-at-html-tags — mdToHtml escapa TODO o input antes das regras -->
-                {@html mdToHtml(c.body)}
+          <p class="muted">Nenhum argumento ainda — seja a primeira pessoa a se posicionar.</p>
+        {:else}
+          <div class="f-columns">
+            {#each STANCES as s (s.key)}
+              <div class="f-col f-col-{s.key}">
+                <h3>{s.label} <span class="muted">{columnComments(s.key).length}</span></h3>
+                {#each columnComments(s.key) as c (c.id)}
+                  <div class="f-arg">
+                    <div class="f-topic-text">
+                      <!-- eslint-disable-next-line svelte/no-at-html-tags — mdToHtml escapa TODO o input antes das regras -->
+                      {@html mdToHtml(c.body)}
+                    </div>
+                    <span class="muted small">{c.author} · {fmtDate(c.created_at)}</span>
+                  </div>
+                {/each}
               </div>
-            </li>
-          {/each}
-        </ul>
+            {/each}
+          </div>
+          {#if federatedComments.length > 0}
+            <h3>🌐 Comentários do fediverso <span class="muted small">(não contam pros patamares)</span></h3>
+            <ul>
+              {#each federatedComments as c (c.id)}
+                <li>
+                  <span class="muted small">🌐 {c.author} · {fmtDate(c.created_at)}</span>
+                  <div class="f-topic-text">
+                    <!-- eslint-disable-next-line svelte/no-at-html-tags — mdToHtml escapa TODO o input antes das regras -->
+                    {@html mdToHtml(c.body)}
+                  </div>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        {/if}
+
+        <h3>Participar do debate</h3>
         <form onsubmit={submitComment}>
+          <div class="f-stances" role="group" aria-label="Posição do seu argumento">
+            <button type="button" class="f-stance f-stance-favor" class:active={commentStance === 'favor'} onclick={() => (commentStance = 'favor')}>A favor</button>
+            <button type="button" class="f-stance f-stance-contra" class:active={commentStance === 'contra'} onclick={() => (commentStance = 'contra')}>Contra</button>
+            <button type="button" class="f-stance f-stance-ponde" class:active={commentStance === 'ponderacao'} onclick={() => (commentStance = 'ponderacao')}>Ponderação</button>
+          </div>
           <div class="field">
-            <textarea class="input" rows="3" bind:value={comment} placeholder="Contribua com o debate…"></textarea>
+            <textarea class="input" rows="3" bind:value={comment} placeholder="Seu argumento… (Markdown suportado)"></textarea>
           </div>
           <button class="btn btn-primary" type="submit" disabled={busy || !comment.trim()}>
-            {busy ? 'Enviando…' : 'Comentar'}
+            {busy ? 'Enviando…' : 'Publicar argumento'}
           </button>
+          <p class="muted small">Seu argumento também registra sua posição no contador.</p>
         </form>
         {#if formMsg}<p class="note" role="status">{formMsg} {#if !isLogged()}<a href="/entrar">Entrar</a>{/if}</p>{/if}
       </section>
@@ -711,16 +773,37 @@
     padding: 0.6rem 0.4rem; border-bottom: 1px solid var(--c-border, #e3e3e3);
     text-decoration: none; color: inherit;
   }
-  .f-score { min-width: 2.6rem; text-align: center; font-weight: 700; }
   .f-topic-main { display: flex; flex-direction: column; gap: 0.15rem; }
   .f-topic-page { display: flex; gap: 1rem; }
-  .f-vote-col { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; }
-  .f-vote {
+  /* Contadores por posição (fusão debates→fóruns): verde/vermelho/cinza. */
+  .f-tally { display: flex; flex-direction: column; align-items: center; gap: 0.1rem; min-width: 2.6rem; font-size: 0.82rem; font-weight: 700; }
+  .f-t-favor { color: #2a9d54; }
+  .f-t-favor::before { content: '▲ '; }
+  .f-t-contra { color: #d64545; }
+  .f-t-contra::before { content: '▼ '; }
+  .f-t-ponde { opacity: 0.7; }
+  .f-t-ponde::before { content: '~ '; }
+  .f-stances { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; }
+  .f-stance {
     border: 1px solid var(--c-border, #ccc); background: none; color: inherit;
-    border-radius: 0.5rem; width: 2.4rem; height: 2.2rem; font-size: 1rem; cursor: pointer;
+    border-radius: 999px; padding: 0.3rem 0.9rem; cursor: pointer; font-size: 0.95rem;
   }
-  .f-vote:hover { border-color: var(--c-primary, #2a9d54); }
-  .f-score-big { font-weight: 800; }
+  .f-stance strong { margin-left: 0.3rem; }
+  .f-stance-favor:hover, .f-stance-favor.active { border-color: #2a9d54; color: #2a9d54; }
+  .f-stance-contra:hover, .f-stance-contra.active { border-color: #d64545; color: #d64545; }
+  .f-stance-ponde:hover, .f-stance-ponde.active { border-color: #8892a6; }
+  .f-stance.active { font-weight: 700; }
+  .f-columns { display: grid; grid-template-columns: 1fr; gap: 0.9rem; margin: 0.75rem 0; }
+  @media (min-width: 760px) { .f-columns { grid-template-columns: 1fr 1fr 1fr; } }
+  .f-col h3 { border-bottom: 3px solid var(--c-border, #666); padding-bottom: 0.3rem; }
+  .f-col-favor h3 { border-color: #2a9d54; }
+  .f-col-contra h3 { border-color: #d64545; }
+  .f-col-ponderacao h3 { border-color: #8892a6; }
+  .f-arg {
+    border: 1px solid var(--c-border, #333); border-radius: 0.6rem;
+    padding: 0.6rem 0.8rem; margin-bottom: 0.6rem;
+  }
+  .f-arg .f-topic-text { margin: 0 0 0.4rem; }
   .f-topic-body { flex: 1; min-width: 0; }
   .f-topic-text { white-space: pre-wrap; margin: 0.75rem 0 1rem; }
   .f-share { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.75rem 0; }

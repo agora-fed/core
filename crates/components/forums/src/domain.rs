@@ -137,6 +137,45 @@ impl NewTopic {
     }
 }
 
+/// A posição de um cidadão num tópico (fusão DEBATE→FÓRUM, 0544): a participação
+/// deliberativa é a favor, contra ou uma ponderação — uma por cidadão, mutável.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stance {
+    /// A favor da proposta do tópico.
+    Favor,
+    /// Contra.
+    Contra,
+    /// Ponderação (nuance/condicional — não pesa no saldo).
+    Ponderacao,
+}
+
+impl Stance {
+    /// O texto estável gravado em `forum_topic_vote.stance` (casa com a CHECK).
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Favor => "favor",
+            Self::Contra => "contra",
+            Self::Ponderacao => "ponderacao",
+        }
+    }
+
+    /// Interpreta uma posição vinda de fora (request).
+    ///
+    /// # Errors
+    /// [`Error::Validation`] para valor fora do conjunto fechado.
+    pub fn parse_input(s: &str) -> Result<Self> {
+        match s.trim() {
+            "favor" => Ok(Self::Favor),
+            "contra" => Ok(Self::Contra),
+            "ponderacao" => Ok(Self::Ponderacao),
+            other => Err(Error::Validation(format!(
+                "posição deve ser favor, contra ou ponderacao: {other}"
+            ))),
+        }
+    }
+}
+
 /// Valida um comentário.
 ///
 /// # Errors
@@ -244,6 +283,21 @@ mod tests {
         assert!(NewTopic::validate("", "b").is_err());
         assert!(NewTopic::validate(&"a".repeat(MAX_TITLE_LEN + 1), "b").is_err());
         assert!(NewTopic::validate("t", "").is_err());
+    }
+
+    #[test]
+    fn stance_round_trips_and_rejects_unknown() {
+        for (s, txt) in [
+            (Stance::Favor, "favor"),
+            (Stance::Contra, "contra"),
+            (Stance::Ponderacao, "ponderacao"),
+        ] {
+            assert_eq!(s.as_str(), txt);
+            assert_eq!(Stance::parse_input(txt).unwrap(), s);
+        }
+        assert_eq!(Stance::parse_input(" favor ").unwrap(), Stance::Favor);
+        assert!(Stance::parse_input("pro").is_err());
+        assert!(Stance::parse_input("").is_err());
     }
 
     #[test]

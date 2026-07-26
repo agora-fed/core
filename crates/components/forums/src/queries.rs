@@ -59,8 +59,14 @@ pub struct TopicRow {
     pub interaction_count: i64,
     /// Interações federadas (nunca disparam patamar).
     pub federated_interaction_count: i64,
-    /// Soma dos votos ±1.
+    /// Saldo favor - contra (ordenação "em alta").
     pub score: i64,
+    /// Posições a favor (0544).
+    pub favor_count: i64,
+    /// Posições contra (0544).
+    pub contra_count: i64,
+    /// Ponderações (0544).
+    pub ponderacao_count: i64,
     /// Total de comentários aprovados.
     pub comment_count: i64,
     /// Próximo patamar a disparar (índice em `forum.thresholds`).
@@ -82,6 +88,8 @@ pub struct CommentRow {
     pub remote_handle: Option<String>,
     /// Federado?
     pub federated: bool,
+    /// Posição declarada junto do argumento (NULL = sem posição / federado).
+    pub stance: Option<String>,
     /// Corpo.
     pub body: String,
     /// Criação.
@@ -291,8 +299,8 @@ pub async fn insert_topic(
         r#"INSERT INTO forum_topic (id, forum_id, author_id, title, body, created_at)
            VALUES ($1, $2, $3, $4, $5, $6)
            RETURNING id, forum_id, author_id, title, body, interaction_count,
-                     federated_interaction_count, score, comment_count,
-                     next_threshold_idx, created_at"#,
+                     federated_interaction_count, score, favor_count, contra_count,
+                     ponderacao_count, comment_count, next_threshold_idx, created_at"#,
         id,
         forum_id,
         author_id,
@@ -311,6 +319,9 @@ pub async fn insert_topic(
         interaction_count: r.interaction_count,
         federated_interaction_count: r.federated_interaction_count,
         score: r.score,
+        favor_count: r.favor_count,
+        contra_count: r.contra_count,
+        ponderacao_count: r.ponderacao_count,
         comment_count: r.comment_count,
         next_threshold_idx: r.next_threshold_idx,
         created_at: r.created_at,
@@ -327,8 +338,8 @@ pub async fn lock_topic(
 ) -> Result<Option<TopicRow>, sqlx::Error> {
     let r = sqlx::query!(
         r#"SELECT id, forum_id, author_id, title, body, interaction_count,
-                  federated_interaction_count, score, comment_count,
-                  next_threshold_idx, created_at
+                  federated_interaction_count, score, favor_count, contra_count,
+                  ponderacao_count, comment_count, next_threshold_idx, created_at
            FROM forum_topic WHERE id = $1 AND hidden_at IS NULL FOR UPDATE"#,
         id,
     )
@@ -343,6 +354,9 @@ pub async fn lock_topic(
         interaction_count: r.interaction_count,
         federated_interaction_count: r.federated_interaction_count,
         score: r.score,
+        favor_count: r.favor_count,
+        contra_count: r.contra_count,
+        ponderacao_count: r.ponderacao_count,
         comment_count: r.comment_count,
         next_threshold_idx: r.next_threshold_idx,
         created_at: r.created_at,
@@ -362,8 +376,8 @@ pub async fn list_topics(
 ) -> Result<Vec<TopicRow>, sqlx::Error> {
     let rows = sqlx::query!(
         r#"SELECT id, forum_id, author_id, title, body, interaction_count,
-                  federated_interaction_count, score, comment_count,
-                  next_threshold_idx, created_at
+                  federated_interaction_count, score, favor_count, contra_count,
+                  ponderacao_count, comment_count, next_threshold_idx, created_at
            FROM forum_topic
            WHERE forum_id = $1 AND hidden_at IS NULL
            ORDER BY CASE WHEN $2 THEN score END DESC NULLS LAST, id DESC
@@ -386,6 +400,9 @@ pub async fn list_topics(
             interaction_count: r.interaction_count,
             federated_interaction_count: r.federated_interaction_count,
             score: r.score,
+            favor_count: r.favor_count,
+            contra_count: r.contra_count,
+            ponderacao_count: r.ponderacao_count,
             comment_count: r.comment_count,
             next_threshold_idx: r.next_threshold_idx,
             created_at: r.created_at,
@@ -400,8 +417,14 @@ pub struct RecentTopicRow {
     pub id: Uuid,
     /// Título.
     pub title: String,
-    /// Saldo de votos.
+    /// Saldo favor - contra.
     pub score: i64,
+    /// Posições a favor.
+    pub favor_count: i64,
+    /// Posições contra.
+    pub contra_count: i64,
+    /// Ponderações.
+    pub ponderacao_count: i64,
     /// Interações contáveis.
     pub interaction_count: i64,
     /// Comentários aprovados.
@@ -424,7 +447,8 @@ pub async fn list_recent_topics(
     limit: i64,
 ) -> Result<Vec<RecentTopicRow>, sqlx::Error> {
     let rows = sqlx::query!(
-        r#"SELECT t.id, t.title, t.score, t.interaction_count, t.comment_count, t.created_at,
+        r#"SELECT t.id, t.title, t.score, t.favor_count, t.contra_count,
+                  t.ponderacao_count, t.interaction_count, t.comment_count, t.created_at,
                   f.full_path AS forum_path, f.name AS forum_name
            FROM forum_topic t
            JOIN forum f ON f.id = t.forum_id
@@ -442,6 +466,9 @@ pub async fn list_recent_topics(
             id: r.id,
             title: r.title,
             score: r.score,
+            favor_count: r.favor_count,
+            contra_count: r.contra_count,
+            ponderacao_count: r.ponderacao_count,
             interaction_count: r.interaction_count,
             comment_count: r.comment_count,
             created_at: r.created_at,
@@ -451,7 +478,8 @@ pub async fn list_recent_topics(
         .collect())
 }
 
-/// Upsert do voto ±1 do cidadão (uma linha por par tópico-cidadão).
+/// Upsert da posição do cidadão (uma linha por par tópico-cidadão; mudar de
+/// posição sobrescreve — a data original do primeiro voto é preservada).
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -459,16 +487,16 @@ pub async fn upsert_vote(
     executor: impl sqlx::PgExecutor<'_>,
     topic_id: Uuid,
     citizen_id: Uuid,
-    value: i16,
+    stance: &str,
     created_at: DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        r#"INSERT INTO forum_topic_vote (topic_id, citizen_id, value, created_at)
+        r#"INSERT INTO forum_topic_vote (topic_id, citizen_id, stance, created_at)
            VALUES ($1, $2, $3, $4)
-           ON CONFLICT (topic_id, citizen_id) DO UPDATE SET value = EXCLUDED.value"#,
+           ON CONFLICT (topic_id, citizen_id) DO UPDATE SET stance = EXCLUDED.stance"#,
         topic_id,
         citizen_id,
-        value,
+        stance,
         created_at,
     )
     .execute(executor)
@@ -485,16 +513,19 @@ pub async fn insert_local_comment(
     id: Uuid,
     topic_id: Uuid,
     author_id: Uuid,
+    stance: Option<&str>,
     body: &str,
     created_at: DateTime<Utc>,
 ) -> Result<CommentRow, sqlx::Error> {
     let r = sqlx::query!(
-        r#"INSERT INTO forum_topic_comment (id, topic_id, author_id, federated, body, created_at)
-           VALUES ($1, $2, $3, false, $4, $5)
-           RETURNING id, topic_id, author_id, remote_handle, federated, body, created_at"#,
+        r#"INSERT INTO forum_topic_comment
+               (id, topic_id, author_id, federated, stance, body, created_at)
+           VALUES ($1, $2, $3, false, $4, $5, $6)
+           RETURNING id, topic_id, author_id, remote_handle, federated, stance, body, created_at"#,
         id,
         topic_id,
         author_id,
+        stance,
         body,
         created_at,
     )
@@ -506,6 +537,7 @@ pub async fn insert_local_comment(
         author_id: r.author_id,
         remote_handle: r.remote_handle,
         federated: r.federated,
+        stance: r.stance,
         body: r.body,
         created_at: r.created_at,
     })
@@ -522,7 +554,7 @@ pub async fn list_comments(
     limit: i64,
 ) -> Result<Vec<CommentRow>, sqlx::Error> {
     let rows = sqlx::query!(
-        r#"SELECT id, topic_id, author_id, remote_handle, federated, body, created_at
+        r#"SELECT id, topic_id, author_id, remote_handle, federated, stance, body, created_at
            FROM forum_topic_comment
            WHERE topic_id = $1 AND moderation = 'approved'
              AND ($2::uuid IS NULL OR id > $2)
@@ -542,6 +574,7 @@ pub async fn list_comments(
             author_id: r.author_id,
             remote_handle: r.remote_handle,
             federated: r.federated,
+            stance: r.stance,
             body: r.body,
             created_at: r.created_at,
         })
@@ -549,8 +582,9 @@ pub async fn list_comments(
 }
 
 /// Recalcula os contadores do tópico a partir das tabelas-fonte (sob o row lock):
-/// score = soma dos votos; interações contáveis = votos + comentários locais aprovados;
-/// federadas = comentários federados aprovados. Retorna (interactions, federated).
+/// posições por stance, score = favor - contra; interações contáveis = votos +
+/// comentários locais aprovados; federadas = comentários federados aprovados.
+/// Retorna (interactions, federated).
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -560,12 +594,18 @@ pub async fn refresh_topic_counters(
 ) -> Result<(i64, i64), sqlx::Error> {
     let r = sqlx::query!(
         r#"UPDATE forum_topic t SET
-             score = v."score!",
+             favor_count = v."favor!",
+             contra_count = v."contra!",
+             ponderacao_count = v."ponde!",
+             score = v."favor!" - v."contra!",
              comment_count = c."local!" + c."fede!",
              interaction_count = v."votes!" + c."local!",
              federated_interaction_count = c."fede!"
            FROM
-             (SELECT COALESCE(SUM(value), 0) AS "score!", COUNT(*) AS "votes!"
+             (SELECT COUNT(*) FILTER (WHERE stance = 'favor') AS "favor!",
+                     COUNT(*) FILTER (WHERE stance = 'contra') AS "contra!",
+                     COUNT(*) FILTER (WHERE stance = 'ponderacao') AS "ponde!",
+                     COUNT(*) AS "votes!"
                 FROM forum_topic_vote WHERE topic_id = $1) v,
              (SELECT COUNT(*) FILTER (WHERE NOT federated) AS "local!",
                      COUNT(*) FILTER (WHERE federated) AS "fede!"

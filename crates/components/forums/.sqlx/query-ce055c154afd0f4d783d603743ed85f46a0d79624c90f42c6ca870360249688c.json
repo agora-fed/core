@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE forum_topic t SET\n             favor_count = v.\"favor!\",\n             contra_count = v.\"contra!\",\n             ponderacao_count = v.\"ponde!\",\n             score = v.\"favor!\" - v.\"contra!\",\n             comment_count = c.\"local!\" + c.\"fede!\",\n             interaction_count = v.\"votes!\" + c.\"local!\",\n             federated_interaction_count = c.\"fede!\"\n           FROM\n             (SELECT COUNT(*) FILTER (WHERE stance = 'favor') AS \"favor!\",\n                     COUNT(*) FILTER (WHERE stance = 'contra') AS \"contra!\",\n                     COUNT(*) FILTER (WHERE stance = 'ponderacao') AS \"ponde!\",\n                     COUNT(*) AS \"votes!\"\n                FROM forum_topic_vote WHERE topic_id = $1) v,\n             (SELECT COUNT(*) FILTER (WHERE NOT federated) AS \"local!\",\n                     COUNT(*) FILTER (WHERE federated) AS \"fede!\"\n                FROM forum_topic_comment\n               WHERE topic_id = $1 AND moderation = 'approved') c\n           WHERE t.id = $1\n           RETURNING t.interaction_count, t.federated_interaction_count",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "interaction_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "federated_interaction_count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "ce055c154afd0f4d783d603743ed85f46a0d79624c90f42c6ca870360249688c"
+}

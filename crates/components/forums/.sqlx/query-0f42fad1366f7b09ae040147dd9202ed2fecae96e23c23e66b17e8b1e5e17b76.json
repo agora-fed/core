@@ -1,0 +1,103 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, forum_id, author_id, title, body, interaction_count,\n                  federated_interaction_count, score, favor_count, contra_count,\n                  ponderacao_count, comment_count, next_threshold_idx, created_at\n           FROM forum_topic\n           WHERE forum_id = $1 AND hidden_at IS NULL\n           ORDER BY CASE WHEN $2 THEN score END DESC NULLS LAST, id DESC\n           LIMIT $3 OFFSET $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "forum_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "author_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "body",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "interaction_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "federated_interaction_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "score",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "favor_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "contra_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "ponderacao_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 11,
+        "name": "comment_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 12,
+        "name": "next_threshold_idx",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 13,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "0f42fad1366f7b09ae040147dd9202ed2fecae96e23c23e66b17e8b1e5e17b76"
+}

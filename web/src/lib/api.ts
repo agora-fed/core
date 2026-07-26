@@ -8,9 +8,6 @@ import type {
   ConsultationDto,
   ConsultaSummary,
   ConsultaDetail,
-  DebateDto,
-  ContributionDto,
-  ApiResponse,
   FeedItemDto,
   LikeResultDto,
   MandateDto,
@@ -902,34 +899,6 @@ export const getSlas = (orgId = DEFAULT_ORG_ID, limit = 50) =>
 
 export const getSla = (id: string) =>
   apiGet<SlaDto>(`/api/v1/consequence/slas/${encodeURIComponent(id)}`);
-
-export const getDebates = (orgId = DEFAULT_ORG_ID, limit = 30) =>
-  apiGet<DebateDto[]>(`/api/v1/debates${orgQuery(orgId, `&limit=${limit}`)}`);
-
-/** Um debate pelo id (público). */
-export const getDebate = (id: string) =>
-  apiGet<DebateDto>(`/api/v1/debates/${encodeURIComponent(id)}`);
-
-/** Contribuições de um debate (público). */
-export const getDebateContributions = (id: string, limit = 200) =>
-  apiGet<ContributionDto[]>(
-    `/api/v1/debates/${encodeURIComponent(id)}/contributions?limit=${limit}`,
-  );
-
-/** Abre um debate (exige sessão + e-mail confirmado). org vem do CallerId. */
-export const createDebate = (title: string, framing: string, uf?: string | null) =>
-  apiPost<DebateDto>('/api/v1/debates', { title, framing, uf: uf || null });
-
-/** Contribui num debate (pró/contra/neutro). */
-export const contributeToDebate = (
-  debateId: string,
-  stance: 'pro' | 'con' | 'neutral',
-  body: string,
-) =>
-  apiPost<ContributionDto>(
-    `/api/v1/debates/${encodeURIComponent(debateId)}/contributions`,
-    { stance, body },
-  );
 
 export const getConsultations = (orgId = DEFAULT_ORG_ID, limit = 30) =>
   apiGet<ConsultationDto[]>(
@@ -2794,7 +2763,10 @@ export interface ForumTreeDto {
   children: ForumChildDto[];
 }
 
-/** Tópico de fórum: interações contáveis × federadas. */
+/** Posição num tópico (fusão debates→fóruns, 0544). */
+export type ForumStance = 'favor' | 'contra' | 'ponderacao';
+
+/** Tópico de fórum: interações contáveis × federadas + contadores por posição. */
 export interface ForumTopicDto {
   id: string;
   forum_id: string;
@@ -2804,6 +2776,9 @@ export interface ForumTopicDto {
   interactions: number;
   federated_interactions: number;
   score: number;
+  favor: number;
+  contra: number;
+  ponderacao: number;
   comment_count: number;
   created_at: string;
 }
@@ -2817,6 +2792,7 @@ export interface ForumCommentItemDto {
   id: string;
   author: string;
   federated: boolean;
+  stance: ForumStance | null;
   body: string;
   created_at: string;
 }
@@ -2850,15 +2826,19 @@ export const getForumTopic = (id: string) =>
 export const createForumTopic = (path: string, title: string, body: string) =>
   apiPost<ForumTopicDto>('/api/v1/f/topics', { path, title, body });
 
-export const voteForumTopic = (id: string, value: 1 | -1) =>
+export const voteForumTopic = (id: string, stance: ForumStance) =>
   apiPost<ForumTopicDto>(`/api/v1/f/topics/${encodeURIComponent(id)}/vote`, {
-    value,
+    stance,
   });
 
-export const commentForumTopic = (id: string, body: string) =>
+export const commentForumTopic = (
+  id: string,
+  body: string,
+  stance?: ForumStance,
+) =>
   apiPost<ForumTopicDto>(
     `/api/v1/f/topics/${encodeURIComponent(id)}/comments`,
-    { body },
+    { body, stance: stance ?? null },
   );
 
 /** Linha do painel admin de fóruns (F3). */
@@ -2929,6 +2909,9 @@ export interface RecentForumTopicDto {
   id: string;
   title: string;
   score: number;
+  favor: number;
+  contra: number;
+  ponderacao: number;
   interactions: number;
   comment_count: number;
   created_at: string;

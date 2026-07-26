@@ -8,6 +8,23 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.56.0-fusao-debates — DEBATE e FÓRUM viram uma coisa só** (issue #19):
+  a dualidade acabou — a estrutura organizacional dos Fóruns fica, e o tópico
+  de fórum adota o modelo funcional consolidado do Debate. (1) **Posições**:
+  participar é se posicionar — *a favor*, *contra* ou *ponderação* (uma por
+  cidadão, mutável; migration `0544_forum_stances` converte o voto ±1).
+  (2) **Argumentos com posição**: o composer do tópico publica o argumento e
+  registra a posição junto (modelo do debate); a página do tópico exibe as
+  três colunas com contadores. (3) **Contadores por posição** no tópico e em
+  todas as listas (feed da home /f e listagem do fórum). (4) **/debates
+  encerrado**: navegação, páginas e ilhas removidas (redirects preservam
+  bookmarks); crate `dsoc-debates` aposentado; o único debate de prod migrou
+  para tópico em `/f/ministerio-transportes` com histórico e datas
+  preservados (`scripts/migrate-debates-to-forums.sql`). Interações contáveis
+  seguem locais (posições+argumentos); federadas seguem contando separado.
+- **Analytics primeira-parte**: snippet Plausible (self-hosted,
+  `analytics.pop.coop`) no rodapé global — pageviews, outbound links,
+  downloads e eventos, sem cookies de terceiros.
 - **0.35.0-base-contatos — a base de audiência nasce**: "queria ter uma base
   boa primeiro" — agora todo visitante pode virar contato. (1) **Captação no
   site**: bloco "📬 Receba as novidades" no rodapé global (nome opcional +

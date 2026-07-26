@@ -41,7 +41,6 @@ dsoc-mandates = { path = "../spaces/mandates" }
 dsoc-proposals = { path = "../components/proposals" }
 dsoc-votes = { path = "../components/votes" }
 dsoc-comments = { path = "../components/comments" }
-dsoc-debates = { path = "../components/debates" }
 dsoc-forums = { path = "../components/forums" }
 dsoc-meetings = { path = "../components/meetings" }
 dsoc-budgets = { path = "../components/budgets" }

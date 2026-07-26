@@ -41,7 +41,7 @@
         { id: 'go-politicos', label: 'Placar dos políticos', icon: 'users', action: nav('/politicos') },
         { id: 'go-partidos', label: 'Partidos', icon: 'party', action: nav('/partidos') },
         { id: 'go-propostas', label: 'Propostas', icon: 'ballot', action: nav('/propostas') },
-        { id: 'go-debates', label: 'Debates', icon: 'chat', action: nav('/debates') },
+        { id: 'go-foruns', label: 'Fóruns', icon: 'chat', action: nav('/f/') },
         { id: 'go-consultas', label: 'Consultas', icon: 'mic', action: nav('/consultas') },
         { id: 'act-propor', label: 'Propor algo novo', hint: 'Ação', icon: 'plus', action: nav('/propor') },
         { id: 'act-config', label: 'Configurações', hint: 'Ação', icon: 'settings', action: nav('/configuracoes'), when: 'auth' },

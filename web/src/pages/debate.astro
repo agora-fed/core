@@ -1,17 +1,17 @@
 ---
-// Detalhe de um debate. /debate/?id=<uuid> — SSG + querystring (a ilha resolve
-// no client, como /campanha e /grupo), pra debates novos aparecerem sem rebuild.
+// Debates foi fundido nos Fóruns (issue #19, 2026-07-26). O único debate que
+// existia virou tópico de fórum — bookmarks de /debate/?id=… caem na home /f/.
 import BaseLayout from '../layouts/BaseLayout.astro';
-import DebateDetail from '../components/islands/DebateDetail.svelte';
-
-const description =
-  'Debate na DemocraciaBR: argumentos a favor, contra e ponderações, num espaço plural.';
 ---
 
-<BaseLayout title="Debate" {description}>
+<BaseLayout title="Debates agora são os Fóruns">
   <section class="section">
     <div class="container">
-      <DebateDetail client:load />
+      <p>Os debates agora vivem nos <a href="/f/">Fóruns</a>. Redirecionando…</p>
     </div>
   </section>
 </BaseLayout>
+
+<script is:inline>
+  window.location.replace('/f/');
+</script>

@@ -1,35 +1,18 @@
 ---
+// Debates foi fundido nos Fóruns (issue #19, 2026-07-26): o modelo funcional
+// (a favor/contra/ponderação com argumentos) agora vive em cada tópico de /f/.
+// Esta página só preserva bookmarks antigos redirecionando.
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import CreateDebateForm from '../../components/islands/CreateDebateForm.svelte';
-import DebatesList from '../../components/islands/DebatesList.svelte';
-
-const description =
-  'Debates abertos da DemocraciaBR: espaços plurais onde diferentes ideias se encontram e qualificam as demandas da população.';
 ---
 
-<BaseLayout title="Debates" {description}>
+<BaseLayout title="Debates agora são os Fóruns">
   <section class="section">
     <div class="container">
-      <header class="page-head">
-        <h1>Debates</h1>
-        <p class="muted lede">
-          Diferentes ideias, um só Brasil. O espaço plural onde os argumentos
-          amadurecem antes de virar cobrança.
-        </p>
-      </header>
-
-      <CreateDebateForm client:load />
-      <DebatesList client:load />
+      <p>Os debates agora vivem nos <a href="/f/">Fóruns</a>. Redirecionando…</p>
     </div>
   </section>
 </BaseLayout>
 
-<style>
-  .page-head {
-    max-width: 46rem;
-    margin-bottom: 2rem;
-  }
-  .lede {
-    font-size: 1.1rem;
-  }
-</style>
+<script is:inline>
+  window.location.replace('/f/');
+</script>

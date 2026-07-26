@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::domain::NewTopic;
+use crate::domain::{NewTopic, Stance};
 use crate::queries::{CommentRow, DispatchRow, ForumRow, TopicRow};
 use crate::service::{ChildEntry, ForumService};
 
@@ -92,8 +92,14 @@ pub struct TopicDto {
     pub interactions: i64,
     /// Interações FEDERADAS (nunca disparam).
     pub federated_interactions: i64,
-    /// Soma dos votos ±1.
+    /// Saldo favor - contra.
     pub score: i64,
+    /// Posições a favor (fusão debates→fóruns, 0544).
+    pub favor: i64,
+    /// Posições contra.
+    pub contra: i64,
+    /// Ponderações.
+    pub ponderacao: i64,
     /// Comentários aprovados.
     pub comment_count: i64,
     /// Criação.
@@ -109,6 +115,8 @@ pub struct ForumCommentDto {
     pub author: String,
     /// Veio do fediverso?
     pub federated: bool,
+    /// Posição declarada com o argumento (`favor`|`contra`|`ponderacao`|null).
+    pub stance: Option<String>,
     /// Corpo.
     pub body: String,
     /// Criação.
@@ -148,18 +156,38 @@ pub struct CreateTopicRequest {
     pub body: String,
 }
 
-/// Voto ±1.
+/// Posição do cidadão (fusão debates→fóruns).
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct VoteRequest {
-    /// +1 ou -1.
-    pub value: i16,
+    /// `favor` | `contra` | `ponderacao`.
+    pub stance: Option<String>,
+    /// Compat com clientes antigos: +1 → favor, -1 → contra.
+    pub value: Option<i16>,
 }
 
-/// Comentário local.
+impl VoteRequest {
+    /// Resolve a posição pedida (stance preferido; `value` legado mapeado).
+    fn stance(&self) -> Result<Stance, Error> {
+        if let Some(s) = &self.stance {
+            return Stance::parse_input(s);
+        }
+        match self.value {
+            Some(1) => Ok(Stance::Favor),
+            Some(-1) => Ok(Stance::Contra),
+            _ => Err(Error::Validation(
+                "informe stance: favor, contra ou ponderacao".to_owned(),
+            )),
+        }
+    }
+}
+
+/// Comentário local (argumento) — com posição opcional que também registra o voto.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CommentRequest {
     /// Corpo.
     pub body: String,
+    /// `favor` | `contra` | `ponderacao` (opcional).
+    pub stance: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -204,6 +232,9 @@ fn topic_dto(r: TopicRow) -> TopicDto {
         interactions: r.interaction_count,
         federated_interactions: r.federated_interaction_count,
         score: r.score,
+        favor: r.favor_count,
+        contra: r.contra_count,
+        ponderacao: r.ponderacao_count,
         comment_count: r.comment_count,
         created_at: r.created_at,
     }
@@ -219,6 +250,7 @@ fn comment_dto(r: CommentRow) -> ForumCommentDto {
         id: r.id,
         author,
         federated: r.federated,
+        stance: r.stance,
         body: r.body,
         created_at: r.created_at,
     }
@@ -260,8 +292,14 @@ pub struct RecentTopicDto {
     pub id: Uuid,
     /// Título.
     pub title: String,
-    /// Saldo de votos.
+    /// Saldo favor - contra.
     pub score: i64,
+    /// Posições a favor.
+    pub favor: i64,
+    /// Posições contra.
+    pub contra: i64,
+    /// Ponderações.
+    pub ponderacao: i64,
     /// Interações contáveis.
     pub interactions: i64,
     /// Comentários.
@@ -289,6 +327,9 @@ async fn recent(
                     id: r.id,
                     title: r.title,
                     score: r.score,
+                    favor: r.favor_count,
+                    contra: r.contra_count,
+                    ponderacao: r.ponderacao_count,
                     interactions: r.interaction_count,
                     comment_count: r.comment_count,
                     created_at: r.created_at,
@@ -395,7 +436,8 @@ async fn get_topic(State(state): State<dsoc_app::AppState>, Path(id): Path<Uuid>
     }
 }
 
-/// `POST /f/topics/{id}/vote` — voto ±1 (upsert; SÓ cidadão local, por construção).
+/// `POST /f/topics/{id}/vote` — posição a favor/contra/ponderação (upsert;
+/// SÓ cidadão local, por construção).
 async fn vote(
     State(state): State<dsoc_app::AppState>,
     caller: dsoc_app::CallerId,
@@ -409,8 +451,12 @@ async fn vote(
     {
         return error_response::<TopicDto>(&e);
     }
+    let stance = match req.stance() {
+        Ok(s) => s,
+        Err(e) => return error_response::<TopicDto>(&e),
+    };
     let svc = ForumService::from_state(&state);
-    match svc.vote(id, caller.citizen, req.value).await {
+    match svc.vote(id, caller.citizen, stance).await {
         Ok(row) => (StatusCode::OK, Json(ApiResponse::ok(topic_dto(row)))).into_response(),
         Err(e) => error_response::<TopicDto>(&e),
     }
@@ -430,8 +476,12 @@ async fn comment(
     {
         return error_response::<TopicDto>(&e);
     }
+    let stance = match req.stance.as_deref().map(Stance::parse_input).transpose() {
+        Ok(s) => s,
+        Err(e) => return error_response::<TopicDto>(&e),
+    };
     let svc = ForumService::from_state(&state);
-    match svc.comment(id, caller.citizen, &req.body).await {
+    match svc.comment(id, caller.citizen, &req.body, stance).await {
         Ok(row) => (StatusCode::CREATED, Json(ApiResponse::ok(topic_dto(row)))).into_response(),
         Err(e) => error_response::<TopicDto>(&e),
     }

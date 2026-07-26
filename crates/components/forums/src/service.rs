@@ -9,7 +9,9 @@ use dsoc_core::{Clock, Error, Result};
 use dsoc_db::Db;
 use uuid::Uuid;
 
-use crate::domain::{self, territorial_sections, thresholds_to_fire, NewTopic, TerritorialSection};
+use crate::domain::{
+    self, territorial_sections, thresholds_to_fire, NewTopic, Stance, TerritorialSection,
+};
 use crate::queries::{self, CommentRow, DispatchRow, ForumRow, TopicRow};
 
 /// Uma seção-filha na árvore: materializada (linha real) ou virtual (template
@@ -257,14 +259,17 @@ impl ForumService {
         Ok((topic, comments, dispatches))
     }
 
-    /// Voto ±1 (upsert) — recalcula contadores e dispara patamares pendentes.
+    /// Posição do cidadão (upsert; a favor/contra/ponderação) — recalcula
+    /// contadores e dispara patamares pendentes.
     ///
     /// # Errors
     /// [`Error::NotFound`]/[`Error::Validation`]/[`Error::Storage`].
-    pub async fn vote(&self, topic_id: Uuid, citizen: CitizenId, value: i16) -> Result<TopicRow> {
-        if value != 1 && value != -1 {
-            return Err(Error::Validation("voto deve ser +1 ou -1".to_owned()));
-        }
+    pub async fn vote(
+        &self,
+        topic_id: Uuid,
+        citizen: CitizenId,
+        stance: Stance,
+    ) -> Result<TopicRow> {
         let now = self.clock.now();
         let mut tx = self.db.begin().await.map_err(map_sqlx)?;
         let Some(topic) = queries::lock_topic(&mut *tx, topic_id)
@@ -273,7 +278,7 @@ impl ForumService {
         else {
             return Err(Error::NotFound("tópico não encontrado".to_owned()));
         };
-        queries::upsert_vote(&mut *tx, topic_id, citizen.as_uuid(), value, now)
+        queries::upsert_vote(&mut *tx, topic_id, citizen.as_uuid(), stance.as_str(), now)
             .await
             .map_err(map_sqlx)?;
         let updated = Self::after_interaction(&mut tx, &topic, now).await?;
@@ -281,7 +286,9 @@ impl ForumService {
         Ok(updated)
     }
 
-    /// Comentário local — recalcula contadores e dispara patamares pendentes.
+    /// Comentário local — com posição opcional (modelo do debate: argumento +
+    /// posição juntos; a posição também registra/atualiza o voto do autor).
+    /// Recalcula contadores e dispara patamares pendentes.
     ///
     /// # Errors
     /// [`Error::NotFound`]/[`Error::Validation`]/[`Error::Storage`].
@@ -290,6 +297,7 @@ impl ForumService {
         topic_id: Uuid,
         citizen: CitizenId,
         body: &str,
+        stance: Option<Stance>,
     ) -> Result<TopicRow> {
         let body = domain::validate_comment(body)?;
         let now = self.clock.now();
@@ -305,11 +313,17 @@ impl ForumService {
             Uuid::now_v7(),
             topic_id,
             citizen.as_uuid(),
+            stance.map(Stance::as_str),
             &body,
             now,
         )
         .await
         .map_err(map_sqlx)?;
+        if let Some(stance) = stance {
+            queries::upsert_vote(&mut *tx, topic_id, citizen.as_uuid(), stance.as_str(), now)
+                .await
+                .map_err(map_sqlx)?;
+        }
         let updated = Self::after_interaction(&mut tx, &topic, now).await?;
         tx.commit().await.map_err(map_sqlx)?;
         Ok(updated)

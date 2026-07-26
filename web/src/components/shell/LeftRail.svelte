@@ -23,7 +23,7 @@
     { id: 'politicos', href: '/politicos', icon: 'users', label: 'Políticos' },
     { id: 'partidos', href: '/partidos', icon: 'party', label: 'Partidos' },
     { id: 'propostas', href: '/propostas', icon: 'ballot', label: 'Propostas' },
-    { id: 'debates', href: '/debates', icon: 'chat', label: 'Debates' },
+    { id: 'foruns', href: '/f/', icon: 'chat', label: 'Fóruns' },
     { id: 'consultas', href: '/consultas', icon: 'mic', label: 'Consultas' },
   ];
 

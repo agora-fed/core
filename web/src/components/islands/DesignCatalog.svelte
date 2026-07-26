@@ -325,7 +325,7 @@
             { id: 'mandatos', label: 'Mandatos', count: 594 },
             { id: 'partidos', label: 'Partidos', count: 22 },
             { id: 'propostas', label: 'Propostas', count: 128 },
-            { id: 'debates', label: 'Debates' },
+            { id: 'foruns', label: 'Fóruns' },
           ]}
           bind:active
         >
