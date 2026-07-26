@@ -92,6 +92,33 @@ pub(crate) async fn list_admin_orgs(
 
 /// Insert a role binding. A duplicate `(org_id, citizen_id, role)` raises a unique
 /// violation, which the service maps to [`dsoc_core::Error::Conflict`].
+/// Load the permission key lists that apply to `citizen` in `org`: every bound role's
+/// `permissions` array PLUS the org's implicit Base role (position 0, never bound — the
+/// Mastodon "everyone" role). One `Vec<String>` per role; the resolver flattens them.
+pub(crate) async fn effective_permission_key_lists(
+    db: &Db,
+    org_id: Uuid,
+    citizen_id: Uuid,
+) -> Result<Vec<Vec<String>>, sqlx::Error> {
+    let rows = sqlx::query_scalar!(
+        r#"
+        SELECT ur.permissions AS "permissions!"
+          FROM citizen_role_binding b
+          JOIN user_role ur ON ur.id = b.role_id
+         WHERE b.org_id = $1 AND b.citizen_id = $2
+        UNION ALL
+        SELECT ur.permissions AS "permissions!"
+          FROM user_role ur
+         WHERE ur.org_id = $1 AND ur.position = 0
+        "#,
+        org_id,
+        citizen_id,
+    )
+    .fetch_all(db)
+    .await?;
+    Ok(rows)
+}
+
 /// Whether `citizen` holds a mutating administrative role (`owner`|`admin`) in `org`.
 /// The root of trust is `scripts/bootstrap-admin.sh`, which seeds the first owner via SQL.
 pub(crate) async fn actor_has_admin_role(

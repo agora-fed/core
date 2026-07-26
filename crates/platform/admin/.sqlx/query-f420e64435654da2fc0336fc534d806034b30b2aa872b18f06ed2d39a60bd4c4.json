@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT ur.permissions AS \"permissions!\"\n          FROM citizen_role_binding b\n          JOIN user_role ur ON ur.id = b.role_id\n         WHERE b.org_id = $1 AND b.citizen_id = $2\n        UNION ALL\n        SELECT ur.permissions AS \"permissions!\"\n          FROM user_role ur\n         WHERE ur.org_id = $1 AND ur.position = 0\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "permissions!",
+        "type_info": "TextArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "f420e64435654da2fc0336fc534d806034b30b2aa872b18f06ed2d39a60bd4c4"
+}

@@ -20,6 +20,7 @@ pub mod amendments;
 pub mod announcements;
 pub mod attestations;
 pub mod audience;
+pub mod authz_ext;
 pub mod campaign_groups;
 pub mod campanha;
 pub mod civic_notify;

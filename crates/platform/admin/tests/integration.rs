@@ -285,6 +285,71 @@ async fn unauthorized_mutation_is_forbidden() {
     assert_eq!(missing.code(), "not_found");
 }
 
+/// R0.3 (#40): `permissions_for` agrega papéis bindados + o papel Base implícito,
+/// e resolve chaves `modulo.acao`. Semeia papéis pro org de teste (a 0600 só semeou
+/// orgs que já existiam quando rodou), binda um Moderador e confere.
+#[tokio::test]
+async fn permissions_for_aggregates_roles_and_base() {
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    let moderador = seed_citizen(&db, org).await;
+    let anon = seed_citizen(&db, org).await; // sem binding — só Base implícito.
+
+    // Base (pos 0, vazio) + Moderador (content.moderate) pro org de teste.
+    let base_id = Uuid::now_v7();
+    let mod_id = Uuid::now_v7();
+    sqlx::query!(
+        "INSERT INTO user_role (id, org_id, name, position, permissions) \
+         VALUES ($1, $2, 'Base', 0, ARRAY[]::text[])",
+        base_id,
+        org.as_uuid(),
+    )
+    .execute(&db)
+    .await
+    .expect("seed base role");
+    sqlx::query!(
+        "INSERT INTO user_role (id, org_id, name, position, permissions) \
+         VALUES ($1, $2, 'Moderador', 10, ARRAY['content.moderate','reports.manage'])",
+        mod_id,
+        org.as_uuid(),
+    )
+    .execute(&db)
+    .await
+    .expect("seed moderador role");
+    sqlx::query!(
+        "INSERT INTO citizen_role_binding (id, org_id, citizen_id, role_id, created_at) \
+         VALUES ($1, $2, $3, $4, now())",
+        Uuid::now_v7(),
+        org.as_uuid(),
+        moderador.as_uuid(),
+        mod_id,
+    )
+    .execute(&db)
+    .await
+    .expect("bind moderador");
+
+    let (svc, _bus) = service_with(
+        db,
+        fixed_clock("2026-02-01T12:00:00Z"),
+        VerificationLevel::Email,
+    );
+
+    // O moderador resolve content.moderate/reports.manage, mas não roles.manage.
+    let p = svc
+        .permissions_for(org, moderador)
+        .await
+        .expect("perms mod");
+    assert!(p.can("content.moderate"));
+    assert!(p.can("reports.manage"));
+    assert!(!p.can("roles.manage"));
+    assert!(!p.is_administrator());
+
+    // Sem binding: só o Base (vazio) — não pode nada.
+    let p2 = svc.permissions_for(org, anon).await.expect("perms anon");
+    assert!(!p2.can("content.moderate"));
+    assert!(p2.is_empty());
+}
+
 /// Regressão do fix de 2026-07-26: um cidadão nível Directory SEM binding admin
 /// não pode mais mutar (antes, `bind_role` deixava ele se autopromover a owner).
 #[tokio::test]

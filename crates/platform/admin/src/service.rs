@@ -80,6 +80,24 @@ impl AdminService {
         &self.bus
     }
 
+    /// Resolve the caller's effective [`Permissions`] in `org` (R0.3 / ADR-0011): the union of
+    /// every bound role's keys plus the implicit Base role. Pure read; the caller (gateway
+    /// helper `require_permission`) decides whether a given key is required.
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on persistence failure.
+    pub async fn permissions_for(
+        &self,
+        org: OrgId,
+        citizen: CitizenId,
+    ) -> Result<crate::permissions::Permissions> {
+        let lists =
+            queries::effective_permission_key_lists(&self.db, org.as_uuid(), citizen.as_uuid())
+                .await
+                .map_err(map_sqlx)?;
+        Ok(crate::permissions::Permissions::from_role_key_lists(lists))
+    }
+
     /// Assert the caller may perform an administrative mutation in `org`.
     ///
     /// SECURITY (2026-07-26, fila de segurança R0.4 / ADR-0011): antes exigia só
