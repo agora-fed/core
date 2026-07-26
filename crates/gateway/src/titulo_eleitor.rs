@@ -141,19 +141,34 @@ struct StatusDto {
     titulo_last4: Option<String>,
     /// Um de: `unverified` | `validated` | `verified` | (NULL quando não cadastrado).
     titulo_status: Option<String>,
+    /// Zona eleitoral declarada (até 4 dígitos). Auxiliar — não valida o título.
+    titulo_zona: Option<String>,
+    /// Seção eleitoral declarada (até 4 dígitos). Auxiliar — não valida o título.
+    titulo_secao: Option<String>,
 }
 
 async fn get_status(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized();
     };
-    let row: Result<Option<(Option<String>, Option<String>)>, _> =
-        sqlx::query_as(r"SELECT titulo_eleitor, titulo_status FROM citizen WHERE id = $1")
-            .bind(citizen)
-            .fetch_optional(&state.db)
-            .await;
+    #[allow(clippy::type_complexity)]
+    let row: Result<
+        Option<(
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        )>,
+        _,
+    > = sqlx::query_as(
+        r"SELECT titulo_eleitor, titulo_status, titulo_zona, titulo_secao
+                FROM citizen WHERE id = $1",
+    )
+    .bind(citizen)
+    .fetch_optional(&state.db)
+    .await;
     match row {
-        Ok(Some((titulo, status))) => {
+        Ok(Some((titulo, status, zona, secao))) => {
             let last4 = titulo
                 .as_deref()
                 .filter(|s| s.chars().count() >= 4)
@@ -163,6 +178,8 @@ async fn get_status(State(state): State<AppState>, headers: HeaderMap) -> Respon
                 Json(ApiResponse::ok(StatusDto {
                     titulo_last4: last4,
                     titulo_status: status,
+                    titulo_zona: zona,
+                    titulo_secao: secao,
                 })),
             )
                 .into_response()
@@ -172,6 +189,8 @@ async fn get_status(State(state): State<AppState>, headers: HeaderMap) -> Respon
             Json(ApiResponse::ok(StatusDto {
                 titulo_last4: None,
                 titulo_status: None,
+                titulo_zona: None,
+                titulo_secao: None,
             })),
         )
             .into_response(),
@@ -188,7 +207,33 @@ async fn get_status(State(state): State<AppState>, headers: HeaderMap) -> Respon
 
 #[derive(Debug, Deserialize)]
 struct SubmitReq {
-    titulo: String,
+    /// 12 dígitos do título. Opcional quando o cidadão já tem título vinculado
+    /// e está só atualizando zona/seção.
+    #[serde(default)]
+    titulo: Option<String>,
+    /// Zona eleitoral (opcional, até 4 dígitos) — consta no próprio título.
+    #[serde(default)]
+    zona: Option<String>,
+    /// Seção eleitoral (opcional, até 4 dígitos) — consta no próprio título.
+    #[serde(default)]
+    secao: Option<String>,
+}
+
+/// Normaliza zona/seção: aceita vazio (→ None) ou 1–4 dígitos (pontos/espaços
+/// removidos). `Err` quando sobra algo que não é dígito ou passa de 4.
+fn normalize_zona_secao(raw: Option<&str>) -> Result<Option<String>, ()> {
+    let Some(raw) = raw else { return Ok(None) };
+    let digits: String = raw.chars().filter(char::is_ascii_digit).collect();
+    let had_other = raw
+        .chars()
+        .any(|c| !c.is_ascii_digit() && !c.is_whitespace() && c != '.' && c != '-');
+    if had_other || digits.len() > 4 {
+        return Err(());
+    }
+    if digits.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(digits))
 }
 
 async fn submit(
@@ -199,7 +244,49 @@ async fn submit(
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized();
     };
-    let Some(digits) = normalize(&body.titulo) else {
+    let Ok(zona) = normalize_zona_secao(body.zona.as_deref()) else {
+        return bad("Zona inválida — use até 4 dígitos (ex.: 123).");
+    };
+    let Ok(secao) = normalize_zona_secao(body.secao.as_deref()) else {
+        return bad("Seção inválida — use até 4 dígitos (ex.: 45).");
+    };
+    // Sem número novo → só zona/seção; exige título já vinculado.
+    let titulo_input = body
+        .titulo
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let Some(raw_titulo) = titulo_input else {
+        let res = sqlx::query_as::<_, (Option<String>, Option<String>)>(
+            r"UPDATE citizen
+                 SET titulo_zona = $2, titulo_secao = $3
+               WHERE id = $1 AND titulo_eleitor IS NOT NULL
+           RETURNING titulo_status, right(titulo_eleitor, 4)",
+        )
+        .bind(citizen)
+        .bind(zona.as_deref())
+        .bind(secao.as_deref())
+        .fetch_optional(&state.db)
+        .await;
+        return match res {
+            Ok(Some((status, last4))) => (
+                StatusCode::OK,
+                Json(ApiResponse::ok(serde_json::json!({
+                    "titulo_status": status,
+                    "titulo_last4": last4,
+                    "titulo_zona": zona,
+                    "titulo_secao": secao,
+                }))),
+            )
+                .into_response(),
+            Ok(None) => bad("Vincule o número do título antes de salvar zona e seção."),
+            Err(err) => {
+                tracing::error!(?err, "submit_titulo zona/secao");
+                server_error()
+            }
+        };
+    };
+    let Some(digits) = normalize(raw_titulo) else {
         return bad("O título deve ter 12 dígitos (sem pontos ou espaços).");
     };
     if !check_digits(&digits) {
@@ -210,11 +297,15 @@ async fn submit(
     let res = sqlx::query(
         r"UPDATE citizen
              SET titulo_eleitor = $2,
-                 titulo_status  = 'validated'
+                 titulo_status  = 'validated',
+                 titulo_zona    = $3,
+                 titulo_secao   = $4
            WHERE id = $1",
     )
     .bind(citizen)
     .bind(&normalized)
+    .bind(zona.as_deref())
+    .bind(secao.as_deref())
     .execute(&state.db)
     .await;
     match res {
@@ -223,6 +314,8 @@ async fn submit(
             Json(ApiResponse::ok(serde_json::json!({
                 "titulo_status": "validated",
                 "titulo_last4": &normalized[8..12],
+                "titulo_zona": zona,
+                "titulo_secao": secao,
             }))),
         )
             .into_response(),
@@ -280,5 +373,17 @@ mod tests {
         let raw = "000000019900";
         let d = normalize(raw).unwrap();
         assert!(!check_digits(&d));
+    }
+
+    #[test]
+    fn zona_secao_normalization() {
+        assert_eq!(normalize_zona_secao(None), Ok(None));
+        assert_eq!(normalize_zona_secao(Some("")), Ok(None));
+        assert_eq!(normalize_zona_secao(Some("  ")), Ok(None));
+        assert_eq!(normalize_zona_secao(Some("123")), Ok(Some("123".into())));
+        assert_eq!(normalize_zona_secao(Some("0045")), Ok(Some("0045".into())));
+        assert_eq!(normalize_zona_secao(Some("1.2")), Ok(Some("12".into())));
+        assert_eq!(normalize_zona_secao(Some("12345")), Err(()));
+        assert_eq!(normalize_zona_secao(Some("12a")), Err(()));
     }
 }

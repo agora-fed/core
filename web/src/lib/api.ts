@@ -1053,6 +1053,10 @@ export const registerResend = (email: string, orgId = DEFAULT_ORG_ID) =>
 export interface TituloEleitorStatus {
   titulo_last4: string | null;
   titulo_status: 'unverified' | 'validated' | 'verified' | null;
+  /** Zona eleitoral declarada (até 4 dígitos) — auxiliar, não valida o título. */
+  titulo_zona: string | null;
+  /** Seção eleitoral declarada (até 4 dígitos) — auxiliar, não valida o título. */
+  titulo_secao: string | null;
 }
 
 /** GET /me/titulo-eleitor — status da cidadania política. */
@@ -1379,12 +1383,19 @@ export const listInviteCampaign = (
     `/api/v1/admin/invite-campaign/invites?status=${status}&limit=${limit}`,
   );
 
-/** POST /me/titulo-eleitor — valida algoritmicamente (12 dígitos) e persiste. */
-export const submitTituloEleitor = (titulo: string) =>
-  apiPost<{ titulo_status: string; titulo_last4: string }>(
-    '/api/v1/me/titulo-eleitor',
-    { titulo },
-  );
+/** POST /me/titulo-eleitor — valida algoritmicamente (12 dígitos) e persiste.
+ *  `titulo` vazio + título já vinculado → atualiza só zona/seção. */
+export const submitTituloEleitor = (
+  titulo: string,
+  zona?: string,
+  secao?: string,
+) =>
+  apiPost<{
+    titulo_status: string | null;
+    titulo_last4: string | null;
+    titulo_zona: string | null;
+    titulo_secao: string | null;
+  }>('/api/v1/me/titulo-eleitor', { titulo, zona, secao });
 
 /** Authenticate (e-mail + senha). Always includes org_id. */
 export const login = (email: string, password: string, orgId = DEFAULT_ORG_ID) =>

@@ -20,10 +20,14 @@
   type Status = 'unverified' | 'validated' | 'verified' | null;
 
   let titulo = $state('');
+  let zona = $state('');
+  let secao = $state('');
   let busy = $state(false);
   let loading = $state(true);
   let status = $state<Status>(null);
   let last4 = $state<string | null>(null);
+  let savedZona = $state<string | null>(null);
+  let savedSecao = $state<string | null>(null);
   let serverError = $state<string | null>(null);
   let justSaved = $state(false);
 
@@ -31,6 +35,14 @@
   const onlyDigits = (s: string) => s.replace(/\D/g, '');
   let digits = $derived(onlyDigits(titulo));
   let valid = $derived(digits.length === 12);
+  // Zona/seção: até 4 dígitos cada, opcionais.
+  let zonaDigits = $derived(onlyDigits(zona).slice(0, 4));
+  let secaoDigits = $derived(onlyDigits(secao).slice(0, 4));
+  // Com título já vinculado dá pra salvar só zona/seção alteradas.
+  let zonaSecaoChanged = $derived(
+    zonaDigits !== (savedZona ?? '') || secaoDigits !== (savedSecao ?? ''),
+  );
+  let canSubmit = $derived(valid || (status !== null && zonaSecaoChanged));
 
   function onInput(event: Event) {
     const el = event.target as HTMLInputElement;
@@ -46,19 +58,32 @@
     if (res.ok && res.data) {
       status = res.data.titulo_status;
       last4 = res.data.titulo_last4;
+      savedZona = res.data.titulo_zona;
+      savedSecao = res.data.titulo_secao;
+      zona = res.data.titulo_zona ?? '';
+      secao = res.data.titulo_secao ?? '';
     }
   }
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();
-    if (!valid || busy) return;
+    if (!canSubmit || busy) return;
     serverError = null;
     busy = true;
-    const res = await submitTituloEleitor(digits);
+    // Título vazio + já vinculado → o backend atualiza só zona/seção.
+    const res = await submitTituloEleitor(
+      valid ? digits : '',
+      zonaDigits,
+      secaoDigits,
+    );
     busy = false;
     if (res.success && res.data) {
       status = res.data.titulo_status as Status;
       last4 = res.data.titulo_last4;
+      savedZona = res.data.titulo_zona;
+      savedSecao = res.data.titulo_secao;
+      zona = res.data.titulo_zona ?? '';
+      secao = res.data.titulo_secao ?? '';
       titulo = '';
       justSaved = true;
       window.setTimeout(() => (justSaved = false), 4000);
@@ -99,6 +124,11 @@
         {#if last4}
           <span class="muted small">Final ••••{last4}</span>
         {/if}
+        {#if savedZona || savedSecao}
+          <span class="muted small">
+            {#if savedZona}Zona {savedZona}{/if}{#if savedZona && savedSecao} · {/if}{#if savedSecao}Seção {savedSecao}{/if}
+          </span>
+        {/if}
       </div>
       {#if justSaved}
         <span class="badge ok">salvo</span>
@@ -128,14 +158,40 @@
         : `${digits.length}/12 dígitos.`}
       required
     />
+    <div class="zona-secao">
+      <Input
+        id="titulo-zona"
+        label="Zona"
+        placeholder="ex.: 123"
+        inputmode="numeric"
+        autocomplete="off"
+        maxlength={4}
+        bind:value={zona}
+        hint="Consta no título (opcional)."
+      />
+      <Input
+        id="titulo-secao"
+        label="Seção"
+        placeholder="ex.: 45"
+        inputmode="numeric"
+        autocomplete="off"
+        maxlength={4}
+        bind:value={secao}
+        hint="Consta no título (opcional)."
+      />
+    </div>
     <Button
       type="submit"
       variant="primary"
       size="md"
       loading={busy}
-      disabled={!valid}
+      disabled={!canSubmit}
     >
-      {status ? 'Trocar título' : 'Vincular título'}
+      {valid
+        ? status
+          ? 'Trocar título'
+          : 'Vincular título'
+        : 'Salvar zona e seção'}
     </Button>
   </form>
 
@@ -199,12 +255,14 @@
   .form {
     display: grid;
     gap: var(--sp-3);
-    align-items: end;
   }
-  @media (min-width: 480px) {
-    .form {
-      grid-template-columns: 1fr auto;
-    }
+  .zona-secao {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--sp-3);
+  }
+  .form > :global(button[type='submit']) {
+    justify-self: start;
   }
   .err {
     margin-top: var(--sp-3);
