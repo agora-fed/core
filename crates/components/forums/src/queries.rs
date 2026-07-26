@@ -379,6 +379,64 @@ pub async fn list_topics(
         .collect())
 }
 
+/// Um tópico recente com o fórum de origem (feed da home /f).
+#[derive(Debug, Clone)]
+pub struct RecentTopicRow {
+    /// Id do tópico.
+    pub id: Uuid,
+    /// Título.
+    pub title: String,
+    /// Saldo de votos.
+    pub score: i64,
+    /// Interações contáveis.
+    pub interaction_count: i64,
+    /// Comentários aprovados.
+    pub comment_count: i64,
+    /// Criação.
+    pub created_at: DateTime<Utc>,
+    /// Caminho do fórum (`sp/santos/saude`).
+    pub forum_path: String,
+    /// Nome do fórum.
+    pub forum_name: String,
+}
+
+/// Últimos tópicos de TODOS os fóruns (feed da home), mais novos primeiro.
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn list_recent_topics(
+    executor: impl sqlx::PgExecutor<'_>,
+    org_id: Uuid,
+    limit: i64,
+) -> Result<Vec<RecentTopicRow>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT t.id, t.title, t.score, t.interaction_count, t.comment_count, t.created_at,
+                  f.full_path AS forum_path, f.name AS forum_name
+           FROM forum_topic t
+           JOIN forum f ON f.id = t.forum_id
+           WHERE t.hidden_at IS NULL AND f.hidden_at IS NULL AND f.org_id = $1
+           ORDER BY t.id DESC
+           LIMIT $2"#,
+        org_id,
+        limit,
+    )
+    .fetch_all(executor)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| RecentTopicRow {
+            id: r.id,
+            title: r.title,
+            score: r.score,
+            interaction_count: r.interaction_count,
+            comment_count: r.comment_count,
+            created_at: r.created_at,
+            forum_path: r.forum_path,
+            forum_name: r.forum_name,
+        })
+        .collect())
+}
+
 /// Upsert do voto ±1 do cidadão (uma linha por par tópico-cidadão).
 ///
 /// # Errors

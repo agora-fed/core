@@ -239,11 +239,66 @@ fn child_dto(c: ChildEntry) -> ForumChildDto {
 pub fn routes(state: dsoc_app::AppState) -> Router<()> {
     Router::new()
         .route("/f/tree", get(tree))
+        .route("/f/recent", get(recent))
         .route("/f/topics", post(create_topic).get(list_topics))
         .route("/f/topics/{id}", get(get_topic))
         .route("/f/topics/{id}/vote", post(vote))
         .route("/f/topics/{id}/comments", post(comment))
         .with_state(state)
+}
+
+/// Um item do feed de últimas postagens (home /f).
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct RecentTopicDto {
+    /// Id do tópico.
+    pub id: Uuid,
+    /// Título.
+    pub title: String,
+    /// Saldo de votos.
+    pub score: i64,
+    /// Interações contáveis.
+    pub interactions: i64,
+    /// Comentários.
+    pub comment_count: i64,
+    /// Criação.
+    pub created_at: DateTime<Utc>,
+    /// Caminho do fórum.
+    pub forum_path: String,
+    /// Nome do fórum.
+    pub forum_name: String,
+}
+
+/// `GET /f/recent?limit=` — últimas postagens de todos os fóruns (feed da home).
+async fn recent(
+    State(state): State<dsoc_app::AppState>,
+    Query(p): Query<RecentParams>,
+) -> Response {
+    let svc = ForumService::from_state(&state);
+    let org = OrgId::from_uuid(DEFAULT_ORG_UUID);
+    match svc.recent_topics(org, p.limit.unwrap_or(25)).await {
+        Ok(rows) => {
+            let dtos: Vec<RecentTopicDto> = rows
+                .into_iter()
+                .map(|r| RecentTopicDto {
+                    id: r.id,
+                    title: r.title,
+                    score: r.score,
+                    interactions: r.interaction_count,
+                    comment_count: r.comment_count,
+                    created_at: r.created_at,
+                    forum_path: r.forum_path,
+                    forum_name: r.forum_name,
+                })
+                .collect();
+            (StatusCode::OK, Json(ApiResponse::ok(dtos))).into_response()
+        }
+        Err(e) => error_response::<Vec<RecentTopicDto>>(&e),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct RecentParams {
+    limit: Option<i64>,
 }
 
 /// `GET /f/tree?path=&esfera=` — um nível da árvore (raiz quando sem `path`).

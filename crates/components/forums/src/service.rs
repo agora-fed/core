@@ -221,6 +221,20 @@ impl ForumService {
         Ok((forum, topics))
     }
 
+    /// Últimos tópicos de todos os fóruns (feed da home /f).
+    ///
+    /// # Errors
+    /// [`Error::Storage`].
+    pub async fn recent_topics(
+        &self,
+        org: OrgId,
+        limit: i64,
+    ) -> Result<Vec<queries::RecentTopicRow>> {
+        queries::list_recent_topics(&self.db, org.as_uuid(), limit.clamp(1, 50))
+            .await
+            .map_err(map_sqlx)
+    }
+
     /// Detalhe do tópico + comentários aprovados + recibos de envio.
     ///
     /// # Errors

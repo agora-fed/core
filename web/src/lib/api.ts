@@ -2914,3 +2914,18 @@ export async function adminForumRemoveModerator(
     return false;
   }
 }
+
+/** Item do feed de últimas postagens dos fóruns (home /f). */
+export interface RecentForumTopicDto {
+  id: string;
+  title: string;
+  score: number;
+  interactions: number;
+  comment_count: number;
+  created_at: string;
+  forum_path: string;
+  forum_name: string;
+}
+
+export const getRecentForumTopics = (limit = 25) =>
+  apiGet<RecentForumTopicDto[]>(`/api/v1/f/recent?limit=${limit}`);

@@ -14,7 +14,9 @@
     getForumTopic,
     getForumTopics,
     getForumTree,
+    getRecentForumTopics,
     voteForumTopic,
+    type RecentForumTopicDto,
     type ForumChildDto,
     type ForumDto,
     type ForumTopicDetailDto,
@@ -33,6 +35,7 @@
 
   // home
   let roots = $state<ForumChildDto[]>([]);
+  let recent = $state<RecentForumTopicDto[]>([]);
   // forum
   let forum = $state<ForumDto | null>(null);
   let children = $state<ForumChildDto[]>([]);
@@ -130,10 +133,14 @@
     // apiGet devolve o shape `Fetched` ({ok, data, error:string}) — diferente do
     // apiPost ({success, error:{message}}). Confundir os dois foi o bug do 1º deploy.
     if (view === 'home') {
-      const res = await getForumTree();
+      const [res, rec] = await Promise.all([
+        getForumTree(),
+        getRecentForumTopics(25),
+      ]);
       loading = false;
       if (res.ok && res.data) roots = res.data.children;
       else error = res.error ?? 'Não foi possível carregar os fóruns.';
+      recent = rec.ok && rec.data ? rec.data : [];
     } else if (view === 'forum') {
       const [t, tp] = await Promise.all([
         getForumTree(path),
@@ -278,47 +285,77 @@
     </p>
   </header>
 
-  <section class="f-block">
-    <h2>🇧🇷 Federal</h2>
-    <div class="f-grid">
-      {#each casas as c (c.slug)}
-        <a class="f-card f-card-destaque" href={`/f/${c.full_path}`} onclick={(e) => { e.preventDefault(); navigate(`/f/${c.full_path}`); }}>{c.name}</a>
-      {/each}
-    </div>
-    <h3>Ministérios</h3>
-    <div class="f-grid">
-      {#each ministerios as m (m.slug)}
-        <a class="f-card" href={`/f/${m.full_path}`} onclick={(e) => { e.preventDefault(); navigate(`/f/${m.full_path}`); }}>{m.name}</a>
-      {/each}
-    </div>
-    <h3>Judiciário</h3>
-    <div class="f-grid">
-      {#each judiciario as j (j.slug)}
-        <a class="f-card" href={`/f/${j.full_path}`} onclick={(e) => { e.preventDefault(); navigate(`/f/${j.full_path}`); }}>{j.name}</a>
-      {/each}
-    </div>
-  </section>
+  <div class="f-home">
+    <aside class="f-side" aria-label="Todos os fóruns">
+      <details open>
+        <summary>🇧🇷 Casas Federais</summary>
+        <nav>
+          {#each casas as c (c.slug)}
+            <a href={`/f/${c.full_path}`} onclick={(e) => { e.preventDefault(); navigate(`/f/${c.full_path}`); }}>{c.name}</a>
+          {/each}
+        </nav>
+      </details>
+      <details>
+        <summary>🏢 Ministérios <span class="muted">({ministerios.length})</span></summary>
+        <nav>
+          {#each ministerios as m (m.slug)}
+            <a href={`/f/${m.full_path}`} onclick={(e) => { e.preventDefault(); navigate(`/f/${m.full_path}`); }}>{m.name}</a>
+          {/each}
+        </nav>
+      </details>
+      <details>
+        <summary>⚖️ Judiciário <span class="muted">({judiciario.length})</span></summary>
+        <nav>
+          {#each judiciario as j (j.slug)}
+            <a href={`/f/${j.full_path}`} onclick={(e) => { e.preventDefault(); navigate(`/f/${j.full_path}`); }}>{j.name}</a>
+          {/each}
+        </nav>
+      </details>
+      <details>
+        <summary>🏛 Estados <span class="muted">(27 — municípios dentro de cada um)</span></summary>
+        <nav>
+          {#each estados as uf (uf.slug)}
+            <a href={`/f/${uf.full_path}`} onclick={(e) => { e.preventDefault(); navigate(`/f/${uf.full_path}`); }}>{uf.name}</a>
+          {/each}
+        </nav>
+      </details>
+      {#if governanca.length > 0}
+        <details>
+          <summary>⚙️ Plataforma</summary>
+          <nav>
+            {#each governanca as g (g.slug)}
+              <a href={`/f/${g.full_path}`} onclick={(e) => { e.preventDefault(); navigate(`/f/${g.full_path}`); }}>{g.name}</a>
+            {/each}
+          </nav>
+        </details>
+      {/if}
+    </aside>
 
-  <section class="f-block">
-    <h2>🏛 Estados</h2>
-    <div class="f-grid f-grid-uf">
-      {#each estados as uf (uf.slug)}
-        <a class="f-card" href={`/f/${uf.full_path}`} onclick={(e) => { e.preventDefault(); navigate(`/f/${uf.full_path}`); }}>{uf.name}</a>
-      {/each}
-    </div>
-    <p class="muted small">Os municípios ficam dentro do estado — entre no seu estado e busque sua cidade.</p>
-  </section>
-
-  {#if governanca.length > 0}
-    <section class="f-block">
-      <h2>⚙️ Plataforma</h2>
-      <div class="f-grid">
-        {#each governanca as g (g.slug)}
-          <a class="f-card" href={`/f/${g.full_path}`} onclick={(e) => { e.preventDefault(); navigate(`/f/${g.full_path}`); }}>{g.name}</a>
+    <section class="f-feed" aria-label="Últimas postagens">
+      <h2>Últimas postagens</h2>
+      {#if recent.length === 0}
+        <p class="muted">Nenhuma postagem ainda — escolha um fórum à esquerda e abra o primeiro debate.</p>
+      {/if}
+      <ul class="f-topics">
+        {#each recent as t (t.id)}
+          <li>
+            <a class="f-topic" href={`/f/topico/${t.id}/${titleSlug(t.title)}`} onclick={(e) => { e.preventDefault(); navigate(`/f/topico/${t.id}/${titleSlug(t.title)}`); }}>
+              <span class="f-score" title="Saldo de votos">{t.score > 0 ? `+${t.score}` : t.score}</span>
+              <span class="f-topic-main">
+                <strong>{t.title}</strong>
+                <span class="muted small">
+                  <span class="f-feed-badge">/f/{t.forum_path}</span>
+                  · {t.interactions.toLocaleString('pt-BR')} interações
+                  · {t.comment_count.toLocaleString('pt-BR')} comentários
+                  · {fmtDate(t.created_at)}
+                </span>
+              </span>
+            </a>
+          </li>
         {/each}
-      </div>
+      </ul>
     </section>
-  {/if}
+  </div>
 {:else if view === 'forum' && forum}
   <nav class="f-crumbs" aria-label="Caminho">
     <a href="/f/" onclick={(e) => { e.preventDefault(); navigate('/f/'); }}>Fóruns</a>
@@ -527,6 +564,28 @@
 
 <style>
   .f-head { margin-bottom: 1.25rem; }
+  .f-home { display: grid; grid-template-columns: 1fr; gap: 1.25rem; }
+  @media (min-width: 860px) {
+    .f-home { grid-template-columns: 20rem 1fr; align-items: start; }
+  }
+  .f-side details {
+    border: 1px solid var(--c-border, #333);
+    border-radius: 0.6rem;
+    margin-bottom: 0.5rem;
+    padding: 0.45rem 0.7rem;
+  }
+  .f-side summary { cursor: pointer; font-weight: 600; }
+  .f-side nav { display: flex; flex-direction: column; gap: 0.15rem; margin-top: 0.4rem; }
+  .f-side nav a {
+    text-decoration: none; color: inherit; font-size: 0.92rem;
+    padding: 0.22rem 0.4rem; border-radius: 0.4rem;
+  }
+  .f-side nav a:hover { background: rgba(127, 127, 127, 0.12); }
+  .f-feed h2 { margin-top: 0; }
+  .f-feed-badge {
+    border: 1px solid var(--c-border, #444); border-radius: 999px;
+    padding: 0 0.5rem; font-size: 0.8rem;
+  }
   .f-block { margin: 1.5rem 0; }
   .f-grid {
     display: grid;
