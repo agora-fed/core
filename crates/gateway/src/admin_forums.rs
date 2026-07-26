@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-pub(crate) fn routes(state: AppState) -> Router<()> {
+pub fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/admin/forums", get(list))
         .route("/admin/forums/{id}", patch(update))
@@ -91,6 +91,8 @@ struct AdminForumRow {
     kind: String,
     esfera: Option<String>,
     contact_email: Option<String>,
+    avatar_url: Option<String>,
+    banner_url: Option<String>,
     thresholds: Vec<i32>,
     moderator_count: i64,
     pending_dispatches: i64,
@@ -108,7 +110,8 @@ async fn list(
     let q = p.q.unwrap_or_default();
     let like = format!("%{}%", q.trim().to_lowercase());
     let rows: Result<Vec<AdminForumRow>, _> = sqlx::query_as(
-        r"SELECT f.id, f.full_path, f.name, f.kind, f.esfera, f.contact_email, f.thresholds,
+        r"SELECT f.id, f.full_path, f.name, f.kind, f.esfera, f.contact_email,
+                 f.avatar_url, f.banner_url, f.thresholds,
                  (SELECT count(*) FROM forum_moderator m WHERE m.forum_id = f.id) AS moderator_count,
                  (SELECT count(*) FROM forum_dispatch d JOIN forum_topic t ON t.id = d.topic_id
                    WHERE t.forum_id = f.id AND d.sent_at IS NULL) AS pending_dispatches,
@@ -139,6 +142,10 @@ struct UpdateForumRequest {
     contact_email: Option<String>,
     /// Patamares novos (crescentes, positivos, máx. 10). `None` mantém.
     thresholds: Option<Vec<i32>>,
+    /// Logo — `Some("")` limpa; `None` mantém.
+    avatar_url: Option<String>,
+    /// Capa — `Some("")` limpa; `None` mantém.
+    banner_url: Option<String>,
 }
 
 async fn update(
@@ -182,16 +189,33 @@ async fn update(
             Some(e)
         }
     });
+    let norm = |v: Option<String>| -> (bool, Option<String>) {
+        match v {
+            None => (false, None),
+            Some(s) => {
+                let s = s.trim().to_owned();
+                (true, if s.is_empty() { None } else { Some(s) })
+            }
+        }
+    };
+    let (av_up, av_val) = norm(req.avatar_url);
+    let (bn_up, bn_val) = norm(req.banner_url);
     let res = sqlx::query(
         r"UPDATE forum SET
              contact_email = CASE WHEN $2 THEN $3 ELSE contact_email END,
-             thresholds    = COALESCE($4, thresholds)
+             thresholds    = COALESCE($4, thresholds),
+             avatar_url    = CASE WHEN $5 THEN $6 ELSE avatar_url END,
+             banner_url    = CASE WHEN $7 THEN $8 ELSE banner_url END
            WHERE id = $1",
     )
     .bind(id)
     .bind(email_update)
     .bind(email_value)
     .bind(req.thresholds)
+    .bind(av_up)
+    .bind(av_val)
+    .bind(bn_up)
+    .bind(bn_val)
     .execute(&state.db)
     .await;
     match res {

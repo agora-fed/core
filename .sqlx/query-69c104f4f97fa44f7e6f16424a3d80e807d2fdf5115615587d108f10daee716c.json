@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, org_id, parent_id, slug, full_path, name, description, kind,\n                  esfera, uf, municipio, contact_email, thresholds, created_at\n           FROM forum WHERE org_id = $1 AND full_path = $2 AND hidden_at IS NULL",
+  "query": "SELECT id, org_id, parent_id, slug, full_path, name, description, kind,\n                  esfera, uf, municipio, contact_email, avatar_url, banner_url,\n                  thresholds, created_at\n           FROM forum WHERE org_id = $1 AND full_path = $2 AND hidden_at IS NULL",
   "describe": {
     "columns": [
       {
@@ -65,11 +65,21 @@
       },
       {
         "ordinal": 12,
+        "name": "avatar_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "banner_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
         "name": "thresholds",
         "type_info": "Int4Array"
       },
       {
-        "ordinal": 13,
+        "ordinal": 15,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
@@ -93,9 +103,11 @@
       true,
       true,
       true,
+      true,
+      true,
       false,
       false
     ]
   },
-  "hash": "1b06b12583c18cec92525a30723ffd258a1ffde5ad83eee3a36d48dea33c149e"
+  "hash": "69c104f4f97fa44f7e6f16424a3d80e807d2fdf5115615587d108f10daee716c"
 }

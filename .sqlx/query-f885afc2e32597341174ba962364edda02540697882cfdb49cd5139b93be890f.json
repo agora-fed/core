@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, org_id, parent_id, slug, full_path, name, description, kind,\n                  esfera, uf, municipio, contact_email, thresholds, created_at\n           FROM forum\n           WHERE org_id = $1 AND hidden_at IS NULL\n             AND parent_id IS NOT DISTINCT FROM $2\n             AND ($3::text IS NULL OR esfera = $3)\n           ORDER BY slug\n           LIMIT $4",
+  "query": "SELECT id, org_id, parent_id, slug, full_path, name, description, kind,\n                  esfera, uf, municipio, contact_email, avatar_url, banner_url,\n                  thresholds, created_at\n           FROM forum\n           WHERE org_id = $1 AND hidden_at IS NULL\n             AND parent_id IS NOT DISTINCT FROM $2\n             AND ($3::text IS NULL OR esfera = $3)\n           ORDER BY slug\n           LIMIT $4",
   "describe": {
     "columns": [
       {
@@ -65,11 +65,21 @@
       },
       {
         "ordinal": 12,
+        "name": "avatar_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "banner_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
         "name": "thresholds",
         "type_info": "Int4Array"
       },
       {
-        "ordinal": 13,
+        "ordinal": 15,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
@@ -95,9 +105,11 @@
       true,
       true,
       true,
+      true,
+      true,
       false,
       false
     ]
   },
-  "hash": "84ab5bd0d9fcffb725ae77915631a6bc9e2ea7398dfdd546e6cb041da4997c24"
+  "hash": "f885afc2e32597341174ba962364edda02540697882cfdb49cd5139b93be890f"
 }

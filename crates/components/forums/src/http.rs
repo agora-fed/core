@@ -45,6 +45,10 @@ pub struct ForumDto {
     pub municipio: Option<String>,
     /// Há e-mail institucional vinculado (o endereço em si não é exposto).
     pub has_contact_email: bool,
+    /// Logo do fórum (0543).
+    pub avatar_url: Option<String>,
+    /// Capa do fórum (0543).
+    pub banner_url: Option<String>,
     /// Patamares de envio configurados.
     pub thresholds: Vec<i32>,
 }
@@ -184,6 +188,8 @@ fn forum_dto(r: ForumRow) -> ForumDto {
         uf: r.uf,
         municipio: r.municipio,
         has_contact_email: r.contact_email.is_some(),
+        avatar_url: r.avatar_url,
+        banner_url: r.banner_url,
         thresholds: r.thresholds,
     }
 }

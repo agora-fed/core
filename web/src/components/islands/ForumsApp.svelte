@@ -57,6 +57,8 @@
   let admForumId = $state('');
   let admEmail = $state('');
   let admThresholds = $state('');
+  let admAvatar = $state('');
+  let admBanner = $state('');
   let admMsg = $state<string | null>(null);
 
   async function loadAdminInline(fullPath: string) {
@@ -70,6 +72,8 @@
         admForumId = row.id;
         admEmail = row.contact_email ?? '';
         admThresholds = row.thresholds.join(', ');
+        admAvatar = row.avatar_url ?? '';
+        admBanner = row.banner_url ?? '';
       }
     }
   }
@@ -92,6 +96,8 @@
     const res = await adminUpdateForum(admForumId, {
       contact_email: admEmail.trim(),
       thresholds: parts,
+      avatar_url: admAvatar.trim(),
+      banner_url: admBanner.trim(),
     });
     busy = false;
     admMsg = res.success ? '✅ Salvo.' : (res.error?.message ?? 'Falha ao salvar.');
@@ -405,7 +411,15 @@
   </nav>
 
   <header class="f-head">
-    <h1>{forum.name}</h1>
+    {#if forum.banner_url}
+      <div class="f-banner" style={`background-image:url('${forum.banner_url}')`}></div>
+    {/if}
+    <div class="f-title-row">
+      {#if forum.avatar_url}
+        <img class="f-logo" src={forum.avatar_url} alt="" />
+      {/if}
+      <h1>{forum.name}</h1>
+    </div>
     {#if forum.description}<p class="muted">{forum.description}</p>{/if}
     {#if forum.has_contact_email}
       <p class="f-badge">✉️ Instituição com e-mail vinculado — patamares: {forum.thresholds.map((t) => t.toLocaleString('pt-BR')).join(' · ')} interações</p>
@@ -423,6 +437,14 @@
           <label>
             Patamares (interações)
             <input class="input" type="text" bind:value={admThresholds} />
+          </label>
+          <label>
+            Logo (URL da imagem)
+            <input class="input" type="url" bind:value={admAvatar} placeholder="https://…/logo.png" />
+          </label>
+          <label>
+            Capa (URL da imagem)
+            <input class="input" type="url" bind:value={admBanner} placeholder="https://…/capa.jpg" />
           </label>
           <button class="btn" type="button" onclick={saveAdminInline} disabled={busy}>Salvar</button>
           {#if admMsg}<span class="note">{admMsg}</span>{/if}
@@ -710,6 +732,16 @@
   .f-comments ul { list-style: none; padding: 0; }
   .f-comments li { border-bottom: 1px solid var(--c-border, #e3e3e3); padding: 0.5rem 0; }
   .f-linklike { background: none; border: none; color: inherit; cursor: pointer; padding: 0; font-size: 0.9rem; text-decoration: underline; }
+  .f-banner {
+    height: 9rem; border-radius: 0.7rem; margin-bottom: 0.75rem;
+    background-size: cover; background-position: center;
+    border: 1px solid var(--c-border, #333);
+  }
+  .f-title-row { display: flex; align-items: center; gap: 0.75rem; }
+  .f-logo {
+    width: 3.4rem; height: 3.4rem; border-radius: 0.7rem; object-fit: cover;
+    border: 1px solid var(--c-border, #333); background: #fff;
+  }
   .f-admin { margin: 0.5rem 0; font-size: 0.92rem; }
   .f-admin summary { cursor: pointer; }
   .f-admin-form { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; margin: 0.5rem 0; }

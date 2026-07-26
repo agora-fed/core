@@ -2776,6 +2776,8 @@ export interface ForumDto {
   uf: string | null;
   municipio: string | null;
   has_contact_email: boolean;
+  avatar_url: string | null;
+  banner_url: string | null;
   thresholds: number[];
 }
 
@@ -2867,6 +2869,8 @@ export interface AdminForumDto {
   kind: string;
   esfera: string | null;
   contact_email: string | null;
+  avatar_url: string | null;
+  banner_url: string | null;
   thresholds: number[];
   moderator_count: number;
   pending_dispatches: number;
@@ -2886,7 +2890,12 @@ export const adminListForums = (q = '', offset = 0, limit = 50) =>
 
 export const adminUpdateForum = (
   id: string,
-  payload: { contact_email?: string; thresholds?: number[] },
+  payload: {
+    contact_email?: string;
+    thresholds?: number[];
+    avatar_url?: string;
+    banner_url?: string;
+  },
 ) => apiPatch<{ ok: true }>(`/api/v1/admin/forums/${encodeURIComponent(id)}`, payload);
 
 export const adminForumModerators = (id: string) =>

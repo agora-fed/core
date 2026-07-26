@@ -32,6 +32,10 @@ pub struct ForumRow {
     pub municipio: Option<String>,
     /// E-mail responsável (herda do pai quando NULL).
     pub contact_email: Option<String>,
+    /// Logo do fórum (0543).
+    pub avatar_url: Option<String>,
+    /// Capa do fórum (0543).
+    pub banner_url: Option<String>,
     /// Patamares de envio (interações contáveis), ordem crescente.
     pub thresholds: Vec<i32>,
     /// Criação.
@@ -113,6 +117,8 @@ fn map_forum(
     uf: Option<String>,
     municipio: Option<String>,
     contact_email: Option<String>,
+    avatar_url: Option<String>,
+    banner_url: Option<String>,
     thresholds: Vec<i32>,
     created_at: DateTime<Utc>,
 ) -> ForumRow {
@@ -129,6 +135,8 @@ fn map_forum(
         uf,
         municipio,
         contact_email,
+        avatar_url,
+        banner_url,
         thresholds,
         created_at,
     }
@@ -145,7 +153,8 @@ pub async fn get_forum_by_path(
 ) -> Result<ForumRow, sqlx::Error> {
     let r = sqlx::query!(
         r#"SELECT id, org_id, parent_id, slug, full_path, name, description, kind,
-                  esfera, uf, municipio, contact_email, thresholds, created_at
+                  esfera, uf, municipio, contact_email, avatar_url, banner_url,
+                  thresholds, created_at
            FROM forum WHERE org_id = $1 AND full_path = $2 AND hidden_at IS NULL"#,
         org_id,
         full_path,
@@ -165,6 +174,8 @@ pub async fn get_forum_by_path(
         r.uf,
         r.municipio,
         r.contact_email,
+        r.avatar_url,
+        r.banner_url,
         r.thresholds,
         r.created_at,
     ))
@@ -183,7 +194,8 @@ pub async fn list_children(
 ) -> Result<Vec<ForumRow>, sqlx::Error> {
     let rows = sqlx::query!(
         r#"SELECT id, org_id, parent_id, slug, full_path, name, description, kind,
-                  esfera, uf, municipio, contact_email, thresholds, created_at
+                  esfera, uf, municipio, contact_email, avatar_url, banner_url,
+                  thresholds, created_at
            FROM forum
            WHERE org_id = $1 AND hidden_at IS NULL
              AND parent_id IS NOT DISTINCT FROM $2
@@ -213,6 +225,8 @@ pub async fn list_children(
                 r.uf,
                 r.municipio,
                 r.contact_email,
+                r.avatar_url,
+                r.banner_url,
                 r.thresholds,
                 r.created_at,
             )

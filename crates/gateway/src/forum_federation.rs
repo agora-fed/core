@@ -49,13 +49,15 @@ pub(crate) struct FedForum {
     pub(crate) name: String,
     pub(crate) description: String,
     pub(crate) federated: bool,
+    pub(crate) avatar_url: Option<String>,
+    pub(crate) banner_url: Option<String>,
 }
 
 /// Resolve um handle federado num fórum visível (federated + não oculto).
 pub(crate) async fn lookup_by_handle(db: &PgPool, handle: &str) -> Option<FedForum> {
     let path = handle_to_path(handle)?;
     sqlx::query_as(
-        r"SELECT id, full_path, name, description, federated
+        r"SELECT id, full_path, name, description, federated, avatar_url, banner_url
           FROM forum WHERE full_path = $1 AND hidden_at IS NULL",
     )
     .bind(&path)
@@ -146,7 +148,22 @@ pub(crate) fn group_actor_json(
             "owner": actor,
             "publicKeyPem": public_pem,
         },
+        "icon": forum.avatar_url.as_ref().map(|u| json!({
+            "type": "Image", "url": absolutize_url(host, u)
+        })),
+        "image": forum.banner_url.as_ref().map(|u| json!({
+            "type": "Image", "url": absolutize_url(host, u)
+        })),
     })
+}
+
+/// `/media/x.png` → `https://<host>/media/x.png`; URLs absolutas passam intactas.
+fn absolutize_url(host: &str, url: &str) -> String {
+    if url.starts_with("http://") || url.starts_with("https://") {
+        url.to_owned()
+    } else {
+        format!("https://{}/{}", host, url.trim_start_matches('/'))
+    }
 }
 
 /// Inbox do Group: `Follow` → registra seguidor (inbox REAL vindo do actor doc,
