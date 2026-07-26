@@ -44,6 +44,7 @@ pub mod mastodon_api;
 pub mod mastodon_dto;
 pub mod mastodon_oauth;
 pub mod me_settings;
+pub mod module_catalog;
 pub mod note_media;
 pub mod notification_receipts;
 pub mod notifications;

@@ -10,6 +10,7 @@
 #![forbid(unsafe_code)]
 
 pub mod caller;
+pub mod manifest;
 pub use caller::CallerId;
 
 use std::sync::Arc;
