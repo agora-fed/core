@@ -377,9 +377,14 @@
 
   $effect(() => {
     // Attach the observer to the sentinel whenever it enters the DOM.
-    if (!observer || !sentinelEl) return;
-    observer.observe(sentinelEl);
-    return () => observer?.unobserve(sentinelEl!);
+    // Captura o elemento POR VALOR: quando o sentinel sai do DOM ({#if hasMore}
+    // vira false, ex. após apagar um post), o bind:this já zerou `sentinelEl`
+    // antes do cleanup rodar — unobserve(null) estourava TypeError e MATAVA a
+    // ilha inteira (feed congelado em "Carregando").
+    const el = sentinelEl;
+    if (!observer || !el) return;
+    observer.observe(el);
+    return () => observer?.unobserve(el);
   });
 
   function patch(uri: string, p: Partial<FeedItemDto>) {
