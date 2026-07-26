@@ -189,6 +189,11 @@ pub async fn list_feed(
                         WHERE r.citizen_id = $1 AND r.object_uri = feed.object_uri
                           AND r.kind = 'boost') AS boosted_by_me
           FROM (
+                -- DISTINCT ON: a mesma nota pode existir local (outbox) E ingerida via
+                -- federacao (loop no proprio dominio). Duplicata derruba o {#each}
+                -- chaveado do front (each_key_duplicate) -- prefere a linha local.
+                SELECT DISTINCT ON (u.object_uri) u.*
+                  FROM (
                 SELECT COALESCE(oe.payload->'object'->>'id', oe.activity_id) AS object_uri,
                        '@' || COALESCE(c.handle, 'u-' || replace(c.id::text, '-', ''))
                                                                              AS author_handle,
@@ -248,6 +253,8 @@ pub async fn list_feed(
                                 WHERE f.citizen_id = $1
                                   AND f.direction = 'outbound'
                                   AND f.remote_actor_url = t.actor_url)
+               ) AS u
+                 ORDER BY u.object_uri, u.is_remote ASC
                ) AS feed
          WHERE (feed.author_actor_url IS NULL
                 OR feed.author_actor_url NOT IN (
@@ -395,6 +402,11 @@ pub async fn list_hashtag_timeline(
                false AS liked_by_me,
                false AS boosted_by_me
           FROM (
+                -- DISTINCT ON: a mesma nota pode existir local (outbox) E ingerida via
+                -- federacao (loop no proprio dominio). Duplicata derruba o {#each}
+                -- chaveado do front (each_key_duplicate) -- prefere a linha local.
+                SELECT DISTINCT ON (u.object_uri) u.*
+                  FROM (
                 SELECT COALESCE(oe.payload->'object'->>'id', oe.activity_id) AS object_uri,
                        '@' || COALESCE(c.handle, 'u-' || replace(c.id::text, '-', ''))
                                                                              AS author_handle,
@@ -429,6 +441,8 @@ pub async fn list_hashtag_timeline(
                   FROM federation_timeline_entry t
                  WHERE t.deleted_at IS NULL
                    AND t.object_uri IN (SELECT object_uri FROM tag_uris)
+               ) AS u
+                 ORDER BY u.object_uri, u.is_remote ASC
                ) AS feed
          ORDER BY feed.published_at DESC
          LIMIT $3 OFFSET $4
@@ -552,6 +566,11 @@ pub async fn list_thread_context(
                         WHERE r.citizen_id = $2 AND r.object_uri = feed.object_uri
                           AND r.kind = 'boost') AS boosted_by_me
           FROM (
+                -- DISTINCT ON: a mesma nota pode existir local (outbox) E ingerida via
+                -- federacao (loop no proprio dominio). Duplicata derruba o {#each}
+                -- chaveado do front (each_key_duplicate) -- prefere a linha local.
+                SELECT DISTINCT ON (u.object_uri) u.*
+                  FROM (
                 SELECT COALESCE(oe.payload->'object'->>'id', oe.activity_id) AS object_uri,
                        '@' || COALESCE(c.handle, 'u-' || replace(c.id::text, '-', ''))
                                                                              AS author_handle,
@@ -586,6 +605,8 @@ pub async fn list_thread_context(
                   FROM federation_timeline_entry t
                  WHERE t.deleted_at IS NULL
                    AND t.object_uri IN (SELECT object_uri FROM thread)
+               ) AS u
+                 ORDER BY u.object_uri, u.is_remote ASC
                ) AS feed
          ORDER BY feed.published_at ASC
         ",

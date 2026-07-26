@@ -309,7 +309,12 @@
     const res = await getMyFeed(PAGE, 0);
     loading = false;
     if (res.success && res.data) {
-      items = res.data;
+      // Dedup por object_uri também na primeira página — chave duplicada no
+      // {#each} derruba a ilha inteira (each_key_duplicate, Svelte 5).
+      const seen = new Set<string>();
+      items = res.data.filter(
+        (i) => !seen.has(i.object_uri) && (seen.add(i.object_uri), true),
+      );
       offset = res.data.length;
       hasMore = res.data.length === PAGE;
     } else if (isAuthError(res)) {

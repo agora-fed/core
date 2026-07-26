@@ -1072,18 +1072,22 @@ async fn fetch_actor_outbox(actor_url: &str) -> Result<Vec<RemoteNoteDto>, Strin
     let collection = fetch_remote_actor(outbox_url)
         .await
         .map_err(|e| format!("outbox collection: {e:?}"))?;
-    let first_page_url = collection
-        .get("first")
-        .and_then(|f| {
-            f.as_str()
-                .or_else(|| f.get("id").and_then(Value::as_str))
-                .map(str::to_owned)
-        })
-        .ok_or_else(|| "outbox sem primeira página".to_string())?;
-    // Step 3: fetch first page → orderedItems.
-    let page = fetch_remote_actor(&first_page_url)
-        .await
-        .map_err(|e| format!("outbox page: {e:?}"))?;
+    // Mastodon pagina (`first` → página 1); o nosso próprio outbox — e outras
+    // implementações pequenas — devolve `orderedItems` inline no wrapper. Aceita os
+    // dois formatos, senão NENHUM perfil local carrega notas (issue #21).
+    let first_page_url = collection.get("first").and_then(|f| {
+        f.as_str()
+            .or_else(|| f.get("id").and_then(Value::as_str))
+            .map(str::to_owned)
+    });
+    // Step 3: fetch first page → orderedItems (or use the inline collection).
+    let page = match first_page_url {
+        Some(url) => fetch_remote_actor(&url)
+            .await
+            .map_err(|e| format!("outbox page: {e:?}"))?,
+        None if collection.get("orderedItems").is_some() => collection,
+        None => return Err("outbox sem primeira página nem orderedItems".to_string()),
+    };
     let items = page
         .get("orderedItems")
         .and_then(Value::as_array)
