@@ -58,6 +58,7 @@ pub mod notification_receipts;
 pub mod notifications;
 pub mod og_cards;
 pub mod parlamentar_activity;
+pub mod party_dashboard;
 pub mod phone;
 mod politico_contacts;
 pub mod politicos_ext;
@@ -180,6 +181,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(crate::campaign_broadcast::routes(state.clone()))
         // Base própria de contatos por diretório, verificada contra a base central (ÁGORA F4, #61).
         .merge(crate::campaign_contacts::routes(state.clone()))
+        // Painel de campanha do partido/diretório (ÁGORA F7, #64).
+        .merge(crate::party_dashboard::routes(state.clone()))
         .merge(crate::module_gate::routes(state.clone()))
         .merge(admin_ext::routes(state.clone()))
         // Super-admin: editar/ocultar/apagar mandato, proposta, partido (0.40, SOCRATES).

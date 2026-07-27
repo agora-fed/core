@@ -13,9 +13,11 @@
     removePartyAdministrator,
     sendBroadcast,
     importContacts,
+    getPartyDashboard,
     type PartyDto,
     type DirectoryDto,
     type PartyAdministratorDto,
+    type PartyDashboard,
   } from '../../lib/api';
   import { UFS } from '../../lib/ufs';
   import { toast } from '../../lib/toasts';
@@ -27,6 +29,7 @@
 
   let directories = $state<DirectoryDto[]>([]);
   let administrators = $state<PartyAdministratorDto[]>([]);
+  let dash = $state<PartyDashboard | null>(null);
   let scopeBusy = $state(false);
 
   // Form: novo diretório
@@ -69,10 +72,16 @@
   async function selectParty(sigla: string) {
     selected = sigla;
     scopeBusy = true;
-    const [d, a] = await Promise.all([listDirectories(sigla), listPartyAdministrators(sigla)]);
+    dash = null;
+    const [d, a, dash_] = await Promise.all([
+      listDirectories(sigla),
+      listPartyAdministrators(sigla),
+      getPartyDashboard(sigla),
+    ]);
     scopeBusy = false;
     directories = d.success ? (d.data ?? []) : [];
     administrators = a.success ? (a.data ?? []) : [];
+    dash = dash_.success ? (dash_.data ?? null) : null;
     if (!d.success) toast.error(d.error?.message ?? 'Erro ao carregar diretórios');
     if (!a.success) toast.error(a.error?.message ?? 'Erro ao carregar administradores');
   }
@@ -236,6 +245,37 @@
         {:else}
           <h2 class="dhead">{selected}</h2>
 
+          {#if dash}
+            <h3>Painel</h3>
+            <div class="cards">
+              <div class="card"><span class="n">{dash.directories_count}</span><span class="l">diretórios</span></div>
+              <div class="card"><span class="n">{dash.administrators_count}</span><span class="l">administradores</span></div>
+              <div class="card"><span class="n">{dash.own_contacts_total}</span><span class="l">base própria ({dash.own_contacts_matched} casados)</span></div>
+              <div class="card"><span class="n">{dash.broadcasts_count}</span><span class="l">comunicados</span></div>
+            </div>
+            <p class="muted small">
+              Consentimentos ativos que alcançam este partido: <strong>{dash.consent.all_parties}</strong>
+              todos · <strong>{dash.consent.this_party}</strong> este partido ·
+              <strong>{dash.consent.directory_this_party}</strong> diretório ·
+              <strong>{dash.consent.municipality_any}</strong> por município.
+            </p>
+            {#if dash.broadcasts.length > 0}
+              <ul class="rows">
+                {#each dash.broadcasts as b (b.created_at + b.subject)}
+                  <li>
+                    <span class="scope">{b.municipio ? `${b.municipio}/${b.uf}` : '—'}</span>
+                    <span class="rname">{b.subject}</span>
+                    <span class="scope2"
+                      >{b.recipients} dest.{#if b.consultation_id} ·
+                        <a href={`/consulta/?id=${b.consultation_id}`}>consulta</a>{/if}</span
+                    >
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+            <hr />
+          {/if}
+
           <!-- Diretórios -->
           <h3>Diretórios</h3>
           {#if directories.length === 0}
@@ -397,6 +437,10 @@
   .mini.col { flex-direction: column; align-items: stretch; max-width: 32rem; }
   .area { resize: vertical; font-family: inherit; }
   .q-label { font-size: var(--fs-sm); color: var(--text-2); margin-top: var(--sp-1); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: var(--sp-2); margin: var(--sp-2) 0; }
+  .card { border: 1px solid var(--border-subtle); border-radius: var(--r-md); padding: var(--sp-3); display: grid; gap: 2px; background: var(--surface-1); }
+  .card .n { font-size: var(--fs-xl); font-weight: var(--fw-bold); color: var(--accent-strong); }
+  .card .l { font-size: var(--fs-xs); color: var(--text-3); }
   .input { padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--surface-1); color: var(--text-1); font-size: var(--fs-sm); }
   .grow { flex: 1; min-width: 10rem; }
   .btn { padding: var(--sp-2) var(--sp-4); border-radius: var(--r-sm); border: 1px solid var(--accent); background: var(--accent); color: #fff; font-weight: var(--fw-semibold); font-size: var(--fs-sm); cursor: pointer; }

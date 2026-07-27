@@ -3096,6 +3096,33 @@ export const assignPartyAdministrator = (
 export const removePartyAdministrator = (sigla: string, id: string) =>
   apiDelete<null>(`/api/v1/admin/parties/${encodeURIComponent(sigla)}/administrators/${id}`);
 
+// ÁGORA F7 (#64) — painel de campanha do partido.
+export interface PartyDashboard {
+  directories_count: number;
+  administrators_count: number;
+  consent: {
+    all_parties: number;
+    this_party: number;
+    directory_this_party: number;
+    municipality_any: number;
+  };
+  own_contacts_total: number;
+  own_contacts_matched: number;
+  broadcasts_count: number;
+  broadcasts: {
+    subject: string;
+    recipients: number;
+    created_at: string;
+    consultation_id: string | null;
+    uf: string | null;
+    municipio: string | null;
+  }[];
+}
+export const getPartyDashboard = (sigla: string) =>
+  apiGetCredentialed<PartyDashboard>(
+    `/api/v1/admin/parties/${encodeURIComponent(sigla)}/dashboard`,
+  );
+
 // ÁGORA F4 (#61) — base própria de contatos por diretório (verificada contra a base central).
 export interface ContactImportResult {
   received: number;
