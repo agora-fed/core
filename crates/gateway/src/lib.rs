@@ -23,6 +23,7 @@ pub mod announcements;
 pub mod attestations;
 pub mod audience;
 pub mod authz_ext;
+pub mod campaign_consent;
 pub mod campaign_groups;
 pub mod campanha;
 pub mod civic_notify;
@@ -206,6 +207,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(federation::client_routes(state.clone()))
         // Per-citizen settings: authorized OAuth apps + change password.
         .merge(me_settings::routes(state.clone()))
+        // Consentimento de campanha do cidadão (ÁGORA F2, #59).
+        .merge(campaign_consent::routes(state.clone()))
         // Cidadania política — validação do título de eleitor.
         .merge(titulo_eleitor::routes(state.clone()))
         // Referência IBGE de municípios (selector UF→município do cadastro).

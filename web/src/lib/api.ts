@@ -3095,6 +3095,26 @@ export const assignPartyAdministrator = (
 ) => apiPost<string>(`/api/v1/admin/parties/${encodeURIComponent(sigla)}/administrators`, body);
 export const removePartyAdministrator = (sigla: string, id: string) =>
   apiDelete<null>(`/api/v1/admin/parties/${encodeURIComponent(sigla)}/administrators/${id}`);
+
+// ÁGORA F2 (#59) — consentimento de campanha do cidadão (/me/campaign-consent).
+export interface CampaignConsentDto {
+  id: string;
+  scope: 'all_parties' | 'party' | 'municipality' | 'directory';
+  party_sigla: string | null;
+  uf: string | null;
+  municipio: string | null;
+  granted_at: string;
+}
+export const listCampaignConsent = () =>
+  apiGetCredentialed<CampaignConsentDto[]>('/api/v1/me/campaign-consent');
+export const grantCampaignConsent = (body: {
+  scope: string;
+  party_sigla?: string;
+  uf?: string;
+  municipio?: string;
+}) => apiPost<string>('/api/v1/me/campaign-consent', body);
+export const revokeCampaignConsent = (id: string) =>
+  apiDelete<null>(`/api/v1/me/campaign-consent/${id}`);
 export const createRole = (body: RoleInput) =>
   apiPost<{ ok: true }>('/api/v1/admin/roles', body);
 export const updateRole = (id: string, body: RoleInput) =>

@@ -14,6 +14,7 @@
   import FediverseSearch from './FediverseSearch.svelte';
   import TituloEleitorForm from './TituloEleitorForm.svelte';
   import LgpdPanel from './LgpdPanel.svelte';
+  import CampaignConsentPanel from './CampaignConsentPanel.svelte';
   import FiltersPanel from './FiltersPanel.svelte';
   import PreferencesPanel from './PreferencesPanel.svelte';
   import ImportPanel from './ImportPanel.svelte';
@@ -28,6 +29,7 @@
     | 'preferencias'
     | 'filtros'
     | 'importar'
+    | 'campanha'
     | 'lgpd';
 
   const tabs: { id: TabId; label: string }[] = [
@@ -40,6 +42,7 @@
     { id: 'fediverso', label: 'Fediverso' },
     { id: 'filtros', label: 'Filtros' },
     { id: 'importar', label: 'Importar' },
+    { id: 'campanha', label: 'Campanha' },
     { id: 'lgpd', label: 'LGPD' },
   ];
 
@@ -176,6 +179,17 @@
           </p>
         </header>
         <FiltersPanel />
+      </section>
+    {:else if active === 'campanha'}
+      <section class="section">
+        <header class="s-head">
+          <h2>Consentimento de campanha</h2>
+          <p class="muted">
+            Controle quem — se alguém — pode usar seus dados para comunicação de
+            campanha. <strong>Padrão: ninguém.</strong> Você autoriza e revoga aqui.
+          </p>
+        </header>
+        <CampaignConsentPanel />
       </section>
     {:else if active === 'lgpd'}
       <section class="section">
