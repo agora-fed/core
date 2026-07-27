@@ -55,6 +55,34 @@ fn storage_error() -> Response {
     fail(StatusCode::INTERNAL_SERVER_ERROR, "storage_error", "Erro interno.")
 }
 
+/// Registra em `admin_audit` (#71) — best-effort, não falha a requisição.
+async fn audit(
+    db: &sqlx::PgPool,
+    admin_id: Uuid,
+    action: &str,
+    target_citizen_id: Option<Uuid>,
+    target_domain: &str,
+    target_id: Option<Uuid>,
+    detail: serde_json::Value,
+) {
+    if let Err(err) = sqlx::query(
+        r"INSERT INTO admin_audit (id, admin_id, action, target_citizen_id, target_domain, target_id, detail)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(admin_id)
+    .bind(action)
+    .bind(target_citizen_id)
+    .bind(target_domain)
+    .bind(target_id)
+    .bind(detail)
+    .execute(db)
+    .await
+    {
+        tracing::warn!(?err, action, "admin_parties: audit falhou (best-effort)");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Parties
 // ---------------------------------------------------------------------------
@@ -182,6 +210,7 @@ async fn create_directory(
     Json(body): Json<CreateDirectoryBody>,
 ) -> Response {
     let org = caller.org.as_uuid();
+    let admin_id = caller.citizen.as_uuid();
     if let Err(r) = require_permission(&state, caller, keys::DIRECTORY_MANAGE).await {
         return r;
     }
@@ -222,7 +251,19 @@ async fn create_directory(
     .fetch_one(&state.db)
     .await;
     match row {
-        Ok((id,)) => (StatusCode::CREATED, Json(ApiResponse::ok(id))).into_response(),
+        Ok((id,)) => {
+            audit(
+                &state.db,
+                admin_id,
+                "party.directory.create",
+                None,
+                "party_directory",
+                Some(id),
+                serde_json::json!({ "party": sigla, "esfera": esfera, "uf": uf, "municipio": municipio }),
+            )
+            .await;
+            (StatusCode::CREATED, Json(ApiResponse::ok(id))).into_response()
+        }
         Err(sqlx::Error::Database(e)) if e.is_foreign_key_violation() => {
             fail(StatusCode::NOT_FOUND, "party_not_found", "Partido não encontrado.")
         }
@@ -356,7 +397,19 @@ async fn assign_administrator(
     .fetch_one(&state.db)
     .await;
     match row {
-        Ok((id,)) => (StatusCode::CREATED, Json(ApiResponse::ok(id))).into_response(),
+        Ok((id,)) => {
+            audit(
+                &state.db,
+                invited_by,
+                "party.administrator.assign",
+                Some(citizen_id),
+                "party_administrator",
+                Some(id),
+                serde_json::json!({ "party": sigla, "role": role, "directory_id": body.directory_id }),
+            )
+            .await;
+            (StatusCode::CREATED, Json(ApiResponse::ok(id))).into_response()
+        }
         Err(sqlx::Error::Database(e)) if e.is_unique_violation() => fail(
             StatusCode::CONFLICT,
             "already_administrator",
@@ -377,9 +430,10 @@ async fn assign_administrator(
 async fn remove_administrator(
     State(state): State<AppState>,
     caller: CallerId,
-    Path((_sigla, id)): Path<(String, Uuid)>,
+    Path((sigla, id)): Path<(String, Uuid)>,
 ) -> Response {
     let org = caller.org.as_uuid();
+    let admin_id = caller.citizen.as_uuid();
     if let Err(r) = require_permission(&state, caller, keys::PARTY_MANAGE).await {
         return r;
     }
@@ -392,7 +446,19 @@ async fn remove_administrator(
         Ok(r) if r.rows_affected() == 0 => {
             fail(StatusCode::NOT_FOUND, "not_found", "Administrador não encontrado.")
         }
-        Ok(_) => (StatusCode::OK, Json(ApiResponse::ok(()))).into_response(),
+        Ok(_) => {
+            audit(
+                &state.db,
+                admin_id,
+                "party.administrator.remove",
+                None,
+                "party_administrator",
+                Some(id),
+                serde_json::json!({ "party": sigla }),
+            )
+            .await;
+            (StatusCode::OK, Json(ApiResponse::ok(()))).into_response()
+        }
         Err(err) => {
             tracing::error!(?err, "remove_administrator");
             storage_error()

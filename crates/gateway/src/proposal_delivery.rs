@@ -23,12 +23,8 @@ use async_trait::async_trait;
 use dsoc_core::events::{Event, EventEnvelope};
 use dsoc_core::Result;
 use dsoc_events::EventHandler;
-use lettre::transport::smtp::authentication::Credentials;
-use lettre::transport::smtp::AsyncSmtpTransport;
-use lettre::{AsyncTransport, Message, Tokio1Executor};
 use sqlx::PgPool;
 use std::collections::HashMap;
-use std::time::Duration;
 use uuid::Uuid;
 
 use crate::email_templates;
@@ -407,30 +403,11 @@ pub(crate) async fn send_email(
     subject: &str,
     body: &str,
 ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut builder = if cfg.port == 465 {
-        AsyncSmtpTransport::<Tokio1Executor>::relay(&cfg.host)?
-    } else {
-        AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&cfg.host)?
-    };
-    builder = builder.port(cfg.port).timeout(Some(Duration::from_secs(5)));
-    if let (Some(u), Some(p)) = (cfg.user.as_ref(), cfg.pass.as_ref()) {
-        builder = builder.credentials(Credentials::new(u.clone(), p.clone()));
-    }
-    let mailer = builder.build();
-
-    let from = cfg.from.parse()?;
-    let to_addr: lettre::message::Mailbox = to.parse()?;
-    // 0.32.1: multipart/alternative — texto puro (fallback universal) +
-    // HTML com a identidade da marca. O template segue texto simples; o
-    // wrapper cuida do visual.
-    let email = Message::builder()
-        .from(from)
-        .to(to_addr)
-        .subject(subject)
-        .multipart(lettre::message::MultiPart::alternative_plain_html(
-            body.to_owned(),
-            dsoc_db::email_templates::html_wrap(body),
-        ))?;
-    mailer.send(email).await?;
-    Ok(())
+    // Delega ao INTERCOMS (ADR-0016, #68): unifica o envio de e-mail do gateway no
+    // `SmtpProvider`. Assinatura mantida — os ~4 callers (civic_notify, forum_mailer,
+    // email_templates, federation) passam a mandar via INTERCOMS sem mudança.
+    use crate::intercoms::{MessageSender, OutboundMessage, SmtpProvider};
+    SmtpProvider::new(cfg.clone())
+        .send(&OutboundMessage::email(to, subject, body))
+        .await
 }

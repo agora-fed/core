@@ -25,36 +25,37 @@
     | 'perfil'
     | 'identidade'
     | 'aparencia'
-    | 'seguranca'
-    | 'aplicativos'
-    | 'fediverso'
     | 'preferencias'
-    | 'filtros'
-    | 'importar'
-    | 'campanha'
-    | 'telefone'
-    | 'lgpd';
+    | 'seguranca'
+    | 'fediverso'
+    | 'dados';
 
   const tabs: { id: TabId; label: string }[] = [
     { id: 'perfil', label: 'Perfil' },
     { id: 'identidade', label: 'Identidade' },
     { id: 'aparencia', label: 'Aparência' },
-    { id: 'seguranca', label: 'Segurança' },
     { id: 'preferencias', label: 'Preferências' },
-    { id: 'aplicativos', label: 'Aplicativos' },
+    { id: 'seguranca', label: 'Segurança & acesso' },
     { id: 'fediverso', label: 'Fediverso' },
-    { id: 'filtros', label: 'Filtros' },
-    { id: 'importar', label: 'Importar' },
-    { id: 'campanha', label: 'Campanha' },
-    { id: 'telefone', label: '2FA' },
-    { id: 'lgpd', label: 'LGPD' },
+    { id: 'dados', label: 'Meus dados' },
   ];
+
+  // Compat: hashes antigos (#lgpd, #2fa, #campanha…) caem no grupo novo.
+  const HASH_ALIAS: Record<string, TabId> = {
+    telefone: 'seguranca',
+    aplicativos: 'seguranca',
+    lgpd: 'dados',
+    campanha: 'dados',
+    filtros: 'fediverso',
+    importar: 'fediverso',
+  };
 
   let active = $state<TabId>('perfil');
 
   onMount(() => {
-    const h = window.location.hash.replace('#', '') as TabId;
-    if (tabs.some((t) => t.id === h)) active = h;
+    const h = window.location.hash.replace('#', '');
+    if (tabs.some((t) => t.id === h)) active = h as TabId;
+    else if (HASH_ALIAS[h]) active = HASH_ALIAS[h];
   });
 
   function select(id: string) {
@@ -114,43 +115,6 @@
           </div>
         </Card>
       </section>
-    {:else if active === 'seguranca'}
-      <section class="section">
-        <header class="s-head">
-          <h2>Segurança</h2>
-          <p class="muted">
-            Sua senha protege sua conta e sua chave de identidade no fediverso.
-            Trocando a senha, os outros navegadores e apps precisam entrar de novo.
-          </p>
-        </header>
-        <Card>
-          <h3 class="sub"><Icon name="lock" size={18} /> Trocar senha</h3>
-          <ChangePasswordForm />
-        </Card>
-        <div class="spacer"></div>
-        <SessionsList />
-      </section>
-    {:else if active === 'aplicativos'}
-      <section class="section">
-        <header class="s-head">
-          <h2>Aplicativos conectados</h2>
-          <p class="muted">
-            Clientes Mastodon e integrações que acessam sua conta via OAuth. Desconecte
-            um app para revogar imediatamente o acesso dele.
-          </p>
-        </header>
-        <AuthorizedApps />
-      </section>
-    {:else if active === 'fediverso'}
-      <section class="section">
-        <header class="s-head">
-          <h2>Descobrir no fediverso</h2>
-          <p class="muted">
-            Busque perfis em outras instâncias (Mastodon, Pleroma, Misskey…) e comece a segui-los.
-          </p>
-        </header>
-        <FediverseSearch />
-      </section>
     {:else if active === 'preferencias'}
       <section class="section">
         <header class="s-head">
@@ -162,60 +126,77 @@
         </header>
         <PreferencesPanel />
       </section>
-    {:else if active === 'importar'}
+    {:else if active === 'seguranca'}
       <section class="section">
         <header class="s-head">
-          <h2>Importar contas do fediverso</h2>
-          <p class="muted">
-            Cole ou envie um CSV com contas que você já segue em outra
-            instância. A gente dispara o Follow pra cada uma.
-          </p>
+          <h2>Segurança &amp; acesso</h2>
+          <p class="muted">Senha, sessões ativas, verificação em duas etapas e apps conectados.</p>
         </header>
-        <ImportPanel />
-      </section>
-    {:else if active === 'filtros'}
-      <section class="section">
-        <header class="s-head">
-          <h2>Filtros de conteúdo</h2>
-          <p class="muted">
-            Adicione termos que devem esconder publicações do seu feed. Zero
-            fanfarra: match simples por substring, case-insensitive.
-          </p>
-        </header>
-        <FiltersPanel />
-      </section>
-    {:else if active === 'campanha'}
-      <section class="section">
-        <header class="s-head">
-          <h2>Consentimento de campanha</h2>
-          <p class="muted">
-            Controle quem — se alguém — pode usar seus dados para comunicação de
-            campanha. <strong>Padrão: ninguém.</strong> Você autoriza e revoga aqui.
-          </p>
-        </header>
-        <CampaignConsentPanel />
-      </section>
-    {:else if active === 'telefone'}
-      <section class="section">
-        <header class="s-head">
-          <h2>Autenticação em dois fatores (2FA)</h2>
-          <p class="muted">
-            Proteja sua conta com uma segunda etapa. <strong>TOTP</strong> (app autenticador) é o
-            método recomendado; o telefone/SMS é uma alternativa (não recomendada).
-          </p>
-        </header>
+
+        <Card>
+          <h3 class="sub"><Icon name="lock" size={18} /> Trocar senha</h3>
+          <ChangePasswordForm />
+        </Card>
+        <div class="spacer"></div>
+        <SessionsList />
+
+        <div class="spacer"></div>
+        <h3 class="grp">Verificação em duas etapas (2FA)</h3>
+        <p class="muted small">
+          <strong>TOTP</strong> (app autenticador) é o recomendado; telefone/SMS é alternativa
+          (não recomendada).
+        </p>
         <TotpPanel />
         <PhonePanel />
+
+        <div class="spacer"></div>
+        <h3 class="grp">Aplicativos conectados</h3>
+        <p class="muted small">
+          Clientes Mastodon e integrações via OAuth. Desconecte um app para revogar o acesso.
+        </p>
+        <AuthorizedApps />
       </section>
-    {:else if active === 'lgpd'}
+    {:else if active === 'fediverso'}
       <section class="section">
         <header class="s-head">
-          <h2>Meus dados (LGPD)</h2>
+          <h2>Fediverso</h2>
           <p class="muted">
-            Direitos do titular conforme Lei 13.709/2018 art. 18: exportar seus
-            dados em formato portável, ou excluir sua conta.
+            Descubra perfis em outras instâncias, importe quem você já segue e filtre o feed.
           </p>
         </header>
+
+        <h3 class="grp">Descobrir perfis</h3>
+        <p class="muted small">Busque em outras instâncias (Mastodon, Pleroma, Misskey…) e siga.</p>
+        <FediverseSearch />
+
+        <div class="spacer"></div>
+        <h3 class="grp">Importar contas</h3>
+        <p class="muted small">
+          Cole ou envie um CSV de contas que você já segue em outra instância — disparamos o Follow.
+        </p>
+        <ImportPanel />
+
+        <div class="spacer"></div>
+        <h3 class="grp">Filtros de conteúdo</h3>
+        <p class="muted small">Termos que escondem publicações do feed (substring, case-insensitive).</p>
+        <FiltersPanel />
+      </section>
+    {:else if active === 'dados'}
+      <section class="section">
+        <header class="s-head">
+          <h2>Meus dados</h2>
+          <p class="muted">Consentimento de campanha e seus direitos de titular (LGPD).</p>
+        </header>
+
+        <h3 class="grp">Consentimento de campanha</h3>
+        <p class="muted small">
+          Controle quem — se alguém — pode usar seus dados para campanha. <strong>Padrão: ninguém.</strong>
+        </p>
+        <CampaignConsentPanel />
+
+        <div class="spacer"></div>
+        <h3 class="grp">Direitos LGPD (art. 18)</h3>
+        <p class="muted small">Exporte seus dados em formato portável ou exclua sua conta.</p>
         <LgpdPanel />
       </section>
     {/if}
@@ -270,5 +251,17 @@
   }
   .spacer {
     height: var(--sp-5);
+  }
+  /* Cabeçalho de subgrupo dentro de uma aba agrupada (2FA, Filtros, LGPD…). */
+  .grp {
+    margin: 0 0 var(--sp-1);
+    padding-top: var(--sp-2);
+    border-top: 1px solid var(--border-subtle);
+    font-size: var(--fs-md);
+    color: var(--text-1);
+  }
+  .grp + .muted {
+    margin-top: 0;
+    margin-bottom: var(--sp-3);
   }
 </style>
