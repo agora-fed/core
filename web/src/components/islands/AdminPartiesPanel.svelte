@@ -43,6 +43,8 @@
   let bcDirId = $state('');
   let bcSubject = $state('');
   let bcBody = $state('');
+  let bcQuestions = $state<string[]>(['', '', '']);
+  let bcResultLink = $state<string | null>(null);
   let municipalDirs = $derived(directories.filter((d) => d.esfera === 'municipal'));
 
   async function reloadParties() {
@@ -153,13 +155,19 @@
     const subject = bcSubject.trim();
     const body = bcBody.trim();
     if (!subject || !body) return toast.error('Preencha assunto e mensagem');
+    const questions = bcQuestions.map((q) => q.trim()).filter(Boolean);
     scopeBusy = true;
-    const res = await sendBroadcast(selected, bcDirId, { subject, body });
+    bcResultLink = null;
+    const res = await sendBroadcast(selected, bcDirId, { subject, body, questions });
     scopeBusy = false;
     if (!res.success) return toast.error(res.error?.message ?? 'Não foi possível enviar');
     toast.success(`Enviado a ${res.data?.recipients ?? 0} destinatário(s) consentido(s)`);
+    if (res.data?.consultation_id) {
+      bcResultLink = `/consulta/?id=${res.data.consultation_id}`;
+    }
     bcSubject = '';
     bcBody = '';
+    bcQuestions = ['', '', ''];
   }
 
   onMount(reloadParties);
@@ -281,8 +289,20 @@
               <input bind:value={bcSubject} class="input" placeholder="Assunto" required />
               <textarea bind:value={bcBody} class="input area" placeholder="Mensagem" rows="4" required
               ></textarea>
+              <span class="q-label"
+                >Micro-consulta (opcional) — até 3 perguntas (concordo/neutro/discordo):</span
+              >
+              {#each bcQuestions as _q, i (i)}
+                <input bind:value={bcQuestions[i]} class="input" placeholder={`Pergunta ${i + 1}`} />
+              {/each}
               <button class="btn" disabled={scopeBusy}>Enviar comunicado</button>
             </form>
+            {#if bcResultLink}
+              <p class="muted small">
+                Micro-consulta criada: <a href={bcResultLink}>ver e responder</a> — o link também foi
+                no e-mail à base consentida.
+              </p>
+            {/if}
           {/if}
         {/if}
       </section>
@@ -312,6 +332,7 @@
   .mini { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
   .mini.col { flex-direction: column; align-items: stretch; max-width: 32rem; }
   .area { resize: vertical; font-family: inherit; }
+  .q-label { font-size: var(--fs-sm); color: var(--text-2); margin-top: var(--sp-1); }
   .input { padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--surface-1); color: var(--text-1); font-size: var(--fs-sm); }
   .grow { flex: 1; min-width: 10rem; }
   .btn { padding: var(--sp-2) var(--sp-4); border-radius: var(--r-sm); border: 1px solid var(--accent); background: var(--accent); color: #fff; font-weight: var(--fw-semibold); font-size: var(--fs-sm); cursor: pointer; }

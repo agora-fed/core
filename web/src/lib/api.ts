@@ -3100,9 +3100,9 @@ export const removePartyAdministrator = (sigla: string, id: string) =>
 export const sendBroadcast = (
   sigla: string,
   directoryId: string,
-  body: { subject: string; body: string },
+  body: { subject: string; body: string; questions?: string[] },
 ) =>
-  apiPost<{ recipients: number; broadcast_id: string }>(
+  apiPost<{ recipients: number; broadcast_id: string; consultation_id: string | null }>(
     `/api/v1/admin/parties/${encodeURIComponent(sigla)}/directories/${directoryId}/broadcast`,
     body,
   );

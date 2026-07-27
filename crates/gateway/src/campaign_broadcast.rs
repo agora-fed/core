@@ -51,13 +51,23 @@ fn storage_error() -> Response {
 struct BroadcastBody {
     subject: String,
     body: String,
+    /// Micro-consulta opcional: 0–3 perguntas (concordo/neutro/discordo). Se houver, o broadcast
+    /// cria uma consulta e manda o link. Respostas/agregação reusam o subsistema de consultas.
+    #[serde(default)]
+    questions: Vec<String>,
 }
 
 #[derive(Serialize)]
 struct BroadcastResult {
     recipients: i64,
     broadcast_id: Uuid,
+    /// Consulta criada (micro-consulta), se houve perguntas — o front mostra o link.
+    consultation_id: Option<Uuid>,
 }
+
+const MAX_QUESTIONS: usize = 3;
+const MAX_PROMPT: usize = 500;
+const CONSULTATION_DAYS: i32 = 14;
 
 /// Autorizado se admin de plataforma OU party_administrator (nacional ou deste diretório).
 async fn authorized(
@@ -115,6 +125,19 @@ async fn broadcast(
     }
     if msg_body.is_empty() || msg_body.chars().count() > MAX_BODY {
         return fail(StatusCode::BAD_REQUEST, "invalid_body", "Mensagem de 1 a 4000 caracteres.");
+    }
+    // Micro-consulta opcional: 0–3 perguntas.
+    let questions: Vec<String> = body
+        .questions
+        .iter()
+        .map(|q| q.trim().to_owned())
+        .filter(|q| !q.is_empty())
+        .collect();
+    if questions.len() > MAX_QUESTIONS {
+        return fail(StatusCode::BAD_REQUEST, "too_many_questions", "No máximo 3 perguntas.");
+    }
+    if questions.iter().any(|q| q.chars().count() > MAX_PROMPT) {
+        return fail(StatusCode::BAD_REQUEST, "invalid_prompt", "Pergunta longa demais (máx. 500).");
     }
 
     // O diretório precisa existir na org, ser deste partido e ser MUNICIPAL (uf + municipio).
@@ -206,10 +229,61 @@ async fn broadcast(
     };
     let recipients = emails.len() as i64;
 
+    // Micro-consulta: se houver perguntas, cria a consulta (reusa consultations_*, ADR-0014)
+    // e liga ao broadcast. Respostas/agregação vêm da página /consulta existente.
+    let consultation_id: Option<Uuid> = if questions.is_empty() {
+        None
+    } else {
+        let mut tx = match state.db.begin().await {
+            Ok(t) => t,
+            Err(err) => {
+                tracing::error!(?err, "broadcast: consult begin");
+                return storage_error();
+            }
+        };
+        let cid: Uuid = match sqlx::query_scalar(
+            r"INSERT INTO consultations_consultation (id, org_id, title, opens_at, closes_at, status, created_at)
+              VALUES (gen_random_uuid(), $1, $2, now(), now() + ($3 || ' days')::interval, 'open', now())
+              RETURNING id",
+        )
+        .bind(org)
+        .bind(&subject)
+        .bind(CONSULTATION_DAYS.to_string())
+        .fetch_one(&mut *tx)
+        .await
+        {
+            Ok(v) => v,
+            Err(err) => {
+                tracing::error!(?err, "broadcast: create consultation");
+                return storage_error();
+            }
+        };
+        for (pos, prompt) in questions.iter().enumerate() {
+            if let Err(err) = sqlx::query(
+                r"INSERT INTO consultations_consultation_question (id, consultation_id, prompt, position, created_at)
+                  VALUES (gen_random_uuid(), $1, $2, $3, now())",
+            )
+            .bind(cid)
+            .bind(prompt)
+            .bind(pos as i32)
+            .execute(&mut *tx)
+            .await
+            {
+                tracing::error!(?err, "broadcast: consultation question");
+                return storage_error();
+            }
+        }
+        if let Err(err) = tx.commit().await {
+            tracing::error!(?err, "broadcast: consult commit");
+            return storage_error();
+        }
+        Some(cid)
+    };
+
     // Registra o broadcast (auditoria + rate-limit) ANTES de enviar.
     let broadcast_id: Uuid = match sqlx::query_scalar(
-        r"INSERT INTO campaign_broadcast (org_id, party_sigla, directory_id, sent_by, subject, body, recipients)
-          VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+        r"INSERT INTO campaign_broadcast (org_id, party_sigla, directory_id, sent_by, subject, body, recipients, consultation_id)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
     )
     .bind(org)
     .bind(&sigla)
@@ -218,6 +292,7 @@ async fn broadcast(
     .bind(&subject)
     .bind(&msg_body)
     .bind(recipients)
+    .bind(consultation_id)
     .fetch_one(&state.db)
     .await
     {
@@ -234,7 +309,15 @@ async fn broadcast(
             "\n\n—\nVocê recebe isto porque autorizou comunicações de campanha do {sigla}. \
              Para ajustar ou revogar: https://democracia.social.br/configuracoes#campanha"
         );
-        let full = format!("{msg_body}{footer}");
+        let consulta = consultation_id
+            .map(|c| {
+                format!(
+                    "\n\nResponda à consulta ({} pergunta(s)): https://democracia.social.br/consulta/?id={c}",
+                    questions.len()
+                )
+            })
+            .unwrap_or_default();
+        let full = format!("{msg_body}{consulta}{footer}");
         let subj = subject.clone();
         let list: Vec<String> = emails.into_iter().map(|(e,)| e).collect();
         tokio::spawn(async move {
@@ -253,7 +336,11 @@ async fn broadcast(
 
     (
         StatusCode::OK,
-        Json(ApiResponse::ok(BroadcastResult { recipients, broadcast_id })),
+        Json(ApiResponse::ok(BroadcastResult {
+            recipients,
+            broadcast_id,
+            consultation_id,
+        })),
     )
         .into_response()
 }
