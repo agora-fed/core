@@ -17,8 +17,10 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -142,7 +144,7 @@ def main() -> int:
 
     print(f"\nTOTAL: {tot_p} proposições/atas · {tot_v} votações · {tot_a} autorias "
           f"({tot_m} casadas ao mandato)", flush=True)
-    sql_path = Path("/tmp/civic-activity.sql")
+    sql_path = Path(tempfile.gettempdir()) / f"civic-activity-{os.getpid()}.sql"
     sql_path.write_text("BEGIN;\n" + "\n".join(all_sql) + "\nCOMMIT;\n" if all_sql else "-- vazio\n")
     print(f"SQL → {sql_path}", flush=True)
     if args.apply and all_sql:

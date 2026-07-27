@@ -20,10 +20,17 @@ from __future__ import annotations
 import argparse
 import difflib
 import json
+import os
 import subprocess
 import sys
+import tempfile
 import unicodedata
 from pathlib import Path
+
+# Artefatos por-PID no tempdir do usuário — evita colisão de dono em /tmp entre usuários (ex.: postgres
+# não conseguir sobrescrever um arquivo criado por outro usuário).
+_TMP = Path(tempfile.gettempdir())
+_PID = os.getpid()
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sapl_client import Parlamentar, fetch_current_parlamentares  # noqa: E402
@@ -182,9 +189,9 @@ def main() -> int:
     print(f"\nTOTAL: {tot_ver} vigentes · {tot_inst} institucionais · "
           f"{tot_match} casados · {tot_enrich} mandatos enriquecíveis", flush=True)
 
-    art_path = Path("/tmp/civic-sapl-extract.json")
+    art_path = _TMP / f"civic-sapl-extract-{_PID}.json"
     art_path.write_text(json.dumps(artifact, ensure_ascii=False, indent=1))
-    sql_path = Path("/tmp/civic-sapl-enrich.sql")
+    sql_path = _TMP / f"civic-sapl-enrich-{_PID}.sql"
     sql_path.write_text("BEGIN;\n" + "\n".join(updates) + "\nCOMMIT;\n" if updates else "-- nada a enriquecer\n")
     print(f"Auditoria → {art_path}\nSQL → {sql_path}", flush=True)
 
