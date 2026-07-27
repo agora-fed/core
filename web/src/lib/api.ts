@@ -699,6 +699,25 @@ export const listMunicipios = async (
     ),
   );
 
+/** Município IBGE (código + nome) — referência completa pro selector de domicílio. */
+export interface MunicipioIbge {
+  codigo_ibge: number;
+  nome: string;
+}
+/**
+ * Lista TODOS os municípios de uma UF (referência IBGE, migration 0651) — usada
+ * no selector UF→município do cadastro. Diferente de `listMunicipios`, que só
+ * traz municípios COM mandato indexado (derivado de `politicos`).
+ */
+export const getMunicipios = async (
+  uf: string,
+): Promise<ApiResponse<MunicipioIbge[]>> =>
+  fetchedToApiResponse(
+    await apiGet<MunicipioIbge[]>(
+      `/api/v1/municipios?uf=${encodeURIComponent(uf)}`,
+    ),
+  );
+
 /** Resumo territorial de um município (Fase 2.2): eleitorado + mandatos por partido. */
 export interface TerritorioResponse {
   uf: string;
@@ -981,6 +1000,10 @@ export interface SignupIdentity {
   sexo?: string;
   /** Título de eleitor (opcional; sem ele = sem poder de voto). */
   titulo_eleitor?: string;
+  /** UF de domicílio (sigla 2 letras). Obrigatória pro cidadão. */
+  uf?: string;
+  /** Município de domicílio (código IBGE). Obrigatório pro cidadão. */
+  municipio_ibge?: number;
 }
 
 /** Inicia o cadastro de cidadão. Não emite sessão — dispara link por e-mail. */
@@ -1000,6 +1023,8 @@ export const register = (
     nascimento: identity.nascimento,
     sexo: identity.sexo,
     titulo_eleitor: identity.titulo_eleitor,
+    uf: identity.uf,
+    municipio_ibge: identity.municipio_ibge,
   });
 
 /**

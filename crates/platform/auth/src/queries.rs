@@ -244,19 +244,42 @@ pub(crate) async fn insert_credential_citizen<'e, E: PgExecutor<'e>>(
     id: Uuid,
     org: Uuid,
     level: &str,
+    uf: Option<&str>,
+    municipio_ibge: Option<i32>,
     now: DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        "INSERT INTO citizen (id, org_id, oidc_subject, verification_level, created_at) \
-         VALUES ($1, $2, NULL, $3, $4)",
+        "INSERT INTO citizen (id, org_id, oidc_subject, verification_level, uf, municipio_ibge, created_at) \
+         VALUES ($1, $2, NULL, $3, $4, $5, $6)",
         id,
         org,
         level,
+        uf,
+        municipio_ibge,
         now
     )
     .execute(ex)
     .await?;
     Ok(())
+}
+
+/// True se o código IBGE existe e pertence à UF informada. Valida o domicílio
+/// declarado no cadastro do cidadão (referência `municipio_ibge`, migration 0651).
+pub(crate) async fn municipio_belongs_to_uf<'e, E: PgExecutor<'e>>(
+    ex: E,
+    codigo_ibge: i32,
+    uf: &str,
+) -> Result<bool, sqlx::Error> {
+    let exists = sqlx::query_scalar!(
+        r#"SELECT EXISTS(
+             SELECT 1 FROM municipio_ibge WHERE codigo_ibge = $1 AND uf = $2
+           ) AS "exists!""#,
+        codigo_ibge,
+        uf,
+    )
+    .fetch_one(ex)
+    .await?;
+    Ok(exists)
 }
 
 /// Insert the e-mail/senha/CPF credential for a citizen.
@@ -1529,6 +1552,9 @@ pub(crate) struct PendingSignupRow {
     pub role: String,
     pub mandate_id: Option<Uuid>,
     pub candidate_meta: Option<serde_json::Value>,
+    /// Domicílio informado no cadastro (só cidadão); aplicado no confirm (0653).
+    pub residencia_uf: Option<String>,
+    pub residencia_municipio_ibge: Option<i32>,
 }
 
 /// Insere um pending_signup. Caller pré-computou o SHA-256 do token (só o
@@ -1544,6 +1570,8 @@ pub(crate) async fn pending_signup_insert<'e, E: PgExecutor<'e>>(
     role: &str,
     mandate_id: Option<Uuid>,
     candidate_meta: Option<&serde_json::Value>,
+    residencia_uf: Option<&str>,
+    residencia_municipio_ibge: Option<i32>,
     token_hash: &[u8],
     expires_at: DateTime<Utc>,
     request_ip: Option<&str>,
@@ -1553,8 +1581,9 @@ pub(crate) async fn pending_signup_insert<'e, E: PgExecutor<'e>>(
         r#"
         INSERT INTO auth_pending_signup
             (id, org_id, email, password_hash, cpf, role, mandate_id, candidate_meta,
-             token_hash, expires_at, used_at, request_ip, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, $11, $12)
+             token_hash, expires_at, used_at, request_ip, created_at,
+             residencia_uf, residencia_municipio_ibge)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, $11, $12, $13, $14)
         "#,
         id,
         org_id,
@@ -1568,6 +1597,8 @@ pub(crate) async fn pending_signup_insert<'e, E: PgExecutor<'e>>(
         expires_at,
         request_ip,
         now,
+        residencia_uf,
+        residencia_municipio_ibge,
     )
     .execute(ex)
     .await?;
@@ -1609,7 +1640,8 @@ pub(crate) async fn pending_signup_find_live<'e, E: PgExecutor<'e>>(
     let row = sqlx::query_as!(
         PendingSignupRow,
         r#"
-        SELECT id, org_id, email, password_hash, cpf, role, mandate_id, candidate_meta
+        SELECT id, org_id, email, password_hash, cpf, role, mandate_id, candidate_meta,
+               residencia_uf, residencia_municipio_ibge
           FROM auth_pending_signup
          WHERE token_hash = $1 AND used_at IS NULL AND expires_at > $2
         "#,
@@ -1656,7 +1688,8 @@ pub(crate) async fn pending_signup_find_live_for_email<'e, E: PgExecutor<'e>>(
     let row = sqlx::query_as!(
         PendingSignupRow,
         r#"
-        SELECT id, org_id, email, password_hash, cpf, role, mandate_id, candidate_meta
+        SELECT id, org_id, email, password_hash, cpf, role, mandate_id, candidate_meta,
+               residencia_uf, residencia_municipio_ibge
           FROM auth_pending_signup
          WHERE org_id = $1 AND email = $2
            AND used_at IS NULL AND expires_at > $3

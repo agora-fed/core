@@ -211,6 +211,8 @@ async fn register(
         nascimento: req.nascimento.clone(),
         sexo: req.sexo.clone(),
         titulo_eleitor: req.titulo_eleitor.clone(),
+        uf: req.uf.clone(),
+        municipio_ibge: req.municipio_ibge,
     };
     match svc
         .request_cidadao(

@@ -14,6 +14,7 @@
     registerCandidate,
     registerResend,
     getAllMandates,
+    getMunicipios,
     previewInvitation,
     DEFAULT_ORG_ID,
     type MandateDto,
@@ -36,6 +37,12 @@
   let nascimento = $state(''); // YYYY-MM-DD (input date)
   let sexo = $state<'' | 'M' | 'F'>('');
   let tituloEleitor = $state(''); // opcional
+  // Domicílio (0651/0652) — UF + município IBGE OBRIGATÓRIOS pro cidadão (eixo
+  // territorial). Municípios carregados por UF via GET /municipios.
+  let residUf = $state('');
+  let residMunicipio = $state(''); // código IBGE, como string do <select>
+  let municipios = $state<{ codigo_ibge: number; nome: string }[]>([]);
+  let municipiosLoading = $state(false);
   let busy = $state(false);
   let serverError = $state<string | null>(null);
   let cpfTouched = $state(false);
@@ -130,15 +137,37 @@
   let identidadeValid = $derived(
     role !== 'cidadao' || (nomeValid && nascimentoValid && sexoValid),
   );
+  // Domicílio obrigatório só pro cidadão.
+  let residenciaValid = $derived(
+    role !== 'cidadao' || (residUf !== '' && residMunicipio !== ''),
+  );
   let valid = $derived(
     emailValid &&
       passwordValid &&
       cpfValid &&
       identidadeValid &&
+      residenciaValid &&
       (role === 'cidadao' ||
         (role === 'politico' && selectedMandate !== null) ||
         (role === 'candidato' && candValid)),
   );
+
+  // Ao trocar a UF de domicílio, zera o município e recarrega a lista por UF.
+  $effect(() => {
+    const uf = residUf;
+    residMunicipio = '';
+    municipios = [];
+    if (!uf) return;
+    municipiosLoading = true;
+    getMunicipios(uf)
+      .then((res) => {
+        if (uf !== residUf) return; // a UF mudou de novo enquanto carregava
+        municipios = res.success ? res.data : [];
+      })
+      .finally(() => {
+        municipiosLoading = false;
+      });
+  });
 
   let mandateResults = $derived.by(() => {
     const q = mandateSearch.trim().toLowerCase();
@@ -213,6 +242,8 @@
               nascimento,
               sexo: sexo || undefined,
               titulo_eleitor: onlyDigits(tituloEleitor) || undefined,
+              uf: residUf,
+              municipio_ibge: Number(residMunicipio),
             });
     busy = false;
 
@@ -556,6 +587,37 @@
           <option value="" disabled>Selecione</option>
           <option value="F">Feminino</option>
           <option value="M">Masculino</option>
+        </select>
+      </label>
+    </div>
+    <div class="id-row">
+      <label class="id-field">
+        <span>Estado (UF)</span>
+        <select bind:value={residUf} required class="id-input">
+          <option value="" disabled>Selecione</option>
+          {#each UFS as uf (uf)}
+            <option value={uf}>{uf}</option>
+          {/each}
+        </select>
+      </label>
+      <label class="id-field">
+        <span>Município</span>
+        <select
+          bind:value={residMunicipio}
+          required
+          class="id-input"
+          disabled={!residUf || municipiosLoading}
+        >
+          <option value="" disabled>
+            {municipiosLoading
+              ? 'Carregando…'
+              : residUf
+                ? 'Selecione'
+                : 'Escolha a UF primeiro'}
+          </option>
+          {#each municipios as m (m.codigo_ibge)}
+            <option value={String(m.codigo_ibge)}>{m.nome}</option>
+          {/each}
         </select>
       </label>
     </div>

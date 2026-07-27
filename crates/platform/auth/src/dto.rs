@@ -132,6 +132,14 @@ pub struct RegisterRequest {
     /// válido no sistema (comunicado na UI).
     #[serde(default)]
     pub titulo_eleitor: Option<String>,
+    /// UF de domicílio (sigla 2 letras). OBRIGATÓRIA no cadastro do cidadão —
+    /// é o eixo territorial (escopo estadual). Validada contra `municipio_ibge`.
+    #[serde(default)]
+    pub uf: Option<String>,
+    /// Município de domicílio (código IBGE de 7 dígitos). OBRIGATÓRIO no cadastro
+    /// do cidadão — escopo municipal. Deve existir e pertencer à `uf` informada.
+    #[serde(default)]
+    pub municipio_ibge: Option<i32>,
 }
 
 /// Registration for a sitting/candidate parliamentarian: the standard sign-up fields plus

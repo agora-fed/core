@@ -230,6 +230,11 @@ pub struct SignupIdentity {
     pub sexo: Option<String>,
     /// Título de eleitor (opcional; sem ele = sem poder de voto).
     pub titulo_eleitor: Option<String>,
+    /// UF de domicílio (sigla 2 letras). Obrigatória para cidadão (eixo territorial).
+    pub uf: Option<String>,
+    /// Município de domicílio (código IBGE). Obrigatório para cidadão; deve
+    /// existir em `municipio_ibge` e pertencer à `uf`.
+    pub municipio_ibge: Option<i32>,
 }
 
 impl std::fmt::Debug for SignupVerifyService {
@@ -492,6 +497,34 @@ impl SignupVerifyService {
             }
         }
 
+        // Domicílio obrigatório para cidadão (0651/0652/0653): UF + município IBGE,
+        // e o município tem de existir e pertencer à UF. Político/candidato não
+        // declaram domicílio aqui — o território vem do mandato/candidatura.
+        let (residencia_uf, residencia_municipio) = if role == PendingRole::Cidadao {
+            let uf = identity
+                .uf
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_uppercase);
+            let (Some(uf), Some(codigo)) = (uf, identity.municipio_ibge) else {
+                return Err(Error::Validation(
+                    "informe seu estado e município de domicílio".to_owned(),
+                ));
+            };
+            if !queries::municipio_belongs_to_uf(&self.db, codigo, &uf)
+                .await
+                .map_err(map_sqlx)?
+            {
+                return Err(Error::Validation(
+                    "estado ou município de domicílio inválidos".to_owned(),
+                ));
+            }
+            (Some(uf), Some(codigo))
+        } else {
+            (None, None)
+        };
+
         // Trava mínima de senha aqui — bater com validação do register atual.
         if password.len() < 8 {
             return Err(Error::Validation(
@@ -518,6 +551,8 @@ impl SignupVerifyService {
             role.as_str(),
             mandate_id,
             candidate_meta.as_ref(),
+            residencia_uf.as_deref(),
+            residencia_municipio,
             &token_hash,
             expires_at,
             request_ip,
@@ -577,6 +612,8 @@ impl SignupVerifyService {
             role.as_str(),
             row.mandate_id,
             row.candidate_meta.as_ref(),
+            row.residencia_uf.as_deref(),
+            row.residencia_municipio_ibge,
             &token_hash,
             expires_at,
             request_ip,
@@ -670,6 +707,8 @@ impl SignupVerifyService {
             citizen.as_uuid(),
             org.as_uuid(),
             domain::level_as_str(level),
+            row.residencia_uf.as_deref(),
+            row.residencia_municipio_ibge,
             now,
         )
         .await

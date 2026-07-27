@@ -47,6 +47,7 @@ pub mod mastodon_oauth;
 pub mod me_settings;
 pub mod module_catalog;
 pub mod module_gate;
+pub mod municipios;
 pub mod note_media;
 pub mod notification_receipts;
 pub mod notifications;
@@ -204,6 +205,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(me_settings::routes(state.clone()))
         // Cidadania política — validação do título de eleitor.
         .merge(titulo_eleitor::routes(state.clone()))
+        // Referência IBGE de municípios (selector UF→município do cadastro).
+        .merge(municipios::routes(state.clone()))
         // Web Push (0.25.0-fediverso): subscribe + GET da chave VAPID pública.
         .merge(web_push::routes(state.clone()))
         // Templates de e-mail editáveis (admin CRUD).

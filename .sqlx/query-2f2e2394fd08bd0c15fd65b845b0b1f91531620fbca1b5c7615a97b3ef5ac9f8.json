@@ -1,0 +1,78 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, org_id, email, password_hash, cpf, role, mandate_id, candidate_meta,\n               residencia_uf, residencia_municipio_ibge\n          FROM auth_pending_signup\n         WHERE org_id = $1 AND email = $2\n           AND used_at IS NULL AND expires_at > $3\n         ORDER BY created_at DESC\n         LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "org_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "email",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "password_hash",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "cpf",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "role",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "mandate_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 7,
+        "name": "candidate_meta",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "residencia_uf",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "residencia_municipio_ibge",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "2f2e2394fd08bd0c15fd65b845b0b1f91531620fbca1b5c7615a97b3ef5ac9f8"
+}

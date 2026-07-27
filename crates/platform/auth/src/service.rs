@@ -184,6 +184,8 @@ impl ZitadelAuth {
             citizen.as_uuid(),
             org.as_uuid(),
             domain::level_as_str(level),
+            None,
+            None,
             now,
         )
         .await
@@ -263,6 +265,8 @@ impl ZitadelAuth {
             citizen.as_uuid(),
             org.as_uuid(),
             domain::level_as_str(VerificationLevel::Directory),
+            None,
+            None,
             now,
         )
         .await

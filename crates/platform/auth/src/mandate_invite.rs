@@ -337,6 +337,8 @@ impl MandateInviteService {
             citizen.as_uuid(),
             org_id,
             domain::level_as_str(INVITE_BINDING_LEVEL),
+            None,
+            None,
             now,
         )
         .await
