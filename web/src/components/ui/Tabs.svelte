@@ -44,9 +44,9 @@
 <style>
   .tabs {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--sp-1);
     border-bottom: 1px solid var(--border-subtle);
-    overflow-x: auto;
     scrollbar-width: none;
   }
   .tabs::-webkit-scrollbar {
