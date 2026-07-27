@@ -1,0 +1,11 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PressKit from '../components/PressKit.astro';
+import { PRESS } from '../lib/press';
+
+const c = PRESS.pt;
+---
+
+<BaseLayout title={c.metaTitle} description={c.metaDescription} canonical="/imprensa">
+  <PressKit content={c} />
+</BaseLayout>

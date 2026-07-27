@@ -9,6 +9,7 @@
     { value: 'lgpd', label: 'Privacidade / LGPD (Encarregado de dados)' },
     { value: 'moderacao', label: 'Moderação / denúncias' },
     { value: 'seguranca', label: 'Segurança (divulgação responsável)' },
+    { value: 'imprensa', label: 'Imprensa' },
   ];
 
   function sectorFromUrl(): ContactSector {

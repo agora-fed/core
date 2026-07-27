@@ -2664,7 +2664,7 @@ export const leaveCampaignGroup = async (id: string): Promise<ApiResponse<{ join
 };
 
 /** Formulário público de contato (0.28.1) — setores fechados no backend. */
-export type ContactSector = 'contato' | 'lgpd' | 'moderacao' | 'seguranca';
+export type ContactSector = 'contato' | 'lgpd' | 'moderacao' | 'seguranca' | 'imprensa';
 export const sendContactMessage = (body: {
   sector: ContactSector;
   name: string;

@@ -60,6 +60,7 @@ fn sector_label(sector: &str) -> Option<&'static str> {
         "lgpd" => Some("LGPD/DPO"),
         "moderacao" => Some("Moderação"),
         "seguranca" => Some("Segurança"),
+        "imprensa" => Some("Imprensa"),
         _ => None,
     }
 }
