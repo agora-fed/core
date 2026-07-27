@@ -3050,6 +3050,51 @@ export interface RoleInput {
 export const getPermissionCatalog = () =>
   apiGetCredentialed<PermissionCatalogItem[]>('/api/v1/admin/permission-catalog');
 export const listRoles = () => apiGetCredentialed<RoleDto[]>('/api/v1/admin/roles');
+
+// ÁGORA campaign layer (F1, #58) — party directories & administrators (/admin/parties).
+export interface PartyDto {
+  sigla: string;
+  name: string;
+  directory_count: number;
+  administrator_count: number;
+}
+export interface DirectoryDto {
+  id: string;
+  esfera: 'federal' | 'estadual' | 'municipal';
+  uf: string | null;
+  municipio: string | null;
+  name: string;
+  parent_directory_id: string | null;
+  created_at: string;
+}
+export interface PartyAdministratorDto {
+  id: string;
+  directory_id: string | null;
+  citizen_id: string;
+  handle: string | null;
+  role: 'admin' | 'moderador';
+  created_at: string;
+}
+
+export const listParties = () => apiGetCredentialed<PartyDto[]>('/api/v1/admin/parties');
+export const listDirectories = (sigla: string) =>
+  apiGetCredentialed<DirectoryDto[]>(
+    `/api/v1/admin/parties/${encodeURIComponent(sigla)}/directories`,
+  );
+export const createDirectory = (
+  sigla: string,
+  body: { esfera: string; uf?: string; municipio?: string; name: string; parent_directory_id?: string },
+) => apiPost<string>(`/api/v1/admin/parties/${encodeURIComponent(sigla)}/directories`, body);
+export const listPartyAdministrators = (sigla: string) =>
+  apiGetCredentialed<PartyAdministratorDto[]>(
+    `/api/v1/admin/parties/${encodeURIComponent(sigla)}/administrators`,
+  );
+export const assignPartyAdministrator = (
+  sigla: string,
+  body: { citizen_id?: string; handle?: string; role: string; directory_id?: string },
+) => apiPost<string>(`/api/v1/admin/parties/${encodeURIComponent(sigla)}/administrators`, body);
+export const removePartyAdministrator = (sigla: string, id: string) =>
+  apiDelete<null>(`/api/v1/admin/parties/${encodeURIComponent(sigla)}/administrators/${id}`);
 export const createRole = (body: RoleInput) =>
   apiPost<{ ok: true }>('/api/v1/admin/roles', body);
 export const updateRole = (id: string, body: RoleInput) =>

@@ -292,7 +292,11 @@ async fn list_administrators(
 
 #[derive(Deserialize)]
 struct AssignAdministratorBody {
-    citizen_id: Uuid,
+    /// The citizen either by id or by `@handle` (handle is resolved server-side).
+    #[serde(default)]
+    citizen_id: Option<Uuid>,
+    #[serde(default)]
+    handle: Option<String>,
     role: String,
     #[serde(default)]
     directory_id: Option<Uuid>,
@@ -313,6 +317,31 @@ async fn assign_administrator(
     if role != "admin" && role != "moderador" {
         return fail(StatusCode::BAD_REQUEST, "invalid_role", "Papel deve ser admin ou moderador.");
     }
+    // Resolve the citizen: prefer an explicit id, else look the `@handle` up.
+    let citizen_id = if let Some(id) = body.citizen_id {
+        id
+    } else if let Some(handle) = body.handle.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        let handle = handle.trim_start_matches('@');
+        match sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM citizen WHERE handle = $1 AND org_id = $2",
+        )
+        .bind(handle)
+        .bind(org)
+        .fetch_optional(&state.db)
+        .await
+        {
+            Ok(Some(id)) => id,
+            Ok(None) => {
+                return fail(StatusCode::NOT_FOUND, "citizen_not_found", "Cidadão não encontrado por handle.")
+            }
+            Err(err) => {
+                tracing::error!(?err, "assign_administrator: resolve handle");
+                return storage_error();
+            }
+        }
+    } else {
+        return fail(StatusCode::BAD_REQUEST, "missing_citizen", "Informe o handle ou o id do cidadão.");
+    };
     let row: Result<(Uuid,), sqlx::Error> = sqlx::query_as(
         r"INSERT INTO party_administrator (org_id, party_sigla, directory_id, citizen_id, role, invited_by, accepted_at)
           VALUES ($1, $2, $3, $4, $5, $6, now())
@@ -321,7 +350,7 @@ async fn assign_administrator(
     .bind(org)
     .bind(&sigla)
     .bind(body.directory_id)
-    .bind(body.citizen_id)
+    .bind(citizen_id)
     .bind(&role)
     .bind(invited_by)
     .fetch_one(&state.db)

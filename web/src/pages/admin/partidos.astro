@@ -1,0 +1,25 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminPartiesPanel from '../../components/islands/AdminPartiesPanel.svelte';
+---
+
+<AdminLayout
+  title="Partidos & Diretórios (admin)"
+  description="Atribua administradores de partido (nacional) e de diretório (federal/estadual/municipal)."
+>
+  <header class="head">
+    <h1>Partidos & Diretórios</h1>
+    <p class="muted">
+      Atribua <strong>Administradores de Partido</strong> (todo o partido) e
+      <strong>Administradores de Diretório</strong> (federal, estadual ou municipal).
+      Esses papéis destravam as ferramentas de campanha por escopo territorial.
+    </p>
+  </header>
+  <AdminPartiesPanel client:load />
+</AdminLayout>
+
+<style>
+  .head { margin-bottom: var(--sp-5); }
+  h1 { margin: 0 0 var(--sp-1); }
+  .head p { max-width: 48rem; }
+</style>
