@@ -168,8 +168,11 @@ def main() -> int:
               f"{len(mandates)} mand · {len(pairs)} casados · {len(enrichable)} enriquecíveis", flush=True)
         for v, m in enrichable:
             email = v.email.replace("'", "''")
+            # Só preenche o e-mail; NÃO altera `source` (a origem TSE do roster é preservada — marcar
+            # 'self' mentiria que o vereador se auto-cadastrou; não há enum 'sapl' e provar contato
+            # institucional não é o mesmo que onboarding).
             updates.append(
-                f"UPDATE mandate SET public_email='{email}', source='self' "
+                f"UPDATE mandate SET public_email='{email}' "
                 f"WHERE id='{m['id']}' AND public_email ILIKE '%{PLACEHOLDER_SUFFIX}';"
             )
             artifact.append({"uf": uf, "municipio": municipio, "mandate_id": m["id"],
