@@ -25,6 +25,7 @@ pub mod audience;
 pub mod authz_ext;
 pub mod campaign_broadcast;
 pub mod campaign_consent;
+pub mod campaign_contacts;
 pub mod campaign_groups;
 pub mod campanha;
 pub mod civic_notify;
@@ -175,6 +176,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(crate::admin_parties::routes(state.clone()))
         // Broadcast consentido de campanha por diretório municipal (ÁGORA F3, #60).
         .merge(crate::campaign_broadcast::routes(state.clone()))
+        // Base própria de contatos por diretório, verificada contra a base central (ÁGORA F4, #61).
+        .merge(crate::campaign_contacts::routes(state.clone()))
         .merge(crate::module_gate::routes(state.clone()))
         .merge(admin_ext::routes(state.clone()))
         // Super-admin: editar/ocultar/apagar mandato, proposta, partido (0.40, SOCRATES).

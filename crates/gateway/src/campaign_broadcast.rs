@@ -70,7 +70,7 @@ const MAX_PROMPT: usize = 500;
 const CONSULTATION_DAYS: i32 = 14;
 
 /// Autorizado se admin de plataforma OU party_administrator (nacional ou deste diretório).
-async fn authorized(
+pub(crate) async fn authorized(
     state: &AppState,
     caller: &CallerId,
     sigla: &str,
