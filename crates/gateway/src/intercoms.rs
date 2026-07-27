@@ -13,6 +13,14 @@ use crate::proposal_delivery::SmtpConfig;
 
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
+/// Chave simétrica para cifrar/decifrar config de provider por escopo (pgcrypto, #69).
+/// Vem de `INTERCOMS_CONFIG_KEY` (Secret). `None` = feature de config por diretório indisponível.
+pub(crate) fn config_key() -> Option<String> {
+    std::env::var("INTERCOMS_CONFIG_KEY")
+        .ok()
+        .filter(|k| !k.is_empty())
+}
+
 /// Canal de envio outbound.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Channel {

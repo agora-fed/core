@@ -3096,6 +3096,25 @@ export const assignPartyAdministrator = (
 export const removePartyAdministrator = (sigla: string, id: string) =>
   apiDelete<null>(`/api/v1/admin/parties/${encodeURIComponent(sigla)}/administrators/${id}`);
 
+// INTERCOMS #69 — SMSGateway por diretório (credenciais cifradas no backend).
+export const getSmsGateway = (sigla: string, dirId: string) =>
+  apiGetCredentialed<{ configured: boolean; url: string | null }>(
+    `/api/v1/admin/parties/${encodeURIComponent(sigla)}/directories/${dirId}/sms-gateway`,
+  );
+export const setSmsGateway = (
+  sigla: string,
+  dirId: string,
+  body: { url: string; user?: string; pass?: string },
+) =>
+  apiPut<{ configured: boolean }>(
+    `/api/v1/admin/parties/${encodeURIComponent(sigla)}/directories/${dirId}/sms-gateway`,
+    body,
+  );
+export const deleteSmsGateway = (sigla: string, dirId: string) =>
+  apiDelete<{ deleted: number }>(
+    `/api/v1/admin/parties/${encodeURIComponent(sigla)}/directories/${dirId}/sms-gateway`,
+  );
+
 // ÁGORA F7 (#64) — painel de campanha do partido.
 export interface PartyDashboard {
   directories_count: number;

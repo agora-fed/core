@@ -42,6 +42,7 @@ mod forum_federation;
 mod forum_mailer;
 pub mod govbr_oidc;
 pub mod intercoms;
+pub mod intercoms_config;
 pub mod invitations;
 pub mod invite_campaign;
 pub mod lgpd;
@@ -181,6 +182,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(crate::campaign_broadcast::routes(state.clone()))
         // Base própria de contatos por diretório, verificada contra a base central (ÁGORA F4, #61).
         .merge(crate::campaign_contacts::routes(state.clone()))
+        // SMSGateway por diretório, cifrado (INTERCOMS #69).
+        .merge(crate::intercoms_config::routes(state.clone()))
         // Painel de campanha do partido/diretório (ÁGORA F7, #64).
         .merge(crate::party_dashboard::routes(state.clone()))
         .merge(crate::module_gate::routes(state.clone()))

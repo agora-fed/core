@@ -13,6 +13,8 @@
     removePartyAdministrator,
     sendBroadcast,
     importContacts,
+    getSmsGateway,
+    setSmsGateway,
     getPartyDashboard,
     type PartyDto,
     type DirectoryDto,
@@ -56,6 +58,47 @@
   let ctBasis = $state('consent');
   let ctText = $state('');
   let ctResult = $state<string | null>(null);
+
+  // Form: SMSGateway por diretório (INTERCOMS #69)
+  let smsDirId = $state('');
+  let smsUrl = $state('');
+  let smsUser = $state('');
+  let smsPass = $state('');
+  let smsStatus = $state<string | null>(null);
+
+  // Carrega o status do SMSGateway ao trocar o diretório.
+  $effect(() => {
+    const d = smsDirId;
+    smsStatus = null;
+    smsUrl = '';
+    if (!d || !selected) return;
+    getSmsGateway(selected, d).then((r) => {
+      if (d !== smsDirId) return;
+      if (r.success && r.data?.configured) {
+        smsUrl = r.data.url ?? '';
+        smsStatus = 'Configurado';
+      } else {
+        smsStatus = 'Não configurado';
+      }
+    });
+  });
+
+  async function submitSmsGateway(e: Event) {
+    e.preventDefault();
+    if (!selected || !smsDirId) return toast.error('Escolha o diretório');
+    if (!smsUrl.trim()) return toast.error('Informe a URL do SMSGateway');
+    scopeBusy = true;
+    const res = await setSmsGateway(selected, smsDirId, {
+      url: smsUrl.trim(),
+      user: smsUser.trim() || undefined,
+      pass: smsPass.trim() || undefined,
+    });
+    scopeBusy = false;
+    if (!res.success) return toast.error(res.error?.message ?? 'Não foi possível salvar');
+    toast.success('SMSGateway salvo (credenciais cifradas)');
+    smsPass = '';
+    smsStatus = 'Configurado';
+  }
 
   async function reloadParties() {
     loading = true;
@@ -407,6 +450,32 @@
             {#if ctResult}
               <p class="muted small">{ctResult}</p>
             {/if}
+          {/if}
+
+          {#if directories.length > 0}
+            <hr />
+            <h3>SMSGateway (por diretório)</h3>
+            <p class="muted small">
+              Cada diretório usa seu <strong>próprio</strong> SMSGateway (app sms-gate.app). As
+              credenciais ficam <strong>cifradas em repouso</strong>. O envio por SMS usa esta
+              config (próxima fase). Precisa da chave <code>INTERCOMS_CONFIG_KEY</code> na instância.
+            </p>
+            <form class="mini col" onsubmit={submitSmsGateway}>
+              <select bind:value={smsDirId} class="input" required>
+                <option value="" disabled>Diretório</option>
+                {#each directories as d (d.id)}<option value={d.id}>{scopeText(d)}</option>{/each}
+              </select>
+              {#if smsStatus}<span class="q-label">Status: {smsStatus}</span>{/if}
+              <input
+                bind:value={smsUrl}
+                class="input"
+                placeholder="https://api.sms-gate.app/3rdparty/v1/message"
+                required
+              />
+              <input bind:value={smsUser} class="input" placeholder="usuário (basic auth)" />
+              <input bind:value={smsPass} class="input" type="password" placeholder="senha / token" />
+              <button class="btn" disabled={scopeBusy}>Salvar SMSGateway</button>
+            </form>
           {/if}
         {/if}
       </section>
