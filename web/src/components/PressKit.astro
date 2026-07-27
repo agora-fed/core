@@ -19,12 +19,12 @@ const langs: { code: 'pt' | 'en' | 'es'; name: string }[] = [
 const releasePdf = `/press/democraciabr-release-${c.lang}.pdf`;
 const zip = '/press/democraciabr-kit-imprensa.zip';
 
-// Callout do Manifesto/Visão — restrito à imprensa (linkado só daqui). Documento
-// em português; EN/ES sinalizam o idioma.
+// Callout do Manifesto/Visão — restrito à imprensa (linkado só daqui), cada idioma
+// aponta pra sua própria versão do documento.
 const manifesto = {
-  pt: { label: 'Manifesto / Visão', desc: 'A tese completa: por que devolver o governo ao povo passa por elevar a capacidade de autogoverno — e como cada peça vira arquitetura.', note: '' },
-  en: { label: 'Manifesto / Vision', desc: 'The full thesis: why returning government to the people means raising the capacity for self-rule — and how each piece becomes architecture.', note: ' (em português)' },
-  es: { label: 'Manifiesto / Visión', desc: 'La tesis completa: por qué devolver el gobierno al pueblo pasa por elevar la capacidad de autogobierno — y cómo cada pieza se vuelve arquitectura.', note: ' (em português)' },
+  pt: { label: 'Manifesto / Visão', desc: 'A tese completa: por que devolver o governo ao povo passa por elevar a capacidade de autogoverno — e como cada peça vira arquitetura.', href: '/imprensa/manifesto' },
+  en: { label: 'Manifesto / Vision', desc: 'The full thesis: why returning government to the people means raising the capacity for self-rule — and how each piece becomes architecture.', href: '/imprensa/manifesto/en' },
+  es: { label: 'Manifiesto / Visión', desc: 'La tesis completa: por qué devolver el gobierno al pueblo pasa por elevar la capacidad de autogobierno — y cómo cada pieza se vuelve arquitectura.', href: '/imprensa/manifesto/es' },
 }[c.lang];
 ---
 
@@ -52,8 +52,8 @@ const manifesto = {
       </p>
     </article>
 
-    <a class="manifesto-cta" href="/imprensa/manifesto">
-      <span class="mc-label">{manifesto.label}<span class="mc-note">{manifesto.note}</span> →</span>
+    <a class="manifesto-cta" href={manifesto.href}>
+      <span class="mc-label">{manifesto.label} →</span>
       <span class="mc-desc">{manifesto.desc}</span>
     </a>
 
@@ -137,7 +137,6 @@ const manifesto = {
   .manifesto-cta { display: block; margin-top: var(--sp-5); padding: var(--sp-4); border: 1px solid var(--border-subtle); border-left: 3px solid var(--accent); border-radius: var(--r-md); background: var(--surface-2); text-decoration: none; }
   .manifesto-cta:hover { border-color: var(--accent); }
   .mc-label { display: block; font-weight: var(--fw-semibold); color: var(--accent-strong); margin-bottom: 4px; }
-  .mc-note { font-weight: var(--fw-regular); color: var(--text-3); }
   .mc-desc { display: block; font-size: var(--fs-sm); color: var(--text-2); line-height: var(--lh-relaxed); }
   .rule { border: none; border-top: 1px solid var(--border-subtle); margin: var(--sp-6) 0; }
   .mk-title, h2 { color: var(--text-1); }

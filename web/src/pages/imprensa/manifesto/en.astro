@@ -1,0 +1,187 @@
+---
+// Manifesto / Vision (EN) — theoretical founding document, press-only (noindex,
+// linked solely from /imprensa). Faithful English translation of the PT manifesto.
+import ManifestoDoc from '../../../components/ManifestoDoc.astro';
+---
+
+<ManifestoDoc
+  lang="en"
+  title="Manifesto / Vision"
+  description="DemocraciaBR's manifesto and vision: why wresting government from the oligarchies and the bureaucracy means raising the people's own capacity for self-rule — and how each institutional mechanism becomes architecture."
+  canonical="/imprensa/manifesto/en"
+  kicker="Vision document · press material"
+  headline="Returning government to the people"
+  lede="DemocraciaBR does not want to swap who rules. It wants to take the power to govern away from the hereditary oligarchies and the bureaucratic distance that captured Brazilian politics — and return it to the people by raising the population's own capacity for self-rule. This document explains why that is possible, what political theory already knows about it, and how each part of the bet becomes architecture."
+  backHref="/imprensa/en"
+  backLabel="Press room"
+>
+  <h2>The problem isn't who manages — it's delegation</h2>
+  <p>
+    In the 1920s, Walter Lippmann argued that the public is incapable of governing and that the
+    answer lay in specialized technocrats — the intellectual defense of modern bureaucracy.
+    <strong>John Dewey</strong> replied, in <em>The Public and Its Problems</em> (1927), with the
+    opposite thesis: the public's incompetence is not natural, it is <strong>produced by the lack
+    of participation</strong>. Democracy is a way of life learned by practice; the more you
+    delegate, the less capable the public becomes — a vicious circle broken only by more
+    participation, not less.
+  </p>
+  <p>
+    That is the root of our bet. Bureaucracy and oligarchy are not fixed by swapping the managers;
+    they are fixed by giving the people real, practiced power.
+  </p>
+
+  <h2>A whole lineage has already thought this through</h2>
+  <p>
+    The thesis has a tradition. <strong>Carole Pateman</strong> (1970) formalized the
+    <em>educative</em> function of participation: taking part produces more competent citizens, who
+    in turn sustain more participation. <strong>Benjamin Barber</strong> (<em>Strong Democracy</em>,
+    1984) proposed concrete institutions against merely representative democracy. <strong>Hannah
+    Arendt</strong> saw the way out in popular councils; <strong>Cornelius Castoriadis</strong>
+    radicalized it in the concept of autonomy — the society that consciously institutes itself,
+    against bureaucratic heteronomy.
+  </p>
+  <p>
+    The strongest empirical rebuttal comes from <strong>Elinor Ostrom</strong> (<em>Governing the
+    Commons</em>, 1990; Nobel 2009): communities manage complex resources through polycentric
+    self-governance, without state bureaucracy or privatization, when the rules are created and
+    policed by those affected. In Brazil, <strong>Paulo Freire</strong> is unavoidable —
+    conscientization as the precondition for the people to stop being an object and become a
+    political subject — and the <strong>Porto Alegre Participatory Budget</strong> (1989) became the
+    most studied case in the world of de-bureaucratization through participation. On the digital
+    front, <strong>Hélène Landemore</strong>, <strong>David Van Reybrouck</strong> and
+    <strong>James Fishkin</strong> defend sortition and informed deliberation; platforms like Decidim
+    (Barcelona) and the vTaiwan process (Audrey Tang) try to operationalize this at scale.
+  </p>
+
+  <h2>The elitist critique, taken seriously</h2>
+  <p>
+    The honest objection (Schumpeter, Lippmann himself, today Jason Brennan in <em>Against
+    Democracy</em>) says: mass participation doesn't scale, the voter's rational ignorance is
+    structural, and enlarged deliberation can be captured by whoever has the most time and rhetoric.
+    The best way to fight it is to take it seriously — each objection has an institutional-design
+    mechanism that neutralizes it. The literature no longer answers with faith in participation, but
+    with engineering.
+  </p>
+  <ol>
+    <li>
+      <strong>"It doesn't scale" → polycentrism + representative sortition.</strong> You don't scale
+      the assembly, you scale the system: each decision at the smallest scale where those affected
+      can deliberate (subsidiarity), and the scales federate. When the national scale is
+      unavoidable, you use sampling — a sortition-selected, representative minipublic deliberates on
+      behalf of the population, as with the Irish Citizens' Assembly and the French Climate
+      Convention, whose decisions survived referendums.
+    </li>
+    <li>
+      <strong>"Rational ignorance" → change the calculus, not the voter.</strong> It is an argument
+      about incentives, not about capacity. Real, local decision power makes information worth
+      acquiring (whoever deliberates about their own street informs themselves). The cost of
+      information is socialized (balanced briefings, paid time — the jury model). Rational ignorance
+      is, in large part, an artifact of delegation itself.
+    </li>
+    <li>
+      <strong>"Capture by the professionals" → sortition, rotation and speech design.</strong>
+      Stratified sortition instead of self-selection removes the bias of those who "want to be seen"
+      (Van Reybrouck: election and volunteering select those who seek power; sortition selects
+      anyone). Short, non-renewable, rotating mandates don't attract careerists. Facilitation and
+      speaking rules distribute time; Pol.is/vTaiwan attacks rhetoric computationally — shouting
+      louder does not move the consensus map.
+    </li>
+  </ol>
+  <p>
+    Two points of honesty that <em>strengthen</em> the position. First: the epistocrat has the same
+    problem, worse — any competence test for voting is defined by someone, and whoever defines it
+    captures the system (Estlund's objection). The adverse selection ascribed to bureaucracy applies
+    in full to epistocracy. Second: none of this works as a standalone part — an assembly without
+    power becomes legitimizing theater; participatory budgeting without funds withers, as in Porto
+    Alegre itself after 2004. The critique is right about <em>badly designed</em> participation and
+    has no data against <em>well-designed</em> participation — which demands continuous institutional
+    commitment, a political choice, not a technical problem.
+  </p>
+
+  <h2>From institutional design to technical design</h2>
+  <p>
+    The tool's design must derive from the institutional design, never the other way around. Each
+    mechanism above maps onto a component of the architecture:
+  </p>
+  <ol>
+    <li>
+      <strong>Stratified sortition → unique verifiable identity, without doxxing.</strong> Sortition
+      only works with uniqueness (anti-Sybil) and stratification by region/age/income without
+      exposing who is who — including the undocumented population. The piece on top is the
+      zero-knowledge attribute proof ("I reside in municipality X, bracket Y") and a
+      <em>publicly verifiable</em> draw (VRF/beacon with commit-reveal): whoever controls the RNG
+      controls the assembly.
+    </li>
+    <li>
+      <strong>Polycentrism → federation, not a single platform.</strong> One instance per scope
+      (neighborhood, municipality, state), federated by protocol (ActivityPub). It solves scale,
+      sovereignty and resilience at once — capturing the system requires capturing every node. A
+      centralized participatory-democracy platform is a performative contradiction and a single
+      political point of failure.
+    </li>
+    <li>
+      <strong>Anti-rhetoric deliberation → opinion clustering, not threads.</strong> Threads reward
+      volume and rhetoric. The Pol.is/vTaiwan design inverts it: short statements, voting
+      (agree/disagree/pass), embeddings mapping clusters, and an interface highlighting consensus
+      across opposing groups. The clustering algorithm itself becomes a point of power — it must be
+      open, deterministic and re-runnable by anyone from the public data, otherwise you merely swap
+      the bureaucrat for the model.
+    </li>
+    <li>
+      <strong>Real power → coupling with mandate and consequence.</strong> Deliberation's output
+      cannot be a PDF; it has to be a structured, traceable commitment — approved proposal → mandate
+      commitment → follow-up → scorecard. Deliberation without the consequence subsystem is half a
+      product (the ill Decidim suffers from).
+    </li>
+    <li>
+      <strong>Balanced information → adversarial, versioned curation.</strong> Each question gets a
+      briefing with designated advocates for each side, cited sources and an auditable public
+      history. Signed, reproducible summarization; AI helps to summarize, never to decide what gets
+      in.
+    </li>
+    <li>
+      <strong>Anti-careerism → rotation in the protocol.</strong> The "member of assembly X"
+      credential expires, and the same identifier becomes ineligible for the next pool — with the
+      caveat that a rule too rigid is hard to amend democratically: the meta-process of changing the
+      rules must also exist.
+    </li>
+    <li>
+      <strong>Everything auditable → immutable ledger and sovereign infrastructure.</strong> Each
+      vote, draw and briefing edit as a public event (anonymized where needed), running on
+      cooperatively-run national infrastructure — the physical substrate of democratic deliberation
+      is a matter of sovereignty.
+    </li>
+  </ol>
+
+  <h2>What the tool does NOT solve</h2>
+  <p>Three limits best admitted up front:</p>
+  <ul>
+    <li>
+      <strong>Digital exclusion.</strong> In Brazil, any purely digital system stratifies wrongly by
+      definition. The design needs points of assisted in-person participation (CRAS, libraries,
+      schools) as first-class citizens of the protocol, not a hack.
+    </li>
+    <li>
+      <strong>Privacy × verifiability.</strong> There is no perfect solution, only trade-offs —
+      better to document them publicly than to pretend cryptography solves everything.
+    </li>
+    <li>
+      <strong>Software does not create political commitment.</strong> Technology can make capture
+      expensive and participation cheap, but transferring real power remains a political conquest.
+      What the tool does is remove the technical excuse that "it doesn't scale."
+    </li>
+  </ul>
+
+  <h2>Next step</h2>
+  <p>
+    Specify the <strong>verifiable sortition</strong> subsystem as an RFC — the piece no existing
+    civic-tech project (Decidim, Consul, Pol.is) has, and the one that answers the elitist critique
+    directly. That is where the ambition stops being rhetoric and becomes engineering.
+  </p>
+
+  <p class="foot-note muted">
+    Vision document — DemocraciaBR press material. The capabilities described include both what is
+    already live and the horizon under development; the current state of each part is in the
+    <a href="/imprensa/en">press kit</a>.
+  </p>
+</ManifestoDoc>

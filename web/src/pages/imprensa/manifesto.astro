@@ -1,228 +1,188 @@
 ---
-// Manifesto / Visão — documento fundacional teórico do projeto. RESTRITO à
-// divulgação de imprensa: linkado só a partir de /imprensa, fora do menu
-// público e com noindex. Desenvolve a tese (democracia participativa e
-// deliberativa) e o mapeamento desenho institucional → arquitetura do Pindorama.
-import BaseLayout from '../../layouts/BaseLayout.astro';
-import ColorBar from '../../components/illustrations/ColorBar.astro';
-
-const description =
-  'Manifesto e visão da DemocraciaBR: por que tirar o governo das oligarquias e da burocracia passa por elevar a capacidade do povo de se autogovernar — e como cada mecanismo institucional vira arquitetura.';
+// Manifesto / Visão (PT) — documento fundacional teórico, RESTRITO à divulgação de
+// imprensa: linkado só de /imprensa, fora do menu público e com noindex (via
+// ManifestoDoc). Desenvolve a tese (democracia participativa e deliberativa) e o
+// mapeamento desenho institucional → arquitetura do Pindorama.
+import ManifestoDoc from '../../components/ManifestoDoc.astro';
 ---
 
-<BaseLayout title="Manifesto / Visão" {description} canonical="/imprensa/manifesto" noindex={true}>
-  <section class="section">
-    <div class="container narrow">
-      <nav class="back"><a href="/imprensa">← Imprensa</a></nav>
-      <header class="head">
-        <ColorBar class="head-bar" />
-        <p class="kicker">Documento de visão · material de imprensa</p>
-        <h1>Devolver o governo ao povo</h1>
-        <p class="lede">
-          A DemocraciaBR não quer trocar quem manda. Quer tirar o poder de governo das
-          oligarquias hereditárias e da distância burocrática que capturaram a política
-          brasileira — e devolvê-lo ao povo elevando a capacidade da própria população de
-          se autogovernar. Este documento explica por que isso é possível, o que a teoria
-          política já sabe sobre o assunto, e como cada peça dessa aposta vira arquitetura.
-        </p>
-      </header>
+<ManifestoDoc
+  lang="pt"
+  title="Manifesto / Visão"
+  description="Manifesto e visão da DemocraciaBR: por que tirar o governo das oligarquias e da burocracia passa por elevar a capacidade do povo de se autogovernar — e como cada mecanismo institucional vira arquitetura."
+  canonical="/imprensa/manifesto"
+  kicker="Documento de visão · material de imprensa"
+  headline="Devolver o governo ao povo"
+  lede="A DemocraciaBR não quer trocar quem manda. Quer tirar o poder de governo das oligarquias hereditárias e da distância burocrática que capturaram a política brasileira — e devolvê-lo ao povo elevando a capacidade da própria população de se autogovernar. Este documento explica por que isso é possível, o que a teoria política já sabe sobre o assunto, e como cada peça dessa aposta vira arquitetura."
+  backHref="/imprensa"
+  backLabel="Imprensa"
+>
+  <h2>O problema não é quem gerencia — é a delegação</h2>
+  <p>
+    Nos anos 1920, Walter Lippmann argumentou que o público é incapaz de governar e que a
+    solução seriam tecnocratas especializados — a defesa intelectual da burocracia moderna.
+    <strong>John Dewey</strong> respondeu, em <em>O Público e Seus Problemas</em> (1927), com a
+    tese oposta: a incompetência do público não é natural, é <strong>produzida pela falta de
+    participação</strong>. Democracia é um modo de vida que se aprende praticando; quanto mais se
+    delega, menos capaz o público se torna — um círculo vicioso que só se quebra com mais
+    participação, não menos.
+  </p>
+  <p>
+    É a raiz da nossa aposta. Burocracia e oligarquia não se corrigem trocando os gestores;
+    corrigem-se dando ao povo poder real e praticado.
+  </p>
 
-      <article class="prose">
-        <h2>O problema não é quem gerencia — é a delegação</h2>
-        <p>
-          Nos anos 1920, Walter Lippmann argumentou que o público é incapaz de governar e
-          que a solução seriam tecnocratas especializados — a defesa intelectual da
-          burocracia moderna. <strong>John Dewey</strong> respondeu, em <em>O Público e Seus
-          Problemas</em> (1927), com a tese oposta: a incompetência do público não é natural,
-          é <strong>produzida pela falta de participação</strong>. Democracia é um modo de
-          vida que se aprende praticando; quanto mais se delega, menos capaz o público se
-          torna — um círculo vicioso que só se quebra com mais participação, não menos.
-        </p>
-        <p>
-          É a raiz da nossa aposta. Burocracia e oligarquia não se corrigem trocando os
-          gestores; corrigem-se dando ao povo poder real e praticado.
-        </p>
+  <h2>Uma linhagem inteira já pensou isso</h2>
+  <p>
+    A tese tem tradição. <strong>Carole Pateman</strong> (1970) formalizou a função
+    <em>educativa</em> da participação: participar gera cidadãos mais competentes, que sustentam
+    mais participação. <strong>Benjamin Barber</strong> (<em>Strong Democracy</em>, 1984) propôs
+    instituições concretas contra a democracia meramente representativa. <strong>Hannah
+    Arendt</strong> via a saída nos conselhos populares; <strong>Cornelius Castoriadis</strong> a
+    radicalizou no conceito de autonomia — a sociedade que se institui conscientemente, contra a
+    heteronomia burocrática.
+  </p>
+  <p>
+    A refutação empírica mais forte é de <strong>Elinor Ostrom</strong> (<em>Governing the
+    Commons</em>, 1990; Nobel de 2009): comunidades gerem recursos complexos por autogoverno
+    policêntrico, sem burocracia estatal nem privatização, quando as regras são criadas e
+    fiscalizadas por quem é afetado. No Brasil, <strong>Paulo Freire</strong> é incontornável — a
+    conscientização como pré-condição para o povo deixar de ser objeto e virar sujeito político —,
+    e o <strong>Orçamento Participativo de Porto Alegre</strong> (1989) tornou-se o caso mais
+    estudado do mundo de desburocratização via participação. Na vertente digital,
+    <strong>Hélène Landemore</strong>, <strong>David Van Reybrouck</strong> e <strong>James
+    Fishkin</strong> defendem o sorteio e a deliberação informada; plataformas como o Decidim
+    (Barcelona) e o processo vTaiwan (Audrey Tang) tentam operacionalizar isso em escala.
+  </p>
 
-        <h2>Uma linhagem inteira já pensou isso</h2>
-        <p>
-          A tese tem tradição. <strong>Carole Pateman</strong> (1970) formalizou a função
-          <em>educativa</em> da participação: participar gera cidadãos mais competentes, que
-          sustentam mais participação. <strong>Benjamin Barber</strong> (<em>Strong
-          Democracy</em>, 1984) propôs instituições concretas contra a democracia meramente
-          representativa. <strong>Hannah Arendt</strong> via a saída nos conselhos populares;
-          <strong>Cornelius Castoriadis</strong> a radicalizou no conceito de autonomia — a
-          sociedade que se institui conscientemente, contra a heteronomia burocrática.
-        </p>
-        <p>
-          A refutação empírica mais forte é de <strong>Elinor Ostrom</strong> (<em>Governing
-          the Commons</em>, 1990; Nobel de 2009): comunidades gerem recursos complexos por
-          autogoverno policêntrico, sem burocracia estatal nem privatização, quando as regras
-          são criadas e fiscalizadas por quem é afetado. No Brasil, <strong>Paulo Freire</strong>
-          é incontornável — a conscientização como pré-condição para o povo deixar de ser
-          objeto e virar sujeito político —, e o <strong>Orçamento Participativo de Porto
-          Alegre</strong> (1989) tornou-se o caso mais estudado do mundo de desburocratização
-          via participação. Na vertente digital, <strong>Hélène Landemore</strong>,
-          <strong>David Van Reybrouck</strong> e <strong>James Fishkin</strong> defendem o
-          sorteio e a deliberação informada; plataformas como o Decidim (Barcelona) e o
-          processo vTaiwan (Audrey Tang) tentam operacionalizar isso em escala.
-        </p>
+  <h2>A crítica elitista, levada a sério</h2>
+  <p>
+    A objeção honesta (Schumpeter, o próprio Lippmann, hoje Jason Brennan em <em>Against
+    Democracy</em>) diz: participação em massa não escala, a ignorância racional do eleitor é
+    estrutural, e a deliberação ampliada pode ser capturada por quem tem mais tempo e retórica. A
+    melhor forma de combatê-la é levá-la a sério — cada objeção tem um mecanismo de desenho
+    institucional que a neutraliza. A literatura já não responde com fé na participação, mas com
+    engenharia.
+  </p>
+  <ol>
+    <li>
+      <strong>"Não escala" → policentrismo + sorteio representativo.</strong> Não se escala a
+      assembleia, escala-se o sistema: cada decisão na menor escala em que os afetados conseguem
+      deliberar (subsidiariedade), e as escalas se federam. Quando a escala nacional é inevitável,
+      usa-se amostragem — uma minipublic sorteada e representativa delibera em nome da população,
+      como a Assembleia Cidadã irlandesa e a Convenção do Clima francesa, cujas decisões
+      sobreviveram a referendos.
+    </li>
+    <li>
+      <strong>"Ignorância racional" → mudar o cálculo, não o eleitor.</strong> É um argumento sobre
+      incentivos, não sobre capacidade. Poder decisório real e local faz a informação valer a pena
+      (quem delibera sobre a própria rua se informa). O custo da informação é socializado (briefings
+      balanceados, tempo remunerado — o modelo do júri). A ignorância racional é, em boa parte,
+      artefato da própria delegação.
+    </li>
+    <li>
+      <strong>"Captura pelos profissionais" → sorteio, rotação e desenho de fala.</strong> Sorteio
+      estratificado em vez de autosseleção elimina o viés de quem "quer aparecer" (Van Reybrouck:
+      eleição e voluntariado selecionam quem busca poder; sorteio seleciona qualquer um). Mandatos
+      curtos, não renováveis e rotativos não atraem carreiristas. Facilitação e regras de fala
+      distribuem o tempo; o Pol.is/vTaiwan ataca a retórica computacionalmente — gritar mais alto
+      não move o mapa de consenso.
+    </li>
+  </ol>
+  <p>
+    Dois pontos de honestidade que <em>fortalecem</em> a posição. Primeiro: o epistocrata tem o
+    mesmo problema, pior — qualquer teste de competência para votar é definido por alguém, e quem
+    define captura o sistema (a objeção de Estlund). A seleção adversa que se atribui à burocracia se
+    aplica integralmente à epistocracia. Segundo: nada disso funciona como peça avulsa — assembleia
+    sem poder vira teatro legitimador; orçamento participativo sem verba definha, como no próprio
+    Porto Alegre depois de 2004. A crítica acerta sobre a participação <em>mal desenhada</em> e não
+    tem dados contra a <em>bem desenhada</em> — que exige compromisso institucional contínuo, uma
+    escolha política, não um problema técnico.
+  </p>
 
-        <h2>A crítica elitista, levada a sério</h2>
-        <p>
-          A objeção honesta (Schumpeter, o próprio Lippmann, hoje Jason Brennan em
-          <em>Against Democracy</em>) diz: participação em massa não escala, a ignorância
-          racional do eleitor é estrutural, e a deliberação ampliada pode ser capturada por
-          quem tem mais tempo e retórica. A melhor forma de combatê-la é levá-la a sério —
-          cada objeção tem um mecanismo de desenho institucional que a neutraliza. A
-          literatura já não responde com fé na participação, mas com engenharia.
-        </p>
-        <ol>
-          <li>
-            <strong>"Não escala" → policentrismo + sorteio representativo.</strong> Não se
-            escala a assembleia, escala-se o sistema: cada decisão na menor escala em que os
-            afetados conseguem deliberar (subsidiariedade), e as escalas se federam. Quando a
-            escala nacional é inevitável, usa-se amostragem — uma minipublic sorteada e
-            representativa delibera em nome da população, como a Assembleia Cidadã irlandesa e
-            a Convenção do Clima francesa, cujas decisões sobreviveram a referendos.
-          </li>
-          <li>
-            <strong>"Ignorância racional" → mudar o cálculo, não o eleitor.</strong> É um
-            argumento sobre incentivos, não sobre capacidade. Poder decisório real e local
-            faz a informação valer a pena (quem delibera sobre a própria rua se informa). O
-            custo da informação é socializado (briefings balanceados, tempo remunerado — o
-            modelo do júri). A ignorância racional é, em boa parte, artefato da própria
-            delegação.
-          </li>
-          <li>
-            <strong>"Captura pelos profissionais" → sorteio, rotação e desenho de fala.</strong>
-            Sorteio estratificado em vez de autosseleção elimina o viés de quem "quer aparecer"
-            (Van Reybrouck: eleição e voluntariado selecionam quem busca poder; sorteio
-            seleciona qualquer um). Mandatos curtos, não renováveis e rotativos não atraem
-            carreiristas. Facilitação e regras de fala distribuem o tempo; o Pol.is/vTaiwan
-            ataca a retórica computacionalmente — gritar mais alto não move o mapa de consenso.
-          </li>
-        </ol>
-        <p>
-          Dois pontos de honestidade que <em>fortalecem</em> a posição. Primeiro: o
-          epistocrata tem o mesmo problema, pior — qualquer teste de competência para votar é
-          definido por alguém, e quem define captura o sistema (a objeção de Estlund). A
-          seleção adversa que se atribui à burocracia se aplica integralmente à epistocracia.
-          Segundo: nada disso funciona como peça avulsa — assembleia sem poder vira teatro
-          legitimador; orçamento participativo sem verba definha, como no próprio Porto Alegre
-          depois de 2004. A crítica acerta sobre a participação <em>mal desenhada</em> e não
-          tem dados contra a <em>bem desenhada</em> — que exige compromisso institucional
-          contínuo, uma escolha política, não um problema técnico.
-        </p>
+  <h2>Do desenho institucional ao desenho técnico</h2>
+  <p>
+    O desenho da ferramenta deve derivar do desenho institucional, nunca o contrário. Cada mecanismo
+    acima mapeia num componente da arquitetura:
+  </p>
+  <ol>
+    <li>
+      <strong>Sorteio estratificado → identidade única verificável, sem doxxing.</strong> Sorteio só
+      funciona com unicidade (anti-Sybil) e estratificação por região/idade/renda sem expor quem é
+      quem — inclusive a população sem documento. A peça em cima é a prova de atributo com
+      conhecimento zero ("resido no município X, faixa Y") e um sorteio <em>publicamente
+      verificável</em> (VRF/beacon com commit-reveal): quem controla o RNG controla a assembleia.
+    </li>
+    <li>
+      <strong>Policentrismo → federação, não plataforma única.</strong> Uma instância por escopo
+      (bairro, município, estado), federadas por protocolo (ActivityPub). Resolve escala, soberania
+      e resiliência de uma vez — capturar o sistema exige capturar cada nó. Uma plataforma
+      centralizada de democracia participativa é uma contradição performativa e um ponto único de
+      falha político.
+    </li>
+    <li>
+      <strong>Deliberação anti-retórica → clustering de opinião, não threads.</strong> Threads
+      premiam volume e retórica. O desenho Pol.is/vTaiwan inverte: afirmações curtas, votação
+      (concordo/discordo/passo), embeddings mapeando clusters, e a interface destacando o consenso
+      entre grupos opostos. O algoritmo de clustering vira ele próprio um ponto de poder — precisa
+      ser aberto, determinístico e re-executável por qualquer um a partir dos dados públicos, senão
+      só se troca o burocrata pelo modelo.
+    </li>
+    <li>
+      <strong>Poder real → acoplamento com mandato e consequência.</strong> O output da deliberação
+      não pode ser um PDF; tem que ser um compromisso estruturado e rastreável — proposta aprovada →
+      compromisso do mandato → acompanhamento → placar. Deliberação sem o subsistema de consequência
+      é metade de um produto (o mal do qual o Decidim sofre).
+    </li>
+    <li>
+      <strong>Informação balanceada → curadoria adversarial e versionada.</strong> Cada questão
+      recebe briefing com defensores designados de cada lado, fontes citadas e histórico público
+      auditável. Sumarização assinada e reproduzível; a IA ajuda a resumir, nunca a decidir o que
+      entra.
+    </li>
+    <li>
+      <strong>Anti-carreirismo → rotação no protocolo.</strong> A credencial de "membro da assembleia
+      X" expira, e o mesmo identificador fica inelegível para o pool seguinte — com a cautela de que
+      regra dura demais é difícil de emendar democraticamente: o meta-processo de mudar as regras
+      também precisa existir.
+    </li>
+    <li>
+      <strong>Tudo auditável → registro imutável e infraestrutura soberana.</strong> Cada voto,
+      sorteio e edição de briefing como evento público (anonimizado onde preciso), rodando em
+      infraestrutura nacional cooperativada — o substrato físico da deliberação democrática é questão
+      de soberania.
+    </li>
+  </ol>
 
-        <h2>Do desenho institucional ao desenho técnico</h2>
-        <p>
-          O desenho da ferramenta deve derivar do desenho institucional, nunca o contrário.
-          Cada mecanismo acima mapeia num componente da arquitetura:
-        </p>
-        <ol>
-          <li>
-            <strong>Sorteio estratificado → identidade única verificável, sem doxxing.</strong>
-            Sorteio só funciona com unicidade (anti-Sybil) e estratificação por região/idade/
-            renda sem expor quem é quem — inclusive a população sem documento. A peça em cima é
-            a prova de atributo com conhecimento zero ("resido no município X, faixa Y") e um
-            sorteio <em>publicamente verificável</em> (VRF/beacon com commit-reveal): quem
-            controla o RNG controla a assembleia.
-          </li>
-          <li>
-            <strong>Policentrismo → federação, não plataforma única.</strong> Uma instância por
-            escopo (bairro, município, estado), federadas por protocolo (ActivityPub). Resolve
-            escala, soberania e resiliência de uma vez — capturar o sistema exige capturar cada
-            nó. Uma plataforma centralizada de democracia participativa é uma contradição
-            performativa e um ponto único de falha político.
-          </li>
-          <li>
-            <strong>Deliberação anti-retórica → clustering de opinião, não threads.</strong>
-            Threads premiam volume e retórica. O desenho Pol.is/vTaiwan inverte: afirmações
-            curtas, votação (concordo/discordo/passo), embeddings mapeando clusters, e a
-            interface destacando o consenso entre grupos opostos. O algoritmo de clustering
-            vira ele próprio um ponto de poder — precisa ser aberto, determinístico e
-            re-executável por qualquer um a partir dos dados públicos, senão só se troca o
-            burocrata pelo modelo.
-          </li>
-          <li>
-            <strong>Poder real → acoplamento com mandato e consequência.</strong> O output da
-            deliberação não pode ser um PDF; tem que ser um compromisso estruturado e rastreável
-            — proposta aprovada → compromisso do mandato → acompanhamento → placar. Deliberação
-            sem o subsistema de consequência é metade de um produto (o mal do qual o Decidim
-            sofre).
-          </li>
-          <li>
-            <strong>Informação balanceada → curadoria adversarial e versionada.</strong> Cada
-            questão recebe briefing com defensores designados de cada lado, fontes citadas e
-            histórico público auditável. Sumarização assinada e reproduzível; a IA ajuda a
-            resumir, nunca a decidir o que entra.
-          </li>
-          <li>
-            <strong>Anti-carreirismo → rotação no protocolo.</strong> A credencial de "membro
-            da assembleia X" expira, e o mesmo identificador fica inelegível para o pool
-            seguinte — com a cautela de que regra dura demais é difícil de emendar
-            democraticamente: o meta-processo de mudar as regras também precisa existir.
-          </li>
-          <li>
-            <strong>Tudo auditável → registro imutável e infraestrutura soberana.</strong> Cada
-            voto, sorteio e edição de briefing como evento público (anonimizado onde preciso),
-            rodando em infraestrutura nacional cooperativada — o substrato físico da deliberação
-            democrática é questão de soberania.
-          </li>
-        </ol>
+  <h2>O que a ferramenta NÃO resolve</h2>
+  <p>Três limites que é melhor admitir de saída:</p>
+  <ul>
+    <li>
+      <strong>Exclusão digital.</strong> No Brasil, qualquer sistema puramente digital estratifica
+      errado por definição. O desenho precisa de pontos de participação assistida presencial (CRAS,
+      bibliotecas, escolas) como cidadãos de primeira classe do protocolo, não gambiarra.
+    </li>
+    <li>
+      <strong>Privacidade × verificabilidade.</strong> Não há solução perfeita, só trade-offs —
+      melhor documentá-los publicamente do que fingir que a criptografia resolve tudo.
+    </li>
+    <li>
+      <strong>Software não cria compromisso político.</strong> A tecnologia pode tornar a captura
+      cara e a participação barata, mas transferir poder real continua sendo conquista política. O
+      que a ferramenta faz é remover a desculpa técnica de que "não escala".
+    </li>
+  </ul>
 
-        <h2>O que a ferramenta NÃO resolve</h2>
-        <p>Três limites que é melhor admitir de saída:</p>
-        <ul>
-          <li>
-            <strong>Exclusão digital.</strong> No Brasil, qualquer sistema puramente digital
-            estratifica errado por definição. O desenho precisa de pontos de participação
-            assistida presencial (CRAS, bibliotecas, escolas) como cidadãos de primeira classe
-            do protocolo, não gambiarra.
-          </li>
-          <li>
-            <strong>Privacidade × verificabilidade.</strong> Não há solução perfeita, só
-            trade-offs — melhor documentá-los publicamente do que fingir que a criptografia
-            resolve tudo.
-          </li>
-          <li>
-            <strong>Software não cria compromisso político.</strong> A tecnologia pode tornar a
-            captura cara e a participação barata, mas transferir poder real continua sendo
-            conquista política. O que a ferramenta faz é remover a desculpa técnica de que "não
-            escala".
-          </li>
-        </ul>
+  <h2>Próximo passo</h2>
+  <p>
+    Especificar o subsistema de <strong>sorteio verificável</strong> como RFC — a peça que nenhum
+    projeto civic-tech existente (Decidim, Consul, Pol.is) tem, e a que responde diretamente à
+    crítica elitista. É por aí que a ambição deixa de ser retórica e vira engenharia.
+  </p>
 
-        <h2>Próximo passo</h2>
-        <p>
-          Especificar o subsistema de <strong>sorteio verificável</strong> como RFC — a peça que
-          nenhum projeto civic-tech existente (Decidim, Consul, Pol.is) tem, e a que responde
-          diretamente à crítica elitista. É por aí que a ambição deixa de ser retórica e vira
-          engenharia.
-        </p>
-
-        <p class="foot-note muted">
-          Documento de visão — material de imprensa da DemocraciaBR. As capacidades descritas
-          incluem tanto o que já está no ar quanto o horizonte em desenvolvimento; o estado
-          atual de cada peça está no <a href="/imprensa">kit de imprensa</a>.
-        </p>
-      </article>
-    </div>
-  </section>
-</BaseLayout>
-
-<style>
-  .narrow { max-width: 46rem; }
-  .back { margin-bottom: var(--sp-3); font-size: var(--fs-sm); }
-  .back a { color: var(--accent-strong); text-decoration: none; font-weight: var(--fw-semibold); }
-  .head { margin-bottom: var(--sp-5); }
-  .head-bar { margin-bottom: var(--sp-3); }
-  .kicker { text-transform: uppercase; letter-spacing: 0.08em; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--accent-strong); margin: 0 0 var(--sp-2); }
-  h1 { margin: 0 0 var(--sp-3); }
-  .lede { font-size: var(--fs-lg); line-height: var(--lh-relaxed); color: var(--text-1); }
-  .prose h2 { margin: var(--sp-6) 0 var(--sp-2); font-size: var(--fs-lg); color: var(--text-1); }
-  .prose p, .prose ul, .prose ol { line-height: var(--lh-relaxed); color: var(--text-2); }
-  .prose ol, .prose ul { padding-left: 1.4rem; display: grid; gap: var(--sp-2); margin: var(--sp-2) 0; }
-  .prose strong { color: var(--text-1); }
-  .foot-note { margin-top: var(--sp-6); padding-top: var(--sp-3); border-top: 1px solid var(--border-subtle); font-size: var(--fs-sm); }
-</style>
+  <p class="foot-note muted">
+    Documento de visão — material de imprensa da DemocraciaBR. As capacidades descritas incluem tanto
+    o que já está no ar quanto o horizonte em desenvolvimento; o estado atual de cada peça está no
+    <a href="/imprensa">kit de imprensa</a>.
+  </p>
+</ManifestoDoc>

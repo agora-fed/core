@@ -1,0 +1,73 @@
+---
+// Chrome compartilhado do Manifesto/Visão (restrito à imprensa, noindex). A prosa
+// traduzida entra pelo <slot>; aqui ficam layout, cabeçalho, alternador PT·EN·ES
+// e estilos — uma fonte só, três rotas finas (/imprensa/manifesto[/en|/es]).
+import BaseLayout from '../layouts/BaseLayout.astro';
+import ColorBar from './illustrations/ColorBar.astro';
+
+interface Props {
+  lang: 'pt' | 'en' | 'es';
+  title: string;
+  description: string;
+  canonical: string;
+  kicker: string;
+  headline: string;
+  lede: string;
+  backHref: string;
+  backLabel: string;
+}
+const { lang, title, description, canonical, kicker, headline, lede, backHref, backLabel } = Astro.props;
+
+const routes = { pt: '/imprensa/manifesto', en: '/imprensa/manifesto/en', es: '/imprensa/manifesto/es' } as const;
+const langs: { code: 'pt' | 'en' | 'es'; name: string }[] = [
+  { code: 'pt', name: 'PT' },
+  { code: 'en', name: 'EN' },
+  { code: 'es', name: 'ES' },
+];
+---
+
+<BaseLayout {title} {description} {canonical} noindex={true}>
+  <section class="section">
+    <div class="container narrow">
+      <div class="topbar">
+        <nav class="back"><a href={backHref}>← {backLabel}</a></nav>
+        <nav class="langbar" aria-label="Idioma">
+          {langs.map((l) => (
+            <a href={routes[l.code]} class:list={['lang', { on: l.code === lang }]} hreflang={l.code}>{l.name}</a>
+          ))}
+        </nav>
+      </div>
+
+      <header class="head">
+        <ColorBar class="head-bar" />
+        <p class="kicker">{kicker}</p>
+        <h1>{headline}</h1>
+        <p class="lede">{lede}</p>
+      </header>
+
+      <article class="prose">
+        <slot />
+      </article>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .narrow { max-width: 46rem; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin-bottom: var(--sp-3); }
+  .back { font-size: var(--fs-sm); }
+  .back a { color: var(--accent-strong); text-decoration: none; font-weight: var(--fw-semibold); }
+  .langbar { display: flex; gap: var(--sp-1); }
+  .lang { font-size: var(--fs-sm); font-weight: var(--fw-semibold); padding: 2px 10px; border-radius: 999px; text-decoration: none; color: var(--text-3); border: 1px solid var(--border-subtle); }
+  .lang.on { color: #fff; background: var(--accent); border-color: var(--accent); }
+  .head { margin-bottom: var(--sp-5); }
+  .head-bar { margin-bottom: var(--sp-3); }
+  .kicker { text-transform: uppercase; letter-spacing: 0.08em; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--accent-strong); margin: 0 0 var(--sp-2); }
+  h1 { margin: 0 0 var(--sp-3); }
+  .lede { font-size: var(--fs-lg); line-height: var(--lh-relaxed); color: var(--text-1); }
+  .prose :global(h2) { margin: var(--sp-6) 0 var(--sp-2); font-size: var(--fs-lg); color: var(--text-1); }
+  .prose :global(p), .prose :global(ul), .prose :global(ol) { line-height: var(--lh-relaxed); color: var(--text-2); }
+  .prose :global(ol), .prose :global(ul) { padding-left: 1.4rem; display: grid; gap: var(--sp-2); margin: var(--sp-2) 0; }
+  .prose :global(strong) { color: var(--text-1); }
+  .prose :global(.foot-note) { margin-top: var(--sp-6); padding-top: var(--sp-3); border-top: 1px solid var(--border-subtle); font-size: var(--fs-sm); }
+</style>
