@@ -23,6 +23,7 @@ pub mod announcements;
 pub mod attestations;
 pub mod audience;
 pub mod authz_ext;
+pub mod campaign_broadcast;
 pub mod campaign_consent;
 pub mod campaign_groups;
 pub mod campanha;
@@ -172,6 +173,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(crate::admin_roles::routes(state.clone()))
         // Party directories + administrators (ÁGORA campaign layer, #58).
         .merge(crate::admin_parties::routes(state.clone()))
+        // Broadcast consentido de campanha por diretório municipal (ÁGORA F3, #60).
+        .merge(crate::campaign_broadcast::routes(state.clone()))
         .merge(crate::module_gate::routes(state.clone()))
         .merge(admin_ext::routes(state.clone()))
         // Super-admin: editar/ocultar/apagar mandato, proposta, partido (0.40, SOCRATES).

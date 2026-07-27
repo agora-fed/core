@@ -11,6 +11,7 @@
     listPartyAdministrators,
     assignPartyAdministrator,
     removePartyAdministrator,
+    sendBroadcast,
     type PartyDto,
     type DirectoryDto,
     type PartyAdministratorDto,
@@ -37,6 +38,12 @@
   let admHandle = $state('');
   let admRole = $state<'admin' | 'moderador'>('admin');
   let admDirectoryId = $state(''); // '' = nacional
+
+  // Form: broadcast consentido (só diretórios municipais)
+  let bcDirId = $state('');
+  let bcSubject = $state('');
+  let bcBody = $state('');
+  let municipalDirs = $derived(directories.filter((d) => d.esfera === 'municipal'));
 
   async function reloadParties() {
     loading = true;
@@ -139,6 +146,22 @@
     await reloadParties();
   }
 
+  async function submitBroadcast(e: Event) {
+    e.preventDefault();
+    if (!selected) return;
+    if (!bcDirId) return toast.error('Escolha o diretório municipal');
+    const subject = bcSubject.trim();
+    const body = bcBody.trim();
+    if (!subject || !body) return toast.error('Preencha assunto e mensagem');
+    scopeBusy = true;
+    const res = await sendBroadcast(selected, bcDirId, { subject, body });
+    scopeBusy = false;
+    if (!res.success) return toast.error(res.error?.message ?? 'Não foi possível enviar');
+    toast.success(`Enviado a ${res.data?.recipients ?? 0} destinatário(s) consentido(s)`);
+    bcSubject = '';
+    bcBody = '';
+  }
+
   onMount(reloadParties);
 </script>
 
@@ -239,6 +262,28 @@
             </select>
             <button class="btn" disabled={scopeBusy}>Atribuir</button>
           </form>
+
+          {#if municipalDirs.length > 0}
+            <hr />
+            <h3>Comunicado (broadcast consentido)</h3>
+            <p class="muted small">
+              Envia por e-mail <strong>só a quem autorizou</strong> receber campanha e reside no
+              município do diretório. A lista nunca é exposta; há opt-out no rodapé. Limite: 1 envio
+              a cada 24h por diretório.
+            </p>
+            <form class="mini col" onsubmit={submitBroadcast}>
+              <select bind:value={bcDirId} class="input" required>
+                <option value="" disabled>Diretório municipal</option>
+                {#each municipalDirs as d (d.id)}
+                  <option value={d.id}>{scopeText(d)}</option>
+                {/each}
+              </select>
+              <input bind:value={bcSubject} class="input" placeholder="Assunto" required />
+              <textarea bind:value={bcBody} class="input area" placeholder="Mensagem" rows="4" required
+              ></textarea>
+              <button class="btn" disabled={scopeBusy}>Enviar comunicado</button>
+            </form>
+          {/if}
         {/if}
       </section>
     </div>
@@ -265,6 +310,8 @@
   .rname { color: var(--text-1); }
   .rm { margin-left: auto; border: 1px solid var(--border-subtle); background: var(--surface-1); border-radius: var(--r-sm); padding: 2px 10px; font-size: var(--fs-sm); cursor: pointer; color: var(--danger, #b91c1c); }
   .mini { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
+  .mini.col { flex-direction: column; align-items: stretch; max-width: 32rem; }
+  .area { resize: vertical; font-family: inherit; }
   .input { padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--surface-1); color: var(--text-1); font-size: var(--fs-sm); }
   .grow { flex: 1; min-width: 10rem; }
   .btn { padding: var(--sp-2) var(--sp-4); border-radius: var(--r-sm); border: 1px solid var(--accent); background: var(--accent); color: #fff; font-weight: var(--fw-semibold); font-size: var(--fs-sm); cursor: pointer; }

@@ -3096,6 +3096,17 @@ export const assignPartyAdministrator = (
 export const removePartyAdministrator = (sigla: string, id: string) =>
   apiDelete<null>(`/api/v1/admin/parties/${encodeURIComponent(sigla)}/administrators/${id}`);
 
+// ÁGORA F3 (#60) — broadcast consentido por diretório municipal.
+export const sendBroadcast = (
+  sigla: string,
+  directoryId: string,
+  body: { subject: string; body: string },
+) =>
+  apiPost<{ recipients: number; broadcast_id: string }>(
+    `/api/v1/admin/parties/${encodeURIComponent(sigla)}/directories/${directoryId}/broadcast`,
+    body,
+  );
+
 // ÁGORA F2 (#59) — consentimento de campanha do cidadão (/me/campaign-consent).
 export interface CampaignConsentDto {
   id: string;
