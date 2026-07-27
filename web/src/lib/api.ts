@@ -3179,6 +3179,13 @@ export const sendBroadcast = (
     body,
   );
 
+// ÁGORA #69b — broadcast SMS consentido (usa o SMSGateway do diretório; 1/semana, owner ilimitado).
+export const sendBroadcastSms = (sigla: string, directoryId: string, body: { body: string }) =>
+  apiPost<{ recipients: number; broadcast_id: string }>(
+    `/api/v1/admin/parties/${encodeURIComponent(sigla)}/directories/${directoryId}/broadcast-sms`,
+    body,
+  );
+
 // ÁGORA F2 (#59) — consentimento de campanha do cidadão (/me/campaign-consent).
 export interface CampaignConsentDto {
   id: string;

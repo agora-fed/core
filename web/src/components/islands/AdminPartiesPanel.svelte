@@ -12,6 +12,7 @@
     assignPartyAdministrator,
     removePartyAdministrator,
     sendBroadcast,
+    sendBroadcastSms,
     importContacts,
     getSmsGateway,
     setSmsGateway,
@@ -66,6 +67,12 @@
   let smsPass = $state('');
   let smsStatus = $state<string | null>(null);
 
+  // Form: broadcast SMS consentido (#69b) — usa o SMSGateway do diretório; 1/semana (owner ilimitado).
+  let smsBcDirId = $state('');
+  let smsBcBody = $state('');
+  let smsBcBusy = $state(false);
+  let smsBcResult = $state<string | null>(null);
+
   // Carrega o status do SMSGateway ao trocar o diretório.
   $effect(() => {
     const d = smsDirId;
@@ -98,6 +105,20 @@
     toast.success('SMSGateway salvo (credenciais cifradas)');
     smsPass = '';
     smsStatus = 'Configurado';
+  }
+
+  async function submitSmsBroadcast(e: Event) {
+    e.preventDefault();
+    if (!selected || !smsBcDirId) return toast.error('Escolha o diretório');
+    if (!smsBcBody.trim()) return toast.error('Escreva a mensagem do SMS');
+    smsBcBusy = true;
+    smsBcResult = null;
+    const res = await sendBroadcastSms(selected, smsBcDirId, { body: smsBcBody.trim() });
+    smsBcBusy = false;
+    if (!res.success) return toast.error(res.error?.message ?? 'Não foi possível enviar');
+    smsBcResult = `SMS enfileirado para ${res.data?.recipients ?? 0} destinatário(s) com telefone verificado.`;
+    smsBcBody = '';
+    toast.success('Broadcast SMS enviado');
   }
 
   async function reloadParties() {
@@ -457,8 +478,8 @@
             <h3>SMSGateway (por diretório)</h3>
             <p class="muted small">
               Cada diretório usa seu <strong>próprio</strong> SMSGateway (app sms-gate.app). As
-              credenciais ficam <strong>cifradas em repouso</strong>. O envio por SMS usa esta
-              config (próxima fase). Precisa da chave <code>INTERCOMS_CONFIG_KEY</code> na instância.
+              credenciais ficam <strong>cifradas em repouso</strong>. O broadcast por SMS abaixo usa
+              esta config. Precisa da chave <code>INTERCOMS_CONFIG_KEY</code> na instância.
             </p>
             <form class="mini col" onsubmit={submitSmsGateway}>
               <select bind:value={smsDirId} class="input" required>
@@ -475,6 +496,31 @@
               <input bind:value={smsUser} class="input" placeholder="usuário (basic auth)" />
               <input bind:value={smsPass} class="input" type="password" placeholder="senha / token" />
               <button class="btn" disabled={scopeBusy}>Salvar SMSGateway</button>
+            </form>
+
+            <hr />
+            <h3>Broadcast por SMS (consentido)</h3>
+            <p class="muted small">
+              Envia um SMS curto à base consentida com <strong>telefone verificado</strong>, pelo
+              SMSGateway do próprio diretório. Limite de <strong>1 envio por semana</strong> por
+              diretório (o OWNER da plataforma é ilimitado). Não expõe a lista.
+            </p>
+            <form class="mini col" onsubmit={submitSmsBroadcast}>
+              <select bind:value={smsBcDirId} class="input" required>
+                <option value="" disabled>Diretório municipal</option>
+                {#each municipalDirs as d (d.id)}<option value={d.id}>{scopeText(d)}</option>{/each}
+              </select>
+              <textarea
+                bind:value={smsBcBody}
+                class="input"
+                rows="3"
+                maxlength="300"
+                placeholder="Mensagem do SMS (máx. 300 caracteres)"
+                required
+              ></textarea>
+              <span class="q-label">{smsBcBody.length}/300</span>
+              <button class="btn" disabled={smsBcBusy}>Enviar SMS</button>
+              {#if smsBcResult}<span class="q-label ok">{smsBcResult}</span>{/if}
             </form>
           {/if}
         {/if}
