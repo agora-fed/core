@@ -34,6 +34,9 @@ pub mod keys {
     pub const EMAIL_TEMPLATES_MANAGE: &str = "email_templates.manage";
     pub const WEBHOOKS_MANAGE: &str = "webhooks.manage";
     pub const INVITES_MANAGE: &str = "invites.manage";
+    /// Manage party directories and party administrators (ÁGORA campaign layer, ADR-0014, #58).
+    pub const PARTY_MANAGE: &str = "party.manage";
+    pub const DIRECTORY_MANAGE: &str = "directory.manage";
 }
 
 /// The effective permissions of a caller in an org: the union of every held role's keys plus

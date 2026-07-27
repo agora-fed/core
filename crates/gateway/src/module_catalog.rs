@@ -128,6 +128,16 @@ pub static CATALOG: &[ModuleManifest] = &[
                 "Gerenciar webhooks",
                 PermissionCategory::Administration,
             ),
+            managed(
+                keys::PARTY_MANAGE,
+                "Gerenciar partidos",
+                PermissionCategory::Administration,
+            ),
+            managed(
+                keys::DIRECTORY_MANAGE,
+                "Gerenciar diretórios",
+                PermissionCategory::Administration,
+            ),
         ],
         nav: &[NavItem {
             label: "Admin",

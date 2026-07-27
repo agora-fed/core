@@ -14,6 +14,7 @@
 pub mod admin_content;
 pub mod admin_ext;
 pub mod admin_forums;
+pub mod admin_parties;
 pub mod admin_reports;
 pub mod admin_roles;
 pub mod admin_users;
@@ -167,6 +168,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(dsoc_admin::routes(state.clone()))
         .merge(crate::authz_ext::routes(state.clone()))
         .merge(crate::admin_roles::routes(state.clone()))
+        // Party directories + administrators (ÁGORA campaign layer, #58).
+        .merge(crate::admin_parties::routes(state.clone()))
         .merge(crate::module_gate::routes(state.clone()))
         .merge(admin_ext::routes(state.clone()))
         // Super-admin: editar/ocultar/apagar mandato, proposta, partido (0.40, SOCRATES).
