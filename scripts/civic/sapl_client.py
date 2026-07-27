@@ -192,3 +192,44 @@ def fetch_current_parlamentares(base_url: str) -> list[Parlamentar]:
         if p:
             out.append(p)
     return out
+
+
+# --- Atividade legislativa (#73, ADR-0018) ---------------------------------------------------------
+
+
+def _iter_capped(base_url: str, path: str, max_pages: int):
+    """Como _iter, mas para após `max_pages` páginas (proteção — matérias têm centenas de milhares)."""
+    url = f"{base_url}{path}"
+    seen_urls = set()
+    pages = 0
+    while url and url not in seen_urls and pages < max_pages:
+        seen_urls.add(url)
+        pages += 1
+        data = _get_json(url)
+        if not isinstance(data, dict):
+            break
+        for row in data.get("results") or []:
+            yield row
+        url = _next_url(base_url, data)
+
+
+def fetch_materias(base_url: str, gte_date: str, max_pages: int = 50) -> list[dict]:
+    """Proposições/atas com data_apresentacao >= gte_date ('YYYY-MM-DD'). Filtro SERVER-SIDE + cap."""
+    path = (f"/api/materia/materialegislativa/?format=json"
+            f"&data_apresentacao__gte={gte_date}&o=-data_apresentacao")
+    return list(_iter_capped(base_url, path, max_pages))
+
+
+def fetch_autoria_de(base_url: str, materia_id) -> list[dict]:
+    """Autoria de UMA matéria (filtro ?materia=). [] quando a matéria não tem autor (ex.: atas)."""
+    out = []
+    for row in _iter(base_url, f"/api/materia/autoria/?format=json&materia={materia_id}"):
+        out.append({"autor_id": row.get("autor"), "primeiro": bool(row.get("primeiro_autor")),
+                    "str": row.get("__str__") or ""})
+    return out
+
+
+def fetch_votacoes(base_url: str, gte_date: str, max_pages: int = 50) -> list[dict]:
+    """Votações (ordemdia) com data_ordem >= gte_date ('YYYY-MM-DD'). Filtro SERVER-SIDE + cap."""
+    path = f"/api/sessao/ordemdia/?format=json&data_ordem__gte={gte_date}&o=-data_ordem"
+    return list(_iter_capped(base_url, path, max_pages))
