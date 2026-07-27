@@ -66,6 +66,7 @@ chrono = { workspace = true }
 sqlx = { workspace = true }
 sha2 = "0.10"
 hmac = "0.12"
+sha1 = "0.10"
 base64 = "0.22"
 image = { workspace = true }
 ab_glyph = { workspace = true }

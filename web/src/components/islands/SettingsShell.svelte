@@ -16,6 +16,7 @@
   import LgpdPanel from './LgpdPanel.svelte';
   import CampaignConsentPanel from './CampaignConsentPanel.svelte';
   import PhonePanel from './PhonePanel.svelte';
+  import TotpPanel from './TotpPanel.svelte';
   import FiltersPanel from './FiltersPanel.svelte';
   import PreferencesPanel from './PreferencesPanel.svelte';
   import ImportPanel from './ImportPanel.svelte';
@@ -45,7 +46,7 @@
     { id: 'filtros', label: 'Filtros' },
     { id: 'importar', label: 'Importar' },
     { id: 'campanha', label: 'Campanha' },
-    { id: 'telefone', label: 'Telefone' },
+    { id: 'telefone', label: '2FA' },
     { id: 'lgpd', label: 'LGPD' },
   ];
 
@@ -197,12 +198,13 @@
     {:else if active === 'telefone'}
       <section class="section">
         <header class="s-head">
-          <h2>Telefone (opcional)</h2>
+          <h2>Autenticação em dois fatores (2FA)</h2>
           <p class="muted">
-            Verifique um telefone para receber alertas por SMS e como 2FA alternativo
-            (não recomendado — prefira app autenticador).
+            Proteja sua conta com uma segunda etapa. <strong>TOTP</strong> (app autenticador) é o
+            método recomendado; o telefone/SMS é uma alternativa (não recomendada).
           </p>
         </header>
+        <TotpPanel />
         <PhonePanel />
       </section>
     {:else if active === 'lgpd'}

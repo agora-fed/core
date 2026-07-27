@@ -73,6 +73,7 @@ pub mod signup_gates;
 pub mod social_graph;
 pub mod threshold_policy;
 pub mod titulo_eleitor;
+pub mod totp;
 pub mod web_push;
 pub mod webhooks;
 pub mod whoami;
@@ -219,6 +220,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(campaign_consent::routes(state.clone()))
         // Telefone + verificação por OTP SMS (ÁGORA F5, #62).
         .merge(phone::routes(state.clone()))
+        // 2FA por TOTP — app autenticador (ÁGORA F6, #63).
+        .merge(totp::routes(state.clone()))
         // Cidadania política — validação do título de eleitor.
         .merge(titulo_eleitor::routes(state.clone()))
         // Referência IBGE de municípios (selector UF→município do cadastro).

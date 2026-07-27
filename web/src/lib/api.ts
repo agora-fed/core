@@ -3160,6 +3160,16 @@ export const setPhone = (phone: string) =>
   apiPost<{ sent: boolean }>('/api/v1/me/phone', { phone });
 export const verifyPhone = (code: string) =>
   apiPost<{ verified: boolean }>('/api/v1/me/phone/verify', { code });
+
+// ÁGORA F6 (#63) — 2FA por TOTP (app autenticador).
+export const getTotpStatus = () =>
+  apiGetCredentialed<{ enabled: boolean }>('/api/v1/me/2fa/totp');
+export const totpSetup = () =>
+  apiPost<{ secret: string; uri: string }>('/api/v1/me/2fa/totp/setup', {});
+export const totpEnable = (code: string) =>
+  apiPost<{ enabled: boolean; recovery_codes: string[] }>('/api/v1/me/2fa/totp/enable', { code });
+export const totpDisable = (code: string) =>
+  apiPost<{ enabled: boolean }>('/api/v1/me/2fa/totp/disable', { code });
 export const createRole = (body: RoleInput) =>
   apiPost<{ ok: true }>('/api/v1/admin/roles', body);
 export const updateRole = (id: string, body: RoleInput) =>
