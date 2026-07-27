@@ -31,6 +31,11 @@
   let email = $state('');
   let password = $state('');
   let cpf = $state('');
+  // R-KYC #50: identidade confrontada com a base autorizada.
+  let nomeCompleto = $state('');
+  let nascimento = $state(''); // YYYY-MM-DD (input date)
+  let sexo = $state<'' | 'M' | 'F'>('');
+  let tituloEleitor = $state(''); // opcional
   let busy = $state(false);
   let serverError = $state<string | null>(null);
   let cpfTouched = $state(false);
@@ -118,10 +123,18 @@
   let emailValid = $derived(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
   let passwordValid = $derived(password.length >= 8);
   let cpfValid = $derived(isValidCpf(cpf));
+  // Identidade (cidadão): nome com ao menos 2 palavras, data e sexo.
+  let nomeValid = $derived(nomeCompleto.trim().split(/\s+/).filter(Boolean).length >= 2);
+  let nascimentoValid = $derived(/^\d{4}-\d{2}-\d{2}$/.test(nascimento));
+  let sexoValid = $derived(sexo === 'M' || sexo === 'F');
+  let identidadeValid = $derived(
+    role !== 'cidadao' || (nomeValid && nascimentoValid && sexoValid),
+  );
   let valid = $derived(
     emailValid &&
       passwordValid &&
       cpfValid &&
+      identidadeValid &&
       (role === 'cidadao' ||
         (role === 'politico' && selectedMandate !== null) ||
         (role === 'candidato' && candValid)),
@@ -195,7 +208,12 @@
               party_sigla: candParty.trim().toUpperCase(),
               number: candNumber.trim() || undefined,
             })
-          : await register(email, password, onlyDigits(cpf));
+          : await register(email, password, onlyDigits(cpf), {
+              nome_completo: nomeCompleto.trim(),
+              nascimento,
+              sexo: sexo || undefined,
+              titulo_eleitor: onlyDigits(tituloEleitor) || undefined,
+            });
     busy = false;
 
     if (res.success) {
@@ -514,6 +532,47 @@
       : undefined}
   />
 
+  {#if role === 'cidadao'}
+    <Input
+      id="r-nome"
+      label="Nome completo"
+      placeholder="Como consta no seu documento"
+      autocomplete="name"
+      bind:value={nomeCompleto}
+      required
+      hint="Conferido com a base oficial pelo CPF."
+      error={nomeCompleto.length > 0 && !nomeValid
+        ? 'Informe nome e sobrenome.'
+        : undefined}
+    />
+    <div class="id-row">
+      <label class="id-field">
+        <span>Data de nascimento</span>
+        <input type="date" bind:value={nascimento} required class="id-input" />
+      </label>
+      <label class="id-field">
+        <span>Sexo</span>
+        <select bind:value={sexo} required class="id-input">
+          <option value="" disabled>Selecione</option>
+          <option value="F">Feminino</option>
+          <option value="M">Masculino</option>
+        </select>
+      </label>
+    </div>
+    <Input
+      id="r-titulo"
+      label="Título de eleitor (opcional)"
+      placeholder="000000000000"
+      autocomplete="off"
+      inputmode="numeric"
+      maxlength={14}
+      bind:value={tituloEleitor}
+      hint={onlyDigits(tituloEleitor).length > 0
+        ? 'Habilita seu poder de voto no sistema.'
+        : 'Sem o título, sua conta é criada, mas você NÃO terá poder de voto válido.'}
+    />
+  {/if}
+
   {#snippet atIcon()}<Icon name="at" size={16} />{/snippet}
   {#snippet lockIcon()}<Icon name="lock" size={16} />{/snippet}
 
@@ -543,6 +602,10 @@
 {/if}
 
 <style>
+  .id-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); margin-bottom: var(--sp-4); }
+  .id-field { display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-1); }
+  .id-input { font: inherit; font-weight: 400; padding: var(--sp-3); border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--surface-1); color: var(--text-1); }
+  .id-input:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--shadow-focus); }
   .sent {
     display: grid;
     gap: var(--sp-3);

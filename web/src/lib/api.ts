@@ -972,13 +972,34 @@ export interface SignupPendingData {
   email: string;
 }
 
+/** Dados de identidade pro cadastro de cidadão (confrontados com a base autorizada). */
+export interface SignupIdentity {
+  nome_completo?: string;
+  /** `YYYY-MM-DD` */
+  nascimento?: string;
+  /** `M` | `F` */
+  sexo?: string;
+  /** Título de eleitor (opcional; sem ele = sem poder de voto). */
+  titulo_eleitor?: string;
+}
+
 /** Inicia o cadastro de cidadão. Não emite sessão — dispara link por e-mail. */
-export const register = (email: string, password: string, cpf: string, orgId = DEFAULT_ORG_ID) =>
+export const register = (
+  email: string,
+  password: string,
+  cpf: string,
+  identity: SignupIdentity = {},
+  orgId = DEFAULT_ORG_ID,
+) =>
   apiPost<SignupPendingData>('/api/v1/auth/register', {
     org_id: orgId,
     email: email.trim(),
     password,
     cpf,
+    nome_completo: identity.nome_completo,
+    nascimento: identity.nascimento,
+    sexo: identity.sexo,
+    titulo_eleitor: identity.titulo_eleitor,
   });
 
 /**
