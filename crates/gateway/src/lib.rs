@@ -39,6 +39,7 @@ pub mod fediverso_admin;
 mod forum_federation;
 mod forum_mailer;
 pub mod govbr_oidc;
+pub mod intercoms;
 pub mod invitations;
 pub mod invite_campaign;
 pub mod lgpd;
