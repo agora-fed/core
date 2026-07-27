@@ -18,6 +18,14 @@ const langs: { code: 'pt' | 'en' | 'es'; name: string }[] = [
 ];
 const releasePdf = `/press/democraciabr-release-${c.lang}.pdf`;
 const zip = '/press/democraciabr-kit-imprensa.zip';
+
+// Callout do Manifesto/Visão — restrito à imprensa (linkado só daqui). Documento
+// em português; EN/ES sinalizam o idioma.
+const manifesto = {
+  pt: { label: 'Manifesto / Visão', desc: 'A tese completa: por que devolver o governo ao povo passa por elevar a capacidade de autogoverno — e como cada peça vira arquitetura.', note: '' },
+  en: { label: 'Manifesto / Vision', desc: 'The full thesis: why returning government to the people means raising the capacity for self-rule — and how each piece becomes architecture.', note: ' (em português)' },
+  es: { label: 'Manifiesto / Visión', desc: 'La tesis completa: por qué devolver el gobierno al pueblo pasa por elevar la capacidad de autogobierno — y cómo cada pieza se vuelve arquitectura.', note: ' (em português)' },
+}[c.lang];
 ---
 
 <section class="section">
@@ -43,6 +51,11 @@ const zip = '/press/democraciabr-kit-imprensa.zip';
         <a class="btn" href={releasePdf} download>{c.dl.releasePdf}</a>
       </p>
     </article>
+
+    <a class="manifesto-cta" href="/imprensa/manifesto">
+      <span class="mc-label">{manifesto.label}<span class="mc-note">{manifesto.note}</span> →</span>
+      <span class="mc-desc">{manifesto.desc}</span>
+    </a>
 
     <hr class="rule" />
 
@@ -121,6 +134,11 @@ const zip = '/press/democraciabr-kit-imprensa.zip';
   .release blockquote cite { display: block; margin-top: var(--sp-2); font-size: var(--fs-sm); font-style: normal; color: var(--text-3); }
   .closing a { color: var(--accent-strong); font-weight: var(--fw-semibold); }
   .release-dl { margin-top: var(--sp-4); }
+  .manifesto-cta { display: block; margin-top: var(--sp-5); padding: var(--sp-4); border: 1px solid var(--border-subtle); border-left: 3px solid var(--accent); border-radius: var(--r-md); background: var(--surface-2); text-decoration: none; }
+  .manifesto-cta:hover { border-color: var(--accent); }
+  .mc-label { display: block; font-weight: var(--fw-semibold); color: var(--accent-strong); margin-bottom: 4px; }
+  .mc-note { font-weight: var(--fw-regular); color: var(--text-3); }
+  .mc-desc { display: block; font-size: var(--fs-sm); color: var(--text-2); line-height: var(--lh-relaxed); }
   .rule { border: none; border-top: 1px solid var(--border-subtle); margin: var(--sp-6) 0; }
   .mk-title, h2 { color: var(--text-1); }
   h3 { color: var(--text-1); margin: var(--sp-5) 0 var(--sp-2); font-size: var(--fs-md); }
@@ -145,7 +163,7 @@ const zip = '/press/democraciabr-kit-imprensa.zip';
   @media (max-width: 560px) { .fact { grid-template-columns: 1fr; gap: 2px; } }
   /* PDF: só o material editorial; esconde nav de idioma e botões de download. */
   @media print {
-    .langbar, .downloads, .release-dl { display: none !important; }
+    .langbar, .downloads, .release-dl, .manifesto-cta { display: none !important; }
     .rule { margin: 1.2rem 0; }
     h1 { font-size: 1.6rem; }
   }
