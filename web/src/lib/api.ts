@@ -3207,6 +3207,17 @@ export const setPhone = (phone: string) =>
 export const verifyPhone = (code: string) =>
   apiPost<{ verified: boolean }>('/api/v1/me/phone/verify', { code });
 
+// Interesses do cidadão (áreas ministeriais) — perfil.
+export interface InterestArea {
+  slug: string;
+  name: string;
+  ministry: string | null;
+}
+export const getInterestAreas = () => apiGetCredentialed<InterestArea[]>('/api/v1/interest-areas');
+export const getMyInterests = () => apiGetCredentialed<string[]>('/api/v1/me/interests');
+export const setMyInterests = (areas: string[]) =>
+  apiPut<{ saved: boolean }>('/api/v1/me/interests', { areas });
+
 // ÁGORA F6 (#63) — 2FA por TOTP (app autenticador).
 export const getTotpStatus = () =>
   apiGetCredentialed<{ enabled: boolean }>('/api/v1/me/2fa/totp');

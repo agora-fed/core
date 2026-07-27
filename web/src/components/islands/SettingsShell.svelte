@@ -17,6 +17,7 @@
   import CampaignConsentPanel from './CampaignConsentPanel.svelte';
   import PhonePanel from './PhonePanel.svelte';
   import TotpPanel from './TotpPanel.svelte';
+  import InterestsPanel from './InterestsPanel.svelte';
   import FiltersPanel from './FiltersPanel.svelte';
   import PreferencesPanel from './PreferencesPanel.svelte';
   import ImportPanel from './ImportPanel.svelte';
@@ -80,6 +81,13 @@
           </p>
         </header>
         <ProfileForm />
+
+        <div class="spacer"></div>
+        <h3 class="grp">Meus interesses</h3>
+        <p class="muted small">
+          Áreas (baseadas na estrutura ministerial) sobre as quais você quer receber atualizações.
+        </p>
+        <InterestsPanel />
       </section>
     {:else if active === 'identidade'}
       <section class="section">

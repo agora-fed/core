@@ -43,6 +43,7 @@ mod forum_mailer;
 pub mod govbr_oidc;
 pub mod intercoms;
 pub mod intercoms_config;
+pub mod interests;
 pub mod invitations;
 pub mod invite_campaign;
 pub mod lgpd;
@@ -226,6 +227,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(campaign_consent::routes(state.clone()))
         // Telefone + verificação por OTP SMS (ÁGORA F5, #62).
         .merge(phone::routes(state.clone()))
+        // Interesses do cidadão (áreas ministeriais) — perfil.
+        .merge(interests::routes(state.clone()))
         // 2FA por TOTP — app autenticador (ÁGORA F6, #63).
         .merge(totp::routes(state.clone()))
         // Cidadania política — validação do título de eleitor.
