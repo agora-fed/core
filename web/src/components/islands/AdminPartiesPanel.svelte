@@ -12,6 +12,7 @@
     assignPartyAdministrator,
     removePartyAdministrator,
     sendBroadcast,
+    importContacts,
     type PartyDto,
     type DirectoryDto,
     type PartyAdministratorDto,
@@ -46,6 +47,12 @@
   let bcQuestions = $state<string[]>(['', '', '']);
   let bcResultLink = $state<string | null>(null);
   let municipalDirs = $derived(directories.filter((d) => d.esfera === 'municipal'));
+
+  // Form: base própria de contatos (F4)
+  let ctDirId = $state('');
+  let ctBasis = $state('consent');
+  let ctText = $state('');
+  let ctResult = $state<string | null>(null);
 
   async function reloadParties() {
     loading = true;
@@ -168,6 +175,29 @@
     bcSubject = '';
     bcBody = '';
     bcQuestions = ['', '', ''];
+  }
+
+  async function submitContacts(e: Event) {
+    e.preventDefault();
+    if (!selected) return;
+    if (!ctDirId) return toast.error('Escolha o diretório');
+    const tokens = ctText
+      .split(/[\s,;]+/)
+      .map((t) => t.trim())
+      .filter((t) => t.includes('@'));
+    if (tokens.length === 0) return toast.error('Cole ao menos um e-mail');
+    scopeBusy = true;
+    ctResult = null;
+    const res = await importContacts(selected, ctDirId, {
+      legal_basis: ctBasis,
+      contacts: tokens.map((email) => ({ email })),
+    });
+    scopeBusy = false;
+    if (!res.success) return toast.error(res.error?.message ?? 'Não foi possível importar');
+    const d = res.data;
+    ctResult = `${d?.inserted ?? 0} importados · ${d?.matched ?? 0} casados na base central · ${d?.duplicates ?? 0} duplicados · ${d?.invalid ?? 0} inválidos`;
+    toast.success('Contatos importados');
+    ctText = '';
   }
 
   onMount(reloadParties);
@@ -302,6 +332,40 @@
                 Micro-consulta criada: <a href={bcResultLink}>ver e responder</a> — o link também foi
                 no e-mail à base consentida.
               </p>
+            {/if}
+          {/if}
+
+          {#if directories.length > 0}
+            <hr />
+            <h3>Base própria de contatos</h3>
+            <p class="muted small">
+              O diretório sobe <strong>seus próprios</strong> contatos (base legal declarada). Fica
+              <strong>isolada</strong> e apagável em bloco (LGPD); verificamos contra a base central
+              (casa por e-mail e enriquece o domicílio). Cole os e-mails, um por linha.
+            </p>
+            <form class="mini col" onsubmit={submitContacts}>
+              <select bind:value={ctDirId} class="input" required>
+                <option value="" disabled>Diretório</option>
+                {#each directories as d (d.id)}
+                  <option value={d.id}>{scopeText(d)}</option>
+                {/each}
+              </select>
+              <select bind:value={ctBasis} class="input">
+                <option value="consent">Base legal: consentimento</option>
+                <option value="legitimate_interest">Base legal: legítimo interesse</option>
+                <option value="contract">Base legal: execução de contrato</option>
+              </select>
+              <textarea
+                bind:value={ctText}
+                class="input area"
+                placeholder="um e-mail por linha"
+                rows="4"
+                required
+              ></textarea>
+              <button class="btn" disabled={scopeBusy}>Importar contatos</button>
+            </form>
+            {#if ctResult}
+              <p class="muted small">{ctResult}</p>
             {/if}
           {/if}
         {/if}

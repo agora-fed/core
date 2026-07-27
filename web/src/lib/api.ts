@@ -3096,6 +3096,32 @@ export const assignPartyAdministrator = (
 export const removePartyAdministrator = (sigla: string, id: string) =>
   apiDelete<null>(`/api/v1/admin/parties/${encodeURIComponent(sigla)}/administrators/${id}`);
 
+// ÁGORA F4 (#61) — base própria de contatos por diretório (verificada contra a base central).
+export interface ContactImportResult {
+  received: number;
+  inserted: number;
+  duplicates: number;
+  matched: number;
+  invalid: number;
+}
+export const importContacts = (
+  sigla: string,
+  directoryId: string,
+  body: { legal_basis: string; contacts: { email: string; name?: string; phone?: string }[] },
+) =>
+  apiPost<ContactImportResult>(
+    `/api/v1/admin/parties/${encodeURIComponent(sigla)}/directories/${directoryId}/contacts/import`,
+    body,
+  );
+export const contactStats = (sigla: string, directoryId: string) =>
+  apiGetCredentialed<{ total: number; matched: number }>(
+    `/api/v1/admin/parties/${encodeURIComponent(sigla)}/directories/${directoryId}/contacts`,
+  );
+export const clearContacts = (sigla: string, directoryId: string) =>
+  apiDelete<{ deleted: number }>(
+    `/api/v1/admin/parties/${encodeURIComponent(sigla)}/directories/${directoryId}/contacts`,
+  );
+
 // ÁGORA F3 (#60) — broadcast consentido por diretório municipal.
 export const sendBroadcast = (
   sigla: string,
