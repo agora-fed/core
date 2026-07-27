@@ -1,0 +1,48 @@
+# ADR-0017 — Extração de dados cívicos: por plataforma, não por município; TSE como backbone
+
+- **Status:** Accepted
+- **Context:** Diretriz do Marcos (2026-07-27) — popular/enriquecer os ~70k mandatos com contatos
+  (nome, e-mail, telefone institucionais) sem manter um scraper por município. Ver épico em
+  git.pop.coop/brasil/democracia-social (issue de extração).
+
+## Decision
+
+Enriquecer a base de **mandatos** (não confundir com a base própria de campanha, `campaign_contact`
+do F4/#61 — pool distinto) por um pipeline de 4 camadas:
+
+### 1. Roster canônico — TSE dados abertos
+`dadosabertos.tse.jus.br` / DivulgaCandContas dão o roster de **todos os eleitos** (nome, cargo,
+partido, município, número). É a fonte da verdade de *quem tem mandato onde*. Atualiza **por
+eleição** (4 anos, escalonado: municipal 2024/2028, geral 2026/2030) — **não** ano a ano.
+
+### 2. Federal/estadual por API oficial
+Câmara (`dadosabertos.camara.leg.br`) + Senado (`legis.senado.leg.br`) já dão e-mail institucional
+estruturado (já em uso). 27 Assembleias Legislativas = 27 portais (não milhares).
+
+### 3. Municipal: extrair POR PLATAFORMA, não por município
+As ~5.570 câmaras rodam um punhado de plataformas. A maior é o **Portal Modelo / SAPL do Interlegis**
+(programa gratuito do Senado): **1.200+ câmaras** com a MESMA estrutura, e o SAPL tem **API**. Somados
+os vendors privados (`camaraonline.org`, IPM, Câmara Sem Papel…), **~5-10 extratores cobrem a maioria**.
+Fluxo: *fingerprint* de cada câmara → agrupa por plataforma → **um extrator por plataforma**.
+
+### 4. Casamento + ingestão
+Casar (nome + partido + município, fuzzy) com o roster do TSE → dedupe → alimentar o pipeline que já
+existe (`scripts/seed-*.py`, módulo `politico_contacts`).
+
+**Priorização por população** (grandes municípios concentram a maior parte da população em poucos %
+das câmaras): SP → PR → SC → RS → RJ → ES → MG → GO → MT → MS → BA → Nordeste.
+
+## Rationale
+
+Manter 5.570 scrapers é insustentável e frágil. Agrupar por software colapsa o problema em ~poucos
+extratores; o roster do TSE dá a espinha dorsal estável e evita depender de scraping para saber *quem*
+existe. A cadência real é eleitoral (4 anos), então o custo de manutenção é baixo entre pleitos.
+
+## Consequences
+
+- Conformidade: usar SÓ contato **institucional** (gabinete/câmara) — dado público de transparência;
+  nunca telefone/e-mail pessoal. Respeitar robots.txt/ToS. Accountability, não marketing.
+- Trabalho: (a) baixar/normalizar roster TSE; (b) mapa município→plataforma (fingerprint); (c)
+  extratores por plataforma (Interlegis/Portal Modelo + camaraonline.org primeiro); (d) casar + seed.
+- Ortogonal ao F4 (base própria de campanha) — este pipeline enriquece os MANDATOS da plataforma.
+- Candidato a um workflow multi-agente (fan-out por município/UF, priorizado por população).
