@@ -103,3 +103,63 @@ impl MessageSender for SmtpProvider {
         Ok(())
     }
 }
+
+/// Config de um SMSGateway (app Android sms-gate.app) — URL do endpoint de mensagem + basic auth.
+/// Increment 1 (#69): config por env (nível plataforma). Config por escopo (diretório/campanha)
+/// cifrada = próximo passo.
+#[derive(Clone)]
+pub(crate) struct SmsConfig {
+    pub url: String,
+    pub user: Option<String>,
+    pub pass: Option<String>,
+}
+
+pub(crate) fn sms_from_env() -> Option<SmsConfig> {
+    let url = std::env::var("SMS_GATEWAY_URL").ok()?;
+    Some(SmsConfig {
+        url,
+        user: std::env::var("SMS_GATEWAY_USER").ok(),
+        pass: std::env::var("SMS_GATEWAY_PASS").ok(),
+    })
+}
+
+/// Provider de SMS via SMSGateway (app Android sms-gate.app). POST JSON
+/// `{message, phoneNumbers:[...]}` com basic auth. Só o canal `Sms`.
+pub struct SmsGatewayProvider {
+    cfg: SmsConfig,
+}
+
+impl SmsGatewayProvider {
+    pub(crate) fn new(cfg: SmsConfig) -> Self {
+        Self { cfg }
+    }
+
+    /// Lê a config do ambiente (`SMS_GATEWAY_*`); `None` quando não há gateway configurado.
+    pub(crate) fn from_env() -> Option<Self> {
+        sms_from_env().map(Self::new)
+    }
+}
+
+#[async_trait]
+impl MessageSender for SmsGatewayProvider {
+    async fn send(&self, msg: &OutboundMessage) -> Result<(), BoxError> {
+        if msg.channel != Channel::Sms {
+            return Err("SmsGatewayProvider só envia SMS".into());
+        }
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()?;
+        let mut req = client.post(&self.cfg.url).json(&serde_json::json!({
+            "message": msg.body,
+            "phoneNumbers": [msg.to],
+        }));
+        if let (Some(u), Some(p)) = (self.cfg.user.as_ref(), self.cfg.pass.as_ref()) {
+            req = req.basic_auth(u, Some(p));
+        }
+        let resp = req.send().await?;
+        if !resp.status().is_success() {
+            return Err(format!("SMSGateway respondeu HTTP {}", resp.status()).into());
+        }
+        Ok(())
+    }
+}

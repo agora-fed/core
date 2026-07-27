@@ -3152,6 +3152,14 @@ export const grantCampaignConsent = (body: {
 }) => apiPost<string>('/api/v1/me/campaign-consent', body);
 export const revokeCampaignConsent = (id: string) =>
   apiDelete<null>(`/api/v1/me/campaign-consent/${id}`);
+
+// ÁGORA F5 (#62) — telefone + verificação por OTP SMS (opt-in).
+export const getPhoneStatus = () =>
+  apiGetCredentialed<{ phone: string | null; verified: boolean }>('/api/v1/me/phone');
+export const setPhone = (phone: string) =>
+  apiPost<{ sent: boolean }>('/api/v1/me/phone', { phone });
+export const verifyPhone = (code: string) =>
+  apiPost<{ verified: boolean }>('/api/v1/me/phone/verify', { code });
 export const createRole = (body: RoleInput) =>
   apiPost<{ ok: true }>('/api/v1/admin/roles', body);
 export const updateRole = (id: string, body: RoleInput) =>

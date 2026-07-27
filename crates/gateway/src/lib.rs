@@ -58,6 +58,7 @@ pub mod notification_receipts;
 pub mod notifications;
 pub mod og_cards;
 pub mod parlamentar_activity;
+pub mod phone;
 mod politico_contacts;
 pub mod politicos_ext;
 pub mod polls;
@@ -216,6 +217,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(me_settings::routes(state.clone()))
         // Consentimento de campanha do cidadão (ÁGORA F2, #59).
         .merge(campaign_consent::routes(state.clone()))
+        // Telefone + verificação por OTP SMS (ÁGORA F5, #62).
+        .merge(phone::routes(state.clone()))
         // Cidadania política — validação do título de eleitor.
         .merge(titulo_eleitor::routes(state.clone()))
         // Referência IBGE de municípios (selector UF→município do cadastro).
