@@ -54,10 +54,10 @@
     error = null;
     const [cat, rs] = await Promise.all([getPermissionCatalog(), listRoles()]);
     loading = false;
-    if (!cat.ok || !rs.ok) {
+    if (!cat.success || !rs.success) {
       error =
-        cat.error ??
-        rs.error ??
+        cat.error?.message ??
+        rs.error?.message ??
         'Não foi possível carregar (precisa da permissão roles.manage).';
       return;
     }
@@ -85,7 +85,7 @@
       highlighted: r.highlighted,
     };
     const m = await listRoleMembers(r.id);
-    members = m.ok && m.data ? m.data : [];
+    members = m.success && m.data ? m.data : [];
   }
 
   function cancelEdit() {
@@ -131,7 +131,7 @@
     if (res.success) {
       newMemberHandle = '';
       const m = await listRoleMembers(editing.id);
-      members = m.ok && m.data ? m.data : [];
+      members = m.success && m.data ? m.data : [];
     } else {
       toast.error(res.error?.message ?? 'Não foi possível adicionar.');
     }

@@ -207,7 +207,7 @@
   async function loadModeration() {
     if (!isLogged()) return;
     const res = await getMyPermissions();
-    if (res.ok && res.data) {
+    if (res.success && res.data) {
       const k = res.data.keys;
       canModerate =
         res.data.is_administrator ||

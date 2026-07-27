@@ -55,7 +55,7 @@
     loading = true;
     const res = await getTituloEleitor();
     loading = false;
-    if (res.ok && res.data) {
+    if (res.success && res.data) {
       status = res.data.titulo_status;
       last4 = res.data.titulo_last4;
       savedZona = res.data.titulo_zona;
