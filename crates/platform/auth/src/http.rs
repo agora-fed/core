@@ -31,7 +31,7 @@ use crate::mandate_invite::{AcceptRequest, MandateInviteService};
 use crate::password_reset::PasswordResetService;
 use crate::profile::{ProfileService, ProfileUpdate};
 use crate::service::{IssuedSession, ZitadelAuth};
-use crate::signup_verify::{ConfirmOutcome, SignupVerifyService};
+use crate::signup_verify::{ConfirmOutcome, SignupIdentity, SignupVerifyService};
 
 /// Build the routed service surface. Reads sovereign-issuer configuration from the environment
 /// (never hardcoded — PLAN.md principle 8). When the issuer/JWKS is unconfigured the endpoints
@@ -206,8 +206,21 @@ async fn register(
     let svc = SignupVerifyService::from_state(&state);
     let org = OrgId::from_uuid(req.org_id);
     let ip = caller_ip(&headers);
+    let identity = SignupIdentity {
+        nome_completo: req.nome_completo.clone(),
+        nascimento: req.nascimento.clone(),
+        sexo: req.sexo.clone(),
+        titulo_eleitor: req.titulo_eleitor.clone(),
+    };
     match svc
-        .request_cidadao(org, &req.email, &req.password, &req.cpf, ip.as_deref())
+        .request_cidadao(
+            org,
+            &req.email,
+            &req.password,
+            &req.cpf,
+            identity,
+            ip.as_deref(),
+        )
         .await
     {
         Ok(()) => (

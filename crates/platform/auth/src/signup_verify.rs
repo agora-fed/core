@@ -214,6 +214,22 @@ pub struct SignupVerifyService {
     ttl_secs: i64,
     session_ttl_secs: i64,
     cpf_verifier: std::sync::Arc<dyn CpfVerifier>,
+    identity_verifier: std::sync::Arc<dyn crate::identity_verify::IdentityVerifier>,
+}
+
+/// Dados de identidade auto-declarados no cadastro, confrontados com a base
+/// autorizada (R-KYC #50). Todos opcionais por compat; o front novo envia
+/// nome+nascimento+sexo (verificação) e, opcionalmente, o título de eleitor.
+#[derive(Debug, Clone, Default)]
+pub struct SignupIdentity {
+    /// Nome completo informado.
+    pub nome_completo: Option<String>,
+    /// Data de nascimento `YYYY-MM-DD`.
+    pub nascimento: Option<String>,
+    /// Sexo `M`/`F`.
+    pub sexo: Option<String>,
+    /// Título de eleitor (opcional; sem ele = sem poder de voto).
+    pub titulo_eleitor: Option<String>,
 }
 
 impl std::fmt::Debug for SignupVerifyService {
@@ -247,6 +263,8 @@ impl SignupVerifyService {
             ttl_secs,
             session_ttl_secs,
             cpf_verifier: std::sync::Arc::new(AlgorithmicCpfVerifier),
+            // Testes não têm serviço externo: Noop (skipped → cadastro segue).
+            identity_verifier: std::sync::Arc::new(crate::identity_verify::NoopIdentityVerifier),
         }
     }
 
@@ -285,6 +303,8 @@ impl SignupVerifyService {
             ttl_secs,
             session_ttl_secs,
             cpf_verifier: std::sync::Arc::new(AlgorithmicCpfVerifier),
+            // HTTP se CPF_VERIFY_URL estiver setada, senão Noop (degradação graciosa).
+            identity_verifier: crate::identity_verify::from_env(),
         }
     }
 
@@ -303,6 +323,7 @@ impl SignupVerifyService {
         email: &str,
         password: &str,
         cpf_raw: &str,
+        identity: SignupIdentity,
         request_ip: Option<&str>,
     ) -> Result<()> {
         self.request_common(
@@ -313,6 +334,7 @@ impl SignupVerifyService {
             PendingRole::Cidadao,
             None,
             None,
+            identity,
             request_ip,
         )
         .await
@@ -351,6 +373,7 @@ impl SignupVerifyService {
             PendingRole::Candidato,
             None,
             Some(meta_json),
+            SignupIdentity::default(),
             request_ip,
         )
         .await
@@ -393,6 +416,7 @@ impl SignupVerifyService {
             PendingRole::Politico,
             Some(mandate_id),
             None,
+            SignupIdentity::default(),
             request_ip,
         )
         .await
@@ -400,6 +424,7 @@ impl SignupVerifyService {
 
     // 8 args: o pipeline de signup é uma sequência linear de dados validados;
     // agrupar em struct só adicionaria uma camada sem callers extras (2 sites).
+    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     async fn request_common(
         &self,
@@ -410,6 +435,7 @@ impl SignupVerifyService {
         role: PendingRole,
         mandate_id: Option<Uuid>,
         candidate_meta: Option<serde_json::Value>,
+        identity: SignupIdentity,
         request_ip: Option<&str>,
     ) -> Result<()> {
         let now = self.clock.now();
@@ -433,6 +459,39 @@ impl SignupVerifyService {
         }
         let email = normalize_email(email)?;
         let cpf = Cpf::parse(cpf_raw)?;
+
+        // R-KYC #50: quando nome+data+sexo vêm informados, confronta com a base
+        // autorizada via o SaaS cpf-verify. REJEITA bloqueia o cadastro; as demais
+        // faixas (ACEITA/REVISA/ESCALA) e Skipped (serviço ausente/fora — fail-open)
+        // seguem. A revisão humana das faixas REVISA/ESCALA é tratada na fatia de
+        // persistência (parte 2); aqui só barramos o negativo claro.
+        if let (Some(nome), true) = (
+            identity
+                .nome_completo
+                .as_deref()
+                .filter(|s| !s.trim().is_empty()),
+            identity.nascimento.is_some() || identity.sexo.is_some(),
+        ) {
+            let query = crate::identity_verify::IdentityQuery {
+                cpf: cpf.as_str().to_owned(),
+                nome: nome.to_owned(),
+                nascimento: identity.nascimento.clone(),
+                sexo: identity.sexo.clone(),
+            };
+            let verdict = self.identity_verifier.verify_identity(&query).await;
+            if !verdict.allows_registration() {
+                tracing::info!(
+                    faixa = verdict.faixa().as_str(),
+                    "cadastro barrado na verificação"
+                );
+                return Err(Error::Validation(
+                    "não conseguimos confirmar seus dados (nome, data de nascimento ou sexo) \
+                     com o CPF informado. Confira as informações e tente novamente."
+                        .to_owned(),
+                ));
+            }
+        }
+
         // Trava mínima de senha aqui — bater com validação do register atual.
         if password.len() < 8 {
             return Err(Error::Validation(

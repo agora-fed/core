@@ -156,6 +156,16 @@ pub struct HttpIdentityVerifier {
     client: reqwest::Client,
 }
 
+impl std::fmt::Debug for HttpIdentityVerifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Nunca vaza a api_key no Debug.
+        f.debug_struct("HttpIdentityVerifier")
+            .field("endpoint", &self.endpoint)
+            .field("api_key", &"<redacted>")
+            .finish()
+    }
+}
+
 impl HttpIdentityVerifier {
     /// Constrói a partir de `CPF_VERIFY_URL` (base, ex. `http://cpf-verify.cpf-verify.svc:8090`)
     /// e `CPF_VERIFY_API_KEY`. Retorna `None` se qualquer uma faltar (→ usar Noop).

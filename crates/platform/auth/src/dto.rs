@@ -117,6 +117,21 @@ pub struct RegisterRequest {
     pub password: String,
     /// Brazilian CPF (any punctuation; validated by check digits).
     pub cpf: String,
+    /// Nome completo — confrontado com a base autorizada (R-KYC). Opcional por
+    /// compat: quando presente com data+sexo, o cadastro é verificado e bloqueia
+    /// em REJEITA. O front novo sempre envia.
+    #[serde(default)]
+    pub nome_completo: Option<String>,
+    /// Data de nascimento `YYYY-MM-DD`, pra verificação.
+    #[serde(default)]
+    pub nascimento: Option<String>,
+    /// Sexo `M`/`F`, pra verificação.
+    #[serde(default)]
+    pub sexo: Option<String>,
+    /// Título de eleitor (OPCIONAL). Sem ele, o cidadão não terá poder de voto
+    /// válido no sistema (comunicado na UI).
+    #[serde(default)]
+    pub titulo_eleitor: Option<String>,
 }
 
 /// Registration for a sitting/candidate parliamentarian: the standard sign-up fields plus
