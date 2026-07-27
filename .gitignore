@@ -25,3 +25,4 @@ web/playwright-report/
 web/.playwright/
 
 test-results/
+scripts/civic/__pycache__/
