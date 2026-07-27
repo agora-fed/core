@@ -46,3 +46,23 @@ existe. A cadência real é eleitoral (4 anos), então o custo de manutenção �
   extratores por plataforma (Interlegis/Portal Modelo + camaraonline.org primeiro); (d) casar + seed.
 - Ortogonal ao F4 (base própria de campanha) — este pipeline enriquece os MANDATOS da plataforma.
 - Candidato a um workflow multi-agente (fan-out por município/UF, priorizado por população).
+
+## Status de implementação (2026-07-27)
+
+Camada 3 (municipal por plataforma) **entregue e provada** para SAPL/Interlegis:
+
+- `migrations/0662_civic_source.sql` — catálogo município→plataforma+URL (aplicado local + prod).
+- `scripts/civic/sapl_client.py` — roster VIGENTE via `mandato/legislatura` + partido via `filiacao`;
+  paginação cobre os dois formatos SAPL (`pagination` e DRF).
+- `scripts/civic/fingerprint_sapl.py` — probe concorrente da convenção `sapl.<slug>.<uf>.leg.br` →
+  grava `civic_source`.
+- `scripts/civic/extract_sapl.py` — casa nome (fuzzy) + partido com `mandate`; **só e-mail
+  institucional** (transparência); enriquece `mandate.public_email` **apenas quando placeholder**;
+  **dry-run por padrão**, `--apply` grava.
+- `scripts/civic/confirmed_sapl_seed.sql` — 25 câmaras SAPL verificadas ao vivo (SP PR SC RS RJ ES MG).
+
+Prova end-to-end (slice de 25 câmaras × mandatos reais de prod): 26 câmaras respondendo, **499
+vereadores vigentes, 313 casados, 45 mandatos enriquecíveis** — matches conferidos manualmente.
+A cobertura por-e-mail depende da qualidade da fonte (capitais rodam portais próprios; municípios
+pequenos usam e-mail pessoal, que é descartado). Camadas 1/2/4 e o fan-out nacional seguem pendentes
+(workflow multi-agente com custo estimado). Atividade legislativa (atas/votações) → [ADR-0018](ADR-0018-legislative-activity-distillation.md).
