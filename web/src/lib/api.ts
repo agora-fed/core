@@ -3291,6 +3291,29 @@ export const getMyInterests = () => apiGetCredentialed<string[]>('/api/v1/me/int
 export const setMyInterests = (areas: string[]) =>
   apiPut<{ saved: boolean }>('/api/v1/me/interests', { areas });
 
+// Gestão admin das áreas de interesse (interest_area) — CRUD + contagem de uso.
+export interface AdminInterestArea {
+  slug: string;
+  name: string;
+  ministry: string | null;
+  position: number;
+  citizen_count: number;
+}
+export const getAdminInterestAreas = () =>
+  apiGetCredentialed<AdminInterestArea[]>('/api/v1/admin/interest-areas');
+export const createInterestArea = (body: {
+  slug: string;
+  name: string;
+  ministry?: string | null;
+  position?: number;
+}) => apiPost<AdminInterestArea>('/api/v1/admin/interest-areas', body);
+export const updateInterestArea = (
+  slug: string,
+  body: { name: string; ministry?: string | null; position?: number },
+) => apiPut<{ updated: boolean }>(`/api/v1/admin/interest-areas/${encodeURIComponent(slug)}`, body);
+export const deleteInterestArea = (slug: string) =>
+  apiDelete<{ deleted: boolean }>(`/api/v1/admin/interest-areas/${encodeURIComponent(slug)}`);
+
 // ÁGORA F6 (#63) — 2FA por TOTP (app autenticador).
 export const getTotpStatus = () =>
   apiGetCredentialed<{ enabled: boolean }>('/api/v1/me/2fa/totp');
