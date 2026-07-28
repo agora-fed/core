@@ -317,6 +317,11 @@
                   {#if u.titulo_status === 'validated' || u.titulo_status === 'verified'}
                     <Badge tone="success" size="sm">título ✓</Badge>
                   {/if}
+                  {#if u.cpf_status === 'validated'}
+                    <Badge tone="success" size="sm">CPF ✓</Badge>
+                  {:else if u.cpf_status}
+                    <Badge tone="warning" size="sm">CPF: {u.cpf_status}</Badge>
+                  {/if}
                   {#if !u.is_public}
                     <Badge tone="neutral" size="sm">privado</Badge>
                   {/if}

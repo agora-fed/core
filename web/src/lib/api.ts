@@ -1208,6 +1208,7 @@ export interface AdminUserRow {
   verification_level: string;
   is_public: boolean;
   titulo_status: string | null;
+  cpf_status: string | null;
   party_sigla: string | null;
   created_at: string;
   platform_role: 'owner' | 'admin' | 'auditor' | null;

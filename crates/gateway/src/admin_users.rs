@@ -105,6 +105,8 @@ pub struct AdminUserRow {
     pub verification_level: String,
     pub is_public: bool,
     pub titulo_status: Option<String>,
+    // Status da verificação de CPF (auth_credential.cpf_status): 'validated' | outro | NULL.
+    pub cpf_status: Option<String>,
     pub party_sigla: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     // Papel na plataforma (owner|admin|auditor) — NULL se não tem.
@@ -209,6 +211,7 @@ async fn list(
           c.verification_level,
           c.is_public,
           c.titulo_status,
+          ac.cpf_status,
           c.party_sigla,
           c.created_at,
           plat.role             AS platform_role,
