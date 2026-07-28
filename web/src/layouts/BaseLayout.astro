@@ -5,6 +5,7 @@ import Footer from '../components/Footer.astro';
 import CommandPalette from '../components/islands/CommandPalette.svelte';
 import AnnouncementBanner from '../components/islands/AnnouncementBanner.svelte';
 import ToastHost from '../components/ui/Toast.svelte';
+import ProfileGate from '../components/islands/ProfileGate.svelte';
 
 export interface Props {
   title: string;
@@ -105,5 +106,6 @@ const jsonLdList = jsonLd ? (Array.isArray(jsonLd) ? jsonLd : [jsonLd]) : [];
     <Footer />
     <CommandPalette client:idle />
     <ToastHost client:idle />
+    <ProfileGate client:load />
   </body>
 </html>

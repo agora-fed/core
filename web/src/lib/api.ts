@@ -930,6 +930,21 @@ export interface CivicSourcesResult {
   offset: number;
   items: CivicSource[];
 }
+// Completar cadastro obrigatório (0664) — usuários antigos sem nome/sexo/nascimento.
+export interface ProfileStatus {
+  complete: boolean;
+  missing: string[];
+  auto_handle: boolean;
+}
+export const getProfileStatus = () =>
+  apiGetCredentialed<ProfileStatus>('/api/v1/me/profile-status');
+export const completeProfile = (body: {
+  nome: string;
+  sexo: string;
+  nascimento: string;
+  handle?: string;
+}) => apiPost<{ complete: boolean }>('/api/v1/me/complete-profile', body);
+
 export const getCivicSourcesOverview = () =>
   apiGetCredentialed<CivicSourceOverviewRow[]>('/api/v1/admin/civic-sources/overview');
 export const getCivicSources = (params: {
