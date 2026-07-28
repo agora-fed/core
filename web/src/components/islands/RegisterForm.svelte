@@ -34,6 +34,7 @@
   let cpf = $state('');
   // R-KYC #50: identidade confrontada com a base autorizada.
   let nomeCompleto = $state('');
+  let nick = $state(''); // @handle do fediverso — obrigatório pro cidadão (0664)
   let nascimento = $state(''); // YYYY-MM-DD (input date)
   let sexo = $state<'' | 'M' | 'F'>('');
   let tituloEleitor = $state(''); // opcional
@@ -130,12 +131,14 @@
   let emailValid = $derived(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
   let passwordValid = $derived(password.length >= 8);
   let cpfValid = $derived(isValidCpf(cpf));
-  // Identidade (cidadão): nome com ao menos 2 palavras, data e sexo.
+  // Identidade (cidadão): nome com ao menos 2 palavras, nick, data e sexo.
   let nomeValid = $derived(nomeCompleto.trim().split(/\s+/).filter(Boolean).length >= 2);
+  // Nick: 3–30 chars, minúsculas/números/_ começando por letra (bate com o back).
+  let nickValid = $derived(/^[a-z][a-z0-9_]{2,29}$/.test(nick));
   let nascimentoValid = $derived(/^\d{4}-\d{2}-\d{2}$/.test(nascimento));
   let sexoValid = $derived(sexo === 'M' || sexo === 'F');
   let identidadeValid = $derived(
-    role !== 'cidadao' || (nomeValid && nascimentoValid && sexoValid),
+    role !== 'cidadao' || (nomeValid && nickValid && nascimentoValid && sexoValid),
   );
   // Domicílio obrigatório só pro cidadão.
   let residenciaValid = $derived(
@@ -244,6 +247,7 @@
               titulo_eleitor: onlyDigits(tituloEleitor) || undefined,
               uf: residUf,
               municipio_ibge: Number(residMunicipio),
+              handle: nick.trim().toLowerCase().replace(/^@/, ''),
             });
     busy = false;
 
@@ -574,6 +578,18 @@
       hint="Conferido com a base oficial pelo CPF."
       error={nomeCompleto.length > 0 && !nomeValid
         ? 'Informe nome e sobrenome.'
+        : undefined}
+    />
+    <Input
+      id="r-nick"
+      label="Nick de usuário (@ no fediverso)"
+      placeholder="ex.: maria_silva"
+      autocomplete="off"
+      bind:value={nick}
+      required
+      hint="É o seu @ público na rede. 3 a 30 caracteres: letras minúsculas, números ou _."
+      error={nick.length > 0 && !nickValid
+        ? 'Nick inválido: use 3–30 caracteres (a–z, 0–9, _), começando por letra.'
         : undefined}
     />
     <div class="id-row">

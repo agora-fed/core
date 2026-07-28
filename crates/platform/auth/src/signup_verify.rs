@@ -235,6 +235,34 @@ pub struct SignupIdentity {
     /// Município de domicílio (código IBGE). Obrigatório para cidadão; deve
     /// existir em `municipio_ibge` e pertencer à `uf`.
     pub municipio_ibge: Option<i32>,
+    /// Nick escolhido pro fediverso (handle). Obrigatório pro cidadão (0664).
+    pub handle: Option<String>,
+}
+
+/// Normaliza+valida um nick de fediverso: minúsculas, `[a-z0-9_]`, 3–30 chars.
+/// Retorna o handle normalizado ou erro de validação. Usado no cadastro (0664).
+pub fn normalize_handle(raw: &str) -> Result<String> {
+    let h = raw.trim().trim_start_matches('@').to_lowercase();
+    let ok = (3..=30).contains(&h.chars().count())
+        && h.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        && h.chars().next().is_some_and(|c| c.is_ascii_lowercase());
+    if ok {
+        Ok(h)
+    } else {
+        Err(Error::Validation(
+            "nick inválido: use 3 a 30 caracteres — letras minúsculas, números ou _, começando por letra"
+                .to_owned(),
+        ))
+    }
+}
+
+/// Mapeia o sexo do formulário (`F`/`M`) para o vocabulário de `citizen.gender`.
+fn sexo_to_gender(sexo: &str) -> Option<&'static str> {
+    match sexo.trim().to_uppercase().as_str() {
+        "F" => Some("mulher"),
+        "M" => Some("homem"),
+        _ => None,
+    }
 }
 
 impl std::fmt::Debug for SignupVerifyService {
@@ -525,6 +553,63 @@ impl SignupVerifyService {
             (None, None)
         };
 
+        // Dados pessoais OBRIGATÓRIOS pro cidadão (0664): nome (com sobrenome), sexo,
+        // nascimento e nick do fediverso. Político/candidato herdam nome/território do
+        // mandato/candidatura, então aqui ficam None. Título continua opcional.
+        let (full_name, gender, birth_date, handle) = if role == PendingRole::Cidadao {
+            let Some(nome) = identity
+                .nome_completo
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            else {
+                return Err(Error::Validation("informe seu nome completo".to_owned()));
+            };
+            if nome.split_whitespace().count() < 2 {
+                return Err(Error::Validation("informe nome e sobrenome".to_owned()));
+            }
+            let Some(gender) = identity.sexo.as_deref().and_then(sexo_to_gender) else {
+                return Err(Error::Validation("informe seu sexo".to_owned()));
+            };
+            let Some(birth_raw) = identity
+                .nascimento
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            else {
+                return Err(Error::Validation(
+                    "informe sua data de nascimento".to_owned(),
+                ));
+            };
+            let birth_date = chrono::NaiveDate::parse_from_str(birth_raw, "%Y-%m-%d")
+                .map_err(|_| Error::Validation("data de nascimento inválida".to_owned()))?;
+            let Some(handle_raw) = identity
+                .handle
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            else {
+                return Err(Error::Validation("escolha um nick de usuário".to_owned()));
+            };
+            let handle = normalize_handle(handle_raw)?;
+            if !queries::handle_available(&self.db, org.as_uuid(), &handle)
+                .await
+                .map_err(map_sqlx)?
+            {
+                return Err(Error::Validation(
+                    "esse nick já está em uso — escolha outro".to_owned(),
+                ));
+            }
+            (
+                Some(nome.to_owned()),
+                Some(gender.to_owned()),
+                Some(birth_date),
+                Some(handle),
+            )
+        } else {
+            (None, None, None, None)
+        };
+
         // Trava mínima de senha aqui — bater com validação do register atual.
         if password.len() < 8 {
             return Err(Error::Validation(
@@ -557,6 +642,10 @@ impl SignupVerifyService {
             expires_at,
             request_ip,
             now,
+            full_name.as_deref(),
+            gender.as_deref(),
+            birth_date,
+            handle.as_deref(),
         )
         .await
         .map_err(map_sqlx)?;
@@ -618,6 +707,10 @@ impl SignupVerifyService {
             expires_at,
             request_ip,
             now,
+            row.full_name.as_deref(),
+            row.gender.as_deref(),
+            row.birth_date,
+            row.handle.as_deref(),
         )
         .await
         .map_err(map_sqlx)?;
@@ -702,6 +795,8 @@ impl SignupVerifyService {
             .map_err(map_sqlx)?;
 
         let citizen = CitizenId::new();
+        // Dados pessoais do cadastro (0664): nome → display_name + legal_name (o nome
+        // civil informado é o mesmo que aparece), sexo → gender, nascimento → birth_date.
         queries::insert_credential_citizen(
             &mut *tx,
             citizen.as_uuid(),
@@ -710,19 +805,31 @@ impl SignupVerifyService {
             row.residencia_uf.as_deref(),
             row.residencia_municipio_ibge,
             now,
+            row.full_name.as_deref(),
+            row.full_name.as_deref(),
+            row.gender.as_deref(),
+            row.birth_date,
         )
         .await
         .map_err(map_register_sqlx)?;
 
-        // Onboarding federado (2026-07-26): TODO cidadão nasce com presença pública
-        // no fediverso — handle automático derivado do próprio id (único por
-        // construção; a pessoa troca depois nas configurações, ou fecha o perfil
-        // com is_public=false se quiser).
-        let auto_handle = format!(
-            "cidadao-{}",
-            &citizen.as_uuid().as_simple().to_string()[..8]
-        );
-        queries::set_handle_if_null(&mut *tx, citizen.as_uuid(), &auto_handle)
+        // Handle do fediverso: usa o NICK escolhido no cadastro (0664) se ainda estiver
+        // livre; senão cai no automático `cidadao-<id8>` (único por construção). Político/
+        // candidato (sem nick no cadastro) também caem no automático — trocam depois.
+        let chosen = match row.handle.as_deref() {
+            Some(h)
+                if queries::handle_available(&mut *tx, org.as_uuid(), h)
+                    .await
+                    .map_err(map_sqlx)? =>
+            {
+                h.to_owned()
+            }
+            _ => format!(
+                "cidadao-{}",
+                &citizen.as_uuid().as_simple().to_string()[..8]
+            ),
+        };
+        queries::set_handle_if_null(&mut *tx, citizen.as_uuid(), &chosen)
             .await
             .map_err(map_sqlx)?;
         queries::insert_credential(

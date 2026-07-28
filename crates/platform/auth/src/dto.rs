@@ -140,6 +140,10 @@ pub struct RegisterRequest {
     /// do cidadão — escopo municipal. Deve existir e pertencer à `uf` informada.
     #[serde(default)]
     pub municipio_ibge: Option<i32>,
+    /// Nick do fediverso (handle escolhido). OBRIGATÓRIO no cadastro do cidadão
+    /// (0664): 3–30 chars, `[a-z0-9_]`, começa por letra; único por org.
+    #[serde(default)]
+    pub handle: Option<String>,
 }
 
 /// Registration for a sitting/candidate parliamentarian: the standard sign-up fields plus

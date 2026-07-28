@@ -213,6 +213,7 @@ async fn register(
         titulo_eleitor: req.titulo_eleitor.clone(),
         uf: req.uf.clone(),
         municipio_ibge: req.municipio_ibge,
+        handle: req.handle.clone(),
     };
     match svc
         .request_cidadao(

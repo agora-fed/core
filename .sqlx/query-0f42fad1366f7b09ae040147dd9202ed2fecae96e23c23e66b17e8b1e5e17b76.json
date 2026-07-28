@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, forum_id, author_id, title, body, interaction_count,\n                  federated_interaction_count, score, comment_count,\n                  next_threshold_idx, created_at\n           FROM forum_topic WHERE id = $1 AND hidden_at IS NULL FOR UPDATE",
+  "query": "SELECT id, forum_id, author_id, title, body, interaction_count,\n                  federated_interaction_count, score, favor_count, contra_count,\n                  ponderacao_count, comment_count, next_threshold_idx, created_at\n           FROM forum_topic\n           WHERE forum_id = $1 AND hidden_at IS NULL\n           ORDER BY CASE WHEN $2 THEN score END DESC NULLS LAST, id DESC\n           LIMIT $3 OFFSET $4",
   "describe": {
     "columns": [
       {
@@ -45,23 +45,41 @@
       },
       {
         "ordinal": 8,
-        "name": "comment_count",
+        "name": "favor_count",
         "type_info": "Int8"
       },
       {
         "ordinal": 9,
+        "name": "contra_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "ponderacao_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 11,
+        "name": "comment_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 12,
         "name": "next_threshold_idx",
         "type_info": "Int4"
       },
       {
-        "ordinal": 10,
+        "ordinal": 13,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Uuid",
+        "Bool",
+        "Int8",
+        "Int8"
       ]
     },
     "nullable": [
@@ -75,8 +93,11 @@
       false,
       false,
       false,
+      false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "4ab3498ea1a86d506a9073853c9b59241f4e7732bab432995354998ed2bb96f1"
+  "hash": "0f42fad1366f7b09ae040147dd9202ed2fecae96e23c23e66b17e8b1e5e17b76"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO forum_topic_comment (id, topic_id, author_id, federated, body, created_at)\n           VALUES ($1, $2, $3, false, $4, $5)\n           RETURNING id, topic_id, author_id, remote_handle, federated, body, created_at",
+  "query": "SELECT id, topic_id, author_id, remote_handle, federated, stance,\n                  favor_count, contra_count, ponderacao_count, body, created_at\n           FROM forum_topic_comment WHERE id = $1 AND moderation = 'approved'",
   "describe": {
     "columns": [
       {
@@ -30,22 +30,38 @@
       },
       {
         "ordinal": 5,
-        "name": "body",
+        "name": "stance",
         "type_info": "Text"
       },
       {
         "ordinal": 6,
+        "name": "favor_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "contra_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "ponderacao_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "body",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Uuid",
-        "Uuid",
-        "Text",
-        "Timestamptz"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -54,9 +70,13 @@
       true,
       true,
       false,
+      true,
+      false,
+      false,
+      false,
       false,
       false
     ]
   },
-  "hash": "f74b45c087c4683886d3c3f3b6138253a69f2b8bf8bb48d369f10ed6e44cca85"
+  "hash": "d962bd5a5fe9479db8c4fb05fe4d3f38b8cca5f1e90b3da2e7ebeed3ffe02e27"
 }

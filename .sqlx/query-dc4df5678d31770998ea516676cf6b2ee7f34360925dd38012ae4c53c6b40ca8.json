@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO citizen (id, org_id, oidc_subject, verification_level, uf, municipio_ibge, created_at, display_name, legal_name, gender, birth_date) VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, $8, $9, $10)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Int4",
+        "Timestamptz",
+        "Text",
+        "Text",
+        "Text",
+        "Date"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dc4df5678d31770998ea516676cf6b2ee7f34360925dd38012ae4c53c6b40ca8"
+}

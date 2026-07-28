@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, org_id, email, password_hash, cpf, role, mandate_id, candidate_meta,\n               residencia_uf, residencia_municipio_ibge\n          FROM auth_pending_signup\n         WHERE org_id = $1 AND email = $2\n           AND used_at IS NULL AND expires_at > $3\n         ORDER BY created_at DESC\n         LIMIT 1\n        ",
+  "query": "\n        SELECT id, org_id, email, password_hash, cpf, role, mandate_id, candidate_meta,\n               residencia_uf, residencia_municipio_ibge,\n               full_name, gender, birth_date, handle\n          FROM auth_pending_signup\n         WHERE org_id = $1 AND email = $2\n           AND used_at IS NULL AND expires_at > $3\n         ORDER BY created_at DESC\n         LIMIT 1\n        ",
   "describe": {
     "columns": [
       {
@@ -52,6 +52,26 @@
         "ordinal": 9,
         "name": "residencia_municipio_ibge",
         "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "full_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "gender",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "birth_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 13,
+        "name": "handle",
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -71,8 +91,12 @@
       true,
       true,
       true,
+      true,
+      true,
+      true,
+      true,
       true
     ]
   },
-  "hash": "2f2e2394fd08bd0c15fd65b845b0b1f91531620fbca1b5c7615a97b3ef5ac9f8"
+  "hash": "df5c337aa9c02b3120972f6d53e359e5a40101a5499fe0d58467e5c0318bbbbb"
 }

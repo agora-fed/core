@@ -239,6 +239,7 @@ pub(crate) struct CredentialRow {
 }
 
 /// Insert a credential-authenticated citizen (no external OIDC subject).
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn insert_credential_citizen<'e, E: PgExecutor<'e>>(
     ex: E,
     id: Uuid,
@@ -247,20 +248,49 @@ pub(crate) async fn insert_credential_citizen<'e, E: PgExecutor<'e>>(
     uf: Option<&str>,
     municipio_ibge: Option<i32>,
     now: DateTime<Utc>,
+    display_name: Option<&str>,
+    legal_name: Option<&str>,
+    gender: Option<&str>,
+    birth_date: Option<chrono::NaiveDate>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        "INSERT INTO citizen (id, org_id, oidc_subject, verification_level, uf, municipio_ibge, created_at) \
-         VALUES ($1, $2, NULL, $3, $4, $5, $6)",
+        "INSERT INTO citizen \
+           (id, org_id, oidc_subject, verification_level, uf, municipio_ibge, created_at, \
+            display_name, legal_name, gender, birth_date) \
+         VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, $8, $9, $10)",
         id,
         org,
         level,
         uf,
         municipio_ibge,
-        now
+        now,
+        display_name,
+        legal_name,
+        gender,
+        birth_date,
     )
     .execute(ex)
     .await?;
     Ok(())
+}
+
+/// True se o `handle` (nick do fediverso) está livre no org (nenhum citizen o usa).
+/// Usado na validação do cadastro e no confirm (race entre register e confirm).
+pub(crate) async fn handle_available<'e, E: PgExecutor<'e>>(
+    ex: E,
+    org: Uuid,
+    handle: &str,
+) -> Result<bool, sqlx::Error> {
+    let taken = sqlx::query_scalar!(
+        r#"SELECT EXISTS(
+             SELECT 1 FROM citizen WHERE org_id = $1 AND lower(handle) = lower($2)
+           ) AS "taken!""#,
+        org,
+        handle,
+    )
+    .fetch_one(ex)
+    .await?;
+    Ok(!taken)
 }
 
 /// True se o código IBGE existe e pertence à UF informada. Valida o domicílio
@@ -1561,6 +1591,11 @@ pub(crate) struct PendingSignupRow {
     /// Domicílio informado no cadastro (só cidadão); aplicado no confirm (0653).
     pub residencia_uf: Option<String>,
     pub residencia_municipio_ibge: Option<i32>,
+    /// Dados pessoais obrigatórios (0664); aplicados ao citizen no confirm.
+    pub full_name: Option<String>,
+    pub gender: Option<String>,
+    pub birth_date: Option<chrono::NaiveDate>,
+    pub handle: Option<String>,
 }
 
 /// Insere um pending_signup. Caller pré-computou o SHA-256 do token (só o
@@ -1582,14 +1617,20 @@ pub(crate) async fn pending_signup_insert<'e, E: PgExecutor<'e>>(
     expires_at: DateTime<Utc>,
     request_ip: Option<&str>,
     now: DateTime<Utc>,
+    full_name: Option<&str>,
+    gender: Option<&str>,
+    birth_date: Option<chrono::NaiveDate>,
+    handle: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
         INSERT INTO auth_pending_signup
             (id, org_id, email, password_hash, cpf, role, mandate_id, candidate_meta,
              token_hash, expires_at, used_at, request_ip, created_at,
-             residencia_uf, residencia_municipio_ibge)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, $11, $12, $13, $14)
+             residencia_uf, residencia_municipio_ibge,
+             full_name, gender, birth_date, handle)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, $11, $12, $13, $14,
+                $15, $16, $17, $18)
         "#,
         id,
         org_id,
@@ -1605,6 +1646,10 @@ pub(crate) async fn pending_signup_insert<'e, E: PgExecutor<'e>>(
         now,
         residencia_uf,
         residencia_municipio_ibge,
+        full_name,
+        gender,
+        birth_date,
+        handle,
     )
     .execute(ex)
     .await?;
@@ -1647,7 +1692,8 @@ pub(crate) async fn pending_signup_find_live<'e, E: PgExecutor<'e>>(
         PendingSignupRow,
         r#"
         SELECT id, org_id, email, password_hash, cpf, role, mandate_id, candidate_meta,
-               residencia_uf, residencia_municipio_ibge
+               residencia_uf, residencia_municipio_ibge,
+               full_name, gender, birth_date, handle
           FROM auth_pending_signup
          WHERE token_hash = $1 AND used_at IS NULL AND expires_at > $2
         "#,
@@ -1695,7 +1741,8 @@ pub(crate) async fn pending_signup_find_live_for_email<'e, E: PgExecutor<'e>>(
         PendingSignupRow,
         r#"
         SELECT id, org_id, email, password_hash, cpf, role, mandate_id, candidate_meta,
-               residencia_uf, residencia_municipio_ibge
+               residencia_uf, residencia_municipio_ibge,
+               full_name, gender, birth_date, handle
           FROM auth_pending_signup
          WHERE org_id = $1 AND email = $2
            AND used_at IS NULL AND expires_at > $3

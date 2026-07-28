@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO forum_topic (id, forum_id, author_id, title, body, created_at)\n           VALUES ($1, $2, $3, $4, $5, $6)\n           RETURNING id, forum_id, author_id, title, body, interaction_count,\n                     federated_interaction_count, score, comment_count,\n                     next_threshold_idx, created_at",
+  "query": "SELECT id, topic_id, author_id, remote_handle, federated, stance,\n                  favor_count, contra_count, ponderacao_count, body, created_at\n           FROM forum_topic_comment\n           WHERE topic_id = $1 AND moderation = 'approved' AND hidden_at IS NULL\n             AND ($2::uuid IS NULL OR id > $2)\n           ORDER BY id\n           LIMIT $3",
   "describe": {
     "columns": [
       {
@@ -10,7 +10,7 @@
       },
       {
         "ordinal": 1,
-        "name": "forum_id",
+        "name": "topic_id",
         "type_info": "Uuid"
       },
       {
@@ -20,38 +20,38 @@
       },
       {
         "ordinal": 3,
-        "name": "title",
+        "name": "remote_handle",
         "type_info": "Text"
       },
       {
         "ordinal": 4,
-        "name": "body",
-        "type_info": "Text"
+        "name": "federated",
+        "type_info": "Bool"
       },
       {
         "ordinal": 5,
-        "name": "interaction_count",
-        "type_info": "Int8"
+        "name": "stance",
+        "type_info": "Text"
       },
       {
         "ordinal": 6,
-        "name": "federated_interaction_count",
+        "name": "favor_count",
         "type_info": "Int8"
       },
       {
         "ordinal": 7,
-        "name": "score",
+        "name": "contra_count",
         "type_info": "Int8"
       },
       {
         "ordinal": 8,
-        "name": "comment_count",
+        "name": "ponderacao_count",
         "type_info": "Int8"
       },
       {
         "ordinal": 9,
-        "name": "next_threshold_idx",
-        "type_info": "Int4"
+        "name": "body",
+        "type_info": "Text"
       },
       {
         "ordinal": 10,
@@ -63,19 +63,16 @@
       "Left": [
         "Uuid",
         "Uuid",
-        "Uuid",
-        "Text",
-        "Text",
-        "Timestamptz"
+        "Int8"
       ]
     },
     "nullable": [
       false,
       false,
+      true,
+      true,
       false,
-      false,
-      false,
-      false,
+      true,
       false,
       false,
       false,
@@ -83,5 +80,5 @@
       false
     ]
   },
-  "hash": "9a8ae36ba0ec915ee13b09ea4616fec6e73e391f47d11d4271c947315542b5e7"
+  "hash": "3e9b2744c752df1c0a76ac546ea4a30e0559f8887e768637a375f1656abfc968"
 }

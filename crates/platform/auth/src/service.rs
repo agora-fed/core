@@ -187,6 +187,10 @@ impl ZitadelAuth {
             None,
             None,
             now,
+            None,
+            None,
+            None,
+            None,
         )
         .await
         .map_err(map_register_sqlx)?;
@@ -268,6 +272,10 @@ impl ZitadelAuth {
             None,
             None,
             now,
+            None,
+            None,
+            None,
+            None,
         )
         .await
         .map_err(map_register_sqlx)?;

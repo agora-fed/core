@@ -1045,6 +1045,8 @@ export interface SignupIdentity {
   uf?: string;
   /** Município de domicílio (código IBGE). Obrigatório pro cidadão. */
   municipio_ibge?: number;
+  /** Nick do fediverso (handle escolhido). Obrigatório pro cidadão. */
+  handle?: string;
 }
 
 /** Inicia o cadastro de cidadão. Não emite sessão — dispara link por e-mail. */
@@ -1066,6 +1068,7 @@ export const register = (
     titulo_eleitor: identity.titulo_eleitor,
     uf: identity.uf,
     municipio_ibge: identity.municipio_ibge,
+    handle: identity.handle,
   });
 
 /**
