@@ -1209,6 +1209,12 @@ export interface AdminUserRow {
   is_public: boolean;
   titulo_status: string | null;
   cpf_status: string | null;
+  legal_name: string | null;
+  gender: string | null;
+  birth_date: string | null;
+  uf: string | null;
+  municipio: string | null;
+  cpf_masked: string | null;
   party_sigla: string | null;
   created_at: string;
   platform_role: 'owner' | 'admin' | 'auditor' | null;

@@ -201,6 +201,27 @@
     });
   }
 
+  const GENDER_LABEL: Record<string, string> = {
+    mulher: 'Feminino',
+    homem: 'Masculino',
+    'nao-binarie': 'Não-binárie',
+    'prefiro-nao-dizer': 'Prefiro não dizer',
+  };
+  function genderLabel(g: string | null): string {
+    if (!g) return '— não informado —';
+    return GENDER_LABEL[g] ?? g;
+  }
+  function fmtBirth(d: string | null): string {
+    if (!d) return '— não informado —';
+    // birth_date vem como 'YYYY-MM-DD' (date puro); evita fuso do Date().
+    const [y, m, day] = d.split('-');
+    return day && m && y ? `${day}/${m}/${y}` : d;
+  }
+  function tituloLabel(s: string | null): string {
+    if (s === 'validated' || s === 'verified') return 'Verificado ✓';
+    return '— não informado (opcional) —';
+  }
+
   function civicBadges(u: AdminUserRow) {
     const out: { label: string; tone: 'success' | 'accent' | 'neutral' }[] = [];
     if (u.has_candidacy) out.push({ label: 'candidatura', tone: 'accent' });
@@ -408,6 +429,20 @@
         <span class="mono">{editing.email}</span>
       {/if}
     </p>
+
+    <div class="ficha">
+      <h4>Dados do cadastro</h4>
+      <dl>
+        <div><dt>Nome</dt><dd>{editing.display_name || editing.legal_name || '— não informado —'}</dd></div>
+        <div><dt>Nick (@fediverso)</dt><dd>@{editing.handle ?? '—'}</dd></div>
+        <div><dt>Sexo</dt><dd>{genderLabel(editing.gender)}</dd></div>
+        <div><dt>Nascimento</dt><dd>{fmtBirth(editing.birth_date)}</dd></div>
+        <div><dt>CPF</dt><dd class="mono">{editing.cpf_masked ?? '— não informado —'}</dd></div>
+        <div><dt>Título</dt><dd>{tituloLabel(editing.titulo_status)}</dd></div>
+        <div><dt>Estado</dt><dd>{editing.uf ?? '—'}</dd></div>
+        <div><dt>Município</dt><dd>{editing.municipio ?? '—'}</dd></div>
+      </dl>
+    </div>
 
     <div class="field">
       <label for="d-party">Filiação partidária</label>
@@ -631,6 +666,36 @@
     padding: 0;
     cursor: pointer;
     z-index: 90;
+  }
+  .ficha {
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-sm);
+    padding: var(--sp-3);
+    margin-bottom: var(--sp-4);
+    background: var(--surface-2);
+  }
+  .ficha h4 {
+    margin: 0 0 var(--sp-2);
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-3);
+  }
+  .ficha dl {
+    margin: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--sp-2) var(--sp-3);
+  }
+  .ficha dt {
+    font-size: var(--fs-xs);
+    color: var(--text-3);
+  }
+  .ficha dd {
+    margin: 0;
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semibold);
+    color: var(--text-1);
   }
   .drawer {
     position: fixed;

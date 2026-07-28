@@ -107,6 +107,13 @@ pub struct AdminUserRow {
     pub titulo_status: Option<String>,
     // Status da verificação de CPF (auth_credential.cpf_status): 'validated' | outro | NULL.
     pub cpf_status: Option<String>,
+    // Dados pessoais (obrigatórios no cadastro, 0664). CPF vem MASCARADO do servidor.
+    pub legal_name: Option<String>,
+    pub gender: Option<String>,
+    pub birth_date: Option<chrono::NaiveDate>,
+    pub uf: Option<String>,
+    pub municipio: Option<String>,
+    pub cpf_masked: Option<String>,
     pub party_sigla: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     // Papel na plataforma (owner|admin|auditor) — NULL se não tem.
@@ -212,6 +219,13 @@ async fn list(
           c.is_public,
           c.titulo_status,
           ac.cpf_status,
+          c.legal_name,
+          c.gender,
+          c.birth_date,
+          c.uf,
+          mi.nome AS municipio,
+          CASE WHEN ac.cpf IS NULL OR length(ac.cpf) < 5 THEN NULL
+               ELSE left(ac.cpf, 3) || '.***.***-' || right(ac.cpf, 2) END AS cpf_masked,
           c.party_sigla,
           c.created_at,
           plat.role             AS platform_role,
@@ -231,6 +245,7 @@ async fn list(
           c.silenced_at
           FROM citizen c
           LEFT JOIN auth_credential ac ON ac.citizen_id = c.id
+          LEFT JOIN municipio_ibge mi ON mi.codigo_ibge = c.municipio_ibge
           LEFT JOIN plat         ON plat.citizen_id = c.id
           LEFT JOIN party_admin  ON party_admin.citizen_id = c.id
           LEFT JOIN mib_agg      ON mib_agg.citizen_id = c.id
