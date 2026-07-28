@@ -17,6 +17,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|_| "DATABASE_URL must be set (IPv6-first, e.g. postgres://dsoc@[::1]/...)")?;
     let db = dsoc_db::connect(&database_url, 16).await?;
 
+    // Localização ativa da instalação (ADR-0015): Pindorama → l10n_br. A instalação declara o país
+    // via INSTALL_L10N (ISO-3166-1 alfa-2); default = BR. Resolvida no boot só para log/validação —
+    // as rotas (CPF/título/municípios) já consomem dsoc-l10n-br atrás dos traits do core.
+    let country = std::env::var("INSTALL_L10N").unwrap_or_else(|_| "BR".to_owned());
+    match dsoc_l10n_br::resolve(&country) {
+        Some(_) => tracing::info!(country = %country, "l10n ativa: l10n_br (CPF + Título + IBGE)"),
+        None => tracing::warn!(
+            country = %country,
+            "INSTALL_L10N sem módulo l10n_<cc> — só l10n_br está implementado; usando BR"
+        ),
+    }
+
     let clock = Arc::new(SystemClock);
     let bus = Arc::new(PgEventBus::new(db.clone()));
     let authz = dsoc_auth::authorization(db.clone(), clock.clone(), bus.clone());

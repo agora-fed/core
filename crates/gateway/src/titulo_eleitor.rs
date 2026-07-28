@@ -71,65 +71,12 @@ fn server_error() -> Response {
 }
 
 // ---------------------------------------------------------------------------
-// Validador do título (algoritmo TSE oficial)
+// Validador do título — algoritmo TSE oficial (l10n_br, ADR-0015)
 // ---------------------------------------------------------------------------
-
-/// Extrai só dígitos + valida comprimento 12.
-fn normalize(raw: &str) -> Option<Vec<u8>> {
-    let digits: Vec<u8> = raw
-        .chars()
-        .filter_map(|c| c.to_digit(10).map(|d| d as u8))
-        .collect();
-    if digits.len() != 12 {
-        return None;
-    }
-    Some(digits)
-}
-
-/// Valida os 2 DVs conforme regra oficial TSE (docs.tse.jus.br + Serpro).
-/// Estrutura: `SEQ (8 dígitos) | UF (2 dígitos, 01–28) | DV1 | DV2`.
-/// Regra: DV1 = mod 11 sobre SEQ com pesos 2..=9; se SEQ = 0 e UF∈{01,02}
-/// (SP, MG) e DV1 == 0, então DV1 vira 1. DV2 = mod 11 sobre UF+DV1 com pesos
-/// 7,8,9. Resto 10 vira 0 (idem para SP/MG passando a 1).
-fn check_digits(d: &[u8]) -> bool {
-    let seq = &d[..8];
-    let uf = ((d[8] as u32) * 10 + d[9] as u32) as u8;
-    if !(1..=28).contains(&uf) {
-        return false;
-    }
-    let dv1_expected = d[10];
-    let dv2_expected = d[11];
-
-    // DV1
-    let mut sum: u32 = 0;
-    for (i, dig) in seq.iter().enumerate() {
-        sum += (*dig as u32) * ((i as u32) + 2);
-    }
-    let mut dv1 = (sum % 11) as u8;
-    if dv1 == 10 {
-        dv1 = 0;
-    }
-    if dv1 == 0 && matches!(uf, 1 | 2) {
-        dv1 = 1;
-    }
-    if dv1 != dv1_expected {
-        return false;
-    }
-
-    // DV2
-    let d8 = d[8] as u32;
-    let d9 = d[9] as u32;
-    let d10 = dv1 as u32;
-    let sum2 = d8 * 7 + d9 * 8 + d10 * 9;
-    let mut dv2 = (sum2 % 11) as u8;
-    if dv2 == 10 {
-        dv2 = 0;
-    }
-    if dv2 == 0 && matches!(uf, 1 | 2) {
-        dv2 = 1;
-    }
-    dv2 == dv2_expected
-}
+// A validação algorítmica do Título de Eleitor é código Brasil-específico e vive em
+// `dsoc_l10n_br::voter` (`BrVoterRegistration`), por trás do trait agnóstico
+// `dsoc_core::VoterRegistration`. O handler `submit` abaixo delega a validação; a UX/rota fica
+// idêntica.
 
 // ---------------------------------------------------------------------------
 // GET /me/titulo-eleitor
@@ -286,13 +233,17 @@ async fn submit(
             }
         };
     };
-    let Some(digits) = normalize(raw_titulo) else {
-        return bad("O título deve ter 12 dígitos (sem pontos ou espaços).");
+    // Validação algorítmica TSE atrás do trait dsoc_core::VoterRegistration (ADR-0015).
+    // As mensagens de erro são idênticas às de antes (preservadas em BrVoterRegistration).
+    use dsoc_core::VoterRegistration as _;
+    let normalized = match dsoc_l10n_br::BrVoterRegistration.validate(raw_titulo) {
+        Ok(n) => n,
+        Err(dsoc_core::Error::Validation(msg)) => return bad(&msg),
+        Err(err) => {
+            tracing::error!(?err, "submit_titulo validate");
+            return server_error();
+        }
     };
-    if !check_digits(&digits) {
-        return bad("Título de eleitor inválido — verifique os dígitos e tente novamente.");
-    }
-    let normalized: String = digits.iter().map(|d| char::from(b'0' + d)).collect();
     // Atualiza; ON CONFLICT via UNIQUE parcial dá violação → 409.
     let res = sqlx::query(
         r"UPDATE citizen
@@ -341,39 +292,8 @@ fn is_unique_violation(err: &sqlx::Error) -> bool {
 mod tests {
     use super::*;
 
-    #[test]
-    fn normalizes_and_rejects_wrong_length() {
-        assert!(normalize("123").is_none());
-        assert!(normalize("12345678 9012").is_some());
-    }
-
-    #[test]
-    fn valid_titulo_passes() {
-        // Título real de teste dominio público (12 dígitos):
-        // 4321-0987-6543  (SP): sequência 43210987, UF 06, DVs computados abaixo
-        // Vamos usar um caso construído: SEQ=00000001, UF=03 (RJ) — calcular DVs
-        // SEQ=00000001 → sum = 1*9 = 9 → DV1 = 9
-        // UF=03, DV1=9 → sum2 = 0*7 + 3*8 + 9*9 = 24 + 81 = 105 → 105 % 11 = 6 → DV2=6
-        let raw = "000000010396";
-        let d = normalize(raw).unwrap();
-        assert!(check_digits(&d), "título construído com DVs válidos");
-    }
-
-    #[test]
-    fn invalid_dv_rejected() {
-        // Mesmo raw mas com DV errado.
-        let raw = "000000010397"; // DV2 errado
-        let d = normalize(raw).unwrap();
-        assert!(!check_digits(&d));
-    }
-
-    #[test]
-    fn invalid_uf_rejected() {
-        // UF=99 é fora do range [01..28].
-        let raw = "000000019900";
-        let d = normalize(raw).unwrap();
-        assert!(!check_digits(&d));
-    }
+    // Os testes da validação algorítmica do título (normalize/check_digits) migraram junto com a
+    // lógica para `dsoc_l10n_br::voter` (ADR-0015). Aqui ficam só os testes do handler HTTP.
 
     #[test]
     fn zona_secao_normalization() {

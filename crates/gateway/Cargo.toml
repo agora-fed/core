@@ -29,6 +29,8 @@ dsoc-consensus = { path = "../platform/consensus", features = ["model-embedder"]
 dsoc-moderation = { path = "../platform/moderation" }
 dsoc-admin = { path = "../platform/admin" }
 dsoc-storage = { path = "../platform/storage" }
+# l10n_br (ADR-0015): Título de Eleitor + IBGE atrás das abstrações do core.
+dsoc-l10n-br = { path = "../platform/l10n-br" }
 # clients
 dsoc-federation = { path = "../clients/federation" }
 # spaces
