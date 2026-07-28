@@ -1,0 +1,26 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminConsultationsPanel from '../../components/islands/AdminConsultationsPanel.svelte';
+---
+
+<AdminLayout
+  title="Consultas (admin)"
+  description="Gestão de consultas e micro-consultas: listar, ver perguntas e respostas, e encerrar."
+>
+  <header class="head">
+    <h1>Consultas — gestão</h1>
+    <p class="muted">
+      Todas as consultas e micro-consultas da plataforma (inclusive as criadas pelos broadcasts de
+      campanha). Filtre por status ou título, abra uma linha para ver as perguntas e o agregado das
+      respostas (concordo/neutro/discordo) e <strong>encerre</strong> uma consulta aberta. O
+      encerramento é definitivo — não há reabertura.
+    </p>
+  </header>
+  <AdminConsultationsPanel client:load />
+</AdminLayout>
+
+<style>
+  .head { margin-bottom: var(--sp-5); }
+  h1 { margin: 0 0 var(--sp-1); }
+  .head p { max-width: 48rem; }
+</style>
