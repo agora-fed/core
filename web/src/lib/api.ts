@@ -906,6 +906,47 @@ export const getPoliticoContacts = (params: {
   );
 };
 
+// ÁGORA #72 (ADR-0017) — mapa município→plataforma (civic_source).
+export interface CivicSourceOverviewRow {
+  platform: string;
+  probe_status: string;
+  total: number;
+  parlamentares: number | null;
+}
+export interface CivicSource {
+  id: string;
+  uf: string;
+  municipio: string;
+  platform: string;
+  base_url: string | null;
+  probe_status: string;
+  parlamentares_found: number | null;
+  last_probed_at: string | null;
+  last_extracted_at: string | null;
+}
+export interface CivicSourcesResult {
+  total: number;
+  limit: number;
+  offset: number;
+  items: CivicSource[];
+}
+export const getCivicSourcesOverview = () =>
+  apiGetCredentialed<CivicSourceOverviewRow[]>('/api/v1/admin/civic-sources/overview');
+export const getCivicSources = (params: {
+  uf?: string;
+  platform?: string;
+  status?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
+}) => {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== '' && v !== null) qs.set(k, String(v));
+  }
+  return apiGetCredentialed<CivicSourcesResult>(`/api/v1/admin/civic-sources?${qs.toString()}`);
+};
+
 /** O parlamentar registra uma promessa pública (gate MIN_OFFICIAL_LEVEL no backend). */
 export const recordPromise = (mandateId: string, text: string) =>
   apiPost<PromiseDto>(

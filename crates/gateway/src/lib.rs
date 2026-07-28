@@ -64,6 +64,7 @@ pub mod parlamentar_activity;
 pub mod party_dashboard;
 pub mod phone;
 mod politico_contacts;
+mod civic_sources;
 pub mod politicos_ext;
 pub mod polls;
 pub mod preferences;
@@ -266,6 +267,7 @@ pub fn api_router(state: AppState) -> Router {
         .merge(consultas_ext::routes(state.clone()))
         .merge(profile_nudge::routes(state.clone()))
         .merge(politico_contacts::routes(state.clone()))
+        .merge(civic_sources::routes(state.clone()))
         .merge(admin_forums::routes(state.clone()))
         // Formulário de contato público — nenhum e-mail exposto no site.
         .merge(contact::routes(state.clone()))

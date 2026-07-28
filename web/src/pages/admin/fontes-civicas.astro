@@ -1,0 +1,26 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import CivicSourcesPanel from '../../components/islands/CivicSourcesPanel.svelte';
+---
+
+<AdminLayout
+  title="Fontes cívicas (admin)"
+  description="Mapa município→plataforma: qual sistema cada câmara municipal roda (SAPL/Interlegis…) para extração de contatos por plataforma."
+>
+  <header class="head">
+    <h1>Fontes cívicas — mapa de plataformas</h1>
+    <p class="muted">
+      Qual software legislativo cada câmara municipal roda (<strong>SAPL/Interlegis</strong>,
+      camaraonline…), a URL-base e o status do probe. É a espinha dorsal da extração
+      <strong>por plataforma</strong> (ADR-0017): um extrator por sistema enriquece os mandatos
+      com contato institucional. Filtre por UF, plataforma ou status.
+    </p>
+  </header>
+  <CivicSourcesPanel client:load />
+</AdminLayout>
+
+<style>
+  .head { margin-bottom: var(--sp-5); }
+  h1 { margin: 0 0 var(--sp-1); }
+  .head p { max-width: 48rem; }
+</style>
