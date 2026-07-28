@@ -44,17 +44,17 @@ async fn list(State(state): State<AppState>, Query(q): Query<ListQuery>) -> Resp
             "Informe a UF como sigla de 2 letras (ex.: SP).",
         );
     }
-    let rows: Result<Vec<(i32, String)>, sqlx::Error> = sqlx::query_as(
-        "SELECT codigo_ibge, nome FROM municipio_ibge WHERE uf = $1 ORDER BY nome",
-    )
-    .bind(&uf)
-    .fetch_all(&state.db)
-    .await;
-    match rows {
+    // IBGE atrás da abstração agnóstica dsoc_core::TerritorialProvider (ADR-0015).
+    use dsoc_core::TerritorialProvider as _;
+    let provider = dsoc_l10n_br::BrTerritorialProvider::new(state.db.clone());
+    match provider.municipalities(&uf).await {
         Ok(items) => {
             let dtos: Vec<MunicipioDto> = items
                 .into_iter()
-                .map(|(codigo_ibge, nome)| MunicipioDto { codigo_ibge, nome })
+                .map(|m| MunicipioDto {
+                    codigo_ibge: m.code,
+                    nome: m.name,
+                })
                 .collect();
             (StatusCode::OK, Json(ApiResponse::ok(dtos))).into_response()
         }

@@ -265,6 +265,12 @@ pub(crate) async fn insert_credential_citizen<'e, E: PgExecutor<'e>>(
 
 /// True se o código IBGE existe e pertence à UF informada. Valida o domicílio
 /// declarado no cadastro do cidadão (referência `municipio_ibge`, migration 0651).
+///
+// TODO(ADR-0015): esta leitura de IBGE é a mesma de
+// `dsoc_l10n_br::BrTerritorialProvider::municipality_in_subdivision`. Consolidar atrás do trait
+// `dsoc_core::TerritorialProvider` quando o fluxo de cadastro receber a localização injetada.
+// Mantida aqui por ora como `query_scalar!` (checagem em tempo de compilação, cache `.sqlx`),
+// sem mudar comportamento.
 pub(crate) async fn municipio_belongs_to_uf<'e, E: PgExecutor<'e>>(
     ex: E,
     codigo_ibge: i32,

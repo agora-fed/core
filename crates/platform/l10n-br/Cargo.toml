@@ -1,0 +1,25 @@
+[package]
+name = "dsoc-l10n-br"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Localização brasileira (l10n_br, ADR-0015): CPF + Título de Eleitor + IBGE atrás das abstrações agnósticas de país do dsoc-core."
+
+[lints]
+workspace = true
+
+[dependencies]
+dsoc-core = { path = "../../core" }
+dsoc-db = { path = "../../db" }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+reqwest = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+serde_json = { workspace = true }
