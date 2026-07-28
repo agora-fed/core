@@ -64,6 +64,7 @@ pub mod og_cards;
 pub mod parlamentar_activity;
 pub mod party_dashboard;
 pub mod phone;
+mod admin_consultations;
 mod politico_contacts;
 mod civic_sources;
 mod admin_interests;
@@ -272,6 +273,7 @@ pub fn api_router(state: AppState) -> Router {
         .merge(politico_contacts::routes(state.clone()))
         .merge(civic_sources::routes(state.clone()))
         .merge(admin_interests::routes(state.clone()))
+        .merge(admin_consultations::routes(state.clone()))
         .merge(admin_forums::routes(state.clone()))
         // Formulário de contato público — nenhum e-mail exposto no site.
         .merge(contact::routes(state.clone()))

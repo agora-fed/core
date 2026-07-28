@@ -945,6 +945,66 @@ export const completeProfile = (body: {
   handle?: string;
 }) => apiPost<{ complete: boolean }>('/api/v1/me/complete-profile', body);
 
+// Gestão admin de consultas (consultations_consultation) — listar/detalhar/fechar.
+export interface AdminConsultation {
+  id: string;
+  title: string;
+  status: string;
+  opens_at: string;
+  closes_at: string;
+  created_at: string;
+  question_count: number;
+  response_count: number;
+}
+export interface AdminConsultationsResult {
+  total: number;
+  limit: number;
+  offset: number;
+  items: AdminConsultation[];
+}
+export interface AdminConsultationQuestion {
+  id: string;
+  prompt: string;
+  position: number;
+  concordo: number;
+  neutro: number;
+  discordo: number;
+  total: number;
+}
+export interface AdminConsultationDetail {
+  id: string;
+  title: string;
+  status: string;
+  opens_at: string;
+  closes_at: string;
+  created_at: string;
+  questions: AdminConsultationQuestion[];
+}
+
+export const getAdminConsultations = (params: {
+  status?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
+}) => {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== '' && v !== null) qs.set(k, String(v));
+  }
+  return apiGetCredentialed<AdminConsultationsResult>(
+    `/api/v1/admin/consultations?${qs.toString()}`,
+  );
+};
+export const getAdminConsultation = (id: string) =>
+  apiGetCredentialed<AdminConsultationDetail>(
+    `/api/v1/admin/consultations/${encodeURIComponent(id)}`,
+  );
+export const closeAdminConsultation = (id: string) =>
+  apiPost<{ id: string; status: string }>(
+    `/api/v1/admin/consultations/${encodeURIComponent(id)}/close`,
+    {},
+  );
+
 export const getCivicSourcesOverview = () =>
   apiGetCredentialed<CivicSourceOverviewRow[]>('/api/v1/admin/civic-sources/overview');
 export const getCivicSources = (params: {
