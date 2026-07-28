@@ -66,3 +66,31 @@ vereadores vigentes, 313 casados, 45 mandatos enriquecíveis** — matches confe
 A cobertura por-e-mail depende da qualidade da fonte (capitais rodam portais próprios; municípios
 pequenos usam e-mail pessoal, que é descartado). Camadas 1/2/4 e o fan-out nacional seguem pendentes
 (workflow multi-agente com custo estimado). Atividade legislativa (atas/votações) → [ADR-0018](ADR-0018-legislative-activity-distillation.md).
+
+### Outras plataformas municipais (2026-07-27)
+
+Investigadas ao vivo as 3 plataformas não-SAPL do épico #72 (camaraonline, IPM, Câmara Sem Papel):
+
+- **camaraonline** — ENTREGUE e provado. Vendor privado, sem API: dados no HTML público. Assinatura
+  de fingerprint = link `camaraonline.org/cm_<slug>` no HTML; listagem em `/vereadores`; detalhe em
+  `/vereador/<id>/<slug>` (template moderno) ou `/vereadores/<id>/biografia` (legado). Convenção de
+  host `camara<slug>.<uf>.gov.br`. `scripts/civic/{camaraonline_client,fingerprint_camaraonline,
+  extract_camaraonline}.py` + `confirmed_camaraonline_seed.sql`. Reusa o matcher do `extract_sapl`.
+  Prova (Santana de Parnaíba/SP, 2026-07-27): 17 vereadores vigentes, 16 com e-mail institucional
+  `@camarasantanadeparnaiba.sp.gov.br`; casou 7/7 fixtures, enriqueceu 6 (o 7º só tinha gmail →
+  descartado; idempotente no rerun). O template legado (ex.: Caieiras) ofusca e-mail via Cloudflare
+  email-protection — NÃO decodificamos (sinal anti-scraping; ToS) → roster sim, e-mail não.
+
+- **IPM (Atende.net)** — NÃO extraível de forma limpa. Fingerprint confiável (`<slug>.atende.net`,
+  título "Portal do Cidadão", fragmentos `origem=".../static/portal/html/elementos/"`). A rota
+  `/cidadao/pagina/vereadores` existe, mas o conteúdo dos vereadores é renderizado por JS/AJAX
+  (componentes dinâmicos), ausente do HTML servido; os endpoints dinâmicos (`?rot=…`) são
+  **Disallow** no robots.txt. Sem motor JS e respeitando o robots, não há dado estruturado acessível;
+  e nenhum e-mail institucional aparece no HTML. Não foi construído extrator (evitar esboço quebrado).
+
+- **Câmara Sem Papel** — NÃO é uma plataforma única. É um conceito ("legislativo sem papel")
+  implementado por vários fornecedores distintos (1doc, Ágape, NOPAPER Cloud, SPL/ASP.NET…), sem
+  fingerprint nem endpoint uniforme. É um sistema de PROCESSO/documento legislativo (proposições,
+  assinatura digital), adjacente ao ADR-0018, não um diretório de contatos. A instância probada
+  (Caçapava/SP, `spl/parlamentares.aspx`) lista nomes de parlamentares mas **não publica e-mail**.
+  Não há alvo de extração de contato; nenhum extrator construído.
