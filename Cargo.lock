@@ -1373,6 +1373,7 @@ dependencies = [
  "dsoc-core",
  "dsoc-db",
  "dsoc-federation",
+ "dsoc-l10n-br",
  "image",
  "jsonwebtoken",
  "lettre",
@@ -1605,6 +1606,7 @@ dependencies = [
  "dsoc-federation",
  "dsoc-forums",
  "dsoc-initiatives",
+ "dsoc-l10n-br",
  "dsoc-mandates",
  "dsoc-meetings",
  "dsoc-moderation",
@@ -1623,6 +1625,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_urlencoded",
+ "sha1 0.10.6",
  "sha2 0.10.9",
  "sqlx 0.8.6",
  "tokio",
@@ -1653,6 +1656,21 @@ dependencies = [
  "tracing",
  "utoipa",
  "uuid",
+]
+
+[[package]]
+name = "dsoc-l10n-br"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "dsoc-core",
+ "dsoc-db",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx 0.8.6",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
