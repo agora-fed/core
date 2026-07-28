@@ -1,0 +1,26 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminInterestsPanel from '../../components/islands/AdminInterestsPanel.svelte';
+---
+
+<AdminLayout
+  title="Áreas de interesse (admin)"
+  description="Gestão das áreas temáticas ministeriais (interest_area) que o cidadão marca no perfil: adicionar, editar, reordenar e remover."
+>
+  <header class="head">
+    <h1>Áreas de interesse</h1>
+    <p class="muted">
+      As áreas temáticas (baseadas na estrutura <strong>ministerial</strong>) que o cidadão marca no
+      perfil para acompanhar (Saúde, Educação, Segurança…). Adicione, edite o nome/ministério,
+      reordene pela <strong>ordem</strong> ou remova. Uma área <strong>em uso</strong> por cidadãos
+      não pode ser removida.
+    </p>
+  </header>
+  <AdminInterestsPanel client:load />
+</AdminLayout>
+
+<style>
+  .head { margin-bottom: var(--sp-5); }
+  h1 { margin: 0 0 var(--sp-1); }
+  .head p { max-width: 48rem; }
+</style>
