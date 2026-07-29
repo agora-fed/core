@@ -734,7 +734,20 @@
         {@html mdToHtml(detail.topic.body)}
       </div>
 
-      <!-- Posições (fusão debates→fóruns): registrar/mudar a sua + contadores. -->
+      <!-- Placar por pontos (ADR-0019): sinal = qual lado ganha; ≥10 → encaminha ao gabinete. -->
+      <div class="f-score" class:pos={detail.topic.score > 0} class:neg={detail.topic.score < 0}>
+        <span class="f-score-num">{detail.topic.score > 0 ? '+' : ''}{detail.topic.score.toLocaleString('pt-BR')}</span>
+        <span class="f-score-lbl">pontos</span>
+        {#if detail.topic.score >= 10}
+          <span class="f-score-hint ok">✓ encaminhado ao gabinete</span>
+        {:else if detail.topic.score > 0}
+          <span class="f-score-hint">faltam {(10 - detail.topic.score).toLocaleString('pt-BR')} pra encaminhar ao gabinete</span>
+        {:else}
+          <span class="f-score-hint">apoio líquido negativo — não encaminha</span>
+        {/if}
+      </div>
+
+      <!-- Posições: registrar/mudar a sua + contagem de votos por lado. -->
       <div class="f-stances" role="group" aria-label="Sua posição">
         <button type="button" class="f-stance f-stance-favor" onclick={() => vote('favor')} disabled={busy}>
           A favor <strong>{detail.topic.favor.toLocaleString('pt-BR')}</strong>
@@ -979,6 +992,13 @@
   .f-t-contra::before { content: '▼ '; }
   .f-t-ponde { opacity: 0.7; }
   .f-t-ponde::before { content: '~ '; }
+  .f-score { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; margin: 0.9rem 0 0.4rem; padding: 0.6rem 0.9rem; border-radius: 10px; background: var(--surface-2, #f1f5f9); border: 1px solid var(--border-subtle, rgba(0,0,0,0.08)); }
+  .f-score-num { font-size: 1.6rem; font-weight: 800; color: var(--text-3, #64748b); }
+  .f-score.pos .f-score-num { color: var(--c-green-dark, #15803d); }
+  .f-score.neg .f-score-num { color: #dc2626; }
+  .f-score-lbl { font-size: 0.85rem; color: var(--text-3, #64748b); }
+  .f-score-hint { font-size: 0.8rem; color: var(--text-3, #64748b); margin-left: auto; }
+  .f-score-hint.ok { color: var(--c-green-dark, #15803d); font-weight: 600; }
   .f-stances { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; }
   .f-stance {
     border: 1px solid var(--c-border, #ccc); background: none; color: inherit;
