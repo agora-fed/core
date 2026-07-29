@@ -10,6 +10,7 @@ import type {
   ConsultaDetail,
   FeedItemDto,
   LikeResultDto,
+  MandateCrmDto,
   MandateDto,
   MandateInviteSummaryDto,
   MyMandateDto,
@@ -426,6 +427,17 @@ export const getPublicProfile = (handle: string, orgId = DEFAULT_ORG_ID) =>
 /** Reverse lookup: does the authenticated citizen operate a mandate? */
 export const getMyMandate = () =>
   apiGetCredentialed<MyMandateDto>('/api/v1/me/mandate');
+
+/** CRM de gabinete (C6): quem procurou o mandato e o que pediu. Gated pelo mesmo
+ *  vínculo do painel-mandato; só dado público (autoria de proposta dirigida).
+ *  Filtros opcionais por status e tema (recontam no servidor). */
+export const getMandateCrm = (opts?: { status?: string; theme?: string }) => {
+  const qs = new URLSearchParams();
+  if (opts?.status) qs.set('status', opts.status);
+  if (opts?.theme) qs.set('theme', opts.theme);
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  return apiGetCredentialed<MandateCrmDto>(`/api/v1/me/mandate/crm${suffix}`);
+};
 
 /** An official records a public response to an SLA. Identity comes from the cookie. */
 export const respondToSla = (slaId: string, body: string, committed: boolean) =>
