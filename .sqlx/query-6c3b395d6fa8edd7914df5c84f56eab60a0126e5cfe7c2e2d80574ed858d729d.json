@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT e.voters AS \"voters?\"\n           FROM forum f\n           LEFT JOIN electorate e ON f.esfera IS NOT NULL AND (\n                (f.esfera = 'municipal' AND f.uf IS NOT NULL AND f.municipio IS NOT NULL\n                    AND e.uf = f.uf AND e.municipio = f.municipio)\n             OR (f.esfera IN ('estadual', 'federal') AND f.uf IS NOT NULL\n                    AND e.uf = f.uf AND e.municipio IS NULL)\n             OR (f.esfera = 'federal' AND f.uf IS NULL\n                    AND e.uf = 'BR' AND e.municipio IS NULL)\n           )\n           WHERE f.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "voters?",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6c3b395d6fa8edd7914df5c84f56eab60a0126e5cfe7c2e2d80574ed858d729d"
+}

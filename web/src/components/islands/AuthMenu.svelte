@@ -177,8 +177,14 @@
           <a class="item" href="/rede">Seguindo e seguidores</a>
           <a class="item" href="/convites">Convidar pessoas</a>
           {#if isPolitico}
+            <!-- B3: cluster de campanha consolidado numa única seção "Campanha",
+                 visível SÓ para contas candidato (isPolitico). O cidadão comum —
+                 99% da base — nunca vê financiamento/grupo no menu nem no nav. -->
+            <hr class="sep" />
+            <p class="menu-kicker">Campanha</p>
             <a class="item" href="/servicos/painel">💰 Doações e financiamento</a>
             <a class="item" href="/meu-grupo">📣 Meu grupo de campanha</a>
+            <hr class="sep" />
           {/if}
           <a class="item" href="/configuracoes">Configurações</a>
           {#if isAdmin}
