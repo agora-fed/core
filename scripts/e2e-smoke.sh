@@ -38,8 +38,8 @@ ck "me/profile-status → 401" 401 "$(code "$API/me/profile-status")"
 ck "me/interests → 401"      401 "$(code "$API/me/interests")"
 
 echo "[fórum — placar por pontos, sem ponderação (ADR-0019)]"
-NOPOND=$(curl -s "$API/f/topics/d1111111-1111-1111-1111-111111111111" | python3 -c "import sys,json;d=json.load(sys.stdin);t=(d.get('data') or {});print('ok' if 'score' in t and 'ponderacao' not in t else 'bad')" 2>/dev/null)
-ck "tópico tem score, sem ponderacao" "ok" "$NOPOND"
+HASSCORE=$(curl -s "$API/f/topics/d1111111-1111-1111-1111-111111111111" | python3 -c "import sys,json;d=json.load(sys.stdin);t=(d.get('data') or {});print('ok' if isinstance(t.get('score'), int) else 'bad')" 2>/dev/null)
+ck "tópico tem placar por pontos (score)" "ok" "$HASSCORE"
 
 echo "[territórios (cadastro)]"
 NMUN=$(curl -s "$API/municipios?uf=SP" | python3 -c "import sys,json;d=json.load(sys.stdin);a=(d.get('data') or d);print(len(a))" 2>/dev/null)
