@@ -177,6 +177,40 @@ export interface MandateCrmDto {
   totals: CrmTotals;
 }
 
+/** Resultado declarado de um compromisso de mandato coletivo (D8.1).
+ *  `pendente` = ainda sem resultado; nunca é vinculação jurídica, só declaração. */
+export type CommitmentOutcome = 'seguiu' | 'nao_seguiu' | 'pendente';
+
+/** Agregado público da consulta ligada a um compromisso — só contagens, nunca voto por-cidadão. */
+export interface CommitmentConsultation {
+  consultation_id: string;
+  title: string;
+  status: string;
+  concordo: number;
+  neutro: number;
+  discordo: number;
+  total: number;
+}
+
+/** Um compromisso consultivo VOLUNTÁRIO declarado por um mandato coletivo (D8.1).
+ *  `kind` é sempre `'consultivo'` — a copy nunca promete vinculação. */
+export interface PublicCommitment {
+  id: string;
+  theme: string;
+  description: string;
+  kind: string;
+  outcome: CommitmentOutcome;
+  outcome_note: string | null;
+  created_at: string;
+  consultation: CommitmentConsultation | null;
+}
+
+/** Resposta de `GET /api/v1/politicos/{mandate_id}/commitments` (pública). */
+export interface MandateCommitmentsDto {
+  mandate_id: string;
+  commitments: PublicCommitment[];
+}
+
 /** Public per-politician scorecard summary. */
 export interface ScorecardDto {
   mandate_id: string;
