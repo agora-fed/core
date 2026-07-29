@@ -3461,3 +3461,61 @@ export const removeRoleMember = (id: string, citizenId: string) =>
   apiDelete<{ ok: true }>(
     `/api/v1/admin/roles/${encodeURIComponent(id)}/members/${encodeURIComponent(citizenId)}`,
   );
+
+// ---------------------------------------------------------------------------
+// Orçamento participativo — piloto de mandato (D8.3)
+// ---------------------------------------------------------------------------
+import type { OpRoundDto, OpRoundSummaryDto } from './types';
+
+/** Operador cria uma rodada (verba de emenda). Gate: vínculo de mandato. */
+export const createOpRound = (body: {
+  title: string;
+  budget_cents: number;
+  uf?: string | null;
+  municipio_ibge?: number | null;
+}) => apiPost<{ id: string }>('/api/v1/me/mandate/op/rounds', body);
+
+/** Operador avança a fase da rodada (propostas → votacao → resultado → execucao). */
+export const advanceOpPhase = (roundId: string, phase: string) =>
+  apiPost<{ phase: string }>(
+    `/api/v1/me/mandate/op/rounds/${encodeURIComponent(roundId)}/phase`,
+    { phase },
+  );
+
+/** Operador marca o status de execução de um item (prestação de contas). */
+export const markOpExecution = (
+  roundId: string,
+  itemId: string,
+  execution_status: string,
+) =>
+  apiPost<{ execution_status: string }>(
+    `/api/v1/me/mandate/op/rounds/${encodeURIComponent(roundId)}/items/${encodeURIComponent(itemId)}/execution`,
+    { execution_status },
+  );
+
+/** Cidadão logado submete um item (só na fase 'propostas'). */
+export const submitOpItem = (
+  roundId: string,
+  body: { title: string; description?: string; estimated_cents?: number | null },
+) => apiPost<{ id: string }>(`/api/v1/op/rounds/${encodeURIComponent(roundId)}/items`, body);
+
+/** Cidadão logado vota num item (só na fase 'votacao'). Upsert: 1 voto por rodada. */
+export const castOpVote = (roundId: string, itemId: string) =>
+  apiPost<{ voted: boolean; item_id: string }>(
+    `/api/v1/op/rounds/${encodeURIComponent(roundId)}/vote`,
+    { item_id: itemId },
+  );
+
+/** Superfície pública de uma rodada (rodada + itens + ranking). */
+export const getOpRound = (roundId: string) =>
+  apiGetCredentialed<OpRoundDto>(`/api/v1/op/rounds/${encodeURIComponent(roundId)}`);
+
+/** Rodadas de OP de um mandato (perfil do político). */
+export const getMandateOpRounds = (mandateId: string) =>
+  apiGetCredentialed<{ mandate_id: string; rounds: OpRoundSummaryDto[] }>(
+    `/api/v1/politicos/${encodeURIComponent(mandateId)}/op`,
+  );
+
+/** Rodadas recentes (descoberta + build-time SSG). Usa o GET simples (Fetched). */
+export const getRecentOpRounds = () =>
+  apiGet<{ rounds: OpRoundSummaryDto[] }>('/api/v1/op/rounds');

@@ -54,6 +54,7 @@ pub mod mastodon_api;
 pub mod mastodon_dto;
 pub mod mastodon_oauth;
 pub mod me_mandate_crm;
+pub mod me_mandate_op;
 pub mod me_settings;
 pub mod module_catalog;
 pub mod module_gate;
@@ -273,6 +274,7 @@ pub fn api_router(state: AppState) -> Router {
         // CRM de gabinete (C6): quem procurou o mandato e o que pediu — gated
         // pelo mesmo vínculo de mandato. Só dado público (autoria de proposta).
         .merge(me_mandate_crm::routes(state.clone()))
+        .merge(me_mandate_op::routes(state.clone()))
         // Grupos de campanha — canal proativo campanha→eleitor (0.39, Fase 2.3).
         .merge(campaign_groups::routes(state.clone()))
         .merge(consultas_ext::routes(state.clone()))

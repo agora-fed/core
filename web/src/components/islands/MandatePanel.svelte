@@ -20,6 +20,7 @@
     CrmStatus,
   } from '../../lib/types';
   import SlaClock from './SlaClock.svelte';
+  import MandateOpPanel from './MandateOpPanel.svelte';
 
   let loading = $state(true);
   let mine = $state<MyMandateDto | null>(null);
@@ -38,7 +39,7 @@
   let settled = $derived(slas.filter((s) => s.status !== 'pending'));
 
   // --- CRM de gabinete (C6): "quem te procurou e o que pediu" ------------------
-  type Tab = 'fila' | 'crm';
+  type Tab = 'fila' | 'crm' | 'op';
   let activeTab = $state<Tab>('fila');
   let crm = $state<MandateCrmDto | null>(null);
   let crmLoading = $state(false);
@@ -222,6 +223,13 @@
       onclick={() => selectTab('crm')}
     >
       Quem te procurou
+    </button>
+    <button
+      type="button"
+      class={`tab ${activeTab === 'op' ? 'is-active' : ''}`}
+      onclick={() => selectTab('op')}
+    >
+      Orçamento participativo
     </button>
   </nav>
 
@@ -464,6 +472,10 @@
         {/if}
       {/if}
     </section>
+  {/if}
+
+  {#if activeTab === 'op'}
+    <MandateOpPanel mandateId={mine.mandate.id} />
   {/if}
 {/if}
 
