@@ -104,6 +104,20 @@ pub struct CommentRow {
     pub created_at: DateTime<Utc>,
 }
 
+/// Um argumento-ponte (D8.2): o comentário mais os ENDOSSOS cruzados por lado do
+/// tópico. `favor_side`/`contra_side` = quantos endossantes deste argumento
+/// (voto `favor` no comentário) votaram, respectivamente, `favor`/`contra` NO
+/// TÓPICO. O bridge score é derivado por [`crate::domain::bridge_score`].
+#[derive(Debug, Clone)]
+pub struct BridgeCommentRow {
+    /// O comentário/argumento (local, aprovado).
+    pub comment: CommentRow,
+    /// Endossantes cuja posição no tópico é `favor`.
+    pub favor_side: i64,
+    /// Endossantes cuja posição no tópico é `contra`.
+    pub contra_side: i64,
+}
+
 /// Um recibo de envio institucional por patamar.
 #[derive(Debug, Clone)]
 pub struct DispatchRow {
@@ -632,6 +646,67 @@ pub async fn get_comment(
         body: r.body,
         created_at: r.created_at,
     })
+}
+
+/// Lista os ARGUMENTOS-PONTE candidatos de um tópico (D8.2): comentários locais
+/// aprovados que recebem endosso (`forum_comment_vote.stance = 'favor'`) de
+/// cidadãos posicionados em AMBOS os lados do tópico. Cruza cada endossante com
+/// sua posição no tópico (`forum_topic_vote`) e agrega por lado. O `HAVING`
+/// já descarta quem só tem apoio de um lado — a ordenação/corte por bridge score
+/// fica no chamador (a fórmula mora em `domain::bridge_score`, testada).
+///
+/// Nota: só posições `favor`/`contra` no tópico contam; endossantes que votaram
+/// no argumento mas não se posicionaram no tópico não entram na conta de ponte.
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn list_bridge_comments(
+    executor: impl sqlx::PgExecutor<'_>,
+    topic_id: Uuid,
+) -> Result<Vec<BridgeCommentRow>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT c.id, c.topic_id, c.author_id, c.remote_handle, c.federated, c.stance,
+                  c.favor_count, c.contra_count, c.ponderacao_count, c.body, c.created_at,
+                  (SELECT ci.karma FROM citizen ci WHERE ci.id = c.author_id) AS author_karma,
+                  COUNT(*) FILTER (WHERE tv.stance = 'favor')  AS "favor_side!",
+                  COUNT(*) FILTER (WHERE tv.stance = 'contra') AS "contra_side!"
+           FROM forum_topic_comment c
+           JOIN forum_comment_vote cv
+             ON cv.comment_id = c.id AND cv.stance = 'favor'
+           JOIN forum_topic_vote tv
+             ON tv.topic_id = c.topic_id AND tv.citizen_id = cv.citizen_id
+          WHERE c.topic_id = $1
+            AND c.moderation = 'approved'
+            AND c.hidden_at IS NULL
+            AND NOT c.federated
+          GROUP BY c.id
+         HAVING COUNT(*) FILTER (WHERE tv.stance = 'favor')  > 0
+            AND COUNT(*) FILTER (WHERE tv.stance = 'contra') > 0"#,
+        topic_id,
+    )
+    .fetch_all(executor)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| BridgeCommentRow {
+            comment: CommentRow {
+                id: r.id,
+                topic_id: r.topic_id,
+                author_id: r.author_id,
+                remote_handle: r.remote_handle,
+                federated: r.federated,
+                stance: r.stance,
+                favor_count: r.favor_count,
+                contra_count: r.contra_count,
+                ponderacao_count: r.ponderacao_count,
+                author_karma: r.author_karma,
+                body: r.body,
+                created_at: r.created_at,
+            },
+            favor_side: r.favor_side,
+            contra_side: r.contra_side,
+        })
+        .collect())
 }
 
 /// Upsert da posição do cidadão num ARGUMENTO (0545) — uma por par, mutável.

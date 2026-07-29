@@ -3024,9 +3024,35 @@ export interface ForumTopicDetailDto {
   aggregate_only: boolean;
 }
 
+/**
+ * Uma afirmação-ponte (D8.2 — síntese estilo Polis/vTaiwan): um argumento que
+ * reúne endosso ATRAVESSANDO a divisão favor×contra do tópico. `favor_side` e
+ * `contra_side` = endossos vindos de cada lado; `bridge_score` = média harmônica
+ * dos dois (quanto maior, mais o argumento UNE quem discorda).
+ */
+export interface ForumBridgeCommentDto {
+  comment: ForumCommentItemDto;
+  favor_side: number;
+  contra_side: number;
+  bridge_score: number;
+}
+
+/** Consenso de um tópico (D8.2): as afirmações-ponte do topo. Camada ADITIVA sobre o placar. */
+export interface ForumTopicConsensusDto {
+  topic_id: string;
+  bridges: ForumBridgeCommentDto[];
+  aggregate_only: boolean;
+}
+
 export const getForumTree = (path?: string) =>
   apiGet<ForumTreeDto>(
     `/api/v1/f/tree${path ? `?path=${encodeURIComponent(path)}` : ''}`,
+  );
+
+/** Top N afirmações-ponte de um tópico (D8.2) — "argumentos que uniram quem discorda". */
+export const getForumConsensus = (id: string, limit = 5) =>
+  apiGet<ForumTopicConsensusDto>(
+    `/api/v1/f/topics/${encodeURIComponent(id)}/consensus?limit=${limit}`,
   );
 
 export const getForumTopics = (path: string, sort: 'hot' | 'new' = 'hot') =>

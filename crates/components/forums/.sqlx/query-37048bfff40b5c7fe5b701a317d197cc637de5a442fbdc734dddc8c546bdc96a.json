@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE forum_topic t SET\n             favor_count = v.\"favor!\",\n             contra_count = v.\"contra!\",\n             score = pos.\"base!\" + amp.\"amp!\",\n             comment_count = c.\"local!\" + c.\"fede!\",\n             interaction_count = v.\"votes!\" + c.\"local!\" + cv.\"cvotes!\",\n             federated_interaction_count = c.\"fede!\"\n           FROM\n             (SELECT COUNT(*) FILTER (WHERE stance = 'favor') AS \"favor!\",\n                     COUNT(*) FILTER (WHERE stance = 'contra') AS \"contra!\",\n                     COUNT(*) AS \"votes!\"\n                FROM forum_topic_vote WHERE topic_id = $1) v,\n             (SELECT COUNT(*) FILTER (WHERE NOT federated) AS \"local!\",\n                     COUNT(*) FILTER (WHERE federated) AS \"fede!\"\n                FROM forum_topic_comment\n               WHERE topic_id = $1 AND moderation = 'approved') c,\n             (SELECT COUNT(*) AS \"cvotes!\"\n                FROM forum_comment_vote fcv\n                JOIN forum_topic_comment fc ON fc.id = fcv.comment_id\n               WHERE fc.topic_id = $1) cv,\n             -- base por votante: ±2 se a pessoa TAMBÉM comentou (argumentou), ±1 se só votou.\n             (SELECT COALESCE(SUM(\n                       CASE WHEN tv.stance = 'favor' THEN\n                              CASE WHEN EXISTS (SELECT 1 FROM forum_topic_comment fc2\n                                     WHERE fc2.topic_id = tv.topic_id AND fc2.author_id = tv.citizen_id\n                                       AND NOT fc2.federated AND fc2.moderation = 'approved')\n                                   THEN 2 ELSE 1 END\n                            ELSE\n                              CASE WHEN EXISTS (SELECT 1 FROM forum_topic_comment fc2\n                                     WHERE fc2.topic_id = tv.topic_id AND fc2.author_id = tv.citizen_id\n                                       AND NOT fc2.federated AND fc2.moderation = 'approved')\n                                   THEN -2 ELSE -1 END\n                       END), 0)::bigint AS \"base!\"\n                FROM forum_topic_vote tv WHERE tv.topic_id = $1) pos,\n             -- amplificação: voto no argumento × stance do argumento (matriz ADR-0019).\n             (SELECT COALESCE(SUM(\n                       CASE\n                         WHEN fc.stance = 'favor'  AND fcv.stance = 'favor'  THEN 2\n                         WHEN fc.stance = 'favor'  AND fcv.stance = 'contra' THEN -1\n                         WHEN fc.stance = 'contra' AND fcv.stance = 'favor'  THEN -2\n                         WHEN fc.stance = 'contra' AND fcv.stance = 'contra' THEN 1\n                         ELSE 0\n                       END), 0)::bigint AS \"amp!\"\n                FROM forum_comment_vote fcv\n                JOIN forum_topic_comment fc ON fc.id = fcv.comment_id\n               WHERE fc.topic_id = $1 AND fc.moderation = 'approved' AND NOT fc.federated) amp\n           WHERE t.id = $1\n           RETURNING t.interaction_count, t.federated_interaction_count, t.score",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "interaction_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "federated_interaction_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "score",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "37048bfff40b5c7fe5b701a317d197cc637de5a442fbdc734dddc8c546bdc96a"
+}

@@ -162,6 +162,32 @@ pub struct TopicDetailDto {
     pub aggregate_only: bool,
 }
 
+/// Uma **afirmação-ponte** (D8.2): um argumento endossado ATRAVESSANDO a divisão
+/// favor×contra do tópico — o que UNE quem discorda, não o placar de torcida.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct BridgeCommentDto {
+    /// O argumento (mesmo shape dos comentários; autor pseudonimizado em município pequeno).
+    pub comment: ForumCommentDto,
+    /// Endossos vindos de quem votou `favor` no tópico.
+    pub favor_side: i64,
+    /// Endossos vindos de quem votou `contra` no tópico.
+    pub contra_side: i64,
+    /// Bridge score = média harmônica dos dois lados (quanto maior, mais une).
+    pub bridge_score: f64,
+}
+
+/// Seção de **consenso** de um tópico (D8.2): as afirmações-ponte do topo,
+/// ordenadas por bridge score. Camada ADITIVA sobre o placar favor×contra.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct TopicConsensusDto {
+    /// Id do tópico.
+    pub topic_id: Uuid,
+    /// Afirmações-ponte ordenadas por bridge score (desc); vazio = ainda não há ponte.
+    pub bridges: Vec<BridgeCommentDto>,
+    /// Privacidade agregada ativa (D5/D6): autor pseudonimizado nos argumentos.
+    pub aggregate_only: bool,
+}
+
 /// Criação de tópico.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateTopicRequest {
@@ -312,6 +338,7 @@ pub fn routes(state: dsoc_app::AppState) -> Router<()> {
         .route("/f/recent", get(recent))
         .route("/f/topics", post(create_topic).get(list_topics))
         .route("/f/topics/{id}", get(get_topic))
+        .route("/f/topics/{id}/consensus", get(consensus))
         .route("/f/topics/{id}/vote", post(vote))
         .route("/f/topics/{id}/comments", post(comment))
         .route("/f/comments/{id}/vote", post(vote_comment))
@@ -473,6 +500,45 @@ async fn get_topic(State(state): State<dsoc_app::AppState>, Path(id): Path<Uuid>
             (StatusCode::OK, Json(ApiResponse::ok(dto))).into_response()
         }
         Err(e) => error_response::<TopicDetailDto>(&e),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ConsensusParams {
+    limit: Option<usize>,
+}
+
+/// `GET /f/topics/{id}/consensus?limit=` — as afirmações-ponte do topo (D8.2):
+/// argumentos que reúnem apoio dos DOIS lados do tópico, ordenados por bridge
+/// score. Leitura pública (mesma política dos demais GET de fórum). `limit`
+/// default = 5, teto = 20 (aplicado no serviço).
+async fn consensus(
+    State(state): State<dsoc_app::AppState>,
+    Path(id): Path<Uuid>,
+    Query(p): Query<ConsensusParams>,
+) -> Response {
+    let svc = ForumService::from_state(&state);
+    match svc.topic_consensus(id, p.limit.unwrap_or(5)).await {
+        Ok(c) => {
+            let protect = c.aggregate_only;
+            let bridges: Vec<BridgeCommentDto> = c
+                .bridges
+                .into_iter()
+                .map(|b| BridgeCommentDto {
+                    comment: comment_dto(b.comment, protect),
+                    favor_side: b.favor_side,
+                    contra_side: b.contra_side,
+                    bridge_score: b.bridge_score,
+                })
+                .collect();
+            let dto = TopicConsensusDto {
+                topic_id: id,
+                bridges,
+                aggregate_only: c.aggregate_only,
+            };
+            (StatusCode::OK, Json(ApiResponse::ok(dto))).into_response()
+        }
+        Err(e) => error_response::<TopicConsensusDto>(&e),
     }
 }
 

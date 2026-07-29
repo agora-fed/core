@@ -87,6 +87,30 @@ pub struct TopicDetail {
     pub aggregate_only: bool,
 }
 
+/// Um argumento-ponte já pontuado (D8.2) — pronto pra UI de consenso. Carrega o
+/// comentário, os endossos cruzados por lado e o bridge score (média harmônica).
+#[derive(Debug, Clone)]
+pub struct BridgeComment {
+    /// O comentário/argumento.
+    pub comment: CommentRow,
+    /// Endossantes cuja posição no tópico é `favor`.
+    pub favor_side: i64,
+    /// Endossantes cuja posição no tópico é `contra`.
+    pub contra_side: i64,
+    /// Bridge score = `domain::bridge_score(favor_side, contra_side)`.
+    pub bridge_score: f64,
+}
+
+/// Consenso de um tópico (D8.2): as afirmações-ponte do topo + o flag de
+/// privacidade agregada (D5/D6), que a UI usa pra pseudonimizar o autor.
+#[derive(Debug, Clone)]
+pub struct TopicConsensus {
+    /// As afirmações-ponte, já ordenadas por bridge score (desc) e cortadas em N.
+    pub bridges: Vec<BridgeComment>,
+    /// Município pequeno: omitir atribuição individual de autor (D5/D6).
+    pub aggregate_only: bool,
+}
+
 /// Serviço dos fóruns.
 #[derive(Clone)]
 pub struct ForumService {
@@ -336,6 +360,65 @@ impl ForumService {
             comments,
             dispatches,
             escalation_threshold,
+            aggregate_only,
+        })
+    }
+
+    /// **Consenso do tópico** (D8.2): as afirmações-ponte do topo — argumentos
+    /// endossados ATRAVESSANDO a divisão favor×contra — ordenadas por bridge score
+    /// (média harmônica dos dois lados; ver `domain::bridge_score`). Camada ADITIVA
+    /// sobre o placar de torcida: destaca o que UNE quem discorda.
+    ///
+    /// Ordena por bridge score desc, desempata por volume de endosso cruzado e
+    /// depois por recência (determinístico), e corta em `limit` (1..=20). Aplica a
+    /// MESMA régua de privacidade agregada do detalhe (D5/D6): em município
+    /// pequeno, o autor é pseudonimizado no chamador via `aggregate_only`.
+    ///
+    /// # Errors
+    /// [`Error::NotFound`] se o tópico não existe; [`Error::Storage`] em falha de I/O.
+    pub async fn topic_consensus(&self, topic_id: Uuid, limit: usize) -> Result<TopicConsensus> {
+        let limit = limit.clamp(1, 20);
+        let mut tx = self.db.begin().await.map_err(map_sqlx)?;
+        // lock_topic serve de checagem de existência e dá o forum_id p/ o eleitorado.
+        let Some(topic) = queries::lock_topic(&mut *tx, topic_id).await.map_err(map_sqlx)? else {
+            return Err(Error::NotFound("tópico não encontrado".to_owned()));
+        };
+        let rows = queries::list_bridge_comments(&mut *tx, topic_id)
+            .await
+            .map_err(map_sqlx)?;
+        let voters = queries::forum_territory_voters(&mut *tx, topic.forum_id)
+            .await
+            .map_err(map_sqlx)?;
+        tx.commit().await.map_err(map_sqlx)?;
+
+        let aggregate_only = dsoc_core::is_small_electorate(
+            voters,
+            env_i64(
+                "SMALL_MUNICIPALITY_ELECTORATE",
+                DEFAULT_SMALL_MUNICIPALITY_ELECTORATE,
+            ),
+        );
+
+        let mut bridges: Vec<BridgeComment> = rows
+            .into_iter()
+            .map(|r| BridgeComment {
+                bridge_score: domain::bridge_score(r.favor_side, r.contra_side),
+                comment: r.comment,
+                favor_side: r.favor_side,
+                contra_side: r.contra_side,
+            })
+            .collect();
+        // Ordenação estável e determinística: score ↓, depois volume cruzado ↓,
+        // depois mais recente (id v7 é monotônico no tempo) ↓.
+        bridges.sort_by(|a, b| {
+            b.bridge_score
+                .total_cmp(&a.bridge_score)
+                .then((b.favor_side + b.contra_side).cmp(&(a.favor_side + a.contra_side)))
+                .then(b.comment.id.cmp(&a.comment.id))
+        });
+        bridges.truncate(limit);
+        Ok(TopicConsensus {
+            bridges,
             aggregate_only,
         })
     }

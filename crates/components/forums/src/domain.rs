@@ -207,6 +207,46 @@ pub fn thresholds_to_fire(
     (fire, idx)
 }
 
+/// **Afirmação-ponte** (D8.2 do plano de crítica — síntese estilo Polis/vTaiwan):
+/// mede o quanto um argumento é endossado ATRAVESSANDO a divisão favor×contra do
+/// tópico. A entrada é o número de ENDOSSOS ao argumento (voto `favor` no
+/// comentário) vindos de cada lado do tópico:
+/// - `favor_side` = endossantes cuja posição NO TÓPICO é `favor`;
+/// - `contra_side` = endossantes cuja posição NO TÓPICO é `contra`.
+///
+/// Devolve a **média harmônica** dos dois lados:
+///
+/// ```text
+/// bridge = 2·f·c / (f + c)   (0 quando qualquer lado é 0)
+/// ```
+///
+/// Por que média harmônica (e não a soma favor+contra do placar de torcida):
+/// - vale **0** se só um lado endossa — não é ponte, é torcida;
+/// - é **dominada pelo lado mais fraco** (o "elo fraco"): uma ponte vale o que o
+///   lado que MENOS a apoia lhe dá, então recrutar só a própria facção não sobe
+///   o score — é preciso convencer o outro lado;
+/// - cresce com o volume E com o equilíbrio (máxima quando `f = c`), premiando o
+///   argumento que UNE quem discorda, não o que grita mais alto.
+///
+/// Pura e total: sem I/O, trivialmente testável (a fórmula mora aqui, não no SQL).
+#[must_use]
+#[allow(clippy::cast_precision_loss)] // contagens de votos são pequenas — sem perda relevante
+pub fn bridge_score(favor_side: i64, contra_side: i64) -> f64 {
+    if favor_side <= 0 || contra_side <= 0 {
+        return 0.0;
+    }
+    let f = favor_side as f64;
+    let c = contra_side as f64;
+    2.0 * f * c / (f + c)
+}
+
+/// Um argumento é **ponte** quando recebe endosso de AMBOS os lados do tópico
+/// (`favor_side ≥ 1` E `contra_side ≥ 1`). Só pontes entram na seção de consenso.
+#[must_use]
+pub const fn is_bridge(favor_side: i64, contra_side: i64) -> bool {
+    favor_side > 0 && contra_side > 0
+}
+
 /// Slugifica um nome de município/entidade para segmento de caminho
 /// (`"São Paulo"` → `"sao-paulo"`). Mesma regra do seed SQL.
 #[must_use]
@@ -319,6 +359,51 @@ mod tests {
     #[test]
     fn thresholds_empty_list_never_fires() {
         assert_eq!(thresholds_to_fire(999_999, &[], 0), (vec![], 0));
+    }
+
+    // --- afirmação-ponte (D8.2) ---
+
+    #[test]
+    fn bridge_score_zero_when_one_side_absent() {
+        // Só um lado endossa → não é ponte, é torcida.
+        assert_eq!(bridge_score(5, 0), 0.0);
+        assert_eq!(bridge_score(0, 5), 0.0);
+        assert_eq!(bridge_score(0, 0), 0.0);
+        // Contagens negativas (defensivo) também zeram.
+        assert_eq!(bridge_score(-3, 4), 0.0);
+        assert!(!is_bridge(5, 0));
+        assert!(!is_bridge(0, 5));
+        assert!(is_bridge(1, 1));
+    }
+
+    #[test]
+    fn bridge_score_is_dominated_by_the_weaker_side() {
+        // Elo fraco: recrutar só o próprio lado quase não move o score.
+        // f=10, c=1 → 2·10·1/11 ≈ 1.818 (perto de 2·c, não de f).
+        let lopsided = bridge_score(10, 1);
+        assert!((lopsided - 1.818_181).abs() < 1e-4);
+        // Empatar mais o lado fraco vale MUITO mais que inflar o lado forte:
+        // dobrar o forte (10→20) mal muda; dobrar o fraco (1→2) quase dobra.
+        assert!(bridge_score(20, 1) < bridge_score(10, 2));
+    }
+
+    #[test]
+    fn bridge_score_rewards_balance_and_volume() {
+        // Máxima no equilíbrio: para uma soma fixa (f+c=10), 5/5 > 9/1.
+        assert!(bridge_score(5, 5) > bridge_score(9, 1));
+        // Equilibrado, cresce com o volume: 5/5 > 2/2 > 1/1.
+        assert!(bridge_score(5, 5) > bridge_score(2, 2));
+        assert!(bridge_score(2, 2) > bridge_score(1, 1));
+        // Quando f = c, a média harmônica é exatamente c (elo fraco = ambos).
+        assert_eq!(bridge_score(4, 4), 4.0);
+        assert_eq!(bridge_score(1, 1), 1.0);
+    }
+
+    #[test]
+    fn bridge_score_is_symmetric() {
+        // Ponte não tem "lado de honra": favor↔contra dá o mesmo score.
+        assert_eq!(bridge_score(3, 7), bridge_score(7, 3));
+        assert_eq!(bridge_score(2, 9), bridge_score(9, 2));
     }
 
     #[test]

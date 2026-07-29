@@ -11,6 +11,7 @@
     adminUpdateForum,
     commentForumTopic,
     createForumTopic,
+    getForumConsensus,
     getForumTopic,
     getForumTopics,
     getForumTree,
@@ -27,6 +28,7 @@
     type ForumChildDto,
     type ForumCommentItemDto,
     type ForumDto,
+    type ForumTopicConsensusDto,
     type ForumTopicDetailDto,
     type ForumTopicDto,
   } from '../../lib/api';
@@ -55,6 +57,8 @@
   let muniFilter = $state('');
   // topic
   let detail = $state<ForumTopicDetailDto | null>(null);
+  // Consenso (D8.2): afirmações-ponte do tópico — carregado em paralelo ao detalhe.
+  let consensus = $state<ForumTopicConsensusDto | null>(null);
   // forms
   let title = $state('');
   let body = $state('');
@@ -187,10 +191,16 @@
       topics = tp.ok && tp.data ? tp.data.topics : [];
       void loadAdminInline(path);
     } else {
-      const res = await getForumTopic(topicId);
+      // Detalhe + consenso (D8.2) em paralelo. O consenso é ADITIVO: se falhar,
+      // a página do tópico segue funcionando (placar/colunas intactos).
+      const [res, cons] = await Promise.all([
+        getForumTopic(topicId),
+        getForumConsensus(topicId, 5),
+      ]);
       loading = false;
       if (res.ok && res.data) detail = res.data;
       else error = res.error ?? 'Tópico não encontrado.';
+      consensus = cons.ok && cons.data ? cons.data : null;
     }
   }
 
@@ -734,6 +744,40 @@
         {@html mdToHtml(detail.topic.body)}
       </div>
 
+      <!-- 🌉 Pontos de consenso (D8.2): ACIMA do placar de torcida. A síntese
+           estilo Polis/vTaiwan — os argumentos-ponte, endossados pelos DOIS
+           lados — vem ANTES do favor×contra. ADITIVO: não substitui o placar. -->
+      {#if consensus && consensus.bridges.length > 0}
+        <section class="f-consensus" aria-label="Pontos de consenso">
+          <h2 class="f-consensus-title">🌉 Pontos de consenso</h2>
+          <p class="f-consensus-lede muted small">
+            Argumentos que uniram quem discorda — endossados tanto por quem é
+            <strong>a favor</strong> quanto por quem é <strong>contra</strong> deste tópico.
+          </p>
+          <ol class="f-consensus-list">
+            {#each consensus.bridges as b (b.comment.id)}
+              <li class="f-bridge">
+                <div class="f-topic-text">
+                  <!-- eslint-disable-next-line svelte/no-at-html-tags — mdToHtml escapa TODO o input antes das regras -->
+                  {@html mdToHtml(b.comment.body)}
+                </div>
+                <div class="f-bridge-meta">
+                  <span class="f-bridge-badge" title="Endossado dos dois lados do tópico">
+                    🤝 {b.favor_side.toLocaleString('pt-BR')} do lado “a favor” · {b.contra_side.toLocaleString('pt-BR')} do lado “contra”
+                  </span>
+                  <span class="muted small f-bridge-author">
+                    — {b.comment.author}{#if b.comment.author_karma != null}<span class="f-karma" title="Reputação do autor">◆ {b.comment.author_karma.toLocaleString('pt-BR')}</span>{/if}
+                  </span>
+                </div>
+              </li>
+            {/each}
+          </ol>
+          {#if consensus.aggregate_only}
+            <p class="muted small">🛡️ Município pequeno: autoria pseudonimizada por privacidade.</p>
+          {/if}
+        </section>
+      {/if}
+
       <!-- Placar por pontos (ADR-0019 + D3): sinal = qual lado ganha; cruzar o
            patamar PROPORCIONAL ao eleitorado do território → encaminha ao gabinete. -->
       <div class="f-score" class:pos={detail.topic.score > 0} class:neg={detail.topic.score < 0}>
@@ -1001,6 +1045,15 @@
   .f-t-contra::before { content: '▼ '; }
   .f-t-ponde { opacity: 0.7; }
   .f-t-ponde::before { content: '~ '; }
+  /* 🌉 Pontos de consenso (D8.2): destaque ACIMA do placar de torcida. */
+  .f-consensus { margin: 1rem 0 0.5rem; padding: 0.9rem 1rem; border-radius: 12px; background: var(--accent-soft, #eef6ff); border: 1px solid var(--c-blue, #93c5fd); }
+  .f-consensus-title { margin: 0 0 0.25rem; font-size: 1.05rem; }
+  .f-consensus-lede { margin: 0 0 0.6rem; }
+  .f-consensus-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+  .f-bridge { padding: 0.55rem 0.7rem; border-radius: 9px; background: var(--surface, #fff); border: 1px solid var(--border-subtle, rgba(0,0,0,0.08)); }
+  .f-bridge-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem 0.6rem; margin-top: 0.35rem; }
+  .f-bridge-badge { font-size: 0.78rem; font-weight: 700; padding: 0.1rem 0.5rem; border-radius: 999px; background: var(--c-blue-soft, #dbeafe); color: var(--c-blue-dark, #1e40af); }
+  .f-bridge-author { margin-left: auto; }
   .f-score { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; margin: 0.9rem 0 0.4rem; padding: 0.6rem 0.9rem; border-radius: 10px; background: var(--surface-2, #f1f5f9); border: 1px solid var(--border-subtle, rgba(0,0,0,0.08)); }
   .f-score-num { font-size: 1.6rem; font-weight: 800; color: var(--text-3, #64748b); }
   .f-score.pos .f-score-num { color: var(--c-green-dark, #15803d); }
