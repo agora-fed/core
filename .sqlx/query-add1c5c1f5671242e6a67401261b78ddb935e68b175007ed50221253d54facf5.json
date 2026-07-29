@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO forum_topic_comment\n               (id, topic_id, author_id, federated, stance, body, created_at)\n           VALUES ($1, $2, $3, false, $4, $5, $6)\n           RETURNING id, topic_id, author_id, remote_handle, federated, stance,\n                     favor_count, contra_count, ponderacao_count, body, created_at",
+  "query": "INSERT INTO forum_topic_comment\n               (id, topic_id, author_id, federated, stance, body, created_at)\n           VALUES ($1, $2, $3, false, $4, $5, $6)\n           RETURNING id, topic_id, author_id, remote_handle, federated, stance,\n                     favor_count, contra_count, ponderacao_count, body, created_at,\n                     (SELECT ci.karma FROM citizen ci WHERE ci.id = author_id) AS author_karma",
   "describe": {
     "columns": [
       {
@@ -57,6 +57,11 @@
         "ordinal": 10,
         "name": "created_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "author_karma",
+        "type_info": "Int4"
       }
     ],
     "parameters": {
@@ -80,8 +85,9 @@
       false,
       false,
       false,
-      false
+      false,
+      null
     ]
   },
-  "hash": "f0577834db4430732345c545c7f9e3ced1439f1fb5ab14d53d2e8985710828c4"
+  "hash": "add1c5c1f5671242e6a67401261b78ddb935e68b175007ed50221253d54facf5"
 }

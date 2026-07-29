@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, topic_id, author_id, remote_handle, federated, stance,\n                  favor_count, contra_count, ponderacao_count, body, created_at\n           FROM forum_topic_comment\n           WHERE topic_id = $1 AND moderation = 'approved' AND hidden_at IS NULL\n             AND ($2::uuid IS NULL OR id > $2)\n           ORDER BY id\n           LIMIT $3",
+  "query": "SELECT id, topic_id, author_id, remote_handle, federated, stance,\n                  favor_count, contra_count, ponderacao_count, body, created_at,\n                  (SELECT ci.karma FROM citizen ci WHERE ci.id = author_id) AS author_karma\n           FROM forum_topic_comment WHERE id = $1 AND moderation = 'approved'",
   "describe": {
     "columns": [
       {
@@ -57,13 +57,16 @@
         "ordinal": 10,
         "name": "created_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "author_karma",
+        "type_info": "Int4"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Uuid",
-        "Int8"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -77,8 +80,9 @@
       false,
       false,
       false,
-      false
+      false,
+      null
     ]
   },
-  "hash": "3e9b2744c752df1c0a76ac546ea4a30e0559f8887e768637a375f1656abfc968"
+  "hash": "459b2dc43878a1f2914f63d1979ae9cee77cc11c2e5c728ed4d6e96b57c63fc0"
 }

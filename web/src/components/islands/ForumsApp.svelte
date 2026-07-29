@@ -813,7 +813,7 @@
                       {@html mdToHtml(c.body)}
                     </div>
                     <span class="muted small">
-                      {c.author} · {fmtDate(c.created_at)}
+                      {c.author}{#if c.author_karma != null}<span class="f-karma" title="Karma (reputação) do autor">◆ {c.author_karma.toLocaleString('pt-BR')}</span>{/if} · {fmtDate(c.created_at)}
                       · <button type="button" class="f-linklike" title="Denunciar este argumento à moderação" onclick={() => askReportComment(c)}>⚑ denunciar</button>
                       {#if canModerate}
                         · <button type="button" class="f-linklike f-linklike-danger" title="Remover este argumento (moderação)" onclick={() => removeComment(c)}>🗑 remover</button>
@@ -999,6 +999,7 @@
   .f-score-lbl { font-size: 0.85rem; color: var(--text-3, #64748b); }
   .f-score-hint { font-size: 0.8rem; color: var(--text-3, #64748b); margin-left: auto; }
   .f-score-hint.ok { color: var(--c-green-dark, #15803d); font-weight: 600; }
+  .f-karma { display: inline-block; margin-left: 0.35rem; padding: 0 0.4rem; border-radius: 6px; background: var(--accent-soft, #dcfce7); color: var(--c-green-dark, #15803d); font-weight: 700; font-size: 0.72rem; }
   .f-stances { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; }
   .f-stance {
     border: 1px solid var(--c-border, #ccc); background: none; color: inherit;

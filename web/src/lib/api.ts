@@ -2980,6 +2980,8 @@ export interface ForumTopicListDto {
 export interface ForumCommentItemDto {
   id: string;
   author: string;
+  /** Karma (reputação SO) do autor local; null p/ federado (ADR-0019). */
+  author_karma: number | null;
   federated: boolean;
   stance: ForumStance | null;
   favor: number;

@@ -113,6 +113,8 @@ pub struct ForumCommentDto {
     pub id: Uuid,
     /// Autor local (handle opaco) OU handle remoto.
     pub author: String,
+    /// Karma (reputação SO) do autor local (ADR-0019). `None` = federado/sem autor.
+    pub author_karma: Option<i32>,
     /// Veio do fediverso?
     pub federated: bool,
     /// Posição declarada com o argumento (`favor`|`contra`|`ponderacao`|null).
@@ -255,6 +257,7 @@ fn comment_dto(r: CommentRow) -> ForumCommentDto {
     ForumCommentDto {
         id: r.id,
         author,
+        author_karma: r.author_karma,
         federated: r.federated,
         stance: r.stance,
         favor: r.favor_count,

@@ -94,8 +94,10 @@ pub struct CommentRow {
     pub favor_count: i64,
     /// Votos contra.
     pub contra_count: i64,
-    /// Ponderações.
+    /// Ponderações (vestigial, sempre 0 pós-ADR-0019).
     pub ponderacao_count: i64,
+    /// Karma (reputação SO) do autor local, se local (ADR-0019). `None` = federado/sem autor.
+    pub author_karma: Option<i32>,
     /// Corpo.
     pub body: String,
     /// Criação.
@@ -528,7 +530,8 @@ pub async fn insert_local_comment(
                (id, topic_id, author_id, federated, stance, body, created_at)
            VALUES ($1, $2, $3, false, $4, $5, $6)
            RETURNING id, topic_id, author_id, remote_handle, federated, stance,
-                     favor_count, contra_count, ponderacao_count, body, created_at"#,
+                     favor_count, contra_count, ponderacao_count, body, created_at,
+                     (SELECT ci.karma FROM citizen ci WHERE ci.id = author_id) AS author_karma"#,
         id,
         topic_id,
         author_id,
@@ -548,6 +551,7 @@ pub async fn insert_local_comment(
         favor_count: r.favor_count,
         contra_count: r.contra_count,
         ponderacao_count: r.ponderacao_count,
+        author_karma: r.author_karma,
         body: r.body,
         created_at: r.created_at,
     })
@@ -565,7 +569,8 @@ pub async fn list_comments(
 ) -> Result<Vec<CommentRow>, sqlx::Error> {
     let rows = sqlx::query!(
         r#"SELECT id, topic_id, author_id, remote_handle, federated, stance,
-                  favor_count, contra_count, ponderacao_count, body, created_at
+                  favor_count, contra_count, ponderacao_count, body, created_at,
+                  (SELECT ci.karma FROM citizen ci WHERE ci.id = author_id) AS author_karma
            FROM forum_topic_comment
            WHERE topic_id = $1 AND moderation = 'approved' AND hidden_at IS NULL
              AND ($2::uuid IS NULL OR id > $2)
@@ -589,6 +594,7 @@ pub async fn list_comments(
             favor_count: r.favor_count,
             contra_count: r.contra_count,
             ponderacao_count: r.ponderacao_count,
+            author_karma: r.author_karma,
             body: r.body,
             created_at: r.created_at,
         })
@@ -605,7 +611,8 @@ pub async fn get_comment(
 ) -> Result<CommentRow, sqlx::Error> {
     let r = sqlx::query!(
         r#"SELECT id, topic_id, author_id, remote_handle, federated, stance,
-                  favor_count, contra_count, ponderacao_count, body, created_at
+                  favor_count, contra_count, ponderacao_count, body, created_at,
+                  (SELECT ci.karma FROM citizen ci WHERE ci.id = author_id) AS author_karma
            FROM forum_topic_comment WHERE id = $1 AND moderation = 'approved'"#,
         id,
     )
@@ -621,6 +628,7 @@ pub async fn get_comment(
         favor_count: r.favor_count,
         contra_count: r.contra_count,
         ponderacao_count: r.ponderacao_count,
+        author_karma: r.author_karma,
         body: r.body,
         created_at: r.created_at,
     })
