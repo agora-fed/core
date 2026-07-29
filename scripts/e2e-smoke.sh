@@ -48,6 +48,22 @@ ck "consenso responde com bridges[]" "ok" "$BRIDGES"
 echo "[CRM de gabinete — gated (401 sem sessão) (C6)]"
 ck "me/mandate/crm → 401" 401 "$(code "$API/me/mandate/crm")"
 
+echo "[B1 — fusão Propor≡Fórum (uma porta, uma régua)]"
+REDIR=$(curl -sL "$BASE/propostas/" | grep -c 'url=/f' 2>/dev/null)
+ck "/propostas meta-refresh → /f" 1 "$REDIR"
+
+echo "[D8.1 — mandato coletivo (compromisso consultivo)]"
+FEDID=$(curl -s "$API/mandates?org_id=$ORG&limit=1&sphere=federal" | python3 -c "import sys,json;d=json.load(sys.stdin);a=(d.get('data') or []);print(a[0]['id'] if a else '')" 2>/dev/null)
+ck "commitments público → 200" 200 "$(code "$API/politicos/$FEDID/commitments")"
+CMT401=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"theme":"t","description":"d"}' "$API/me/mandate/commitments")
+ck "criar compromisso sem sessão → 401" 401 "$CMT401"
+
+echo "[D8.3 — orçamento participativo (piloto de mandato)]"
+ck "op/rounds público → 200" 200 "$(code "$API/op/rounds")"
+ck "op do mandato público → 200" 200 "$(code "$API/politicos/$FEDID/op")"
+OP401=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"title":"t","budget_cents":1}' "$API/me/mandate/op/rounds")
+ck "criar rodada sem sessão → 401" 401 "$OP401"
+
 echo "[território (cadastro)]"
 NMUN=$(curl -s "$API/municipios?uf=SP" | python3 -c "import sys,json;d=json.load(sys.stdin);a=(d.get('data') or d);print(len(a))" 2>/dev/null)
 ck "municípios SP = 645" 645 "$NMUN"
