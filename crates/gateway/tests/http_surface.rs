@@ -2598,18 +2598,6 @@ async fn commitments_write_is_gated_read_is_public() {
             "/api/v1/me/mandate/commitments",
             None,
             r#"{"theme":"Tema","description":"Descrição do compromisso"}"#,
-// Orçamento participativo — piloto de mandato (D8.3)
-// ---------------------------------------------------------------------------
-
-#[tokio::test]
-async fn op_anonymous_cannot_create_round() {
-    let (app, _st) = app().await;
-    let resp = app
-        .oneshot(json_req(
-            "POST",
-            "/api/v1/me/mandate/op/rounds",
-            None,
-            r#"{"title":"Emenda 2026","budget_cents":50000000}"#,
         ))
         .await
         .unwrap();
@@ -2624,19 +2612,6 @@ async fn op_anonymous_cannot_create_round() {
             "/api/v1/me/mandate/commitments",
             Some(&plain_cookie),
             r#"{"theme":"Intruso","description":"Não deveria gravar"}"#,
-}
-
-#[tokio::test]
-async fn op_plain_citizen_cannot_create_round() {
-    let (app, st) = app().await;
-    // Conta comum, sem binding de mandato → não é operador.
-    let (_, _, cookie) = seed_session(&st.db).await;
-    let resp = app
-        .oneshot(json_req(
-            "POST",
-            "/api/v1/me/mandate/op/rounds",
-            Some(&cookie),
-            r#"{"title":"Emenda 2026","budget_cents":50000000}"#,
         ))
         .await
         .unwrap();
@@ -2698,15 +2673,6 @@ async fn commitment_declare_consult_and_outcome_flow() {
     let mandate = seed_mandate_binding(&st.db, org, operator).await;
 
     // 1) Declara o compromisso.
-}
-
-#[tokio::test]
-async fn op_full_cycle_operator_and_citizen() {
-    let (app, st) = app().await;
-    // Operador (vínculo de mandato) abre a rodada.
-    let (org, operator, op_cookie) = seed_session(&st.db).await;
-    let mandate = seed_mandate_binding(&st.db, org, operator).await;
-
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2714,22 +2680,16 @@ async fn op_full_cycle_operator_and_citizen() {
             "/api/v1/me/mandate/commitments",
             Some(&cookie),
             r#"{"theme":"Reforma tributária","description":"Consultar a base antes de votar."}"#,
-            "/api/v1/me/mandate/op/rounds",
-            Some(&op_cookie),
-            r#"{"title":"Verba de emenda 2026","budget_cents":250,"uf":"SP"}"#,
         ))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let id = body_json(resp).await["data"]["id"]
-    let round_id = body_json(resp).await["data"]["id"]
         .as_str()
         .unwrap()
         .to_owned();
 
     // 2) Abre a consulta ligada (reusa o crate consultations).
-    // Cidadão logado (outra conta na mesma org) submete um item na fase propostas.
-    let (_, _, voter_cookie) = seed_session_in_org(&st.db, org).await;
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2737,9 +2697,6 @@ async fn op_full_cycle_operator_and_citizen() {
             &format!("/api/v1/me/mandate/commitments/{id}/consult"),
             Some(&cookie),
             "{}",
-            &format!("/api/v1/op/rounds/{round_id}/items"),
-            Some(&voter_cookie),
-            r#"{"title":"Praça revitalizada","estimated_cents":150}"#,
         ))
         .await
         .unwrap();
@@ -2758,6 +2715,122 @@ async fn op_full_cycle_operator_and_citizen() {
     assert_eq!(cc, 1);
 
     // Abrir de novo é conflito (compromisso já tem consulta).
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/me/mandate/commitments/{id}/consult"),
+            Some(&cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+
+    // 3) Registra que seguiu, com nota.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/me/mandate/commitments/{id}/outcome"),
+            Some(&cookie),
+            r#"{"outcome":"seguiu","note":"Votei conforme a maioria da base."}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // 4) A superfície pública reflete tudo (sem login).
+    let resp = app
+        .oneshot(get(&format!("/api/v1/politicos/{mandate}/commitments")))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    let list = json["data"]["commitments"].as_array().unwrap();
+    assert_eq!(list.len(), 1);
+    let c = &list[0];
+    assert_eq!(c["theme"], "Reforma tributária");
+    assert_eq!(c["kind"], "consultivo");
+    assert_eq!(c["outcome"], "seguiu");
+    assert_eq!(c["outcome_note"], "Votei conforme a maioria da base.");
+    assert_eq!(c["consultation"]["consultation_id"], consultation_id);
+    assert_eq!(c["consultation"]["total"], 0);
+}
+
+
+// ---------------------------------------------------------------------------
+// Orçamento participativo — piloto de mandato (D8.3)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn op_anonymous_cannot_create_round() {
+    let (app, _st) = app().await;
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/me/mandate/op/rounds",
+            None,
+            r#"{"title":"Emenda 2026","budget_cents":50000000}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn op_plain_citizen_cannot_create_round() {
+    let (app, st) = app().await;
+    // Conta comum, sem binding de mandato → não é operador.
+    let (_, _, cookie) = seed_session(&st.db).await;
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/me/mandate/op/rounds",
+            Some(&cookie),
+            r#"{"title":"Emenda 2026","budget_cents":50000000}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn op_full_cycle_operator_and_citizen() {
+    let (app, st) = app().await;
+    // Operador (vínculo de mandato) abre a rodada.
+    let (org, operator, op_cookie) = seed_session(&st.db).await;
+    let mandate = seed_mandate_binding(&st.db, org, operator).await;
+
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/me/mandate/op/rounds",
+            Some(&op_cookie),
+            r#"{"title":"Verba de emenda 2026","budget_cents":250,"uf":"SP"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let round_id = body_json(resp).await["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // Cidadão logado (outra conta na mesma org) submete um item na fase propostas.
+    let (_, _, voter_cookie) = seed_session_in_org(&st.db, org).await;
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/op/rounds/{round_id}/items"),
+            Some(&voter_cookie),
+            r#"{"title":"Praça revitalizada","estimated_cents":150}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
     let item_id = body_json(resp).await["data"]["id"]
         .as_str()
         .unwrap()
@@ -2768,9 +2841,6 @@ async fn op_full_cycle_operator_and_citizen() {
         .clone()
         .oneshot(json_req(
             "POST",
-            &format!("/api/v1/me/mandate/commitments/{id}/consult"),
-            Some(&cookie),
-            "{}",
             &format!("/api/v1/op/rounds/{round_id}/vote"),
             Some(&voter_cookie),
             &format!(r#"{{"item_id":"{item_id}"}}"#),
@@ -2779,15 +2849,11 @@ async fn op_full_cycle_operator_and_citizen() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 
-    // 3) Registra que seguiu, com nota.
     // Operador avança para 'votacao'.
     let resp = app
         .clone()
         .oneshot(json_req(
             "POST",
-            &format!("/api/v1/me/mandate/commitments/{id}/outcome"),
-            Some(&cookie),
-            r#"{"outcome":"seguiu","note":"Votei conforme a maioria da base."}"#,
             &format!("/api/v1/me/mandate/op/rounds/{round_id}/phase"),
             Some(&op_cookie),
             r#"{"phase":"votacao"}"#,
@@ -2796,9 +2862,6 @@ async fn op_full_cycle_operator_and_citizen() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // 4) A superfície pública reflete tudo (sem login).
-    let resp = app
-        .oneshot(get(&format!("/api/v1/politicos/{mandate}/commitments")))
     // Anônimo não vota → 401.
     let resp = app
         .clone()
@@ -2835,15 +2898,6 @@ async fn op_full_cycle_operator_and_citizen() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let json = body_json(resp).await;
-    let list = json["data"]["commitments"].as_array().unwrap();
-    assert_eq!(list.len(), 1);
-    let c = &list[0];
-    assert_eq!(c["theme"], "Reforma tributária");
-    assert_eq!(c["kind"], "consultivo");
-    assert_eq!(c["outcome"], "seguiu");
-    assert_eq!(c["outcome_note"], "Votei conforme a maioria da base.");
-    assert_eq!(c["consultation"]["consultation_id"], consultation_id);
-    assert_eq!(c["consultation"]["total"], 0);
     assert_eq!(json["data"]["total_votes"], 1);
     assert_eq!(json["data"]["mandate_id"], mandate.to_string());
     let items = json["data"]["items"].as_array().unwrap();
