@@ -60,7 +60,7 @@
   let body = $state('');
   let comment = $state('');
   // Posição escolhida no composer (modelo do debate: argumento + posição juntos).
-  let commentStance = $state<ForumStance>('ponderacao');
+  let commentStance = $state<ForumStance>('favor');
   let busy = $state(false);
   let formMsg = $state<string | null>(null);
   let showPreview = $state(false);
@@ -310,17 +310,16 @@
     else formMsg = res.error?.message ?? 'Não foi possível registrar a posição.';
   }
 
-  // Colunas do debate: locais com posição; sem posição/legados caem em Ponderação.
+  // Colunas do debate (ADR-0019: só A favor / Contra; ponderação eliminada).
   const STANCES: { key: ForumStance; label: string }[] = [
     { key: 'favor', label: 'A favor' },
     { key: 'contra', label: 'Contra' },
-    { key: 'ponderacao', label: 'Ponderação' },
   ];
   function columnComments(stance: ForumStance): ForumCommentItemDto[] {
     if (!detail) return [];
     // Estilo StackOverflow: dentro da coluna, o argumento mais votado sobe.
     return detail.comments
-      .filter((c) => (c.federated ? false : (c.stance ?? 'ponderacao') === stance))
+      .filter((c) => (c.federated ? false : (c.stance ?? 'favor') === stance))
       .toSorted((a, b) => b.favor - b.contra - (a.favor - a.contra) || (a.id < b.id ? -1 : 1));
   }
 
@@ -546,7 +545,6 @@
               <span class="f-tally" title="A favor · Contra · Ponderações">
                 <span class="f-t-favor">{t.favor}</span>
                 <span class="f-t-contra">{t.contra}</span>
-                <span class="f-t-ponde">{t.ponderacao}</span>
               </span>
               <span class="f-topic-main">
                 <strong>{t.title}</strong>
@@ -661,7 +659,6 @@
             <span class="f-tally" title="A favor · Contra · Ponderações">
               <span class="f-t-favor">{t.favor}</span>
               <span class="f-t-contra">{t.contra}</span>
-              <span class="f-t-ponde">{t.ponderacao}</span>
             </span>
             <span class="f-topic-main">
               <strong>{t.title}</strong>
@@ -745,9 +742,6 @@
         <button type="button" class="f-stance f-stance-contra" onclick={() => vote('contra')} disabled={busy}>
           Contra <strong>{detail.topic.contra.toLocaleString('pt-BR')}</strong>
         </button>
-        <button type="button" class="f-stance f-stance-ponde" onclick={() => vote('ponderacao')} disabled={busy}>
-          Ponderação <strong>{detail.topic.ponderacao.toLocaleString('pt-BR')}</strong>
-        </button>
       </div>
 
       <div class="f-share">
@@ -815,7 +809,6 @@
                     <div class="f-arg-votes" role="group" aria-label="Votar neste argumento">
                       <button type="button" class="f-argv f-argv-favor" title="Concordo com este argumento" onclick={() => voteArg(c, 'favor')} disabled={busy}>▲ {c.favor}</button>
                       <button type="button" class="f-argv f-argv-contra" title="Discordo deste argumento" onclick={() => voteArg(c, 'contra')} disabled={busy}>▼ {c.contra}</button>
-                      <button type="button" class="f-argv f-argv-ponde" title="Pondero este argumento" onclick={() => voteArg(c, 'ponderacao')} disabled={busy}>~ {c.ponderacao}</button>
                     </div>
                   </div>
                 {/each}
@@ -849,7 +842,6 @@
           <div class="f-stances" role="group" aria-label="Posição do seu argumento">
             <button type="button" class="f-stance f-stance-favor" class:active={commentStance === 'favor'} onclick={() => (commentStance = 'favor')}>A favor</button>
             <button type="button" class="f-stance f-stance-contra" class:active={commentStance === 'contra'} onclick={() => (commentStance = 'contra')}>Contra</button>
-            <button type="button" class="f-stance f-stance-ponde" class:active={commentStance === 'ponderacao'} onclick={() => (commentStance = 'ponderacao')}>Ponderação</button>
           </div>
           <div class="field">
             <textarea class="input" rows="3" bind:value={comment} placeholder="Seu argumento… (Markdown suportado)"></textarea>

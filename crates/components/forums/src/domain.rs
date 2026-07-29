@@ -137,16 +137,14 @@ impl NewTopic {
     }
 }
 
-/// A posição de um cidadão num tópico (fusão DEBATE→FÓRUM, 0544): a participação
-/// deliberativa é a favor, contra ou uma ponderação — uma por cidadão, mutável.
+/// A posição de um cidadão num tópico (0544; ponderação eliminada em ADR-0019): a favor
+/// ou contra — uma por cidadão, mutável. Alimenta o placar por pontos (ADR-0019).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stance {
     /// A favor da proposta do tópico.
     Favor,
     /// Contra.
     Contra,
-    /// Ponderação (nuance/condicional — não pesa no saldo).
-    Ponderacao,
 }
 
 impl Stance {
@@ -156,7 +154,6 @@ impl Stance {
         match self {
             Self::Favor => "favor",
             Self::Contra => "contra",
-            Self::Ponderacao => "ponderacao",
         }
     }
 
@@ -168,9 +165,8 @@ impl Stance {
         match s.trim() {
             "favor" => Ok(Self::Favor),
             "contra" => Ok(Self::Contra),
-            "ponderacao" => Ok(Self::Ponderacao),
             other => Err(Error::Validation(format!(
-                "posição deve ser favor, contra ou ponderacao: {other}"
+                "posição deve ser favor ou contra: {other}"
             ))),
         }
     }
@@ -287,15 +283,13 @@ mod tests {
 
     #[test]
     fn stance_round_trips_and_rejects_unknown() {
-        for (s, txt) in [
-            (Stance::Favor, "favor"),
-            (Stance::Contra, "contra"),
-            (Stance::Ponderacao, "ponderacao"),
-        ] {
+        for (s, txt) in [(Stance::Favor, "favor"), (Stance::Contra, "contra")] {
             assert_eq!(s.as_str(), txt);
             assert_eq!(Stance::parse_input(txt).unwrap(), s);
         }
         assert_eq!(Stance::parse_input(" favor ").unwrap(), Stance::Favor);
+        // Ponderação foi eliminada (ADR-0019) — agora é valor inválido.
+        assert!(Stance::parse_input("ponderacao").is_err());
         assert!(Stance::parse_input("pro").is_err());
         assert!(Stance::parse_input("").is_err());
     }

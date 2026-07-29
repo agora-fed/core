@@ -2954,7 +2954,7 @@ export interface ForumTreeDto {
 }
 
 /** Posição num tópico (fusão debates→fóruns, 0544). */
-export type ForumStance = 'favor' | 'contra' | 'ponderacao';
+export type ForumStance = 'favor' | 'contra';
 
 /** Tópico de fórum: interações contáveis × federadas + contadores por posição. */
 export interface ForumTopicDto {
@@ -2968,7 +2968,6 @@ export interface ForumTopicDto {
   score: number;
   favor: number;
   contra: number;
-  ponderacao: number;
   comment_count: number;
   created_at: string;
 }
@@ -2985,7 +2984,6 @@ export interface ForumCommentItemDto {
   stance: ForumStance | null;
   favor: number;
   contra: number;
-  ponderacao: number;
   body: string;
   created_at: string;
 }
