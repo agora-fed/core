@@ -41,7 +41,14 @@ echo "[fórum — placar por pontos, sem ponderação (ADR-0019)]"
 HASSCORE=$(curl -s "$API/f/topics/d1111111-1111-1111-1111-111111111111" | python3 -c "import sys,json;d=json.load(sys.stdin);t=((d.get('data') or {}).get('topic') or {});print('ok' if isinstance(t.get('score'), int) else 'bad')" 2>/dev/null)
 ck "tópico tem placar por pontos (score)" "ok" "$HASSCORE"
 
-echo "[territórios (cadastro)]"
+echo "[deliberação — síntese Polis / afirmação-ponte (D8.2)]"
+BRIDGES=$(curl -s "$API/f/topics/d1111111-1111-1111-1111-111111111111/consensus" | python3 -c "import sys,json;d=json.load(sys.stdin);print('ok' if isinstance(((d.get('data') or {}).get('bridges')), list) else 'bad')" 2>/dev/null)
+ck "consenso responde com bridges[]" "ok" "$BRIDGES"
+
+echo "[CRM de gabinete — gated (401 sem sessão) (C6)]"
+ck "me/mandate/crm → 401" 401 "$(code "$API/me/mandate/crm")"
+
+echo "[território (cadastro)]"
 NMUN=$(curl -s "$API/municipios?uf=SP" | python3 -c "import sys,json;d=json.load(sys.stdin);a=(d.get('data') or d);print(len(a))" 2>/dev/null)
 ck "municípios SP = 645" 645 "$NMUN"
 
