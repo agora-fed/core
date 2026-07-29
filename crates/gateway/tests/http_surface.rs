@@ -2467,3 +2467,113 @@ async fn consultas_full_participation_flow() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 }
+
+// ---------------------------------------------------------------------------
+// CRM de gabinete (C6) — gate de autorização
+// ---------------------------------------------------------------------------
+
+/// Semeia uma proposta dirigida a um mandato, com autor público, e a linha de
+/// destinatário (`proposal_target`) que o CRM lê. Devolve o id da proposta.
+async fn seed_directed_proposal(
+    db: &Db,
+    org: Uuid,
+    mandate: Uuid,
+    author: Uuid,
+    title: &str,
+) -> Uuid {
+    let proposal = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO proposal \
+         (id, org_id, mandate_id, title, body, threshold, author_citizen_id, status, created_at) \
+         VALUES ($1, $2, $3, $4, 'corpo da demanda', 10, $5, 'published', now())",
+    )
+    .bind(proposal)
+    .bind(org)
+    .bind(mandate)
+    .bind(title)
+    .bind(author)
+    .execute(db)
+    .await
+    .expect("seed proposal");
+    sqlx::query(
+        "INSERT INTO proposal_target (proposal_id, mandate_id, created_at) \
+         VALUES ($1, $2, now())",
+    )
+    .bind(proposal)
+    .bind(mandate)
+    .execute(db)
+    .await
+    .expect("seed proposal_target");
+    proposal
+}
+
+/// SECURITY — o CRM é escopado ao mandato do operador logado: só ele vê o CRM
+/// DELE. Um operador do gabinete A jamais vê as demandas do gabinete B; um
+/// cidadão sem vínculo recebe 403; anônimo recebe 401.
+#[tokio::test]
+async fn mandate_crm_scoped_to_operator_only() {
+    let (app, st) = app().await;
+
+    // Gabinete A: operador com vínculo.
+    let (org, operator_a, cookie_a) = seed_session(&st.db).await;
+    let mandate_a = seed_mandate_binding(&st.db, org, operator_a).await;
+
+    // Gabinete B: outro mandato no mesmo org, sem relação com o operador A.
+    let mandate_b = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO mandate (id, org_id, office, display_name, public_email, created_at) \
+         VALUES ($1, $2, 'vereador', 'Vereador B', 'b@camara.test', now())",
+    )
+    .bind(mandate_b)
+    .bind(org)
+    .execute(&st.db)
+    .await
+    .expect("seed mandate B");
+
+    // Autor cidadão público que dirige propostas aos dois gabinetes.
+    let (_, author, _) = seed_session(&st.db).await;
+    sqlx::query(
+        "UPDATE citizen SET handle = 'fulana', display_name = 'Fulana', is_public = true \
+         WHERE id = $1",
+    )
+    .bind(author)
+    .execute(&st.db)
+    .await
+    .expect("author profile");
+    let prop_a =
+        seed_directed_proposal(&st.db, org, mandate_a, author, "Falta médico no posto").await;
+    let prop_b =
+        seed_directed_proposal(&st.db, org, mandate_b, author, "Buraco na rua do B").await;
+
+    // Operador A vê o CRM DELE: exatamente a demanda de A, nunca a de B.
+    let resp = app
+        .clone()
+        .oneshot(get_with_cookie("/api/v1/me/mandate/crm", &cookie_a))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["data"]["mandate_id"], mandate_a.to_string());
+    assert_eq!(json["data"]["totals"]["contacts"], 1);
+    assert_eq!(json["data"]["totals"]["demands"], 1);
+    let demands = json["data"]["contacts"][0]["demands"].as_array().unwrap();
+    assert_eq!(demands.len(), 1);
+    assert_eq!(demands[0]["proposal_id"], prop_a.to_string());
+    assert_ne!(demands[0]["proposal_id"], prop_b.to_string());
+    // O handle público do autor aparece (dado já público); nenhum e-mail/PII.
+    assert_eq!(json["data"]["contacts"][0]["handle"], "fulana");
+    assert!(json["data"]["contacts"][0].get("email").is_none());
+
+    // Cidadão sem vínculo de mandato → 403 (não é operador de nenhum gabinete).
+    let (_, _, plain_cookie) = seed_session(&st.db).await;
+    let resp = app
+        .clone()
+        .oneshot(get_with_cookie("/api/v1/me/mandate/crm", &plain_cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+    // Anônimo (sem cookie) → 401.
+    let resp = app.oneshot(get("/api/v1/me/mandate/crm")).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}

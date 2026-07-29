@@ -120,6 +120,63 @@ export interface MandateDto {
 /** State of a consequence SLA — the emotional core of the UI. */
 export type SlaStatus = 'pending' | 'answered' | 'acted' | 'ignored';
 
+/** Status de uma demanda no CRM de gabinete (C6). Vocabulário do relacionamento,
+ *  não da fila: `aberta` = ainda reunindo apoios (sem prazo correndo). */
+export type CrmStatus = 'respondida' | 'pendente' | 'silencio' | 'aberta';
+
+/** Uma demanda (proposta dirigida) de uma pessoa a este mandato. */
+export interface CrmDemand {
+  proposal_id: string;
+  title: string;
+  /** Tema derivado por palavra-chave (agrupamento leve, sem embeddings). */
+  theme: string;
+  status: CrmStatus;
+  urgencia: string;
+  created_at: string;
+}
+
+/** Uma pessoa que procurou o gabinete, com seu histórico de demandas. */
+export interface CrmContact {
+  citizen_id: string;
+  handle: string | null;
+  public_handle: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  demands_count: number;
+  answered_count: number;
+  pending_count: number;
+  silence_count: number;
+  open_count: number;
+  first_contact_at: string;
+  last_contact_at: string;
+  demands: CrmDemand[];
+}
+
+/** Agregação leve por tema (fundação do agregador de demandas). */
+export interface CrmTheme {
+  theme: string;
+  demands_count: number;
+  contacts_count: number;
+}
+
+/** Totais do CRM. */
+export interface CrmTotals {
+  contacts: number;
+  demands: number;
+  answered: number;
+  pending: number;
+  silence: number;
+  open: number;
+}
+
+/** Resposta de `GET /me/mandate/crm` — quem te procurou e o que pediu. */
+export interface MandateCrmDto {
+  mandate_id: string;
+  contacts: CrmContact[];
+  themes: CrmTheme[];
+  totals: CrmTotals;
+}
+
 /** Public per-politician scorecard summary. */
 export interface ScorecardDto {
   mandate_id: string;

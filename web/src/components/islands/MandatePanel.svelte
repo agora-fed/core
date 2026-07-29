@@ -7,11 +7,18 @@
     getMyMandate,
     getSlas,
     getProposal,
+    getMandateCrm,
     respondToSla,
     DEFAULT_ORG_ID,
     type MyMandateDto,
   } from '../../lib/api';
-  import type { SlaDto, ProposalDto, SlaStatus } from '../../lib/types';
+  import type {
+    SlaDto,
+    ProposalDto,
+    SlaStatus,
+    MandateCrmDto,
+    CrmStatus,
+  } from '../../lib/types';
   import SlaClock from './SlaClock.svelte';
 
   let loading = $state(true);
@@ -29,6 +36,71 @@
 
   let pending = $derived(slas.filter((s) => s.status === 'pending'));
   let settled = $derived(slas.filter((s) => s.status !== 'pending'));
+
+  // --- CRM de gabinete (C6): "quem te procurou e o que pediu" ------------------
+  type Tab = 'fila' | 'crm';
+  let activeTab = $state<Tab>('fila');
+  let crm = $state<MandateCrmDto | null>(null);
+  let crmLoading = $state(false);
+  let crmError = $state<string | null>(null);
+  let crmLoaded = $state(false);
+  // Filtros (recontam no servidor).
+  let crmStatus = $state<'' | CrmStatus>('');
+  let crmTheme = $state('');
+  // Quais contatos estão expandidos (mostrando o histórico de demandas).
+  let openContacts = $state<Set<string>>(new Set());
+
+  const CRM_STATUS_LABEL: Record<CrmStatus, string> = {
+    respondida: '✓ respondida',
+    pendente: '⏳ prazo correndo',
+    silencio: '✗ silêncio',
+    aberta: '• reunindo apoios',
+  };
+
+  async function loadCrm() {
+    crmLoading = true;
+    crmError = null;
+    const res = await getMandateCrm({
+      status: crmStatus || undefined,
+      theme: crmTheme || undefined,
+    });
+    crmLoading = false;
+    crmLoaded = true;
+    if (res.success && res.data) {
+      crm = res.data;
+    } else {
+      crmError = res.error?.message ?? 'Não foi possível carregar o CRM.';
+    }
+  }
+
+  function selectTab(tab: Tab) {
+    activeTab = tab;
+    if (tab === 'crm' && !crmLoaded) loadCrm();
+  }
+
+  function toggleTheme(theme: string) {
+    crmTheme = crmTheme === theme ? '' : theme;
+    loadCrm();
+  }
+
+  function toggleContact(id: string) {
+    const next = new Set(openContacts);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    openContacts = next;
+  }
+
+  function contactName(c: MandateCrmDto['contacts'][number]): string {
+    return c.display_name || `@${c.handle ?? c.public_handle}`;
+  }
+
+  function fmtDate(iso: string): string {
+    try {
+      return new Date(iso).toLocaleDateString('pt-BR');
+    } catch {
+      return iso;
+    }
+  }
 
   onMount(async () => {
     const mr = await getMyMandate();
@@ -136,6 +208,24 @@
     </a>
   </header>
 
+  <nav class="tabs" aria-label="Seções do painel">
+    <button
+      type="button"
+      class={`tab ${activeTab === 'fila' ? 'is-active' : ''}`}
+      onclick={() => selectTab('fila')}
+    >
+      Demandas com prazo
+    </button>
+    <button
+      type="button"
+      class={`tab ${activeTab === 'crm' ? 'is-active' : ''}`}
+      onclick={() => selectTab('crm')}
+    >
+      Quem te procurou
+    </button>
+  </nav>
+
+  {#if activeTab === 'fila'}
   <section class="counters" aria-label="Resumo">
     <div class="counter">
       <strong>{pending.length}</strong>
@@ -235,6 +325,144 @@
           </li>
         {/each}
       </ul>
+    </section>
+  {/if}
+  {/if}
+
+  {#if activeTab === 'crm'}
+    <section class="crm">
+      <p class="crm-intro muted">
+        Quem procurou o seu mandato e o que pediu — uma ferramenta de
+        <strong>relacionamento</strong> com a sua base. Só mostra o que já é
+        público (autoria de propostas dirigidas a você); nunca votos ou apoios
+        privados.
+      </p>
+
+      {#if crmLoading && !crm}
+        <p class="muted">Carregando…</p>
+      {:else if crmError}
+        <p class="hint hint-error" role="alert">{crmError}</p>
+      {:else if crm}
+        <div class="counters" aria-label="Resumo do CRM">
+          <div class="counter">
+            <strong>{crm.totals.contacts}</strong>
+            <span>pessoas</span>
+          </div>
+          <div class="counter">
+            <strong>{crm.totals.demands}</strong>
+            <span>demandas</span>
+          </div>
+          <div class="counter ok">
+            <strong>{crm.totals.answered}</strong>
+            <span>respondidas</span>
+          </div>
+          <div class="counter bad">
+            <strong>{crm.totals.silence}</strong>
+            <span>silêncio</span>
+          </div>
+        </div>
+
+        <div class="crm-filters">
+          <label class="crm-filter">
+            <span>Status</span>
+            <select
+              class="input"
+              bind:value={crmStatus}
+              onchange={() => loadCrm()}
+            >
+              <option value="">Todos</option>
+              <option value="respondida">Respondidas</option>
+              <option value="pendente">Prazo correndo</option>
+              <option value="silencio">Silêncio</option>
+              <option value="aberta">Reunindo apoios</option>
+            </select>
+          </label>
+
+          {#if crm.themes.length > 0}
+            <div class="themes" role="group" aria-label="Filtrar por tema">
+              {#each crm.themes as t (t.theme)}
+                <button
+                  type="button"
+                  class={`chip ${crmTheme === t.theme ? 'is-active' : ''}`}
+                  onclick={() => toggleTheme(t.theme)}
+                >
+                  {t.theme} ({t.demands_count})
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+
+        {#if crm.contacts.length === 0}
+          <p class="muted">
+            Ninguém dirigiu uma proposta pública a este mandato ainda
+            {crmStatus || crmTheme ? ' com esse filtro' : ''}.
+          </p>
+        {:else}
+          <ul class="crm-list">
+            {#each crm.contacts as c (c.citizen_id)}
+              <li class="crm-card">
+                <button
+                  type="button"
+                  class="crm-person"
+                  onclick={() => toggleContact(c.citizen_id)}
+                  aria-expanded={openContacts.has(c.citizen_id)}
+                >
+                  {#if c.avatar_url}
+                    <img class="crm-avatar" src={c.avatar_url} alt="" />
+                  {:else}
+                    <span class="crm-avatar crm-avatar-ph">👤</span>
+                  {/if}
+                  <span class="crm-who">
+                    <strong>{contactName(c)}</strong>
+                    <span class="muted small">
+                      @{c.handle ?? c.public_handle} ·
+                      {c.demands_count} demanda{c.demands_count === 1 ? '' : 's'} ·
+                      último contato {fmtDate(c.last_contact_at)}
+                    </span>
+                  </span>
+                  <span class="crm-mini">
+                    {#if c.answered_count > 0}<span class="badge badge-answered">{c.answered_count} resp.</span>{/if}
+                    {#if c.pending_count > 0}<span class="badge badge-pending">{c.pending_count} prazo</span>{/if}
+                    {#if c.silence_count > 0}<span class="badge badge-ignored">{c.silence_count} silêncio</span>{/if}
+                    {#if c.open_count > 0}<span class="badge badge-open">{c.open_count} aberta</span>{/if}
+                  </span>
+                </button>
+
+                {#if openContacts.has(c.citizen_id)}
+                  <table class="crm-demands">
+                    <thead>
+                      <tr>
+                        <th>Demanda</th>
+                        <th>Tema</th>
+                        <th>Status</th>
+                        <th>Data</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each c.demands as d (d.proposal_id)}
+                        <tr>
+                          <td>
+                            <a class="prop-link" href={`/propostas/${d.proposal_id}`}>
+                              {d.title}
+                            </a>
+                            {#if d.urgencia === 'urgente'}
+                              <span class="urgente">🔥</span>
+                            {/if}
+                          </td>
+                          <td>{d.theme}</td>
+                          <td><span class={`badge badge-${d.status}`}>{CRM_STATUS_LABEL[d.status]}</span></td>
+                          <td class="nowrap">{fmtDate(d.created_at)}</td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      {/if}
     </section>
   {/if}
 {/if}
@@ -401,12 +629,169 @@
     gap: 1rem;
     flex-wrap: wrap;
   }
-  .badge-answered { background: var(--c-green-soft); color: var(--c-green-dark); }
-  .badge-acted    { background: var(--c-green-soft); color: var(--c-green-dark); font-weight: 700; }
-  .badge-ignored  { background: #fef2f2; color: #b91c1c; }
+  .badge-answered   { background: var(--c-green-soft); color: var(--c-green-dark); }
+  .badge-acted      { background: var(--c-green-soft); color: var(--c-green-dark); font-weight: 700; }
+  .badge-ignored,
+  .badge-silencio   { background: #fef2f2; color: #b91c1c; }
+  .badge-respondida { background: var(--c-green-soft); color: var(--c-green-dark); }
+  .badge-pendente,
+  .badge-pending    { background: #fff7e6; color: #ad6800; }
+  .badge-aberta,
+  .badge-open       { background: var(--c-bg, #f2f4f7); color: var(--c-text-muted); }
   .center {
     text-align: center;
     padding: 2.5rem 1.5rem;
   }
   .hint-ok { color: var(--c-green-dark); }
+
+  /* --- Abas + CRM (C6) ------------------------------------------------------ */
+  .tabs {
+    display: flex;
+    gap: 0.25rem;
+    margin: 0 0 1.5rem;
+    border-bottom: 1px solid var(--c-border);
+  }
+  .tab {
+    appearance: none;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 0.6rem 1rem;
+    font: inherit;
+    font-weight: 600;
+    color: var(--c-text-muted);
+    cursor: pointer;
+  }
+  .tab.is-active {
+    color: var(--c-navy);
+    border-bottom-color: var(--c-navy);
+  }
+  .crm-intro {
+    margin: 0 0 1.25rem;
+    font-size: 0.95rem;
+  }
+  .crm-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.75rem 1.25rem;
+    margin: 0 0 1.25rem;
+  }
+  .crm-filter {
+    display: grid;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .themes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  .chip {
+    appearance: none;
+    border: 1px solid var(--c-border);
+    background: var(--c-paper);
+    border-radius: 999px;
+    padding: 0.3rem 0.75rem;
+    font: inherit;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+  .chip.is-active {
+    background: var(--c-navy);
+    color: #fff;
+    border-color: var(--c-navy);
+  }
+  .crm-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.75rem;
+  }
+  .crm-card {
+    background: var(--c-paper);
+    border: 1px solid var(--c-border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .crm-person {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    width: 100%;
+    padding: 0.85rem 1rem;
+    background: none;
+    border: none;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    flex-wrap: wrap;
+  }
+  .crm-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--c-bg);
+  }
+  .crm-avatar-ph {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .crm-who {
+    display: grid;
+    gap: 2px;
+    flex: 1;
+    min-width: 12rem;
+  }
+  .crm-mini {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+    margin-left: auto;
+  }
+  .badge {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    white-space: nowrap;
+  }
+  .crm-demands {
+    width: 100%;
+    border-collapse: collapse;
+    border-top: 1px solid var(--c-border);
+    font-size: 0.9rem;
+  }
+  .crm-demands th,
+  .crm-demands td {
+    text-align: left;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--c-border);
+    vertical-align: top;
+  }
+  .crm-demands th {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--c-text-muted);
+  }
+  .crm-demands tr:last-child td {
+    border-bottom: none;
+  }
+  .nowrap { white-space: nowrap; }
+  .urgente { margin-left: 0.35rem; }
+  @media (max-width: 560px) {
+    .crm-demands thead { display: none; }
+    .crm-demands,
+    .crm-demands tbody,
+    .crm-demands tr,
+    .crm-demands td { display: block; width: 100%; }
+    .crm-demands td { border-bottom: none; padding: 0.2rem 1rem; }
+    .crm-demands tr { border-bottom: 1px solid var(--c-border); padding: 0.5rem 0; }
+  }
 </style>
