@@ -46,9 +46,9 @@
     favourite: 'favoritou seu post',
     reblog: 'repostou seu post',
     follow: 'começou a seguir você',
-    proposal_threshold: 'sua proposta cruzou o gatilho',
-    sla_started: 'SLA do mandato começou',
-    sla_response: 'o mandato respondeu você',
+    proposal_threshold: 'sua proposta reuniu apoios suficientes',
+    sla_started: 'o prazo de resposta começou',
+    sla_response: 'o político respondeu você',
     sla_expired: 'silêncio público registrado',
   };
   const toneByKind: Record<

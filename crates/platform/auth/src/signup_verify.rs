@@ -256,6 +256,38 @@ pub fn normalize_handle(raw: &str) -> Result<String> {
     }
 }
 
+/// Slug ASCII de um nome pra derivar um handle (B4). Minúsculas, acentos comuns
+/// do português dobrados pra ASCII, separadores (espaço/pontuação) viram `_` e o
+/// resto é descartado. Ex.: "José da Silva" → "jose_da_silva".
+fn slugify_name(name: &str) -> String {
+    let mut out = String::new();
+    let mut pending_sep = false;
+    for c in name.trim().to_lowercase().chars() {
+        let mapped = match c {
+            'a'..='z' | '0'..='9' => Some(c),
+            'á' | 'à' | 'â' | 'ã' | 'ä' | 'å' => Some('a'),
+            'é' | 'è' | 'ê' | 'ë' => Some('e'),
+            'í' | 'ì' | 'î' | 'ï' => Some('i'),
+            'ó' | 'ò' | 'ô' | 'õ' | 'ö' => Some('o'),
+            'ú' | 'ù' | 'û' | 'ü' => Some('u'),
+            'ç' => Some('c'),
+            'ñ' => Some('n'),
+            _ => None,
+        };
+        match mapped {
+            Some(ch) => {
+                if pending_sep && !out.is_empty() {
+                    out.push('_');
+                }
+                pending_sep = false;
+                out.push(ch);
+            }
+            None => pending_sep = true,
+        }
+    }
+    out
+}
+
 /// Mapeia o sexo do formulário (`F`/`M`) para o vocabulário de `citizen.gender`.
 fn sexo_to_gender(sexo: &str) -> Option<&'static str> {
     match sexo.trim().to_uppercase().as_str() {
@@ -553,9 +585,11 @@ impl SignupVerifyService {
             (None, None)
         };
 
-        // Dados pessoais OBRIGATÓRIOS pro cidadão (0664): nome (com sobrenome), sexo,
-        // nascimento e nick do fediverso. Político/candidato herdam nome/território do
-        // mandato/candidatura, então aqui ficam None. Título continua opcional.
+        // Dados pessoais do cidadão. OBRIGATÓRIO no cadastro: nome (com sobrenome)
+        // e nascimento (este último alimenta a verificação R-KYC junto do CPF).
+        // OPCIONAL (B4 — onboarding enxuto): sexo (ProfileGate coleta depois) e o
+        // nick do fediverso (derivado do nome; editável em Configurações).
+        // Político/candidato herdam nome/território do mandato/candidatura → None.
         let (full_name, gender, birth_date, handle) = if role == PendingRole::Cidadao {
             let Some(nome) = identity
                 .nome_completo
@@ -568,9 +602,9 @@ impl SignupVerifyService {
             if nome.split_whitespace().count() < 2 {
                 return Err(Error::Validation("informe nome e sobrenome".to_owned()));
             }
-            let Some(gender) = identity.sexo.as_deref().and_then(sexo_to_gender) else {
-                return Err(Error::Validation("informe seu sexo".to_owned()));
-            };
+            // B4: sexo OPCIONAL. Quando ausente fica None; o ProfileGate coleta
+            // depois (profile-status já lista "sexo" como faltante).
+            let gender = identity.sexo.as_deref().and_then(sexo_to_gender);
             let Some(birth_raw) = identity
                 .nascimento
                 .as_deref()
@@ -583,28 +617,34 @@ impl SignupVerifyService {
             };
             let birth_date = chrono::NaiveDate::parse_from_str(birth_raw, "%Y-%m-%d")
                 .map_err(|_| Error::Validation("data de nascimento inválida".to_owned()))?;
-            let Some(handle_raw) = identity
+            // B4: nick não é mais pedido no cadastro. Se o cidadão informou um
+            // (fluxo avançado/futuro), respeitamos e validamos; senão derivamos do
+            // nome. handle=None faz o confirm() cair no automático `cidadao-<id8>`.
+            let handle = match identity
                 .handle
                 .as_deref()
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
-            else {
-                return Err(Error::Validation("escolha um nick de usuário".to_owned()));
-            };
-            let handle = normalize_handle(handle_raw)?;
-            if !queries::handle_available(&self.db, org.as_uuid(), &handle)
-                .await
-                .map_err(map_sqlx)?
             {
-                return Err(Error::Validation(
-                    "esse nick já está em uso — escolha outro".to_owned(),
-                ));
-            }
+                Some(raw) => {
+                    let h = normalize_handle(raw)?;
+                    if !queries::handle_available(&self.db, org.as_uuid(), &h)
+                        .await
+                        .map_err(map_sqlx)?
+                    {
+                        return Err(Error::Validation(
+                            "esse nick já está em uso — escolha outro".to_owned(),
+                        ));
+                    }
+                    Some(h)
+                }
+                None => self.derive_unique_handle(org.as_uuid(), nome).await?,
+            };
             (
                 Some(nome.to_owned()),
-                Some(gender.to_owned()),
+                gender.map(str::to_owned),
                 Some(birth_date),
-                Some(handle),
+                handle,
             )
         } else {
             (None, None, None, None)
@@ -653,6 +693,40 @@ impl SignupVerifyService {
         let url = format!("{}/confirmar-conta?token={}", self.public_origin, token);
         self.deliver_email(&email, &url).await;
         Ok(())
+    }
+
+    /// Deriva um handle único a partir do nome (B4 — nick não é mais pedido no
+    /// cadastro). Faz o slug ASCII do nome, garante 1º caractere-letra e 3–30
+    /// chars, e resolve colisão com sufixo numérico. Retorna `None` quando não há
+    /// base utilizável (nome só com símbolos) ou todas as variantes já estão
+    /// tomadas — nesse caso o `confirm()` gera o automático `cidadao-<id8>`.
+    async fn derive_unique_handle(&self, org: Uuid, name: &str) -> Result<Option<String>> {
+        let mut base = slugify_name(name);
+        // 1º caractere precisa ser letra (regra do handle).
+        if !base.chars().next().is_some_and(|c| c.is_ascii_lowercase()) {
+            base.insert(0, 'c');
+        }
+        // Deixa folga pra um sufixo numérico dentro do teto de 30 chars. base é
+        // ASCII puro (slugify), então truncar por bytes é seguro.
+        base.truncate(26);
+        while base.ends_with('_') {
+            base.pop();
+        }
+        if base.len() < 3 {
+            return Ok(None);
+        }
+        // Tenta o base puro e depois base2..=base9. O confirm() re-checa a
+        // disponibilidade e cai no automático se perder a corrida request→confirm.
+        for suffix in std::iter::once(String::new()).chain((2..=9).map(|n| n.to_string())) {
+            let candidate = format!("{base}{suffix}");
+            if queries::handle_available(&self.db, org, &candidate)
+                .await
+                .map_err(map_sqlx)?
+            {
+                return Ok(Some(candidate));
+            }
+        }
+        Ok(None)
     }
 
     /// Reenvia o link de verificação pra um e-mail que tem pending viva. Se
@@ -1261,6 +1335,15 @@ mod tests {
             assert_eq!(PendingRole::parse(r.as_str()), Some(r));
         }
         assert_eq!(PendingRole::parse("outro"), None);
+    }
+
+    #[test]
+    fn slugify_name_folds_accents_and_separators() {
+        assert_eq!(slugify_name("José da Silva"), "jose_da_silva");
+        assert_eq!(slugify_name("  Maria  Antônia  "), "maria_antonia");
+        assert_eq!(slugify_name("Ção Núñez"), "cao_nunez");
+        // Só símbolos → vazio (caller cai no handle automático).
+        assert_eq!(slugify_name("!!! ###"), "");
     }
 
     #[test]

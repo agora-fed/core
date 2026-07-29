@@ -118,8 +118,8 @@
           onchange={(e) => setAutoFederate((e.currentTarget as HTMLInputElement).checked)}
         />
         <span>
-          <strong>Amplificar automaticamente no fediverso</strong> quando minha
-          proposta cruzar o gatilho de consequência (requer perfil público)
+          <strong>Amplificar automaticamente na rede</strong> quando minha
+          proposta reunir apoios suficientes (requer perfil público)
         </span>
       </label>
     </div>
