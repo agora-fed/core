@@ -44,8 +44,7 @@
   let settled = $derived(slas.filter((s) => s.status !== 'pending'));
 
   // --- CRM de gabinete (C6): "quem te procurou e o que pediu" ------------------
-  type Tab = 'fila' | 'crm' | 'compromissos';
-  type Tab = 'fila' | 'crm' | 'op';
+  type Tab = 'fila' | 'crm' | 'compromissos' | 'op';
   let activeTab = $state<Tab>('fila');
   let crm = $state<MandateCrmDto | null>(null);
   let crmLoading = $state(false);
@@ -333,6 +332,9 @@
       onclick={() => selectTab('compromissos')}
     >
       Compromissos
+    </button>
+    <button
+      type="button"
       class={`tab ${activeTab === 'op' ? 'is-active' : ''}`}
       onclick={() => selectTab('op')}
     >
@@ -707,6 +709,8 @@
         </ul>
       {/if}
     </section>
+  {/if}
+
   {#if activeTab === 'op'}
     <MandateOpPanel mandateId={mine.mandate.id} />
   {/if}
