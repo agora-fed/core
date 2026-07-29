@@ -9,3 +9,5 @@
 # polls referenciam campaign_group da própria feature de grupos de campanha (0532).
 0531_consultation_responses.sql consultations_consultation_question
 0532_campaign_group_polls.sql campaign_group
+# mandato coletivo (D8.1): o compromisso pode ligar-se a uma consulta à base (crate consultations).
+0666_mandate_commitment.sql consultations_consultation

@@ -2577,3 +2577,183 @@ async fn mandate_crm_scoped_to_operator_only() {
     let resp = app.oneshot(get("/api/v1/me/mandate/crm")).await.unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
+
+// ---------------------------------------------------------------------------
+// SECURITY + FUNCTIONAL — mandato coletivo: compromisso consultivo (D8.1, 0666)
+// ---------------------------------------------------------------------------
+
+/// O gate de escrita é o vínculo de mandato: anônimo → 401, cidadão comum → 403.
+/// A leitura pública dos compromissos é aberta (200) e não vaza dado privado.
+#[tokio::test]
+async fn commitments_write_is_gated_read_is_public() {
+    let (app, st) = app().await;
+    let (org, operator, op_cookie) = seed_session(&st.db).await;
+    let mandate = seed_mandate_binding(&st.db, org, operator).await;
+
+    // Anônimo não cria compromisso.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/me/mandate/commitments",
+            None,
+            r#"{"theme":"Tema","description":"Descrição do compromisso"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+    // Cidadão sem vínculo de mandato → 403, e nada é gravado.
+    let (_, _, plain_cookie) = seed_session(&st.db).await;
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/me/mandate/commitments",
+            Some(&plain_cookie),
+            r#"{"theme":"Intruso","description":"Não deveria gravar"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM mandate_commitment WHERE theme = 'Intruso'")
+            .fetch_one(&st.db)
+            .await
+            .unwrap();
+    assert_eq!(count, 0);
+
+    // A leitura pública é aberta (mandato ainda sem compromissos).
+    let resp = app
+        .clone()
+        .oneshot(get(&format!("/api/v1/politicos/{mandate}/commitments")))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["data"]["commitments"].as_array().map(Vec::len), Some(0));
+
+    // O operador cria um compromisso válido e tenta um outcome inválido → 400.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/me/mandate/commitments",
+            Some(&op_cookie),
+            r#"{"theme":"Plano Diretor","description":"Vou ouvir a base antes de votar."}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let id = body_json(resp).await["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/me/mandate/commitments/{id}/outcome"),
+            Some(&op_cookie),
+            r#"{"outcome":"vinculante"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+/// Fluxo completo: operador declara → abre consulta ligada → registra que seguiu;
+/// a superfície pública reflete tema, kind consultivo, outcome e o agregado.
+#[tokio::test]
+async fn commitment_declare_consult_and_outcome_flow() {
+    let (app, st) = app().await;
+    // A consulta é criada via ConsultationService, que escopa por org — o
+    // operador precisa viver na org default fixa das superfícies públicas.
+    let default_org = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+    let (org, operator, cookie) = seed_session_in_org(&st.db, default_org).await;
+    let mandate = seed_mandate_binding(&st.db, org, operator).await;
+
+    // 1) Declara o compromisso.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/me/mandate/commitments",
+            Some(&cookie),
+            r#"{"theme":"Reforma tributária","description":"Consultar a base antes de votar."}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let id = body_json(resp).await["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // 2) Abre a consulta ligada (reusa o crate consultations).
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/me/mandate/commitments/{id}/consult"),
+            Some(&cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let consultation_id = body_json(resp).await["data"]["consultation_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    // A consulta foi mesmo criada no crate consultations.
+    let cc: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM consultations_consultation WHERE id = $1")
+            .bind(Uuid::parse_str(&consultation_id).unwrap())
+            .fetch_one(&st.db)
+            .await
+            .unwrap();
+    assert_eq!(cc, 1);
+
+    // Abrir de novo é conflito (compromisso já tem consulta).
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/me/mandate/commitments/{id}/consult"),
+            Some(&cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+
+    // 3) Registra que seguiu, com nota.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/me/mandate/commitments/{id}/outcome"),
+            Some(&cookie),
+            r#"{"outcome":"seguiu","note":"Votei conforme a maioria da base."}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // 4) A superfície pública reflete tudo (sem login).
+    let resp = app
+        .oneshot(get(&format!("/api/v1/politicos/{mandate}/commitments")))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    let list = json["data"]["commitments"].as_array().unwrap();
+    assert_eq!(list.len(), 1);
+    let c = &list[0];
+    assert_eq!(c["theme"], "Reforma tributária");
+    assert_eq!(c["kind"], "consultivo");
+    assert_eq!(c["outcome"], "seguiu");
+    assert_eq!(c["outcome_note"], "Votei conforme a maioria da base.");
+    assert_eq!(c["consultation"]["consultation_id"], consultation_id);
+    assert_eq!(c["consultation"]["total"], 0);
+}

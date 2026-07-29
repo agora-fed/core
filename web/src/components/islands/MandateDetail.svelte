@@ -10,6 +10,7 @@
     getScorecard,
     getResponsiveness,
     getSlas,
+    getMandateCommitments,
     adminEditMandate,
     adminHideMandate,
     adminDeleteMandate,
@@ -23,6 +24,7 @@
     ResponsivenessDto,
     ScorecardDto,
     SlaDto,
+    PublicCommitment,
   } from '../../lib/types';
   import { responseRate, formatLatency } from '../../lib/format';
 
@@ -37,6 +39,14 @@
   let loadError = $state<string | null>(null);
   let activity = $state<ActivityDto | null>(null);
   let activityLoading = $state(true);
+  // Compromissos consultivos declarados pelo mandato (D8.1) — best-effort público.
+  let commitments = $state<PublicCommitment[]>([]);
+
+  const OUTCOME_LABEL: Record<PublicCommitment['outcome'], string> = {
+    seguiu: '🟢 seguiu',
+    nao_seguiu: '🔴 não seguiu',
+    pendente: '🕓 pendente',
+  };
 
   let pendingSlas = $derived(mySlas.filter((s) => s.status === 'pending'));
 
@@ -112,13 +122,14 @@
     } catch {
       isAdmin = false;
     }
-    const [mr, scr, rr, pr, slr, ar] = await Promise.all([
+    const [mr, scr, rr, pr, slr, ar, cr] = await Promise.all([
       getMandate(mandateId),
       getScorecard(mandateId),
       getResponsiveness(mandateId),
       getProposals(DEFAULT_ORG_ID, 200),
       getSlas(DEFAULT_ORG_ID, 200),
       getMandateActivity(mandateId),
+      getMandateCommitments(mandateId),
     ]);
     loading = false;
     activityLoading = false;
@@ -141,6 +152,8 @@
     }
     // Activity is best-effort: never blocks the page. If failed, section just doesn't render.
     if (ar.ok && ar.data) activity = ar.data;
+    // Compromissos declarados: best-effort — sem eles a seção some.
+    if (cr.ok && cr.data) commitments = cr.data.commitments;
   });
 
   function badgeRate(s: ScorecardDto | null) {
@@ -382,6 +395,47 @@
     {/if}
   </section>
 
+  {#if commitments.length > 0}
+    <section class="commitments">
+      <h2>Compromissos declarados</h2>
+      <p class="muted commit-lead">
+        Compromisso consultivo voluntário — o mandato declarou que ouviria a
+        base. Não é vinculante (mandato é indelegável por lei); o que se registra
+        aqui é o compromisso e se ele foi seguido.
+      </p>
+      <ul class="commit-list">
+        {#each commitments as c (c.id)}
+          <li class="card commit-card">
+            <div class="commit-head">
+              <strong class="commit-theme">{c.theme}</strong>
+              <span class={`badge badge-outcome-${c.outcome}`}>
+                {OUTCOME_LABEL[c.outcome]}
+              </span>
+            </div>
+            <p class="commit-desc">{c.description}</p>
+            {#if c.outcome_note}
+              <p class="commit-note muted">{c.outcome_note}</p>
+            {/if}
+            {#if c.consultation}
+              <a
+                class="commit-consulta"
+                href={`/consulta/?id=${c.consultation.consultation_id}`}
+              >
+                📋 {c.consultation.title}
+                <span class="muted small">
+                  · {c.consultation.total} resposta{c.consultation.total === 1 ? '' : 's'}
+                  · 👍 {c.consultation.concordo}
+                  · 😐 {c.consultation.neutro}
+                  · 👎 {c.consultation.discordo}
+                </span>
+              </a>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/if}
+
   {#if !activityLoading && activity && hasActivity}
     <section class="activity">
       <header class="activity-head">
@@ -496,6 +550,65 @@
 {/if}
 
 <style>
+  /* --- Compromissos declarados (D8.1) --------------------------------------- */
+  .commit-lead {
+    margin: 0 0 1rem;
+    font-size: 0.92rem;
+  }
+  .commit-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.85rem;
+  }
+  .commit-card {
+    display: grid;
+    gap: 0.55rem;
+  }
+  .commit-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .commit-theme {
+    font-size: 1.05rem;
+  }
+  .commit-desc {
+    margin: 0;
+    white-space: pre-wrap;
+  }
+  .commit-note {
+    margin: 0;
+    padding-left: 0.75rem;
+    border-left: 3px solid var(--c-border);
+    font-style: italic;
+  }
+  .commit-consulta {
+    display: inline-block;
+    padding: 0.5rem 0.75rem;
+    background: var(--c-bg, #f2f4f7);
+    border-radius: 8px;
+    text-decoration: none;
+    color: var(--c-navy);
+  }
+  .commit-consulta:hover {
+    text-decoration: underline;
+  }
+  .badge-outcome-seguiu {
+    background: var(--c-green-soft, #e6f7ed);
+    color: var(--c-green-dark, #115c2d);
+  }
+  .badge-outcome-nao_seguiu {
+    background: #fef2f2;
+    color: #b91c1c;
+  }
+  .badge-outcome-pendente {
+    background: #fff7e6;
+    color: #ad6800;
+  }
   .head {
     display: grid;
     grid-template-columns: auto 1fr auto;

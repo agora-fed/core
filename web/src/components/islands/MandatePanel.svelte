@@ -8,6 +8,10 @@
     getSlas,
     getProposal,
     getMandateCrm,
+    getMandateCommitments,
+    createCommitment,
+    openCommitmentConsultation,
+    recordCommitmentOutcome,
     respondToSla,
     DEFAULT_ORG_ID,
     type MyMandateDto,
@@ -18,6 +22,7 @@
     SlaStatus,
     MandateCrmDto,
     CrmStatus,
+    PublicCommitment,
   } from '../../lib/types';
   import SlaClock from './SlaClock.svelte';
 
@@ -38,7 +43,7 @@
   let settled = $derived(slas.filter((s) => s.status !== 'pending'));
 
   // --- CRM de gabinete (C6): "quem te procurou e o que pediu" ------------------
-  type Tab = 'fila' | 'crm';
+  type Tab = 'fila' | 'crm' | 'compromissos';
   let activeTab = $state<Tab>('fila');
   let crm = $state<MandateCrmDto | null>(null);
   let crmLoading = $state(false);
@@ -76,6 +81,103 @@
   function selectTab(tab: Tab) {
     activeTab = tab;
     if (tab === 'crm' && !crmLoaded) loadCrm();
+    if (tab === 'compromissos' && !commitLoaded) loadCommitments();
+  }
+
+  // --- Compromissos (D8.1): compromisso consultivo VOLUNTÁRIO do mandato -------
+  const OUTCOME_LABEL: Record<PublicCommitment['outcome'], string> = {
+    seguiu: '🟢 seguiu a base',
+    nao_seguiu: '🔴 não seguiu',
+    pendente: '🕓 pendente',
+  };
+
+  let commitments = $state<PublicCommitment[]>([]);
+  let commitLoading = $state(false);
+  let commitLoaded = $state(false);
+  let commitError = $state<string | null>(null);
+  let commitMsg = $state<{ kind: 'ok' | 'error'; text: string } | null>(null);
+
+  // Form de novo compromisso.
+  let newTheme = $state('');
+  let newDescription = $state('');
+  let creating = $state(false);
+  // Ações por compromisso.
+  let busyCommit = $state<string | null>(null);
+
+  async function loadCommitments() {
+    if (!mine?.mandate) return;
+    commitLoading = true;
+    commitError = null;
+    const res = await getMandateCommitments(mine.mandate.id);
+    commitLoading = false;
+    commitLoaded = true;
+    if (res.ok && res.data) {
+      commitments = res.data.commitments;
+    } else {
+      commitError = res.error ?? 'Não foi possível carregar os compromissos.';
+    }
+  }
+
+  async function submitCommitment() {
+    if (creating) return;
+    const theme = newTheme.trim();
+    const description = newDescription.trim();
+    if (!theme || !description) return;
+    creating = true;
+    commitMsg = null;
+    const res = await createCommitment(theme, description);
+    creating = false;
+    if (res.success) {
+      newTheme = '';
+      newDescription = '';
+      commitMsg = { kind: 'ok', text: 'Compromisso declarado publicamente.' };
+      await loadCommitments();
+    } else {
+      commitMsg = {
+        kind: 'error',
+        text: res.error?.message ?? 'Não foi possível declarar o compromisso.',
+      };
+    }
+  }
+
+  async function consult(id: string) {
+    if (busyCommit) return;
+    busyCommit = id;
+    commitMsg = null;
+    const res = await openCommitmentConsultation(id);
+    busyCommit = null;
+    if (res.success) {
+      commitMsg = { kind: 'ok', text: 'Consulta à base aberta.' };
+      await loadCommitments();
+    } else {
+      commitMsg = {
+        kind: 'error',
+        text: res.error?.message ?? 'Não foi possível abrir a consulta.',
+      };
+    }
+  }
+
+  async function setOutcome(id: string, outcome: 'seguiu' | 'nao_seguiu') {
+    if (busyCommit) return;
+    const note =
+      window.prompt(
+        outcome === 'seguiu'
+          ? 'Como o mandato seguiu a base? (opcional)'
+          : 'Por que o mandato não seguiu a base? (opcional)',
+      ) ?? undefined;
+    busyCommit = id;
+    commitMsg = null;
+    const res = await recordCommitmentOutcome(id, outcome, note || undefined);
+    busyCommit = null;
+    if (res.success) {
+      commitMsg = { kind: 'ok', text: 'Resultado registrado. Aparece no perfil público.' };
+      await loadCommitments();
+    } else {
+      commitMsg = {
+        kind: 'error',
+        text: res.error?.message ?? 'Não foi possível registrar o resultado.',
+      };
+    }
   }
 
   function toggleTheme(theme: string) {
@@ -222,6 +324,13 @@
       onclick={() => selectTab('crm')}
     >
       Quem te procurou
+    </button>
+    <button
+      type="button"
+      class={`tab ${activeTab === 'compromissos' ? 'is-active' : ''}`}
+      onclick={() => selectTab('compromissos')}
+    >
+      Compromissos
     </button>
   </nav>
 
@@ -462,6 +571,134 @@
             {/each}
           </ul>
         {/if}
+      {/if}
+    </section>
+  {/if}
+
+  {#if activeTab === 'compromissos'}
+    <section class="commit">
+      <p class="crm-intro muted">
+        Um <strong>compromisso consultivo voluntário</strong>: o mandato declara
+        que vai <strong>ouvir a base</strong> antes de decidir sobre um tema — e
+        publica depois se seguiu ou não. Não é vinculante (mandato é indelegável
+        por lei); é <strong>transparência do compromisso</strong>, não coerção.
+      </p>
+
+      <form
+        class="commit-form"
+        onsubmit={(e) => {
+          e.preventDefault();
+          submitCommitment();
+        }}
+      >
+        <label for="c-theme">Tema</label>
+        <input
+          id="c-theme"
+          class="input"
+          type="text"
+          bind:value={newTheme}
+          maxlength="120"
+          placeholder="Ex.: Voto no Plano Diretor"
+        />
+        <label for="c-desc">O que você se compromete a fazer</label>
+        <textarea
+          id="c-desc"
+          class="input"
+          rows="3"
+          bind:value={newDescription}
+          maxlength="2000"
+          placeholder="Ex.: Vou consultar a base antes de votar e seguir o que a maioria orientar."
+        ></textarea>
+        <button
+          class="btn btn-primary"
+          type="submit"
+          disabled={creating || !newTheme.trim() || !newDescription.trim()}
+        >
+          {creating ? 'Declarando…' : 'Declarar compromisso'}
+        </button>
+      </form>
+
+      {#if commitMsg}
+        <p class={`hint ${commitMsg.kind === 'ok' ? 'hint-ok' : 'hint-error'}`} role="status">
+          {commitMsg.text}
+        </p>
+      {/if}
+
+      {#if commitLoading && commitments.length === 0}
+        <p class="muted">Carregando…</p>
+      {:else if commitError}
+        <p class="hint hint-error" role="alert">{commitError}</p>
+      {:else if commitments.length === 0}
+        <p class="muted">Nenhum compromisso declarado ainda.</p>
+      {:else}
+        <ul class="commit-list">
+          {#each commitments as c (c.id)}
+            <li class="commit-card">
+              <div class="commit-head">
+                <strong class="commit-theme">{c.theme}</strong>
+                <span class={`badge badge-outcome-${c.outcome}`}>
+                  {OUTCOME_LABEL[c.outcome]}
+                </span>
+              </div>
+              <p class="commit-desc">{c.description}</p>
+
+              {#if c.consultation}
+                <div class="commit-consulta">
+                  <a
+                    class="prop-link"
+                    href={`/consulta/?id=${c.consultation.consultation_id}`}
+                  >
+                    📋 {c.consultation.title}
+                  </a>
+                  <span class="muted small">
+                    {c.consultation.total} resposta{c.consultation.total === 1 ? '' : 's'}
+                    · 👍 {c.consultation.concordo}
+                    · 😐 {c.consultation.neutro}
+                    · 👎 {c.consultation.discordo}
+                  </span>
+                </div>
+              {/if}
+
+              <div class="commit-actions">
+                {#if !c.consultation}
+                  <button
+                    class="btn btn-ghost btn-sm"
+                    type="button"
+                    disabled={busyCommit === c.id}
+                    onclick={() => consult(c.id)}
+                  >
+                    Abrir consulta à base
+                  </button>
+                {/if}
+                {#if c.outcome === 'pendente'}
+                  <button
+                    class="btn btn-ghost btn-sm"
+                    type="button"
+                    disabled={busyCommit === c.id}
+                    onclick={() => setOutcome(c.id, 'seguiu')}
+                  >
+                    🟢 Registrar que seguiu
+                  </button>
+                  <button
+                    class="btn btn-ghost btn-sm"
+                    type="button"
+                    disabled={busyCommit === c.id}
+                    onclick={() => setOutcome(c.id, 'nao_seguiu')}
+                  >
+                    🔴 Registrar que não seguiu
+                  </button>
+                {/if}
+              </div>
+
+              {#if c.outcome_note}
+                <p class="commit-note muted">{c.outcome_note}</p>
+              {/if}
+              <p class="commit-date muted small">
+                Declarado em {fmtDate(c.created_at)}
+              </p>
+            </li>
+          {/each}
+        </ul>
       {/if}
     </section>
   {/if}
@@ -785,6 +1022,92 @@
   }
   .nowrap { white-space: nowrap; }
   .urgente { margin-left: 0.35rem; }
+
+  /* --- Compromissos (D8.1) -------------------------------------------------- */
+  .commit-form {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0 0 1.25rem;
+    padding: 1rem;
+    background: var(--c-paper);
+    border: 1px solid var(--c-border);
+    border-radius: 12px;
+  }
+  .commit-form label {
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+  .commit-form textarea {
+    width: 100%;
+    resize: vertical;
+    font-family: inherit;
+  }
+  .commit-form .btn {
+    justify-self: start;
+  }
+  .commit-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.75rem;
+  }
+  .commit-card {
+    background: var(--c-paper);
+    border: 1px solid var(--c-border);
+    border-radius: 12px;
+    padding: 1rem;
+    display: grid;
+    gap: 0.6rem;
+  }
+  .commit-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .commit-theme {
+    font-size: 1.05rem;
+  }
+  .commit-desc {
+    margin: 0;
+    white-space: pre-wrap;
+  }
+  .commit-consulta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding: 0.6rem 0.75rem;
+    background: var(--c-bg, #f2f4f7);
+    border-radius: 8px;
+  }
+  .commit-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .commit-note {
+    margin: 0;
+    padding-left: 0.75rem;
+    border-left: 3px solid var(--c-border);
+    font-style: italic;
+  }
+  .commit-date {
+    margin: 0;
+  }
+  .badge-outcome-seguiu {
+    background: var(--c-green-soft, #e6f7ed);
+    color: var(--c-green-dark, #115c2d);
+  }
+  .badge-outcome-nao_seguiu {
+    background: #fef2f2;
+    color: #b91c1c;
+  }
+  .badge-outcome-pendente {
+    background: #fff7e6;
+    color: #ad6800;
+  }
   @media (max-width: 560px) {
     .crm-demands thead { display: none; }
     .crm-demands,

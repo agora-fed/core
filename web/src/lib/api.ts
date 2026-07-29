@@ -10,6 +10,7 @@ import type {
   ConsultaDetail,
   FeedItemDto,
   LikeResultDto,
+  MandateCommitmentsDto,
   MandateCrmDto,
   MandateDto,
   MandateInviteSummaryDto,
@@ -438,6 +439,44 @@ export const getMandateCrm = (opts?: { status?: string; theme?: string }) => {
   const suffix = qs.toString() ? `?${qs.toString()}` : '';
   return apiGetCredentialed<MandateCrmDto>(`/api/v1/me/mandate/crm${suffix}`);
 };
+
+// --- Mandato coletivo: compromisso consultivo declarado (D8.1) ---------------
+
+/** Compromissos consultivos PÚBLICOS de um mandato (perfil do político). Só dado
+ *  público: tema, resultado e o agregado da consulta (nunca voto por-cidadão).
+ *  Best-effort no front — a página do político nunca quebra se falhar. */
+export const getMandateCommitments = (mandateId: string) =>
+  apiGet<MandateCommitmentsDto>(
+    `/api/v1/politicos/${encodeURIComponent(mandateId)}/commitments`,
+  );
+
+/** Operador declara um compromisso (tema + descrição). Gate: vínculo de mandato. */
+export const createCommitment = (theme: string, description: string) =>
+  apiPost<{ id: string }>('/api/v1/me/mandate/commitments', {
+    theme,
+    description,
+  });
+
+/** Operador abre uma consulta à base ligada ao compromisso (reusa consultations). */
+export const openCommitmentConsultation = (
+  commitmentId: string,
+  question?: string,
+) =>
+  apiPost<{ consultation_id: string }>(
+    `/api/v1/me/mandate/commitments/${encodeURIComponent(commitmentId)}/consult`,
+    { question },
+  );
+
+/** Operador registra o resultado: `seguiu` ou `nao_seguiu` (+ nota opcional). */
+export const recordCommitmentOutcome = (
+  commitmentId: string,
+  outcome: 'seguiu' | 'nao_seguiu',
+  note?: string,
+) =>
+  apiPost<{ ok: boolean }>(
+    `/api/v1/me/mandate/commitments/${encodeURIComponent(commitmentId)}/outcome`,
+    { outcome, note },
+  );
 
 /** An official records a public response to an SLA. Identity comes from the cookie. */
 export const respondToSla = (slaId: string, body: string, committed: boolean) =>
