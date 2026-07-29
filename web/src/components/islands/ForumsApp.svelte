@@ -734,18 +734,27 @@
         {@html mdToHtml(detail.topic.body)}
       </div>
 
-      <!-- Placar por pontos (ADR-0019): sinal = qual lado ganha; ≥10 → encaminha ao gabinete. -->
+      <!-- Placar por pontos (ADR-0019 + D3): sinal = qual lado ganha; cruzar o
+           patamar PROPORCIONAL ao eleitorado do território → encaminha ao gabinete. -->
       <div class="f-score" class:pos={detail.topic.score > 0} class:neg={detail.topic.score < 0}>
         <span class="f-score-num">{detail.topic.score > 0 ? '+' : ''}{detail.topic.score.toLocaleString('pt-BR')}</span>
         <span class="f-score-lbl">pontos</span>
-        {#if detail.topic.score >= 10}
+        {#if detail.topic.score >= detail.escalation_threshold}
           <span class="f-score-hint ok">✓ encaminhado ao gabinete</span>
         {:else if detail.topic.score > 0}
-          <span class="f-score-hint">faltam {(10 - detail.topic.score).toLocaleString('pt-BR')} pra encaminhar ao gabinete</span>
+          <span class="f-score-hint">faltam {(detail.escalation_threshold - detail.topic.score).toLocaleString('pt-BR')} pra encaminhar ao gabinete</span>
         {:else}
           <span class="f-score-hint">apoio líquido negativo — não encaminha</span>
         {/if}
       </div>
+
+      {#if detail.aggregate_only}
+        <!-- D5/D6: município pequeno → só o agregado é público; posição individual protegida. -->
+        <p class="f-privacy muted small">
+          🛡️ Município pequeno: por privacidade, mostramos só o placar agregado —
+          quem apoiou ou se posicionou não é identificado publicamente.
+        </p>
+      {/if}
 
       <!-- Posições: registrar/mudar a sua + contagem de votos por lado. -->
       <div class="f-stances" role="group" aria-label="Sua posição">

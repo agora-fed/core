@@ -12,6 +12,48 @@ use uuid::Uuid;
 use crate::domain::{self, territorial_sections, NewTopic, Stance, TerritorialSection};
 use crate::queries::{self, CommentRow, DispatchRow, ForumRow, TopicRow};
 
+// --- Config do patamar proporcional dos fóruns (D3 do plano de crítica) ---
+//
+// O gatilho de encaminhamento ao gabinete deixa de ser o "10 pontos" fixo do
+// ADR-0019 e passa a ser PROPORCIONAL ao eleitorado do território do fórum,
+// pela MESMA fórmula das propostas (`dsoc_core::proportional_threshold`):
+//
+//     patamar = clamp( ceil(fração × eleitorado), piso, teto )
+//
+// A fração default (0,05%) é a mesma das propostas — UMA régua só (B1). O piso
+// 10 preserva exatamente o comportamento do ADR-0019 (território sem dado, ou
+// município pequeno, seguem exigindo 10). O teto evita alvo impossível numa
+// capital/nacional. Tudo sobrescrevível por env; defaults à prova de falha.
+const DEFAULT_FORUM_FRACTION: f64 = 0.0005;
+const DEFAULT_FORUM_FLOOR: i64 = 10;
+const DEFAULT_FORUM_CEIL: i64 = 10_000;
+
+/// Privacidade graduada por tamanho de município (D5/D6). Abaixo deste
+/// eleitorado, SÓ o agregado do tópico é público — a posição individual (quem
+/// argumentou a favor/contra) não é atribuída, para não virar mapa de
+/// retaliação em território pequeno + clientelista. Sobrescrevível por
+/// `SMALL_MUNICIPALITY_ELECTORATE`. Só municípios caem abaixo disso (a menor UF
+/// tem centenas de milhares de eleitores), então na prática é a régua municipal.
+const DEFAULT_SMALL_MUNICIPALITY_ELECTORATE: i64 = 5_000;
+
+/// Lê uma fração `(0,1]` de env; fora da faixa ou ausente → default (fail-safe).
+fn env_f64(key: &str, default: f64) -> f64 {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|v: &f64| *v > 0.0 && *v <= 1.0)
+        .unwrap_or(default)
+}
+
+/// Lê um inteiro positivo de env; ausente/inválido → default (fail-safe).
+fn env_i64(key: &str, default: i64) -> i64 {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|v: &i64| *v > 0)
+        .unwrap_or(default)
+}
+
 /// Uma seção-filha na árvore: materializada (linha real) ou virtual (template
 /// territorial ainda sem tópicos — vira linha no primeiro uso).
 #[derive(Debug, Clone)]
@@ -24,6 +66,25 @@ pub struct ChildEntry {
     pub name: String,
     /// `true` quando ainda não materializada.
     pub virtual_section: bool,
+}
+
+/// Detalhe de um tópico já enriquecido com os derivados do território:
+/// patamar proporcional efetivo (D3) e privacidade agregada (D5/D6).
+#[derive(Debug, Clone)]
+pub struct TopicDetail {
+    /// O tópico.
+    pub topic: TopicRow,
+    /// Comentários aprovados (locais + federados).
+    pub comments: Vec<CommentRow>,
+    /// Recibos de envio institucional.
+    pub dispatches: Vec<DispatchRow>,
+    /// Patamar de encaminhamento proporcional efetivo deste fórum (D3) — o
+    /// score que o placar precisa cruzar para acionar o gabinete. A UI mostra
+    /// "faltam N" a partir daqui, em vez do antigo 10 fixo.
+    pub escalation_threshold: i64,
+    /// Município pequeno (D5/D6): quando `true`, a atribuição individual de
+    /// posição foi omitida — só o agregado é público.
+    pub aggregate_only: bool,
 }
 
 /// Serviço dos fóruns.
@@ -235,14 +296,13 @@ impl ForumService {
             .map_err(map_sqlx)
     }
 
-    /// Detalhe do tópico + comentários aprovados + recibos de envio.
+    /// Detalhe do tópico + comentários aprovados + recibos de envio, mais os
+    /// derivados do território: o patamar proporcional efetivo (D3) e o flag
+    /// `aggregate_only` (D5/D6).
     ///
     /// # Errors
     /// [`Error::NotFound`]/[`Error::Storage`].
-    pub async fn get_topic(
-        &self,
-        id: Uuid,
-    ) -> Result<(TopicRow, Vec<CommentRow>, Vec<DispatchRow>)> {
+    pub async fn get_topic(&self, id: Uuid) -> Result<TopicDetail> {
         let mut tx = self.db.begin().await.map_err(map_sqlx)?;
         let Some(topic) = queries::lock_topic(&mut *tx, id).await.map_err(map_sqlx)? else {
             return Err(Error::NotFound("tópico não encontrado".to_owned()));
@@ -253,8 +313,31 @@ impl ForumService {
         let dispatches = queries::list_dispatches(&mut *tx, id)
             .await
             .map_err(map_sqlx)?;
+        // Um lookup de eleitorado alimenta os dois derivados (D3 + D5/D6).
+        let voters = queries::forum_territory_voters(&mut *tx, topic.forum_id)
+            .await
+            .map_err(map_sqlx)?;
         tx.commit().await.map_err(map_sqlx)?;
-        Ok((topic, comments, dispatches))
+        let escalation_threshold = dsoc_core::proportional_threshold(
+            voters,
+            env_f64("FORUM_THRESHOLD_FRACTION", DEFAULT_FORUM_FRACTION),
+            env_i64("FORUM_THRESHOLD_FLOOR", DEFAULT_FORUM_FLOOR),
+            env_i64("FORUM_THRESHOLD_CEIL", DEFAULT_FORUM_CEIL),
+        );
+        let aggregate_only = dsoc_core::is_small_electorate(
+            voters,
+            env_i64(
+                "SMALL_MUNICIPALITY_ELECTORATE",
+                DEFAULT_SMALL_MUNICIPALITY_ELECTORATE,
+            ),
+        );
+        Ok(TopicDetail {
+            topic,
+            comments,
+            dispatches,
+            escalation_threshold,
+            aggregate_only,
+        })
     }
 
     /// Posição do cidadão (upsert; a favor/contra/ponderação) — recalcula
@@ -400,21 +483,26 @@ impl ForumService {
             .await
             .map_err(map_sqlx)?;
 
-        // ADR-0019: encaminha ao gabinete quando o PLACAR (pontos com sinal) cruza o patamar de
-        // escala — uma única vez. `next_threshold_idx` vira flag: 0 = ainda não escalou, 1 = escalou.
-        // Só demanda com apoio líquido (score ≥ 10) escala; controverso (líquido baixo) não.
+        // ADR-0019 + D3: encaminha ao gabinete quando o PLACAR (pontos com sinal) cruza o patamar
+        // — uma única vez. `next_threshold_idx` vira flag: 0 = ainda não escalou, 1 = escalou.
+        // O patamar agora é PROPORCIONAL ao eleitorado do território do fórum (piso 10 = o antigo
+        // corte fixo; teto evita alvo impossível em capital/nacional): mesmo esforço relativo em
+        // Roraima e em SP, e volume bruto deixa de ser trivialmente gameável. Só demanda com apoio
+        // líquido (score ≥ patamar) escala; controverso (líquido baixo) não.
         // (Fórum sem e-mail curado fica pendente e dispara quando a curadoria preencher.)
-        const ESCALATION_POINTS: i64 = 10;
-        if score >= ESCALATION_POINTS && topic.next_threshold_idx == 0 {
+        let escalation = Self::forum_escalation_threshold(&mut **tx, topic.forum_id).await?;
+        if score >= escalation && topic.next_threshold_idx == 0 {
             let email = queries::effective_contact_email(&mut **tx, topic.forum_id)
                 .await
                 .map_err(map_sqlx)?;
             if let Some(email) = email {
+                // O recibo registra o patamar REALMENTE cruzado (proporcional), não o "10" fixo.
+                let recorded = i32::try_from(escalation).unwrap_or(i32::MAX);
                 queries::insert_dispatch(
                     &mut **tx,
                     Uuid::now_v7(),
                     topic.id,
-                    ESCALATION_POINTS as i32,
+                    recorded,
                     &email,
                     now,
                 )
@@ -438,6 +526,25 @@ impl ForumService {
             return Err(Error::NotFound("tópico não encontrado".to_owned()));
         };
         Ok(updated)
+    }
+
+    /// Patamar de encaminhamento proporcional ao eleitorado do território do
+    /// fórum (D3). `clamp(ceil(fração × eleitorado), piso, teto)`. Território
+    /// sem esfera/eleitorado → piso (fail-safe; nunca desliga o gatilho).
+    ///
+    /// # Errors
+    /// [`Error::Storage`] se a consulta ao eleitorado falhar.
+    async fn forum_escalation_threshold(
+        executor: impl sqlx::PgExecutor<'_>,
+        forum_id: Uuid,
+    ) -> Result<i64> {
+        let voters = queries::forum_territory_voters(executor, forum_id)
+            .await
+            .map_err(map_sqlx)?;
+        let fraction = env_f64("FORUM_THRESHOLD_FRACTION", DEFAULT_FORUM_FRACTION);
+        let floor = env_i64("FORUM_THRESHOLD_FLOOR", DEFAULT_FORUM_FLOOR);
+        let ceil = env_i64("FORUM_THRESHOLD_CEIL", DEFAULT_FORUM_CEIL);
+        Ok(dsoc_core::proportional_threshold(voters, fraction, floor, ceil))
     }
 }
 

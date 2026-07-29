@@ -85,15 +85,11 @@ fn env_i64(key: &str, default: i64) -> i64 {
         .unwrap_or(default)
 }
 
-/// A conta em si — pura e testável. `voters = None` (território sem dado)
-/// cai no piso.
+/// A conta em si — pura e testável. Agora só delega ao primitivo compartilhado
+/// `dsoc_core::threshold::proportional_threshold`: fóruns e propostas usam a
+/// MESMA régua (D3 do plano de crítica). `voters = None` cai no piso.
 fn compute_threshold(voters: Option<i64>, fraction: f64, floor: i64, ceil: i64) -> i64 {
-    let Some(voters) = voters else {
-        return floor;
-    };
-    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
-    let raw = (voters as f64 * fraction).ceil() as i64;
-    raw.clamp(floor, ceil)
+    dsoc_core::proportional_threshold(voters, fraction, floor, ceil)
 }
 
 /// Eleitorado do território do mandato: municipal → município; federal e

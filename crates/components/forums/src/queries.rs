@@ -876,6 +876,44 @@ pub async fn list_dispatches(
         .collect())
 }
 
+/// Eleitorado do território do fórum (base do patamar proporcional — D3).
+///
+/// Resolve território → linha da tabela `electorate` (seed TSE, migration 0522),
+/// espelhando a política do gateway para mandatos:
+/// - `municipal` com uf+município → eleitorado daquele município;
+/// - `estadual`/`federal` com uf → total da UF;
+/// - `federal` sem uf (ex.: nacional) → total nacional (`'BR'`);
+/// - fórum SEM esfera (institucional/comunitário) ou sem match → `None`
+///   (o chamador cai no piso).
+///
+/// `municipio` é comparado por igualdade de texto (mesmo critério do gateway);
+/// divergência de grafia simplesmente não casa e cai no piso — fail-safe.
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn forum_territory_voters(
+    executor: impl sqlx::PgExecutor<'_>,
+    forum_id: Uuid,
+) -> Result<Option<i64>, sqlx::Error> {
+    let r = sqlx::query!(
+        r#"SELECT e.voters AS "voters?"
+           FROM forum f
+           LEFT JOIN electorate e ON f.esfera IS NOT NULL AND (
+                (f.esfera = 'municipal' AND f.uf IS NOT NULL AND f.municipio IS NOT NULL
+                    AND e.uf = f.uf AND e.municipio = f.municipio)
+             OR (f.esfera IN ('estadual', 'federal') AND f.uf IS NOT NULL
+                    AND e.uf = f.uf AND e.municipio IS NULL)
+             OR (f.esfera = 'federal' AND f.uf IS NULL
+                    AND e.uf = 'BR' AND e.municipio IS NULL)
+           )
+           WHERE f.id = $1"#,
+        forum_id,
+    )
+    .fetch_optional(executor)
+    .await?;
+    Ok(r.and_then(|r| r.voters))
+}
+
 /// E-mail efetivo do fórum: o próprio ou, quando NULL, o do ancestral mais próximo.
 ///
 /// # Errors

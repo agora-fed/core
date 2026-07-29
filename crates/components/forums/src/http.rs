@@ -151,6 +151,15 @@ pub struct TopicDetailDto {
     pub comments: Vec<ForumCommentDto>,
     /// Recibos de envio institucional.
     pub dispatches: Vec<DispatchDto>,
+    /// Patamar de encaminhamento PROPORCIONAL efetivo deste fórum (D3): o score
+    /// que o placar precisa cruzar para acionar o gabinete, proporcional ao
+    /// eleitorado do território (piso 10). A UI usa isto no lugar do 10 fixo.
+    pub escalation_threshold: i64,
+    /// Privacidade graduada (D5/D6): `true` quando o fórum é de um município
+    /// pequeno — nesse caso a atribuição individual de posição foi omitida dos
+    /// comentários (autor pseudonimizado, `stance`/karma nulos); só o agregado
+    /// do tópico (favor/contra/score) é público. A UI deve sinalizar isso.
+    pub aggregate_only: bool,
 }
 
 /// Criação de tópico.
@@ -248,18 +257,29 @@ fn topic_dto(r: TopicRow) -> TopicDto {
     }
 }
 
-fn comment_dto(r: CommentRow) -> ForumCommentDto {
-    let author = match (&r.author_id, &r.remote_handle) {
-        (Some(cid), _) => format!("u-{}", cid.as_simple()),
-        (None, Some(h)) => h.clone(),
-        (None, None) => "(desconhecido)".to_owned(),
+/// `protect` (D5/D6): em município pequeno, a atribuição individual de posição
+/// é omitida — autor vira pseudônimo genérico e `stance`/karma somem, para não
+/// montar mapa de retaliação (quem apoiou/votou o quê). O CORPO do argumento
+/// (fala pública) e os contadores agregados do argumento seguem visíveis; o que
+/// se protege é o vínculo pessoa↔posição, não o debate.
+fn comment_dto(r: CommentRow, protect: bool) -> ForumCommentDto {
+    let author = if protect {
+        // Pseudônimo não-identificável e estável-por-tópico não é possível sem
+        // estado extra; usamos um rótulo genérico (minimum viable).
+        "participante".to_owned()
+    } else {
+        match (&r.author_id, &r.remote_handle) {
+            (Some(cid), _) => format!("u-{}", cid.as_simple()),
+            (None, Some(h)) => h.clone(),
+            (None, None) => "(desconhecido)".to_owned(),
+        }
     };
     ForumCommentDto {
         id: r.id,
         author,
-        author_karma: r.author_karma,
+        author_karma: if protect { None } else { r.author_karma },
         federated: r.federated,
-        stance: r.stance,
+        stance: if protect { None } else { r.stance },
         favor: r.favor_count,
         contra: r.contra_count,
         ponderacao: r.ponderacao_count,
@@ -437,11 +457,18 @@ async fn list_topics(
 async fn get_topic(State(state): State<dsoc_app::AppState>, Path(id): Path<Uuid>) -> Response {
     let svc = ForumService::from_state(&state);
     match svc.get_topic(id).await {
-        Ok((topic, comments, dispatches)) => {
+        Ok(d) => {
+            let aggregate_only = d.aggregate_only;
             let dto = TopicDetailDto {
-                topic: topic_dto(topic),
-                comments: comments.into_iter().map(comment_dto).collect(),
-                dispatches: dispatches.into_iter().map(dispatch_dto).collect(),
+                topic: topic_dto(d.topic),
+                comments: d
+                    .comments
+                    .into_iter()
+                    .map(|c| comment_dto(c, aggregate_only))
+                    .collect(),
+                dispatches: d.dispatches.into_iter().map(dispatch_dto).collect(),
+                escalation_threshold: d.escalation_threshold,
+                aggregate_only,
             };
             (StatusCode::OK, Json(ApiResponse::ok(dto))).into_response()
         }
@@ -531,8 +558,12 @@ async fn vote_comment(
     let svc = ForumService::from_state(&state);
     match svc.vote_comment(id, caller.citizen, stance).await {
         Ok((comment, topic)) => {
+            // TODO(D5/D6): caminho secundário de exposição — em município pequeno,
+            // a resposta do voto ainda devolve stance/autor do argumento. A régua
+            // agregada é aplicada na listagem pública (`get_topic`); endurecer aqui
+            // exige resolver o território neste path (fundação documentada).
             let dto = CommentVoteDto {
-                comment: comment_dto(comment),
+                comment: comment_dto(comment, false),
                 topic: topic_dto(topic),
             };
             (StatusCode::OK, Json(ApiResponse::ok(dto))).into_response()

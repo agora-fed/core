@@ -3009,6 +3009,19 @@ export interface ForumTopicDetailDto {
   topic: ForumTopicDto;
   comments: ForumCommentItemDto[];
   dispatches: ForumDispatchDto[];
+  /**
+   * Patamar de encaminhamento PROPORCIONAL efetivo (D3): o score que o placar
+   * precisa cruzar para acionar o gabinete, proporcional ao eleitorado do
+   * território (piso 10). A UI usa isto no "faltam N" em vez do 10 fixo.
+   */
+  escalation_threshold: number;
+  /**
+   * Privacidade graduada (D5/D6): true quando o fórum é de um município
+   * pequeno. Nesse caso a atribuição individual de posição foi omitida dos
+   * comentários (autor = "participante", stance/karma nulos); só o agregado
+   * do tópico é público. A UI deve sinalizar "apoio agregado por privacidade".
+   */
+  aggregate_only: boolean;
 }
 
 export const getForumTree = (path?: string) =>

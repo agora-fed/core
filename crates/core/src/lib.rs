@@ -18,6 +18,7 @@ pub mod events;
 pub mod ids;
 pub mod l10n;
 pub mod testing;
+pub mod threshold;
 pub mod traits;
 
 pub use clock::{Clock, SystemClock};
@@ -27,4 +28,5 @@ pub use l10n::{
     IdentityAssurance, IdentityBand, IdentityCheck, IdentityOutcome, IdentityVerifier,
     Localization, Municipality, TerritorialProvider, VoterRegistration,
 };
+pub use threshold::{is_small_electorate, proportional_threshold};
 pub use traits::{Authorization, Component, EventBus, Space, Storage, VerificationLevel};
