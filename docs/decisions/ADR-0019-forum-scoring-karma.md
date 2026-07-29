@@ -1,8 +1,8 @@
 # ADR-0019 — Placar de deliberação por pontos + karma do usuário (estilo StackOverflow/Odoo)
 
-- **Status:** Accepted — F1/F2/F3 implementadas e em prod (2026-07-29, imgs 0.86.0→0.88.0). Pendente:
-  selo de karma por-comentário no front (adiado — karma=0 em todo o histórico atual, sem votos em
-  argumento; a acumulação já funciona no backend).
+- **Status:** Implemented — F1/F2/F3 + selo de karma em prod (2026-07-29, imgs 0.86.0→0.89.0).
+  Karma acumula no backend; exibido como selo `◆ N` na autoria dos argumentos (0 hoje, sem votos em
+  argumento no histórico). Patamar proporcional-ao-eleitorado (em pontos) fica como evolução futura.
 - **Context:** Diretriz do Marcos (2026-07-28). O placar atual do fórum conta 3 posições
   (favor/contra/ponderação) como contadores de VOTOS, o que gera incoerência visual (um argumento
   "Contra" sob um "Contra 0" — ver caso `d1111111…`). Trocar por um **placar com sinal** (estilo SO/
