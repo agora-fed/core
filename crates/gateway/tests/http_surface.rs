@@ -2598,6 +2598,18 @@ async fn commitments_write_is_gated_read_is_public() {
             "/api/v1/me/mandate/commitments",
             None,
             r#"{"theme":"Tema","description":"Descrição do compromisso"}"#,
+// Orçamento participativo — piloto de mandato (D8.3)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn op_anonymous_cannot_create_round() {
+    let (app, _st) = app().await;
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/me/mandate/op/rounds",
+            None,
+            r#"{"title":"Emenda 2026","budget_cents":50000000}"#,
         ))
         .await
         .unwrap();
@@ -2612,6 +2624,19 @@ async fn commitments_write_is_gated_read_is_public() {
             "/api/v1/me/mandate/commitments",
             Some(&plain_cookie),
             r#"{"theme":"Intruso","description":"Não deveria gravar"}"#,
+}
+
+#[tokio::test]
+async fn op_plain_citizen_cannot_create_round() {
+    let (app, st) = app().await;
+    // Conta comum, sem binding de mandato → não é operador.
+    let (_, _, cookie) = seed_session(&st.db).await;
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/me/mandate/op/rounds",
+            Some(&cookie),
+            r#"{"title":"Emenda 2026","budget_cents":50000000}"#,
         ))
         .await
         .unwrap();
@@ -2673,6 +2698,15 @@ async fn commitment_declare_consult_and_outcome_flow() {
     let mandate = seed_mandate_binding(&st.db, org, operator).await;
 
     // 1) Declara o compromisso.
+}
+
+#[tokio::test]
+async fn op_full_cycle_operator_and_citizen() {
+    let (app, st) = app().await;
+    // Operador (vínculo de mandato) abre a rodada.
+    let (org, operator, op_cookie) = seed_session(&st.db).await;
+    let mandate = seed_mandate_binding(&st.db, org, operator).await;
+
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2680,16 +2714,22 @@ async fn commitment_declare_consult_and_outcome_flow() {
             "/api/v1/me/mandate/commitments",
             Some(&cookie),
             r#"{"theme":"Reforma tributária","description":"Consultar a base antes de votar."}"#,
+            "/api/v1/me/mandate/op/rounds",
+            Some(&op_cookie),
+            r#"{"title":"Verba de emenda 2026","budget_cents":250,"uf":"SP"}"#,
         ))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let id = body_json(resp).await["data"]["id"]
+    let round_id = body_json(resp).await["data"]["id"]
         .as_str()
         .unwrap()
         .to_owned();
 
     // 2) Abre a consulta ligada (reusa o crate consultations).
+    // Cidadão logado (outra conta na mesma org) submete um item na fase propostas.
+    let (_, _, voter_cookie) = seed_session_in_org(&st.db, org).await;
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2697,6 +2737,9 @@ async fn commitment_declare_consult_and_outcome_flow() {
             &format!("/api/v1/me/mandate/commitments/{id}/consult"),
             Some(&cookie),
             "{}",
+            &format!("/api/v1/op/rounds/{round_id}/items"),
+            Some(&voter_cookie),
+            r#"{"title":"Praça revitalizada","estimated_cents":150}"#,
         ))
         .await
         .unwrap();
@@ -2715,6 +2758,12 @@ async fn commitment_declare_consult_and_outcome_flow() {
     assert_eq!(cc, 1);
 
     // Abrir de novo é conflito (compromisso já tem consulta).
+    let item_id = body_json(resp).await["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // Votar antes da fase de votação → 409 (fase errada).
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2722,12 +2771,16 @@ async fn commitment_declare_consult_and_outcome_flow() {
             &format!("/api/v1/me/mandate/commitments/{id}/consult"),
             Some(&cookie),
             "{}",
+            &format!("/api/v1/op/rounds/{round_id}/vote"),
+            Some(&voter_cookie),
+            &format!(r#"{{"item_id":"{item_id}"}}"#),
         ))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 
     // 3) Registra que seguiu, com nota.
+    // Operador avança para 'votacao'.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2735,6 +2788,9 @@ async fn commitment_declare_consult_and_outcome_flow() {
             &format!("/api/v1/me/mandate/commitments/{id}/outcome"),
             Some(&cookie),
             r#"{"outcome":"seguiu","note":"Votei conforme a maioria da base."}"#,
+            &format!("/api/v1/me/mandate/op/rounds/{round_id}/phase"),
+            Some(&op_cookie),
+            r#"{"phase":"votacao"}"#,
         ))
         .await
         .unwrap();
@@ -2743,6 +2799,38 @@ async fn commitment_declare_consult_and_outcome_flow() {
     // 4) A superfície pública reflete tudo (sem login).
     let resp = app
         .oneshot(get(&format!("/api/v1/politicos/{mandate}/commitments")))
+    // Anônimo não vota → 401.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/op/rounds/{round_id}/vote"),
+            None,
+            &format!(r#"{{"item_id":"{item_id}"}}"#),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+    // Cidadão vota — e vota DE NOVO (upsert): continua 1 voto por rodada.
+    for _ in 0..2 {
+        let resp = app
+            .clone()
+            .oneshot(json_req(
+                "POST",
+                &format!("/api/v1/op/rounds/{round_id}/vote"),
+                Some(&voter_cookie),
+                &format!(r#"{{"item_id":"{item_id}"}}"#),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    // Superfície pública: 1 voto total (upsert não duplicou), item ranqueado e cabe.
+    let resp = app
+        .clone()
+        .oneshot(get(&format!("/api/v1/op/rounds/{round_id}")))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
@@ -2756,4 +2844,74 @@ async fn commitment_declare_consult_and_outcome_flow() {
     assert_eq!(c["outcome_note"], "Votei conforme a maioria da base.");
     assert_eq!(c["consultation"]["consultation_id"], consultation_id);
     assert_eq!(c["consultation"]["total"], 0);
+    assert_eq!(json["data"]["total_votes"], 1);
+    assert_eq!(json["data"]["mandate_id"], mandate.to_string());
+    let items = json["data"]["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["votes"], 1);
+    assert_eq!(items[0]["rank"], 1);
+    assert_eq!(items[0]["fits_budget"], true);
+    assert_eq!(json["data"]["allocated_cents"], 150);
+
+    // Operador fecha e presta contas (marca execução).
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/me/mandate/op/rounds/{round_id}/items/{item_id}/execution"),
+            Some(&op_cookie),
+            r#"{"execution_status":"concluido"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // A rodada aparece na lista pública do mandato.
+    let resp = app
+        .clone()
+        .oneshot(get(&format!("/api/v1/politicos/{mandate}/op")))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    let rounds = json["data"]["rounds"].as_array().unwrap();
+    assert_eq!(rounds.len(), 1);
+    assert_eq!(rounds[0]["id"], round_id);
+    assert_eq!(rounds[0]["total_votes"], 1);
+}
+
+#[tokio::test]
+async fn op_operator_cannot_touch_other_mandate_round() {
+    let (app, st) = app().await;
+    // Gabinete A cria uma rodada.
+    let (org, op_a, cookie_a) = seed_session(&st.db).await;
+    seed_mandate_binding(&st.db, org, op_a).await;
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/me/mandate/op/rounds",
+            Some(&cookie_a),
+            r#"{"title":"Rodada do A","budget_cents":1000}"#,
+        ))
+        .await
+        .unwrap();
+    let round_a = body_json(resp).await["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // Operador de OUTRO gabinete não consegue avançar a fase da rodada do A → 404.
+    let (_, op_b, cookie_b) = seed_session_in_org(&st.db, org).await;
+    seed_mandate_binding(&st.db, org, op_b).await;
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/me/mandate/op/rounds/{round_a}/phase"),
+            Some(&cookie_b),
+            r#"{"phase":"votacao"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }

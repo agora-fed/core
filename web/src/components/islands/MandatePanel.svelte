@@ -25,6 +25,7 @@
     PublicCommitment,
   } from '../../lib/types';
   import SlaClock from './SlaClock.svelte';
+  import MandateOpPanel from './MandateOpPanel.svelte';
 
   let loading = $state(true);
   let mine = $state<MyMandateDto | null>(null);
@@ -44,6 +45,7 @@
 
   // --- CRM de gabinete (C6): "quem te procurou e o que pediu" ------------------
   type Tab = 'fila' | 'crm' | 'compromissos';
+  type Tab = 'fila' | 'crm' | 'op';
   let activeTab = $state<Tab>('fila');
   let crm = $state<MandateCrmDto | null>(null);
   let crmLoading = $state(false);
@@ -331,6 +333,10 @@
       onclick={() => selectTab('compromissos')}
     >
       Compromissos
+      class={`tab ${activeTab === 'op' ? 'is-active' : ''}`}
+      onclick={() => selectTab('op')}
+    >
+      Orçamento participativo
     </button>
   </nav>
 
@@ -701,6 +707,8 @@
         </ul>
       {/if}
     </section>
+  {#if activeTab === 'op'}
+    <MandateOpPanel mandateId={mine.mandate.id} />
   {/if}
 {/if}
 

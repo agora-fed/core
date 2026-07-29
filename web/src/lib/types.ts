@@ -535,6 +535,70 @@ export interface ProfileExtra {
   page_url: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// Orçamento participativo — piloto de mandato (D8.3)
+// ---------------------------------------------------------------------------
+
+/** Fase do ciclo de uma rodada de OP. */
+export type OpPhase = 'propostas' | 'votacao' | 'resultado' | 'execucao';
+
+/** Prestação de contas de um item depois da votação. */
+export type OpExecutionStatus =
+  | 'previsto'
+  | 'em_andamento'
+  | 'concluido'
+  | 'nao_executado';
+
+/** Um item/proposta de uma rodada, na superfície pública (com contagem + ranking). */
+export interface OpItemDto {
+  id: string;
+  title: string;
+  description: string;
+  /** Custo estimado em centavos (`null` = sem estimativa; nunca "cabe"). */
+  estimated_cents: number | null;
+  votes: number;
+  /** Autoria pública (handle) — `null` se item do gabinete/anônimo. */
+  author_handle: string | null;
+  author_display_name: string | null;
+  execution_status: OpExecutionStatus | null;
+  /** Posição no ranking por votos (1-based). */
+  rank: number;
+  /** Cabe na verba acumulada (o "vencedor" é o conjunto que cabe). */
+  fits_budget: boolean;
+  created_at: string;
+}
+
+/** `GET /op/rounds/{id}` — rodada + itens + ranking dentro do orçamento. */
+export interface OpRoundDto {
+  id: string;
+  mandate_id: string;
+  mandate_name: string | null;
+  title: string;
+  /** Verba da emenda em centavos (o teto do ciclo). */
+  budget_cents: number;
+  uf: string | null;
+  municipio_ibge: number | null;
+  phase: OpPhase;
+  total_votes: number;
+  /** Soma dos custos dos itens que cabem (compromisso do conjunto vencedor). */
+  allocated_cents: number;
+  items: OpItemDto[];
+  created_at: string;
+}
+
+/** Resumo de uma rodada (listas do mandato / descoberta). */
+export interface OpRoundSummaryDto {
+  id: string;
+  title: string;
+  budget_cents: number;
+  uf: string | null;
+  municipio_ibge: number | null;
+  phase: OpPhase;
+  items_count: number;
+  total_votes: number;
+  created_at: string;
+}
+
 /** Normalized public activity payload for a mandate. Empty vecs = no data. */
 export interface ActivityDto {
   /** `camara` | `senado` | `manual` | null (the mandate's `source`). */

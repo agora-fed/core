@@ -1,0 +1,34 @@
+---
+// Página pública de uma rodada de orçamento participativo (piloto de mandato, D8.3).
+// SSG: pré-gera uma página por rodada existente no build; o conteúdo (propostas, votos,
+// ranking, execução) hidrata client-side pela ilha — assim reflete mudanças sem rebuild, e
+// rodadas novas aparecem no próximo build (mesmo padrão de /propostas/[id]). A ilha também
+// aceita ?round=<id> como fallback quando a página estática ainda não existe.
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import OpRound from '../../components/islands/OpRound.svelte';
+import { getRecentOpRounds } from '../../lib/api';
+
+export async function getStaticPaths() {
+  const res = await getRecentOpRounds();
+  if (!res.ok || !res.data) return [];
+  return res.data.rounds.map((r) => ({ params: { round: r.id } }));
+}
+
+const { round } = Astro.params;
+const description =
+  'Orçamento participativo (piloto): a base decide onde vai uma fatia real da verba de emenda do mandato — proponha, vote e acompanhe a execução.';
+---
+
+<BaseLayout title="Orçamento participativo" {description} noindex>
+  <section class="section">
+    <div class="container narrow">
+      <OpRound client:load roundId={round!} />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .narrow {
+    max-width: 48rem;
+  }
+</style>

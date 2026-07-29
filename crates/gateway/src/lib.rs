@@ -55,6 +55,7 @@ pub mod mastodon_dto;
 pub mod mastodon_oauth;
 pub mod me_mandate_commitment;
 pub mod me_mandate_crm;
+pub mod me_mandate_op;
 pub mod me_settings;
 pub mod module_catalog;
 pub mod module_gate;
@@ -283,6 +284,10 @@ pub fn api_router(state: AppState) -> Router {
         // declara que ouviria a base e publica se seguiu. Escrita gated pelo
         // vínculo; leitura pública só expõe agregado (nunca voto por-cidadão).
         .merge(me_mandate_commitment::routes(state.clone()))
+        // Orçamento participativo (D8.3): ciclo de OP dono=mandato (verba de
+        // emenda + território + fases). Escrita gated pelo vínculo; leitura
+        // pública só expõe autoria de item (nunca quem votou).
+        .merge(me_mandate_op::routes(state.clone()))
         // Grupos de campanha — canal proativo campanha→eleitor (0.39, Fase 2.3).
         .merge(campaign_groups::routes(state.clone()))
         .merge(consultas_ext::routes(state.clone()))

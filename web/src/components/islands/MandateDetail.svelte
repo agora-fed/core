@@ -11,6 +11,7 @@
     getResponsiveness,
     getSlas,
     getMandateCommitments,
+    getMandateOpRounds,
     adminEditMandate,
     adminHideMandate,
     adminDeleteMandate,
@@ -25,6 +26,7 @@
     ScorecardDto,
     SlaDto,
     PublicCommitment,
+    OpRoundSummaryDto,
   } from '../../lib/types';
   import { responseRate, formatLatency } from '../../lib/format';
 
@@ -47,6 +49,8 @@
     nao_seguiu: '🔴 não seguiu',
     pendente: '🕓 pendente',
   };
+  // Rodadas de orçamento participativo deste mandato (entrada pro piloto D8.3).
+  let opRounds = $state<OpRoundSummaryDto[]>([]);
 
   let pendingSlas = $derived(mySlas.filter((s) => s.status === 'pending'));
 
@@ -154,6 +158,9 @@
     if (ar.ok && ar.data) activity = ar.data;
     // Compromissos declarados: best-effort — sem eles a seção some.
     if (cr.ok && cr.data) commitments = cr.data.commitments;
+    // Rodadas de OP — best-effort, entra depois pra não atrasar a página.
+    const opr = await getMandateOpRounds(mandateId);
+    if (opr.success && opr.data) opRounds = opr.data.rounds;
   });
 
   function badgeRate(s: ScorecardDto | null) {
@@ -301,6 +308,11 @@
       <a class="btn btn-ghost cta-alt" href={`/politicos/${mandate.id}/placar`}>
         📊 Placar público
       </a>
+      {#if opRounds.length > 0}
+        <a class="btn btn-ghost cta-alt" href={`/op/${opRounds[0].id}`}>
+          🧪 Orçamento participativo
+        </a>
+      {/if}
       {#if responsiveness && responsiveness.tier.key !== 'unrated'}
         <a
           class="btn btn-ghost cta-alt"
