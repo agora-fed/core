@@ -293,8 +293,8 @@
   </div>
 
   <div class="field">
-    <span class="label-like">Esfera do destinatário</span>
-    <div class="esfera-toggle" role="radiogroup" aria-label="Esfera do destinatário">
+    <span class="label-like">Nível do destinatário</span>
+    <div class="esfera-toggle" role="radiogroup" aria-label="Nível do destinatário">
       <label>
         <input
           type="radio"
@@ -386,7 +386,7 @@
     </div>
     {#if preview}
       <div class="field narrow">
-        <span class="label-like">Gatilho deste território</span>
+        <span class="label-like">Quantos apoios são necessários aqui</span>
         <p class="threshold-info">
           🎯 <strong>{preview.threshold.toLocaleString('pt-BR')} apoios</strong>
           {#if preview.voters}
@@ -407,7 +407,7 @@
       <span class="label-like">
         Enviar também para outros gabinetes
           <span class="muted">
-            (opcional — mesma esfera: {primarySphere === 'federal'
+            (opcional — mesmo nível: {primarySphere === 'federal'
               ? 'deputados federais e senadores'
               : primarySphere === 'estadual'
                 ? 'deputados estaduais e governadores'
@@ -443,7 +443,7 @@
           />
           {#if coSearch.trim().length >= 2}
             {#if coCandidates.length === 0}
-              <p class="hint muted">Nenhum político dessa esfera com esse nome.</p>
+              <p class="hint muted">Nenhum político desse nível com esse nome.</p>
             {:else}
               <ul class="co-results">
                 {#each coCandidates.slice(0, 12) as m (m.id)}

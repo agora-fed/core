@@ -91,7 +91,7 @@
 
   // Human-readable gate hint — shown as the empty state before `ready`.
   let gateHint = $derived.by<string>(() => {
-    if (!sphere) return 'Escolha uma esfera para começar.';
+    if (!sphere) return 'Escolha um nível (país, estado ou cidade) para começar.';
     if (needsUf && !uf) return 'Escolha um estado.';
     if (needsMunicipio && !municipio) return 'Escolha um município do estado.';
     return '';
@@ -182,9 +182,9 @@
 <section class="wrap">
   <div class="filters">
     <label>
-      <span class="k">Esfera</span>
+      <span class="k">Nível</span>
       <select bind:value={sphere} onchange={onSphereChange}>
-        <option value="">Escolher esfera…</option>
+        <option value="">Escolher nível…</option>
         <option value="federal">Federal (Câmara + Senado)</option>
         <option value="estadual">Estadual (Assembleias)</option>
         <option value="municipal">Municipal (Prefeituras + Câmaras)</option>
@@ -256,7 +256,7 @@
       <EmptyState
         icon="filter"
         title="Configure o filtro pra começar"
-        description={gateHint || 'Escolha esfera → estado → município (se aplicável).'}
+        description={gateHint || 'Escolha nível → estado → município (se aplicável).'}
       />
     </Card>
   {:else if listErr}

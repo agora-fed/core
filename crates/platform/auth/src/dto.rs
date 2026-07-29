@@ -125,7 +125,8 @@ pub struct RegisterRequest {
     /// Data de nascimento `YYYY-MM-DD`, pra verificação.
     #[serde(default)]
     pub nascimento: Option<String>,
-    /// Sexo `M`/`F`, pra verificação.
+    /// Sexo `M`/`F`, pra verificação. OPCIONAL no cadastro (B4): quando ausente,
+    /// o ProfileGate coleta depois. Não desabilita a R-KYC (que roda com nome+data).
     #[serde(default)]
     pub sexo: Option<String>,
     /// Título de eleitor (OPCIONAL). Sem ele, o cidadão não terá poder de voto
@@ -140,8 +141,9 @@ pub struct RegisterRequest {
     /// do cidadão — escopo municipal. Deve existir e pertencer à `uf` informada.
     #[serde(default)]
     pub municipio_ibge: Option<i32>,
-    /// Nick do fediverso (handle escolhido). OBRIGATÓRIO no cadastro do cidadão
-    /// (0664): 3–30 chars, `[a-z0-9_]`, começa por letra; único por org.
+    /// Nick do fediverso (handle escolhido). OPCIONAL no cadastro (B4): quando
+    /// ausente, o back deriva do nome (editável depois em Configurações). Quando
+    /// informado: 3–30 chars, `[a-z0-9_]`, começa por letra; único por org.
     #[serde(default)]
     pub handle: Option<String>,
 }

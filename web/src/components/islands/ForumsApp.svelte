@@ -822,7 +822,7 @@
                       {@html mdToHtml(c.body)}
                     </div>
                     <span class="muted small">
-                      {c.author}{#if c.author_karma != null}<span class="f-karma" title="Karma (reputação) do autor">◆ {c.author_karma.toLocaleString('pt-BR')}</span>{/if} · {fmtDate(c.created_at)}
+                      {c.author}{#if c.author_karma != null}<span class="f-karma" title="Reputação do autor">◆ {c.author_karma.toLocaleString('pt-BR')}</span>{/if} · {fmtDate(c.created_at)}
                       · <button type="button" class="f-linklike" title="Denunciar este argumento à moderação" onclick={() => askReportComment(c)}>⚑ denunciar</button>
                       {#if canModerate}
                         · <button type="button" class="f-linklike f-linklike-danger" title="Remover este argumento (moderação)" onclick={() => removeComment(c)}>🗑 remover</button>

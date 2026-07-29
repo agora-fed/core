@@ -11,15 +11,17 @@ const isActive = (href: string) =>
 
 // Header é só o nível 1. As páginas de /politicos/* têm sua própria sub-nav
 // dentro (PoliticosTabs) com Diretório · Gasto · Propostas dos Mandatos.
+//
+// B8 (nav enxuto): topo reduzido a 4 itens políticos + o menu social no avatar.
+// As rotas removidas do topo CONTINUAM existindo e acessíveis — /propor sai de
+// dentro de /propostas; /f (Fóruns) e /consultas seguem linkadas nas páginas de
+// deliberação. B2: "Serviços" (financiamento de campanha) saiu do caminho do
+// cidadão — vive na área de campanha, visível só a candidatos.
 const links: Array<{ href: string; label: string; cta?: boolean }> = [
   { href: '/politicos/', label: 'Políticos' },
-  { href: '/partidos', label: 'Partidos' },
-  { href: '/eleicoes/2026', label: 'Eleições 2026' },
   { href: '/propostas', label: 'Propostas' },
-  { href: '/propor', label: 'Propor', cta: true },
-  { href: '/f/', label: 'Fóruns' },
-  { href: '/consultas', label: 'Consultas' },
-  { href: '/servicos', label: 'Serviços' },
+  { href: '/eleicoes/2026', label: 'Eleições 2026' },
+  { href: '/partidos', label: 'Partidos' },
 ];
 ---
 
@@ -153,7 +155,7 @@ const links: Array<{ href: string; label: string; cta?: boolean }> = [
   }
 
   /* Desktop apertado: entre 1024 e 1199 o ThemeToggle vira icon-only pra
-     deixar espaço pros 7 itens da nav caberem em uma linha só. */
+     deixar espaço pros itens da nav caberem em uma linha só. */
   @media (max-width: 1199px) and (min-width: 1024px) {
     .actions :global(.lbl) {
       display: none;

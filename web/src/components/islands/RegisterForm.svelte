@@ -29,14 +29,18 @@
   type Role = 'cidadao' | 'politico' | 'candidato';
 
   let role = $state<Role>('cidadao');
+  // B4 (onboarding enxuto): o padrão é cidadã(o) e o seletor de papel fica
+  // escondido atrás de um link discreto — 99% dos cadastros são de cidadãos.
+  let showRoleOptions = $state(false);
   let email = $state('');
   let password = $state('');
   let cpf = $state('');
   // R-KYC #50: identidade confrontada com a base autorizada.
   let nomeCompleto = $state('');
-  let nick = $state(''); // @handle do fediverso — obrigatório pro cidadão (0664)
+  // B4: o @handle não é mais pedido no cadastro — o back deriva do nome
+  // automaticamente (editável depois em Configurações).
   let nascimento = $state(''); // YYYY-MM-DD (input date)
-  let sexo = $state<'' | 'M' | 'F'>('');
+  let sexo = $state<'' | 'M' | 'F'>(''); // B4: opcional (ProfileGate coleta depois)
   let tituloEleitor = $state(''); // opcional
   // Domicílio (0651/0652) — UF + município IBGE OBRIGATÓRIOS pro cidadão (eixo
   // territorial). Municípios carregados por UF via GET /municipios.
@@ -131,14 +135,13 @@
   let emailValid = $derived(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
   let passwordValid = $derived(password.length >= 8);
   let cpfValid = $derived(isValidCpf(cpf));
-  // Identidade (cidadão): nome com ao menos 2 palavras, nick, data e sexo.
+  // Identidade (cidadão): nome com ao menos 2 palavras e data de nascimento.
   let nomeValid = $derived(nomeCompleto.trim().split(/\s+/).filter(Boolean).length >= 2);
-  // Nick: 3–30 chars, minúsculas/números/_ começando por letra (bate com o back).
-  let nickValid = $derived(/^[a-z][a-z0-9_]{2,29}$/.test(nick));
   let nascimentoValid = $derived(/^\d{4}-\d{2}-\d{2}$/.test(nascimento));
-  let sexoValid = $derived(sexo === 'M' || sexo === 'F');
+  // B4: o nick é derivado do nome no back e o sexo é opcional (ProfileGate
+  // coleta depois) → nenhum dos dois entra no gate de validação do cadastro.
   let identidadeValid = $derived(
-    role !== 'cidadao' || (nomeValid && nickValid && nascimentoValid && sexoValid),
+    role !== 'cidadao' || (nomeValid && nascimentoValid),
   );
   // Domicílio obrigatório só pro cidadão.
   let residenciaValid = $derived(
@@ -247,7 +250,7 @@
               titulo_eleitor: onlyDigits(tituloEleitor) || undefined,
               uf: residUf,
               municipio_ibge: Number(residMunicipio),
-              handle: nick.trim().toLowerCase().replace(/^@/, ''),
+              // B4: handle omitido — derivado do nome no back.
             });
     busy = false;
 
@@ -325,54 +328,69 @@
       Título de eleitor confirmado sinaliza voz brasileira.
     </li>
     <li>
-      <strong>Enquetes fediversadas, mas votação restrita a esta instância.</strong>
-      Perfis de outras instâncias veem, mas não computam voto.
+      <strong>Enquetes aparecem em outras redes, mas o voto só conta aqui.</strong>
+      Perfis de fora podem ver, mas não computam voto.
     </li>
   </ul>
 </section>
 
 <form class="auth-form" onsubmit={submit} novalidate>
-  <fieldset class="role-picker" aria-label="Tipo de conta">
-    <legend class="role-legend">Você está entrando como</legend>
-    <div class="role-tabs">
+  {#if !showRoleOptions}
+    <!-- B4: cadastro de cidadã(o) é o padrão. O seletor de papel só aparece
+         quando alguém que representa um mandato/candidatura pede por ele. -->
+    <p class="role-reveal muted">
+      Você está criando uma conta de <strong>cidadã(o)</strong>.
       <button
         type="button"
-        class="role-tab"
-        class:active={role === 'cidadao'}
-        onclick={() => switchRole('cidadao')}
+        class="btn-link"
+        onclick={() => (showRoleOptions = true)}
       >
-        <span class="role-ic"><Icon name="users" size={20} /></span>
-        <span>
-          <strong>Cidadã(o)</strong>
-          <span class="role-hint">Propor, votar, cobrar</span>
-        </span>
+        Represento um mandato ou candidatura
       </button>
-      <button
-        type="button"
-        class="role-tab"
-        class:active={role === 'politico'}
-        onclick={() => switchRole('politico')}
-      >
-        <span class="role-ic"><Icon name="mandate" size={20} /></span>
-        <span>
-          <strong>Político(a) com mandato</strong>
-          <span class="role-hint">Responder, prestar contas</span>
-        </span>
-      </button>
-      <button
-        type="button"
-        class="role-tab"
-        class:active={role === 'candidato'}
-        onclick={() => switchRole('candidato')}
-      >
-        <span class="role-ic"><Icon name="ballot" size={20} /></span>
-        <span>
-          <strong>Candidato(a) 2026</strong>
-          <span class="role-hint">Ainda sem mandato</span>
-        </span>
-      </button>
-    </div>
-  </fieldset>
+    </p>
+  {:else}
+    <fieldset class="role-picker" aria-label="Tipo de conta">
+      <legend class="role-legend">Você está entrando como</legend>
+      <div class="role-tabs">
+        <button
+          type="button"
+          class="role-tab"
+          class:active={role === 'cidadao'}
+          onclick={() => switchRole('cidadao')}
+        >
+          <span class="role-ic"><Icon name="users" size={20} /></span>
+          <span>
+            <strong>Cidadã(o)</strong>
+            <span class="role-hint">Propor, votar, cobrar</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          class="role-tab"
+          class:active={role === 'politico'}
+          onclick={() => switchRole('politico')}
+        >
+          <span class="role-ic"><Icon name="mandate" size={20} /></span>
+          <span>
+            <strong>Político(a) com mandato</strong>
+            <span class="role-hint">Responder, prestar contas</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          class="role-tab"
+          class:active={role === 'candidato'}
+          onclick={() => switchRole('candidato')}
+        >
+          <span class="role-ic"><Icon name="ballot" size={20} /></span>
+          <span>
+            <strong>Candidato(a) 2026</strong>
+            <span class="role-hint">Ainda sem mandato</span>
+          </span>
+        </button>
+      </div>
+    </fieldset>
+  {/if}
 
   {#if role === 'candidato'}
     <div class="field">
@@ -580,27 +598,15 @@
         ? 'Informe nome e sobrenome.'
         : undefined}
     />
-    <Input
-      id="r-nick"
-      label="Nick de usuário (@ no fediverso)"
-      placeholder="ex.: maria_silva"
-      autocomplete="off"
-      bind:value={nick}
-      required
-      hint="É o seu @ público na rede. 3 a 30 caracteres: letras minúsculas, números ou _."
-      error={nick.length > 0 && !nickValid
-        ? 'Nick inválido: use 3–30 caracteres (a–z, 0–9, _), começando por letra.'
-        : undefined}
-    />
     <div class="id-row">
       <label class="id-field">
         <span>Data de nascimento</span>
         <input type="date" bind:value={nascimento} required class="id-input" />
       </label>
       <label class="id-field">
-        <span>Sexo</span>
-        <select bind:value={sexo} required class="id-input">
-          <option value="" disabled>Selecione</option>
+        <span>Sexo (opcional)</span>
+        <select bind:value={sexo} class="id-input">
+          <option value="">Prefiro não informar</option>
           <option value="F">Feminino</option>
           <option value="M">Masculino</option>
         </select>
