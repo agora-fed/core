@@ -125,6 +125,41 @@ export interface ScorecardDto {
   median_response_hours: number | null;
 }
 
+/** Selo/tier derivado do placar (Bloco C — vitrine positiva do político). */
+export interface TierDto {
+  key: 'unrated' | 'building' | 'bronze' | 'silver' | 'gold';
+  label: string;
+  medal: string;
+  blurb: string;
+}
+
+/** Comparativo com pares do mesmo nível/UF. */
+export interface PeerComparisonDto {
+  scope: string;
+  peer_count: number;
+  peer_avg_rate: number | null;
+  better_than_pct: number | null;
+  top_pct: number | null;
+}
+
+/** Responsividade pública do mandato: selo + streak + comparativo com pares. */
+export interface ResponsivenessDto {
+  mandate_id: string;
+  display_name: string;
+  office: string;
+  party: string | null;
+  uf: string | null;
+  house: string | null;
+  answered: number;
+  ignored: number;
+  response_rate: number | null;
+  median_response_hours: number | null;
+  responds_in_days: number | null;
+  answer_streak: number;
+  tier: TierDto;
+  peer: PeerComparisonDto;
+}
+
 /** Public view of an SLA clock. */
 export interface SlaDto {
   id: string;
