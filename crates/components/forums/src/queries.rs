@@ -662,11 +662,9 @@ pub async fn refresh_comment_counters(
     sqlx::query!(
         r#"UPDATE forum_topic_comment c SET
              favor_count = v."favor!",
-             contra_count = v."contra!",
-             ponderacao_count = v."ponde!"
+             contra_count = v."contra!"
            FROM (SELECT COUNT(*) FILTER (WHERE stance = 'favor') AS "favor!",
-                        COUNT(*) FILTER (WHERE stance = 'contra') AS "contra!",
-                        COUNT(*) FILTER (WHERE stance = 'ponderacao') AS "ponde!"
+                        COUNT(*) FILTER (WHERE stance = 'contra') AS "contra!"
                    FROM forum_comment_vote WHERE comment_id = $1) v
            WHERE c.id = $1"#,
         comment_id,
@@ -674,6 +672,52 @@ pub async fn refresh_comment_counters(
     .execute(executor)
     .await?;
     Ok(())
+}
+
+/// Stance do voto atual de `citizen` no comentário `comment_id`, se houver (`None` = não votou).
+/// Usado pra computar o delta de karma quando o voto muda (ADR-0019).
+pub async fn comment_vote_stance(
+    executor: impl sqlx::PgExecutor<'_>,
+    comment_id: Uuid,
+    citizen: Uuid,
+) -> Result<Option<String>, sqlx::Error> {
+    let r = sqlx::query_scalar!(
+        r#"SELECT stance FROM forum_comment_vote WHERE comment_id = $1 AND citizen_id = $2"#,
+        comment_id,
+        citizen,
+    )
+    .fetch_optional(executor)
+    .await?;
+    Ok(r)
+}
+
+/// Soma `delta` ao karma do cidadão (reputação estilo SO, ADR-0019). Pode ser negativo.
+pub async fn add_citizen_karma(
+    executor: impl sqlx::PgExecutor<'_>,
+    citizen: Uuid,
+    delta: i32,
+) -> Result<(), sqlx::Error> {
+    if delta == 0 {
+        return Ok(());
+    }
+    sqlx::query!(
+        r#"UPDATE citizen SET karma = karma + $2 WHERE id = $1"#,
+        citizen,
+        delta,
+    )
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
+/// Valor de karma de um voto em comentário por stance (SO: favor=+10, contra=−2).
+#[must_use]
+pub fn karma_value(stance: &str) -> i32 {
+    match stance {
+        "favor" => 10,
+        "contra" => -2,
+        _ => 0,
+    }
 }
 
 /// Recalcula os contadores do tópico a partir das tabelas-fonte (sob o row lock):
@@ -687,20 +731,21 @@ pub async fn refresh_comment_counters(
 pub async fn refresh_topic_counters(
     executor: impl sqlx::PgExecutor<'_>,
     topic_id: Uuid,
-) -> Result<(i64, i64), sqlx::Error> {
+) -> Result<(i64, i64, i64), sqlx::Error> {
+    // Placar por PONTOS (ADR-0019, com sinal): base por votante (±2 se comentou, ±1 se só votou) +
+    // amplificação dos votos nos argumentos (favor↑+2/↓−1, contra↑−2/↓+1). favor_count/contra_count
+    // seguem sendo a CONTAGEM de votos por lado (exibição); `score` é o placar com sinal.
     let r = sqlx::query!(
         r#"UPDATE forum_topic t SET
              favor_count = v."favor!",
              contra_count = v."contra!",
-             ponderacao_count = v."ponde!",
-             score = v."favor!" - v."contra!",
+             score = pos."base!" + amp."amp!",
              comment_count = c."local!" + c."fede!",
              interaction_count = v."votes!" + c."local!" + cv."cvotes!",
              federated_interaction_count = c."fede!"
            FROM
              (SELECT COUNT(*) FILTER (WHERE stance = 'favor') AS "favor!",
                      COUNT(*) FILTER (WHERE stance = 'contra') AS "contra!",
-                     COUNT(*) FILTER (WHERE stance = 'ponderacao') AS "ponde!",
                      COUNT(*) AS "votes!"
                 FROM forum_topic_vote WHERE topic_id = $1) v,
              (SELECT COUNT(*) FILTER (WHERE NOT federated) AS "local!",
@@ -710,14 +755,40 @@ pub async fn refresh_topic_counters(
              (SELECT COUNT(*) AS "cvotes!"
                 FROM forum_comment_vote fcv
                 JOIN forum_topic_comment fc ON fc.id = fcv.comment_id
-               WHERE fc.topic_id = $1) cv
+               WHERE fc.topic_id = $1) cv,
+             -- base por votante: ±2 se a pessoa TAMBÉM comentou (argumentou), ±1 se só votou.
+             (SELECT COALESCE(SUM(
+                       CASE WHEN tv.stance = 'favor' THEN
+                              CASE WHEN EXISTS (SELECT 1 FROM forum_topic_comment fc2
+                                     WHERE fc2.topic_id = tv.topic_id AND fc2.author_id = tv.citizen_id
+                                       AND NOT fc2.federated AND fc2.moderation = 'approved')
+                                   THEN 2 ELSE 1 END
+                            ELSE
+                              CASE WHEN EXISTS (SELECT 1 FROM forum_topic_comment fc2
+                                     WHERE fc2.topic_id = tv.topic_id AND fc2.author_id = tv.citizen_id
+                                       AND NOT fc2.federated AND fc2.moderation = 'approved')
+                                   THEN -2 ELSE -1 END
+                       END), 0)::bigint AS "base!"
+                FROM forum_topic_vote tv WHERE tv.topic_id = $1) pos,
+             -- amplificação: voto no argumento × stance do argumento (matriz ADR-0019).
+             (SELECT COALESCE(SUM(
+                       CASE
+                         WHEN fc.stance = 'favor'  AND fcv.stance = 'favor'  THEN 2
+                         WHEN fc.stance = 'favor'  AND fcv.stance = 'contra' THEN -1
+                         WHEN fc.stance = 'contra' AND fcv.stance = 'favor'  THEN -2
+                         WHEN fc.stance = 'contra' AND fcv.stance = 'contra' THEN 1
+                         ELSE 0
+                       END), 0)::bigint AS "amp!"
+                FROM forum_comment_vote fcv
+                JOIN forum_topic_comment fc ON fc.id = fcv.comment_id
+               WHERE fc.topic_id = $1 AND fc.moderation = 'approved' AND NOT fc.federated) amp
            WHERE t.id = $1
-           RETURNING t.interaction_count, t.federated_interaction_count"#,
+           RETURNING t.interaction_count, t.federated_interaction_count, t.score"#,
         topic_id,
     )
     .fetch_one(executor)
     .await?;
-    Ok((r.interaction_count, r.federated_interaction_count))
+    Ok((r.interaction_count, r.federated_interaction_count, r.score))
 }
 
 /// Avança o índice de patamar, **guardado** pelo valor anterior esperado (1x por

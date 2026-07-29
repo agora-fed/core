@@ -9,9 +9,7 @@ use dsoc_core::{Clock, Error, Result};
 use dsoc_db::Db;
 use uuid::Uuid;
 
-use crate::domain::{
-    self, territorial_sections, thresholds_to_fire, NewTopic, Stance, TerritorialSection,
-};
+use crate::domain::{self, territorial_sections, NewTopic, Stance, TerritorialSection};
 use crate::queries::{self, CommentRow, DispatchRow, ForumRow, TopicRow};
 
 /// Uma seção-filha na árvore: materializada (linha real) ou virtual (template
@@ -355,6 +353,12 @@ impl ForumService {
         else {
             return Err(Error::NotFound("tópico não encontrado".to_owned()));
         };
+        // Karma (ADR-0019): o AUTOR do argumento ganha/perde reputação conforme o voto que recebe
+        // (SO: favor=+10, contra=−2). Delta = valor(novo) − valor(anterior) pra cobrir troca de voto.
+        // Voto no próprio comentário não gera karma (anti-self-vote, estilo SO).
+        let prev_stance = queries::comment_vote_stance(&mut *tx, comment_id, citizen.as_uuid())
+            .await
+            .map_err(map_sqlx)?;
         queries::upsert_comment_vote(
             &mut *tx,
             comment_id,
@@ -364,6 +368,15 @@ impl ForumService {
         )
         .await
         .map_err(map_sqlx)?;
+        if let Some(author) = comment.author_id {
+            if author != citizen.as_uuid() {
+                let delta = queries::karma_value(stance.as_str())
+                    - prev_stance.as_deref().map_or(0, queries::karma_value);
+                queries::add_citizen_karma(&mut *tx, author, delta)
+                    .await
+                    .map_err(map_sqlx)?;
+            }
+        }
         queries::refresh_comment_counters(&mut *tx, comment_id)
             .await
             .map_err(map_sqlx)?;
@@ -383,34 +396,35 @@ impl ForumService {
         topic: &TopicRow,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Result<TopicRow> {
-        let (interactions, _fed) = queries::refresh_topic_counters(&mut **tx, topic.id)
+        let (_interactions, _fed, score) = queries::refresh_topic_counters(&mut **tx, topic.id)
             .await
             .map_err(map_sqlx)?;
 
-        let forum = sqlx::query!(
-            r#"SELECT thresholds FROM forum WHERE id = $1"#,
-            topic.forum_id
-        )
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(map_sqlx)?;
-        let next_idx = usize::try_from(topic.next_threshold_idx).unwrap_or(0);
-        let (fire, new_idx) = thresholds_to_fire(interactions, &forum.thresholds, next_idx);
-        if !fire.is_empty() {
+        // ADR-0019: encaminha ao gabinete quando o PLACAR (pontos com sinal) cruza o patamar de
+        // escala — uma única vez. `next_threshold_idx` vira flag: 0 = ainda não escalou, 1 = escalou.
+        // Só demanda com apoio líquido (score ≥ 10) escala; controverso (líquido baixo) não.
+        // (Fórum sem e-mail curado fica pendente e dispara quando a curadoria preencher.)
+        const ESCALATION_POINTS: i64 = 10;
+        if score >= ESCALATION_POINTS && topic.next_threshold_idx == 0 {
             let email = queries::effective_contact_email(&mut **tx, topic.forum_id)
                 .await
                 .map_err(map_sqlx)?;
             if let Some(email) = email {
-                for t in &fire {
-                    queries::insert_dispatch(&mut **tx, Uuid::now_v7(), topic.id, *t, &email, now)
-                        .await
-                        .map_err(map_sqlx)?;
-                }
+                queries::insert_dispatch(
+                    &mut **tx,
+                    Uuid::now_v7(),
+                    topic.id,
+                    ESCALATION_POINTS as i32,
+                    &email,
+                    now,
+                )
+                .await
+                .map_err(map_sqlx)?;
                 let _ = queries::advance_threshold_idx(
                     &mut **tx,
                     topic.id,
                     topic.next_threshold_idx,
-                    i32::try_from(new_idx).unwrap_or(topic.next_threshold_idx),
+                    1,
                 )
                 .await
                 .map_err(map_sqlx)?;
