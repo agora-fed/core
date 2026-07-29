@@ -158,6 +158,21 @@ pub fn routes(state: dsoc_app::AppState) -> Router<()> {
         .with_state(state)
 }
 
+/// Superfície **somente-leitura** das propostas (B1). A fusão Propor ≡ Fórum
+/// aposentou a criação de "proposta" pelo cidadão — a mecânica virou 100% fórum
+/// (tópico direcionado a mandato). Mantemos as LEITURAS no ar: permalinks de
+/// propostas antigas (`/propostas/{id}`), recibos de entrega e revisões seguem
+/// visíveis, e a federação/eventos do crate continuam intactos. O worker
+/// `proposal_delivery` fica dormente (sem novos alvos). O `routes()` completo
+/// (com POST) permanece exportado para testes do próprio crate.
+pub fn read_routes(state: dsoc_app::AppState) -> Router<()> {
+    Router::new()
+        .route("/proposals", get(list))
+        .route("/proposals/{id}", get(get_one))
+        .route("/proposals/{id}/revisions", get(list_revisions))
+        .with_state(state)
+}
+
 /// `POST /proposals` — create a proposal directed at a mandate.
 ///
 /// Creating a civic artifact is a citizen action, so the verified caller (from

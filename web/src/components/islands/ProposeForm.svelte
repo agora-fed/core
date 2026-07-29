@@ -3,7 +3,7 @@
   // The mandate is selected from a picker so the user never has to type a UUID by hand.
   import { onMount } from 'svelte';
   import {
-    apiPost,
+    createForumTopic,
     browsePoliticos,
     DEFAULT_ORG_ID,
     getAllMandates,
@@ -15,7 +15,6 @@
     type ThresholdPreviewDto,
   } from '../../lib/api';
   import { UFS } from '../../lib/ufs';
-  import type { ProposalDto } from '../../lib/types';
 
   let title = $state('');
   let body = $state('');
@@ -223,6 +222,33 @@
     }
   });
 
+  // Slug de município → segmento de caminho ("São Paulo" → "sao-paulo"), MESMA
+  // regra do backend (domain::slugify / seed SQL): a demanda direcionada vira um
+  // tópico no fórum territorial do gabinete.
+  function slugify(name: string): string {
+    return name
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  // Fórum-anfitrião da demanda direcionada (B1): a régua/patamar é do fórum, o
+  // encaminhamento vai aos gabinetes-alvo. Territorial pelo destinatário:
+  // municipal → <uf>/<municipio>; estadual → <uf>; federal → senado|camara.
+  function targetForumPath(): string {
+    if (esfera === 'municipal' && ufSel && municipioSel) {
+      return `${ufSel.toLowerCase()}/${slugify(municipioSel)}`;
+    }
+    const m = primary;
+    const sphere = m?.sphere ?? 'federal';
+    if (sphere === 'municipal' && m?.uf) return m.uf.toLowerCase();
+    if (sphere === 'estadual' && m?.uf) return m.uf.toLowerCase();
+    if (sphere === 'federal') return m?.house === 'senado' ? 'senado' : 'camara';
+    return m?.uf ? m.uf.toLowerCase() : 'camara';
+  }
+
   async function submit(event: SubmitEvent) {
     event.preventDefault();
     if (!valid || busy) return;
@@ -231,30 +257,30 @@
     if (!readCitizenId()) {
       status = {
         kind: 'info',
-        text: 'Entre na sua conta para enviar uma proposta.',
+        text: 'Entre na sua conta para enviar uma demanda.',
       };
       return;
     }
 
     busy = true;
-    const res = await apiPost<ProposalDto>('/api/v1/proposals', {
-      org_id: DEFAULT_ORG_ID,
-      mandate_id: mandateId.trim(),
-      additional_mandate_ids: extraIds,
-      title: title.trim(),
-      body: body.trim(),
-      // Sobrescrito no servidor pela política do território (0.30.1) —
-      // enviado só pra satisfazer o shape do contrato.
-      threshold: preview?.threshold ?? 1,
-    });
+    // Uma porta, uma régua (B1): a "proposta" agora é um TÓPICO DE FÓRUM
+    // direcionado ao(s) gabinete(s). Mesmo placar por pontos e patamar
+    // proporcional do fórum; o alvo só decide para onde vai o encaminhamento.
+    const targets = [mandateId.trim(), ...extraIds];
+    const res = await createForumTopic(
+      targetForumPath(),
+      title.trim(),
+      body.trim(),
+      targets,
+    );
     busy = false;
 
     if (res.success && res.data) {
-      window.location.href = `/propostas/${res.data.id}`;
+      window.location.href = `/f/topico/${res.data.id}`;
     } else {
       status = {
         kind: 'error',
-        text: res.error?.message ?? 'Não foi possível enviar a proposta.',
+        text: res.error?.message ?? 'Não foi possível enviar a demanda.',
       };
     }
   }
@@ -466,7 +492,7 @@
   {/if}
 
   <button class="btn btn-primary btn-lg" type="submit" disabled={!valid || busy}>
-    {busy ? 'Enviando…' : 'Enviar proposta'}
+    {busy ? 'Enviando…' : 'Enviar demanda'}
   </button>
 
   {#if status}

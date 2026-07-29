@@ -1,108 +1,24 @@
 ---
-import BaseLayout from '../../layouts/BaseLayout.astro';
-import ProposeForm from '../../components/islands/ProposeForm.svelte';
-import ProposalsList from '../../components/islands/ProposalsList.svelte';
-import ColorBar from '../../components/illustrations/ColorBar.astro';
-
-const description =
-  'Propostas cívicas direcionadas a políticos e candidaturas. Apoie, debata e acompanhe quais reuniram apoios suficientes e iniciaram o prazo de resposta.';
-
-const jsonLd = {
-  '@context': 'https://schema.org',
-  '@type': 'CollectionPage',
-  name: 'Propostas · DemocraciaBR',
-  inLanguage: 'pt-BR',
-  description,
-};
+// B1 — fusão Propor ≡ Fórum: /propostas foi absorvida por /f. A "proposta" virou
+// um TÓPICO DE FÓRUM direcionado a gabinete(s) (uma porta, uma régua). Esta rota
+// vira um redirect estável pro hub de fóruns; permalinks de propostas antigas
+// (/propostas/{id}) seguem existindo para leitura.
+export const prerender = true;
 ---
 
-<BaseLayout title="Propostas" {description} {jsonLd}>
-  <section class="section">
-    <div class="container">
-      <header class="page-head">
-        <ColorBar class="head-bar" />
-        <h1>Propostas</h1>
-        <p class="muted lede">
-          Ideias direcionadas a um político. Ao reunir apoios suficientes, a
-          proposta dispara o relógio do prazo.
-        </p>
-      </header>
-
-      <ProposalsList client:load />
-
-      <section class="propose-block" aria-labelledby="propose-h">
-        <h2 id="propose-h">Enviar uma nova proposta</h2>
-        <p class="muted">
-          Direcione sua proposta a um mandato específico. É preciso estar
-          autenticado.
-        </p>
-        <div class="card form-card">
-          <ProposeForm client:visible />
-        </div>
-      </section>
-    </div>
-  </section>
-</BaseLayout>
-
-<style>
-  .page-head {
-    max-width: 46rem;
-    margin-bottom: 2rem;
-  }
-  .head-bar {
-    margin-bottom: 0.9rem;
-  }
-  .lede {
-    font-size: 1.1rem;
-  }
-  .list {
-    list-style: none;
-    padding: 0;
-    margin: 0 0 3rem;
-  }
-  .prop {
-    padding: 0;
-  }
-  .prop-link {
-    display: block;
-    padding: 1.25rem;
-    text-decoration: none;
-    color: inherit;
-  }
-  .prop-link:hover {
-    background: var(--c-bg);
-  }
-  .prop-title {
-    font-size: 1.15rem;
-    margin: 0 0 0.4rem;
-  }
-  .prop-body {
-    margin: 0 0 1rem;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-  .prop-foot {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 0.9rem;
-  }
-  .support strong {
-    color: var(--c-green-dark);
-    font-size: 1.05rem;
-  }
-  .propose-block {
-    max-width: 46rem;
-  }
-  .form-card {
-    margin-top: 1rem;
-  }
-  .state {
-    text-align: center;
-    padding: 3rem 1.5rem;
-    margin-bottom: 2rem;
-  }
-</style>
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="refresh" content="0; url=/f" />
+    <link rel="canonical" href="/f" />
+    <meta name="robots" content="noindex, follow" />
+    <title>Propostas agora vivem nos Fóruns · DemocraciaBR</title>
+  </head>
+  <body>
+    <p>
+      As propostas agora vivem nos <a href="/f">Fóruns</a> — uma demanda é um
+      tópico direcionado ao gabinete. Redirecionando…
+    </p>
+  </body>
+</html>

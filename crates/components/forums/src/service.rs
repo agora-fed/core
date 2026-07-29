@@ -261,29 +261,57 @@ impl ForumService {
         Ok((forum, children))
     }
 
-    /// Cria um tópico em `path` (materializando a seção se preciso).
+    /// Cria um tópico em `path` (materializando a seção se preciso), com
+    /// direcionamento OPCIONAL a mandato(s) (B1). `targets` são mandate_ids: a
+    /// lista é normalizada (dedupe + teto [`domain::MAX_TOPIC_TARGETS`]), cada
+    /// mandato é validado como EXISTENTE, e as linhas gravadas em
+    /// `forum_topic_target` — tudo na MESMA transação do tópico (alvo inexistente
+    /// aborta a criação inteira). Lista vazia = tópico sem alvo (comportamento
+    /// atual: encaminha ao contato curado da seção quando o patamar cruza).
     ///
     /// # Errors
-    /// Validação/NotFound/Storage conforme as etapas.
+    /// [`Error::Validation`] se algum alvo não existir; NotFound/Storage conforme
+    /// as demais etapas.
     pub async fn create_topic(
         &self,
         org: OrgId,
         path: &str,
         author: CitizenId,
         new: &NewTopic,
+        targets: &[Uuid],
     ) -> Result<TopicRow> {
         let forum = self.resolve_or_materialize(org, path).await?;
-        queries::insert_topic(
-            &self.db,
+        let targets = domain::sanitize_targets(targets);
+        let now = self.clock.now();
+        let mut tx = self.db.begin().await.map_err(map_sqlx)?;
+        let topic = queries::insert_topic(
+            &mut *tx,
             Uuid::now_v7(),
             forum.id,
             author.as_uuid(),
             &new.title,
             &new.body,
-            self.clock.now(),
+            now,
         )
         .await
-        .map_err(map_sqlx)
+        .map_err(map_sqlx)?;
+        for mandate_id in &targets {
+            // Valida ANTES de gravar: alvo inexistente → Validation (não Conflict de FK),
+            // e o rollback da tx descarta o tópico junto (criação é atômica).
+            if !queries::mandate_exists(&mut *tx, *mandate_id)
+                .await
+                .map_err(map_sqlx)?
+            {
+                return Err(Error::Validation(format!(
+                    "mandato inexistente: {mandate_id}"
+                )));
+            }
+            queries::insert_topic_target(&mut *tx, topic.id, *mandate_id, now)
+                .await
+                .map_err(map_sqlx)?;
+        }
+        tx.commit().await.map_err(map_sqlx)?;
+        Ok(topic)
     }
 
     /// Lista tópicos (`hot` = por score; senão recentes).
@@ -575,22 +603,63 @@ impl ForumService {
         // (Fórum sem e-mail curado fica pendente e dispara quando a curadoria preencher.)
         let escalation = Self::forum_escalation_threshold(&mut **tx, topic.forum_id).await?;
         if score >= escalation && topic.next_threshold_idx == 0 {
-            let email = queries::effective_contact_email(&mut **tx, topic.forum_id)
+            // O recibo registra o patamar REALMENTE cruzado (proporcional), não o "10" fixo.
+            let recorded = i32::try_from(escalation).unwrap_or(i32::MAX);
+            // B1 — fusão Propor ≡ Fórum: SE o tópico tem alvo(s), encaminha ao gabinete
+            // de CADA alvo alcançável (um recibo por alvo); senão, ao contato curado da
+            // seção (comportamento atual). Um lookup decide o ramo.
+            let targets = queries::topic_targets(&mut **tx, topic.id)
                 .await
                 .map_err(map_sqlx)?;
-            if let Some(email) = email {
-                // O recibo registra o patamar REALMENTE cruzado (proporcional), não o "10" fixo.
-                let recorded = i32::try_from(escalation).unwrap_or(i32::MAX);
-                queries::insert_dispatch(
-                    &mut **tx,
-                    Uuid::now_v7(),
-                    topic.id,
-                    recorded,
-                    &email,
-                    now,
-                )
-                .await
-                .map_err(map_sqlx)?;
+            let dispatched = if targets.is_empty() {
+                // Sem alvo → contato curado da seção.
+                let email = queries::effective_contact_email(&mut **tx, topic.forum_id)
+                    .await
+                    .map_err(map_sqlx)?;
+                if let Some(email) = email {
+                    queries::insert_dispatch(
+                        &mut **tx,
+                        Uuid::now_v7(),
+                        topic.id,
+                        recorded,
+                        &email,
+                        None,
+                        now,
+                    )
+                    .await
+                    .map_err(map_sqlx)?;
+                    true
+                } else {
+                    false
+                }
+            } else {
+                // Direcionado (B1) — Tier 0: o placeholder já vem como e-mail NULL de
+                // `topic_targets` (mesmo filtro do proposal_delivery). NUNCA registramos
+                // recibo por alvo inalcançável — silêncio seria da plataforma, não do
+                // político. Um recibo por alvo ALCANÇÁVEL (mandate_id discrimina no UNIQUE).
+                let mut any = false;
+                for (mandate_id, reachable_email) in &targets {
+                    if let Some(email) = reachable_email {
+                        queries::insert_dispatch(
+                            &mut **tx,
+                            Uuid::now_v7(),
+                            topic.id,
+                            recorded,
+                            email,
+                            Some(*mandate_id),
+                            now,
+                        )
+                        .await
+                        .map_err(map_sqlx)?;
+                        any = true;
+                    }
+                }
+                any
+            };
+            // O índice só avança quando ALGUM recibo é criado — fórum/gabinete sem
+            // canal alcançável fica PENDENTE e dispara retroativamente quando um
+            // e-mail real aparecer (curadoria da seção OU public_email do mandato).
+            if dispatched {
                 let _ = queries::advance_threshold_idx(
                     &mut **tx,
                     topic.id,

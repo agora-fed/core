@@ -30,3 +30,5 @@ utoipa = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 chrono = { workspace = true }
 sqlx = { workspace = true }
+uuid = { workspace = true }
+dsoc-core = { path = "../../core" }

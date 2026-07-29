@@ -26,7 +26,7 @@ pub mod queries;
 pub mod service;
 
 pub use domain::{crossing_fires, merge_support, NewProposal, NewRevision, ProposalStatus};
-pub use http::routes;
+pub use http::{read_routes, routes};
 pub use queries::{ProposalRow, RevisionRow};
 pub use service::{Consumed, ProposalService};
 

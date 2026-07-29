@@ -897,7 +897,15 @@ pub async fn advance_threshold_idx(
     Ok(res.rows_affected())
 }
 
-/// Registra o recibo de envio de um patamar (UNIQUE topic+threshold ⇒ 1x).
+/// Registra o recibo de envio de um patamar. `mandate_id` discrimina o
+/// destinatário (B1): `None` = contato curado da seção (comportamento atual);
+/// `Some` = um gabinete alvo — um tópico direcionado a N gabinetes registra N
+/// recibos no mesmo patamar. O UNIQUE `(topic_id, threshold, mandate_id)`
+/// (NULLS NOT DISTINCT, migration 0666) garante 1x por (patamar, destinatário).
+///
+/// Runtime `sqlx::query` (não macro): a coluna `mandate_id` só existe após a
+/// 0666, que o cache `.sqlx`/`dsoc_sqlx` pode ainda não ter — bind em runtime
+/// evita depender do cache pra esta query.
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -907,21 +915,95 @@ pub async fn insert_dispatch(
     topic_id: Uuid,
     threshold: i32,
     contact_email: &str,
+    mandate_id: Option<Uuid>,
     created_at: DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query!(
-        r#"INSERT INTO forum_dispatch (id, topic_id, threshold, contact_email, created_at)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (topic_id, threshold) DO NOTHING"#,
-        id,
-        topic_id,
-        threshold,
-        contact_email,
-        created_at,
+    sqlx::query(
+        r"INSERT INTO forum_dispatch (id, topic_id, threshold, contact_email, mandate_id, created_at)
+          VALUES ($1, $2, $3, $4, $5, $6)
+          ON CONFLICT (topic_id, threshold, mandate_id) DO NOTHING",
     )
+    .bind(id)
+    .bind(topic_id)
+    .bind(threshold)
+    .bind(contact_email)
+    .bind(mandate_id)
+    .bind(created_at)
     .execute(executor)
     .await?;
     Ok(())
+}
+
+/// Insere um ALVO do tópico (B1) — idempotente sob corrida.
+///
+/// Runtime `sqlx::query` (não macro): `forum_topic_target` é da 0666, ausente do
+/// cache `.sqlx`/`dsoc_sqlx`.
+///
+/// # Errors
+/// Propaga o `sqlx::Error` (inclui violação de FK se o mandato sumiu na corrida).
+pub async fn insert_topic_target(
+    executor: impl sqlx::PgExecutor<'_>,
+    topic_id: Uuid,
+    mandate_id: Uuid,
+    created_at: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r"INSERT INTO forum_topic_target (topic_id, mandate_id, created_at)
+          VALUES ($1, $2, $3)
+          ON CONFLICT (topic_id, mandate_id) DO NOTHING",
+    )
+    .bind(topic_id)
+    .bind(mandate_id)
+    .bind(created_at)
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
+/// `true` se o mandato existe (validação de alvo na criação de tópico — B1).
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn mandate_exists(
+    executor: impl sqlx::PgExecutor<'_>,
+    mandate_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let row: Option<(i32,)> = sqlx::query_as("SELECT 1 FROM mandate WHERE id = $1")
+        .bind(mandate_id)
+        .fetch_optional(executor)
+        .await?;
+    Ok(row.is_some())
+}
+
+/// Alvos de um tópico (B1): `(mandate_id, reachable_email)`, ordenados por
+/// criação. `reachable_email` já vem `NULL` quando o `public_email` é o
+/// placeholder da plataforma — MESMO filtro do `proposal_delivery` (Tier 0):
+/// nunca entregamos num inbox morto nem carimbamos recibo/SLA por ele.
+///
+/// Vazio = tópico SEM alvo (cai no contato curado da seção). Não-vazio com todos
+/// os e-mails `NULL` = alvos existem mas nenhum é alcançável (fica pendente).
+///
+/// Runtime `sqlx::query_as` (não macro): `forum_topic_target` é da 0666.
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn topic_targets(
+    executor: impl sqlx::PgExecutor<'_>,
+    topic_id: Uuid,
+) -> Result<Vec<(Uuid, Option<String>)>, sqlx::Error> {
+    let rows: Vec<(Uuid, Option<String>)> = sqlx::query_as(
+        r"SELECT tt.mandate_id,
+                 CASE WHEN m.public_email ILIKE '%@parlamento.democracia.social.br'
+                      THEN NULL ELSE m.public_email END AS reachable_email
+            FROM forum_topic_target tt
+            JOIN mandate m ON m.id = tt.mandate_id
+           WHERE tt.topic_id = $1
+           ORDER BY tt.created_at, tt.mandate_id",
+    )
+    .bind(topic_id)
+    .fetch_all(executor)
+    .await?;
+    Ok(rows)
 }
 
 /// Lista os recibos de envio de um tópico (transparência pública).

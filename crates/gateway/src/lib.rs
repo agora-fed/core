@@ -218,7 +218,12 @@ pub fn api_router(state: AppState) -> Router {
         // Bloco C: vitrine positiva do político (selo/tier + comparativo com pares).
         .merge(responsiveness::routes(state.clone()))
         // components
-        .merge(dsoc_proposals::routes(state.clone()))
+        // B1 — fusão Propor ≡ Fórum: o cidadão NÃO cria mais "proposta"; a demanda
+        // direcionada virou um tópico de fórum com alvo (dsoc_forums). Só as LEITURAS
+        // de proposta seguem no ar (permalinks/recibos/revisões antigos); a criação
+        // (POST /proposals) sai do caminho do cidadão. Federação/eventos do crate
+        // intactos; o worker proposal_delivery fica dormente (sem novos alvos).
+        .merge(dsoc_proposals::read_routes(state.clone()))
         .merge(dsoc_votes::routes(state.clone()))
         .merge(dsoc_comments::routes(state.clone()))
         .merge(dsoc_forums::routes(state.clone()))

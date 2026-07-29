@@ -2,9 +2,14 @@
 //! **política de patamares** — sem sqlx, sem axum (TESTING.md: cobertura barata aqui).
 
 use dsoc_core::{Error, Result};
+use uuid::Uuid;
 
 /// Profundidade máxima do caminho (`sp/santos/saude` = 3 segmentos).
 pub const MAX_DEPTH: usize = 3;
+/// Teto de alvos (gabinetes) por tópico direcionado (B1) — espelha o limite das
+/// propostas multi-destinatário (0537): direcionar é dirigir a UM grupo coeso,
+/// não fazer spam institucional.
+pub const MAX_TOPIC_TARGETS: usize = 10;
 /// Limite defensivo do título.
 pub const MAX_TITLE_LEN: usize = 200;
 /// Limite defensivo do corpo.
@@ -186,6 +191,26 @@ pub fn validate_comment(body: &str) -> Result<String> {
     Ok(body.to_owned())
 }
 
+/// Normaliza a lista de alvos (mandate_ids) de um tópico direcionado (B1):
+/// preserva a ORDEM da primeira ocorrência, remove duplicatas e trunca em
+/// [`MAX_TOPIC_TARGETS`]. Pura e total — a validação de EXISTÊNCIA dos mandatos
+/// fica na camada de serviço (precisa de I/O). Lista vazia = tópico sem alvo
+/// (encaminha ao contato curado da seção).
+#[must_use]
+pub fn sanitize_targets(ids: &[Uuid]) -> Vec<Uuid> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for &id in ids {
+        if out.len() >= MAX_TOPIC_TARGETS {
+            break;
+        }
+        if seen.insert(id) {
+            out.push(id);
+        }
+    }
+    out
+}
+
 /// **Política de patamares** (o coração): dado o total de interações CONTÁVEIS,
 /// a lista de patamares do fórum e o índice do próximo patamar ainda não disparado,
 /// devolve os patamares que DEVEM disparar agora (um envio por patamar, em ordem)
@@ -339,6 +364,24 @@ mod tests {
         assert_eq!(validate_comment(" oi ").unwrap(), "oi");
         assert!(validate_comment("   ").is_err());
         assert!(validate_comment(&"x".repeat(MAX_COMMENT_LEN + 1)).is_err());
+    }
+
+    #[test]
+    fn sanitize_targets_dedups_preserves_order_and_caps() {
+        let a = Uuid::from_u128(1);
+        let b = Uuid::from_u128(2);
+        let c = Uuid::from_u128(3);
+        // Vazio → vazio (tópico sem alvo).
+        assert_eq!(sanitize_targets(&[]), Vec::<Uuid>::new());
+        // Dedupe preservando a ordem da PRIMEIRA ocorrência.
+        assert_eq!(sanitize_targets(&[a, b, a, c, b]), vec![a, b, c]);
+        // Trunca em MAX_TOPIC_TARGETS (ids únicos).
+        let many: Vec<Uuid> = (0..(MAX_TOPIC_TARGETS as u128 + 5))
+            .map(Uuid::from_u128)
+            .collect();
+        let out = sanitize_targets(&many);
+        assert_eq!(out.len(), MAX_TOPIC_TARGETS);
+        assert_eq!(out[0], Uuid::from_u128(0));
     }
 
     // --- a política de patamares ---

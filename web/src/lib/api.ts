@@ -3075,8 +3075,21 @@ export const getForumTopics = (path: string, sort: 'hot' | 'new' = 'hot') =>
 export const getForumTopic = (id: string) =>
   apiGet<ForumTopicDetailDto>(`/api/v1/f/topics/${encodeURIComponent(id)}`);
 
-export const createForumTopic = (path: string, title: string, body: string) =>
-  apiPost<ForumTopicDto>('/api/v1/f/topics', { path, title, body });
+/** Cria um tópico de fórum. `targets` (B1) = mandate_ids para direcionar a
+ *  demanda a gabinete(s) específico(s); ausente/vazio = tópico sem alvo (cai no
+ *  contato curado da seção). O mesmo placar/patamar do fórum — uma régua só. */
+export const createForumTopic = (
+  path: string,
+  title: string,
+  body: string,
+  targets: string[] = [],
+) =>
+  apiPost<ForumTopicDto>('/api/v1/f/topics', {
+    path,
+    title,
+    body,
+    ...(targets.length > 0 ? { targets } : {}),
+  });
 
 export const voteForumTopic = (id: string, stance: ForumStance) =>
   apiPost<ForumTopicDto>(`/api/v1/f/topics/${encodeURIComponent(id)}/vote`, {

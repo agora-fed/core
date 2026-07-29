@@ -197,6 +197,11 @@ pub struct CreateTopicRequest {
     pub title: String,
     /// Corpo.
     pub body: String,
+    /// Alvos OPCIONAIS (B1): mandate_ids para direcionar a demanda a gabinete(s)
+    /// específico(s). Ausente/vazio = tópico sem alvo (encaminha ao contato
+    /// curado da seção). Duplicatas são ignoradas; o total é limitado no serviço.
+    #[serde(default)]
+    pub targets: Vec<Uuid>,
 }
 
 /// Posição do cidadão (fusão debates→fóruns).
@@ -443,7 +448,7 @@ async fn create_topic(
     };
     let svc = ForumService::from_state(&state);
     match svc
-        .create_topic(caller.org, &req.path, caller.citizen, &new)
+        .create_topic(caller.org, &req.path, caller.citizen, &new, &req.targets)
         .await
     {
         Ok(row) => (StatusCode::CREATED, Json(ApiResponse::ok(topic_dto(row)))).into_response(),
