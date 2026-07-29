@@ -8,6 +8,7 @@
     getMandateActivity,
     getProposals,
     getScorecard,
+    getResponsiveness,
     getSlas,
     adminEditMandate,
     adminHideMandate,
@@ -17,7 +18,12 @@
     type MandateDto,
     type AdminMandateEdit,
   } from '../../lib/api';
-  import type { ProposalDto, ScorecardDto, SlaDto } from '../../lib/types';
+  import type {
+    ProposalDto,
+    ResponsivenessDto,
+    ScorecardDto,
+    SlaDto,
+  } from '../../lib/types';
   import { responseRate, formatLatency } from '../../lib/format';
 
   let { mandateId }: { mandateId: string } = $props();
@@ -25,6 +31,7 @@
   let loading = $state(true);
   let mandate = $state<MandateDto | null>(null);
   let scorecard = $state<ScorecardDto | null>(null);
+  let responsiveness = $state<ResponsivenessDto | null>(null);
   let myProposals = $state<ProposalDto[]>([]);
   let mySlas = $state<SlaDto[]>([]);
   let loadError = $state<string | null>(null);
@@ -105,9 +112,10 @@
     } catch {
       isAdmin = false;
     }
-    const [mr, scr, pr, slr, ar] = await Promise.all([
+    const [mr, scr, rr, pr, slr, ar] = await Promise.all([
       getMandate(mandateId),
       getScorecard(mandateId),
+      getResponsiveness(mandateId),
       getProposals(DEFAULT_ORG_ID, 200),
       getSlas(DEFAULT_ORG_ID, 200),
       getMandateActivity(mandateId),
@@ -123,6 +131,8 @@
     }
     mandate = mr.data;
     if (scr.ok && scr.data) scorecard = scr.data;
+    // Responsividade é best-effort: se falhar, o selo simplesmente não aparece.
+    if (rr.ok && rr.data) responsiveness = rr.data;
     if (pr.ok && pr.data) {
       myProposals = pr.data.filter((p) => p.mandate_id === mandateId);
     }
@@ -234,6 +244,33 @@
       {:else}
         <p class="muted">Sem demandas registradas ainda.</p>
       {/if}
+      {#if responsiveness && responsiveness.tier.key !== 'unrated'}
+        {@const r = responsiveness}
+        <div class="selo selo-{r.tier.key}" title={r.tier.blurb}>
+          <span class="selo-medal">{r.tier.medal}</span>
+          <span class="selo-body">
+            <strong class="selo-label">{r.tier.label}</strong>
+            <span class="selo-meta">
+              {#if r.responds_in_days !== null}
+                Responde em ~{r.responds_in_days}
+                {r.responds_in_days === 1 ? 'dia' : 'dias'}
+              {/if}
+              {#if r.peer.top_pct !== null && r.peer.peer_count > 0}
+                · Top {r.peer.top_pct}% de {r.peer.scope}
+              {/if}
+              {#if r.answer_streak >= 3}
+                · 🔥 {r.answer_streak} respostas seguidas
+              {/if}
+            </span>
+            {#if r.peer.peer_avg_rate !== null && r.response_rate !== null}
+              <span class="selo-compare">
+                Você respondeu {r.response_rate}% · média de {r.peer.scope}
+                {r.peer.peer_avg_rate}%
+              </span>
+            {/if}
+          </span>
+        </div>
+      {/if}
     </div>
     <div class="cta-group">
       {#if mandate.is_reachable}
@@ -251,6 +288,16 @@
       <a class="btn btn-ghost cta-alt" href={`/politicos/${mandate.id}/placar`}>
         📊 Placar público
       </a>
+      {#if responsiveness && responsiveness.tier.key !== 'unrated'}
+        <a
+          class="btn btn-ghost cta-alt"
+          href={`/og/certificado/${mandate.id}.png`}
+          target="_blank"
+          rel="noopener"
+        >
+          🏅 Certificado
+        </a>
+      {/if}
     </div>
   </header>
 
@@ -527,6 +574,42 @@
     font-weight: 700;
     color: var(--c-navy);
   }
+  /* Selo de responsividade (Bloco C — vitrine positiva do político). */
+  .selo {
+    margin-top: 0.6rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.8rem;
+    border-radius: 0.6rem;
+    border: 1px solid var(--c-border, #e2e8f0);
+    background: #f8fafc;
+    max-width: 100%;
+  }
+  .selo-medal {
+    font-size: 1.7rem;
+    line-height: 1;
+  }
+  .selo-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+  .selo-label {
+    font-size: 0.98rem;
+  }
+  .selo-meta {
+    font-size: 0.85rem;
+    color: var(--c-muted, #64748b);
+  }
+  .selo-compare {
+    font-size: 0.82rem;
+    color: var(--c-muted, #64748b);
+  }
+  .selo-gold { border-color: #f59e0b; background: #fffbeb; }
+  .selo-silver { border-color: #94a3b8; background: #f8fafc; }
+  .selo-bronze { border-color: #ea9166; background: #fff7ed; }
+  .selo-building { border-color: #34d399; background: #f0fdf4; }
   .cta {
     align-self: center;
   }

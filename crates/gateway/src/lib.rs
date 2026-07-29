@@ -76,6 +76,7 @@ pub mod proposal_delivery;
 pub mod public_stats;
 pub mod rate_limit;
 pub mod reports;
+pub mod responsiveness;
 pub mod respond_link;
 pub mod signup_gates;
 pub mod social_graph;
@@ -213,6 +214,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(reports::routes(state.clone()))
         // Filtered politicos browser (0.23.0-municipais).
         .merge(politicos_ext::routes(state.clone()))
+        // Bloco C: vitrine positiva do político (selo/tier + comparativo com pares).
+        .merge(responsiveness::routes(state.clone()))
         // components
         .merge(dsoc_proposals::routes(state.clone()))
         .merge(dsoc_votes::routes(state.clone()))

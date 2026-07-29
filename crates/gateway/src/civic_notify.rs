@@ -77,6 +77,11 @@ impl EventHandler for CivicNotifySub {
                     "o mandato respondeu sua proposta — accountability registrada",
                 )
                 .await;
+                // Bloco C (C3): a RESPOSTA federa positivamente — simétrico ao
+                // `auto_federate_silence`. A regra de ouro do plano: toda
+                // consequência negativa amplificada deve ter sua versão
+                // positiva. O silêncio já virava Note; a resposta também vira.
+                self.auto_federate_response(sla.as_uuid()).await;
             }
             Event::ConsequenceSlaExpired { sla, .. } => {
                 self.notify_via_sla(
@@ -549,6 +554,105 @@ impl CivicNotifySub {
             }
         }
     }
+
+    /// Nota federada POSITIVA da resposta (C3, Bloco C). Simétrica ao
+    /// `auto_federate_silence`: quando o mandato responde dentro do prazo, o
+    /// AUTOR da proposta (já federável) publica uma Note celebrando — dando
+    /// ALCANCE positivo ao político, não só ameaça. Mesmos gates da Note de
+    /// silêncio (autor federável + preferência ligada); idempotência pela
+    /// hashtag `#RespostaRegistrada` junto da URL (a Note de silêncio/threshold
+    /// cita a mesma URL, então a URL sozinha não distingue). Best-effort: falha
+    /// vira warn e nunca derruba o dispatch loop nem as notificações in-app.
+    async fn auto_federate_response(&self, sla_id: Uuid) {
+        let row: Option<(Uuid, Option<Uuid>, String, Option<String>)> = sqlx::query_as(
+            "SELECT p.id, p.author_citizen_id, p.title,
+                    COALESCE(m.display_name, 'o mandato')
+               FROM consequence_sla s
+               JOIN proposal p ON p.id = s.proposal_id
+               LEFT JOIN mandate m ON m.id = s.mandate_id
+              WHERE s.id = $1",
+        )
+        .bind(sla_id)
+        .fetch_optional(&self.db)
+        .await
+        .unwrap_or_default();
+        let Some((proposal_id, Some(author), title, mandate_name)) = row else {
+            return;
+        };
+        let mandate_name = mandate_name.unwrap_or_else(|| "o mandato".to_owned());
+
+        let gate: Option<(Option<String>, bool, bool)> = sqlx::query_as(
+            "SELECT handle, is_public, auto_federate_threshold
+               FROM citizen WHERE id = $1 AND deleted_at IS NULL",
+        )
+        .bind(author)
+        .fetch_optional(&self.db)
+        .await
+        .unwrap_or_default();
+        let Some((Some(handle), true, true)) = gate else {
+            return;
+        };
+
+        let origin = self.public_origin.trim_end_matches('/');
+        let proposal_url = format!("{origin}/propostas/{proposal_id}");
+        let already: bool = sqlx::query_scalar(
+            "SELECT EXISTS (
+                SELECT 1 FROM federation_outbox_entry
+                 WHERE citizen_id = $1
+                   AND payload::text LIKE '%' || $2 || '%'
+                   AND payload::text LIKE '%#RespostaRegistrada%')",
+        )
+        .bind(author)
+        .bind(&proposal_url)
+        .fetch_one(&self.db)
+        .await
+        .unwrap_or(true);
+        if already {
+            return;
+        }
+
+        let citizen = CitizenId::from_uuid(author);
+        if let Err(err) = self.profiles.ensure_actor_public_key(citizen).await {
+            tracing::warn!(citizen = %author, error = ?err, "response note: keypair falhou");
+            return;
+        }
+        let actor_url = format!("{origin}/actors/{handle}");
+        let content = build_response_note(&title, &mandate_name, &proposal_url);
+        match self
+            .profiles
+            .create_public_note(
+                citizen, &actor_url, origin, &content, &[], None, false, None,
+            )
+            .await
+        {
+            Ok((activity_id, fanout)) => {
+                tracing::info!(
+                    citizen = %author,
+                    proposal = %proposal_id,
+                    activity = %activity_id,
+                    fanout,
+                    "response note: resposta positiva federada"
+                );
+            }
+            Err(err) => {
+                tracing::warn!(citizen = %author, proposal = %proposal_id, error = ?err,
+                    "response note: create_public_note falhou");
+            }
+        }
+    }
+}
+
+/// Corpo da Note POSITIVA da resposta (C3). Celebra o mandato que respondeu — a versão positiva da
+/// nota de silêncio. Título capado pra caber com folga no limite de 3000 chars do
+/// `create_public_note`; a hashtag `#RespostaRegistrada` distingue da nota de silêncio na
+/// idempotência e alimenta a timeline positiva.
+fn build_response_note(title: &str, mandate_name: &str, proposal_url: &str) -> String {
+    let title_short: String = title.chars().take(120).collect();
+    format!(
+        "✅ #RespostaRegistrada: {mandate_name} respondeu à demanda \"{title_short}\" dentro do \
+         prazo público na #DemocraciaBR. Accountability funciona quando o gabinete participa.\n\n\
+         {proposal_url}"
+    )
 }
 
 /// Corpo da Note do silêncio — a denúncia viaja COM a prova: cada aviso
@@ -602,7 +706,26 @@ fn build_threshold_note(title: &str, proposal_url: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_silence_note, build_threshold_note};
+    use super::{build_response_note, build_silence_note, build_threshold_note};
+
+    #[test]
+    fn response_note_is_positive_and_names_the_mandate() {
+        let note = build_response_note(
+            "Ciclovia na Av. Central",
+            "Dep. Fulana",
+            "https://x.br/propostas/abc",
+        );
+        // Marcador positivo distinto do silêncio (idempotência + timeline).
+        assert!(note.contains("#RespostaRegistrada"));
+        assert!(!note.contains("#SilêncioRegistrado"));
+        // Credita o mandato pelo nome (alcance positivo ao político).
+        assert!(note.contains("Dep. Fulana"));
+        assert!(note.contains("Ciclovia na Av. Central"));
+        assert!(note.contains("https://x.br/propostas/abc"));
+        // Título absurdo não estoura o limite de 3000 chars do create_public_note.
+        let long = build_response_note(&"x".repeat(5_000), "M", "https://x.br/p/1");
+        assert!(long.chars().count() <= 3_000);
+    }
 
     #[test]
     fn silence_note_carries_receipts_chain_and_marker() {

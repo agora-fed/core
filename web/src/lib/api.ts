@@ -19,6 +19,7 @@ import type {
   ProfileUpdateDto,
   ProposalDto,
   PromiseDto,
+  ResponsivenessDto,
   ScorecardDto,
   SessionInfoDto,
   SlaDto,
@@ -295,6 +296,13 @@ export const getScorecard = (mandateId: string, orgId = DEFAULT_ORG_ID) =>
 export const getMandate = (mandateId: string, orgId = DEFAULT_ORG_ID) =>
   apiGet<MandateDto>(
     `/api/v1/mandates/${encodeURIComponent(mandateId)}${orgQuery(orgId)}`,
+  );
+
+/** Responsividade pública do mandato (Bloco C): selo/tier + streak + comparativo com pares.
+ *  Best-effort no front — a página do político nunca quebra se este endpoint falhar. */
+export const getResponsiveness = (mandateId: string) =>
+  apiGet<ResponsivenessDto>(
+    `/api/v1/politicos/${encodeURIComponent(mandateId)}/responsiveness`,
   );
 
 /** Normalized public activity for a mandate (proxy Câmara/Senado). Always OK with empty
