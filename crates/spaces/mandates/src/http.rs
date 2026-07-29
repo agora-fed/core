@@ -206,7 +206,15 @@ fn to_mandate_dto(view: MandateView) -> MandateDto {
     let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
     let media_base = media_base.trim_end_matches('/');
     let avatar_url = view.avatar_object_key.map(|k| format!("{media_base}/{k}"));
-    let public_email = Some(view.public_email).filter(|s| !s.is_empty());
+    // Integridade (A1): o placeholder `@parlamento.democracia.social.br` NÃO é canal real. Nunca o
+    // expomos como "contato do gabinete" (public_email→None) e sinalizamos is_reachable=false — a UI
+    // usa isso pra não convidar o cidadão a "cobrar" um inbox morto (o silêncio seria da plataforma).
+    const PLACEHOLDER_SUFFIX: &str = "@parlamento.democracia.social.br";
+    let raw_email = Some(view.public_email).filter(|s| !s.is_empty());
+    let is_reachable = raw_email
+        .as_deref()
+        .is_some_and(|e| !e.ends_with(PLACEHOLDER_SUFFIX));
+    let public_email = raw_email.filter(|e| !e.ends_with(PLACEHOLDER_SUFFIX));
     MandateDto {
         id: view.id.as_uuid(),
         office: view.office,
@@ -218,6 +226,7 @@ fn to_mandate_dto(view: MandateView) -> MandateDto {
         house: view.house,
         avatar_url,
         public_email,
+        is_reachable,
         sphere: view.sphere,
         has_verified_operator: view.has_verified_operator,
     }

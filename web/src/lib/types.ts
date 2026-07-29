@@ -106,8 +106,11 @@ export interface MandateDto {
   uf: string | null;
   house: 'camara' | 'senado' | null;
   avatar_url: string | null;
-  /** Public accountability e-mail (added in F1.1). */
+  /** Public accountability e-mail (só REAL; placeholder da plataforma vem omitido). */
   public_email?: string | null;
+  /** True quando há canal institucional real (não placeholder). Integridade: só cobra quem é
+   *  alcançável — senão o "silêncio" seria da plataforma, não do político. */
+  is_reachable?: boolean;
   /** Federative sphere (added in F1.2, migration 0203). Legacy = 'federal'. */
   sphere?: 'federal' | 'estadual' | 'municipal';
   /** Aggregate signal: this mandate has a verified operator bound (LGPD-safe boolean). */

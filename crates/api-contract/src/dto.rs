@@ -104,10 +104,16 @@ pub struct MandateDto {
     /// Avatar URL (resolved via `MEDIA_BASE_URL` from the stored object key). `None` ⇒ UI
     /// shows initials.
     pub avatar_url: Option<String>,
-    /// Public office e-mail (the address citizens can write to). `None` when redacted or
-    /// unknown. Publicly exposed by design — accountability contact channel.
+    /// Public office e-mail (the address citizens can write to). `None` when redacted, unknown, OU
+    /// quando é um PLACEHOLDER gerado pela plataforma (`@parlamento.democracia.social.br`) — nunca
+    /// expomos placeholder como canal real. Publicly exposed by design — accountability contact.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub public_email: Option<String>,
+    /// True quando o gabinete tem canal institucional REAL (e-mail que entrega). False quando só há
+    /// placeholder da plataforma — o cidadão NÃO deve "cobrar" (o silêncio seria NOSSO, não do
+    /// político). Integridade (ADR crítica): 92% dos mandatos hoje são inalcançáveis.
+    #[serde(default)]
+    pub is_reachable: bool,
     /// Federative sphere: `federal` | `estadual` | `municipal` (migration 0203).
     /// Legacy DTOs that predate the field will default to `federal` under Serde.
     #[serde(default = "default_sphere")]

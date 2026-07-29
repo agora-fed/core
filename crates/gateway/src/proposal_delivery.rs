@@ -82,7 +82,10 @@ impl ProposalDeliverySub {
             r"SELECT pt.mandate_id,
                      pt.notified_at,
                      m.display_name,
-                     m.public_email
+                     -- Integridade (A1/D4): placeholder da plataforma NÃO é canal real → NULL, pra
+                     -- nunca entregar num inbox morto nem carimbar 'notificado' (silêncio seria NOSSO).
+                     CASE WHEN m.public_email ILIKE '%@parlamento.democracia.social.br'
+                          THEN NULL ELSE m.public_email END AS public_email
                 FROM proposal_target pt
                 JOIN mandate m ON m.id = pt.mandate_id
                WHERE pt.proposal_id = $1

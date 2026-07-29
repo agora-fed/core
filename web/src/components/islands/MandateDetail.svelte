@@ -236,9 +236,18 @@
       {/if}
     </div>
     <div class="cta-group">
-      <a class="btn btn-primary cta" href={`/propor?mandate=${mandate.id}`}>
-        Propor demanda
-      </a>
+      {#if mandate.is_reachable}
+        <a class="btn btn-primary cta" href={`/propor?mandate=${mandate.id}`}>
+          Propor demanda
+        </a>
+      {:else}
+        <!-- Integridade (A1): sem canal institucional real, não convidamos a "cobrar" — seria gritar
+             no vazio, e o silêncio seria da plataforma, não do político. -->
+        <div class="unreachable">
+          🕓 Este gabinete <strong>ainda não está conectado</strong> à plataforma.
+          Assim que houver um canal oficial, você poderá cobrar aqui — e o relógio de resposta começa a correr.
+        </div>
+      {/if}
       <a class="btn btn-ghost cta-alt" href={`/politicos/${mandate.id}/placar`}>
         📊 Placar público
       </a>
@@ -299,10 +308,14 @@
     {#if myProposals.length === 0}
       <div class="card center">
         <p>Ainda ninguém propôs demanda direta a {mandate.display_name.split(' ')[0]}.</p>
-        <p class="muted">Você pode ser a primeira pessoa.</p>
-        <a class="btn btn-primary" href={`/propor?mandate=${mandate.id}`}>
-          Propor demanda
-        </a>
+        {#if mandate.is_reachable}
+          <p class="muted">Você pode ser a primeira pessoa.</p>
+          <a class="btn btn-primary" href={`/propor?mandate=${mandate.id}`}>
+            Propor demanda
+          </a>
+        {:else}
+          <p class="muted">Este gabinete ainda não tem canal oficial na plataforma — cobrança abre quando ele se conectar.</p>
+        {/if}
       </div>
     {:else}
       <ul class="prop-list">
@@ -516,6 +529,16 @@
   }
   .cta {
     align-self: center;
+  }
+  .unreachable {
+    font-size: 0.9rem;
+    line-height: 1.4;
+    color: var(--text-2, #475569);
+    background: var(--surface-2, #f1f5f9);
+    border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+    border-radius: 10px;
+    padding: 0.7rem 0.9rem;
+    max-width: 34rem;
   }
   .cta-group {
     display: flex;

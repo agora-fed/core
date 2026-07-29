@@ -233,6 +233,7 @@ mod tests {
             house: None,
             avatar_url: None,
             public_email: None,
+            is_reachable: false,
             sphere: "federal".to_owned(),
             has_verified_operator: false,
         };
