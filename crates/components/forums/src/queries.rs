@@ -1006,6 +1006,62 @@ pub async fn topic_targets(
     Ok(rows)
 }
 
+/// Nomes públicos dos alvos de um tópico (B1) + alcançabilidade, pra UI dizer
+/// A QUEM o placar encaminha ("faltam N pontos pra encaminhar a Dep. Fulana").
+/// `reachable=false` = alvo com placeholder (Tier 0) — a UI sinaliza "ainda não
+/// conectado" em vez de prometer entrega que não acontece.
+///
+/// Runtime `sqlx::query_as` (não macro): `forum_topic_target` é da 0666.
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn topic_target_names(
+    executor: impl sqlx::PgExecutor<'_>,
+    topic_id: Uuid,
+) -> Result<Vec<(String, bool)>, sqlx::Error> {
+    let rows: Vec<(String, bool)> = sqlx::query_as(
+        r"SELECT m.display_name,
+                 (m.public_email <> ''
+                  AND m.public_email NOT ILIKE '%@parlamento.democracia.social.br') AS reachable
+            FROM forum_topic_target tt
+            JOIN mandate m ON m.id = tt.mandate_id
+           WHERE tt.topic_id = $1
+           ORDER BY tt.created_at, tt.mandate_id",
+    )
+    .bind(topic_id)
+    .fetch_all(executor)
+    .await?;
+    Ok(rows)
+}
+
+/// Nome da seção que fornece o contato institucional efetivo (mesma cadeia do
+/// [`effective_contact_email`]): o próprio fórum ou o ancestral mais próximo com
+/// `contact_email` curado. `None` = nenhum canal na cadeia (encaminhamento fica
+/// pendente). Alimenta o rótulo do patamar na UI.
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn effective_contact_name(
+    executor: impl sqlx::PgExecutor<'_>,
+    forum_id: Uuid,
+) -> Result<Option<String>, sqlx::Error> {
+    let r: Option<(String,)> = sqlx::query_as(
+        r"WITH RECURSIVE chain AS (
+             SELECT id, parent_id, contact_email, name, 0 AS depth FROM forum WHERE id = $1
+             UNION ALL
+             SELECT f.id, f.parent_id, f.contact_email, f.name, chain.depth + 1
+               FROM forum f JOIN chain ON f.id = chain.parent_id
+              WHERE chain.depth < 4
+           )
+           SELECT name FROM chain
+           WHERE contact_email IS NOT NULL ORDER BY depth LIMIT 1",
+    )
+    .bind(forum_id)
+    .fetch_optional(executor)
+    .await?;
+    Ok(r.map(|(name,)| name))
+}
+
 /// Lista os recibos de envio de um tópico (transparência pública).
 ///
 /// # Errors

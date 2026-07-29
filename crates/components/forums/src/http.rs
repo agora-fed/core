@@ -160,6 +160,11 @@ pub struct TopicDetailDto {
     /// comentários (autor pseudonimizado, `stance`/karma nulos); só o agregado
     /// do tópico (favor/contra/score) é público. A UI deve sinalizar isso.
     pub aggregate_only: bool,
+    /// A QUEM o placar encaminha ao cruzar o patamar: nomes dos mandatos-alvo
+    /// alcançáveis (B1, "Dep. Fulana · Sen. Beltrano") ou o nome da seção com
+    /// contato institucional curado ("Ministério dos Transportes"). `None` =
+    /// nenhum canal alcançável ainda — a UI mostra "encaminhamento pendente".
+    pub escalation_destination: Option<String>,
 }
 
 /// Uma **afirmação-ponte** (D8.2): um argumento endossado ATRAVESSANDO a divisão
@@ -501,6 +506,7 @@ async fn get_topic(State(state): State<dsoc_app::AppState>, Path(id): Path<Uuid>
                 dispatches: d.dispatches.into_iter().map(dispatch_dto).collect(),
                 escalation_threshold: d.escalation_threshold,
                 aggregate_only,
+                escalation_destination: d.escalation_destination,
             };
             (StatusCode::OK, Json(ApiResponse::ok(dto))).into_response()
         }

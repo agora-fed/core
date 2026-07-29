@@ -3067,6 +3067,13 @@ export interface ForumTopicDetailDto {
    */
   escalation_threshold: number;
   /**
+   * A QUEM o placar encaminha ao cruzar o patamar: nomes dos mandatos-alvo
+   * alcançáveis (B1) ou o nome da seção com contato institucional curado
+   * (ex.: "Ministério dos Transportes"). null = nenhum canal alcançável —
+   * a UI mostra "encaminhamento pendente" em vez de prometer entrega.
+   */
+  escalation_destination?: string | null;
+  /**
    * Privacidade graduada (D5/D6): true quando o fórum é de um município
    * pequeno. Nesse caso a atribuição individual de posição foi omitida dos
    * comentários (autor = "participante", stance/karma nulos); só o agregado

@@ -85,6 +85,11 @@ pub struct TopicDetail {
     /// Município pequeno (D5/D6): quando `true`, a atribuição individual de
     /// posição foi omitida — só o agregado é público.
     pub aggregate_only: bool,
+    /// A QUEM o placar encaminha ao cruzar o patamar: nomes dos mandatos-alvo
+    /// alcançáveis (B1) ou o nome da seção com contato institucional curado.
+    /// `None` = nenhum canal alcançável — a UI diz "encaminhamento pendente"
+    /// em vez de prometer entrega que não acontece (Tier 0).
+    pub escalation_destination: Option<String>,
 }
 
 /// Um argumento-ponte já pontuado (D8.2) — pronto pra UI de consenso. Carrega o
@@ -369,6 +374,23 @@ impl ForumService {
         let voters = queries::forum_territory_voters(&mut *tx, topic.forum_id)
             .await
             .map_err(map_sqlx)?;
+        // Destino do encaminhamento, NOMEADO (a resposta a "encaminhar pra quem?"):
+        // alvos alcançáveis do tópico (B1) ou a seção com contato curado. Nenhum
+        // canal → None (a UI fala "pendente"; nunca prometemos inbox morto — Tier 0).
+        let targets = queries::topic_target_names(&mut *tx, id)
+            .await
+            .map_err(map_sqlx)?;
+        let escalation_destination = if targets.is_empty() {
+            queries::effective_contact_name(&mut *tx, topic.forum_id)
+                .await
+                .map_err(map_sqlx)?
+        } else {
+            let reachable: Vec<String> = targets
+                .into_iter()
+                .filter_map(|(name, ok)| ok.then_some(name))
+                .collect();
+            (!reachable.is_empty()).then(|| reachable.join(" · "))
+        };
         tx.commit().await.map_err(map_sqlx)?;
         let escalation_threshold = dsoc_core::proportional_threshold(
             voters,
@@ -389,6 +411,7 @@ impl ForumService {
             dispatches,
             escalation_threshold,
             aggregate_only,
+            escalation_destination,
         })
     }
 

@@ -784,9 +784,17 @@
         <span class="f-score-num">{detail.topic.score > 0 ? '+' : ''}{detail.topic.score.toLocaleString('pt-BR')}</span>
         <span class="f-score-lbl">pontos</span>
         {#if detail.topic.score >= detail.escalation_threshold}
-          <span class="f-score-hint ok">✓ encaminhado ao gabinete</span>
+          {#if detail.escalation_destination}
+            <span class="f-score-hint ok">✓ encaminhado a {detail.escalation_destination}</span>
+          {:else}
+            <span class="f-score-hint">✓ patamar cruzado — encaminhamento pendente (seção ainda sem canal institucional conectado)</span>
+          {/if}
         {:else if detail.topic.score > 0}
-          <span class="f-score-hint">faltam {(detail.escalation_threshold - detail.topic.score).toLocaleString('pt-BR')} pra encaminhar ao gabinete</span>
+          {#if detail.escalation_destination}
+            <span class="f-score-hint">faltam {(detail.escalation_threshold - detail.topic.score).toLocaleString('pt-BR')} pontos para encaminhar a <strong>{detail.escalation_destination}</strong></span>
+          {:else}
+            <span class="f-score-hint">faltam {(detail.escalation_threshold - detail.topic.score).toLocaleString('pt-BR')} pontos para o patamar — seção ainda sem canal institucional (encaminha quando conectar)</span>
+          {/if}
         {:else}
           <span class="f-score-hint">apoio líquido negativo — não encaminha</span>
         {/if}
