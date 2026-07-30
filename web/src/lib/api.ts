@@ -3031,9 +3031,23 @@ export interface ForumTopicDto {
   created_at: string;
 }
 
+/**
+ * Transparência da câmara municipal (catálogo civic_source, 0662/0669).
+ * Presente só em fóruns municipais; usa a ausência de dados abertos como
+ * cobrança pública e aponta o site oficial quando existe.
+ */
+export interface TransparencyDto {
+  /** `plena` | `parcial` | `ausente`. */
+  status: 'plena' | 'parcial' | 'ausente';
+  /** Site oficial da câmara (base_url), quando conhecido. */
+  official_url: string | null;
+}
+
 export interface ForumTopicListDto {
   forum: ForumDto;
   topics: ForumTopicDto[];
+  /** Banner de transparência da câmara — só em fóruns municipais. */
+  transparency: TransparencyDto | null;
 }
 
 export interface ForumCommentItemDto {

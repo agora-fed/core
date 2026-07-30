@@ -53,6 +53,18 @@ pub struct ForumDto {
     pub thresholds: Vec<i32>,
 }
 
+/// Transparência da câmara municipal (catálogo `civic_source`, 0662/0669).
+/// Só acompanha fóruns de esfera municipal; usa a AUSÊNCIA de dados abertos como
+/// cobrança pública, e aponta o site oficial da câmara quando ele existe.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct TransparencyDto {
+    /// `plena` (dados abertos, gabinetes conectados) | `parcial` (tem site, sem
+    /// dados abertos) | `ausente` (nenhum portal localizado).
+    pub status: String,
+    /// Site oficial da câmara, quando conhecido (`base_url`). `None` no `ausente`.
+    pub official_url: Option<String>,
+}
+
 /// Um filho na árvore (materializado ou seção virtual do template).
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ForumChildDto {
@@ -480,9 +492,19 @@ async fn list_topics(
         .await
     {
         Ok((forum, topics)) => {
+            // Banner de transparência: só para fórum municipal, cruzando com o
+            // catálogo civic_source. ADITIVO — degrada para `None` sem quebrar.
+            let transparency = svc
+                .municipal_transparency(&forum)
+                .await
+                .map(|(status, official_url)| TransparencyDto {
+                    status,
+                    official_url,
+                });
             let dto = serde_json::json!({
                 "forum": forum_dto(forum),
                 "topics": topics.into_iter().map(topic_dto).collect::<Vec<_>>(),
+                "transparency": transparency,
             });
             (StatusCode::OK, Json(ApiResponse::ok(dto))).into_response()
         }

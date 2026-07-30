@@ -339,6 +339,31 @@ impl ForumService {
         Ok((forum, topics))
     }
 
+    /// Transparência da câmara para o cabeçalho de um fórum MUNICIPAL: cruza o
+    /// `(uf, municipio)` do fórum com o catálogo `civic_source` (0662/0669) e
+    /// devolve `(status, site_oficial)` — `plena` | `parcial` | `ausente`.
+    ///
+    /// Retorna `None` (sem banner) quando o fórum não é municipal, quando lhe
+    /// faltam `uf`/`municipio`, ou quando o catálogo está indisponível — este é
+    /// um enriquecimento ADITIVO e não deve derrubar a listagem de tópicos.
+    /// Município não catalogado retorna `Some(("ausente", None))`: a AUSÊNCIA de
+    /// dado é justamente a cobrança pública que queremos exibir.
+    pub async fn municipal_transparency(
+        &self,
+        forum: &ForumRow,
+    ) -> Option<(String, Option<String>)> {
+        if forum.esfera.as_deref() != Some("municipal") {
+            return None;
+        }
+        let uf = forum.uf.as_deref()?;
+        let municipio = forum.municipio.as_deref()?;
+        match queries::municipal_transparency(&self.db, uf, municipio).await {
+            Ok(Some(pair)) => Some(pair),
+            Ok(None) => Some(("ausente".to_owned(), None)),
+            Err(_) => None,
+        }
+    }
+
     /// Últimos tópicos de todos os fóruns (feed da home /f).
     ///
     /// # Errors

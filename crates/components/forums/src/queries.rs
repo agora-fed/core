@@ -1151,3 +1151,114 @@ pub async fn effective_contact_email(
     .await?;
     Ok(r.and_then(|r| r.contact_email))
 }
+
+/// Deriva o status de transparência (`plena` | `parcial` | `ausente`) de uma
+/// linha do catálogo `civic_source` (0662/0669), a partir de `platform`,
+/// `probe_status` e da presença de `base_url`.
+///
+/// - `ausente`: sem portal utilizável — `base_url` NULL ou plataforma
+///   `unknown`/`none`.
+/// - `plena`: plataforma legislativa com dados abertos
+///   (`sapl`/`cespro`/`camaraonline`) E probe `ok`.
+/// - `parcial`: existe site (`base_url`), mas não é uma das plataformas plenas
+///   OU o probe não está `ok` (dados não legíveis por máquina).
+#[must_use]
+fn derive_transparency_status(
+    platform: &str,
+    probe_status: &str,
+    base_url: Option<&str>,
+) -> String {
+    /// Plataformas legislativas com dados abertos estruturados + e-mail extraível.
+    const PLENA_PLATFORMS: [&str; 3] = ["sapl", "cespro", "camaraonline"];
+
+    if base_url.is_none() || platform == "unknown" || platform == "none" {
+        return "ausente".to_owned();
+    }
+    if PLENA_PLATFORMS.contains(&platform) && probe_status == "ok" {
+        return "plena".to_owned();
+    }
+    "parcial".to_owned()
+}
+
+/// Consulta a transparência da câmara de um município no catálogo `civic_source`
+/// (0662/0669). RUNTIME (`sqlx::query_as` sem macro): a tabela é um catálogo
+/// cívico independente, fora do schema compile-time-checked dos fóruns — não há
+/// entrada `.sqlx` para ela e não a regeneramos.
+///
+/// Casa por `(uf, municipio)` case-insensitive via `upper()` dos dois lados — a
+/// mesma comparação usada no resto do código (o índice único de `civic_source`
+/// é `(uf, upper(municipio))`). Retorna `(status, base_url)` quando há linha;
+/// `None` quando o município não está catalogado (o chamador trata como
+/// `ausente`).
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn municipal_transparency(
+    executor: impl sqlx::PgExecutor<'_>,
+    uf: &str,
+    municipio: &str,
+) -> Result<Option<(String, Option<String>)>, sqlx::Error> {
+    let row: Option<(String, String, Option<String>)> = sqlx::query_as(
+        r#"SELECT platform, probe_status, base_url
+           FROM civic_source
+           WHERE upper(uf) = upper($1) AND upper(municipio) = upper($2)
+           LIMIT 1"#,
+    )
+    .bind(uf)
+    .bind(municipio)
+    .fetch_optional(executor)
+    .await?;
+
+    Ok(row.map(|(platform, probe_status, base_url)| {
+        let status = derive_transparency_status(&platform, &probe_status, base_url.as_deref());
+        (status, base_url)
+    }))
+}
+
+#[cfg(test)]
+mod transparency_tests {
+    use super::derive_transparency_status;
+
+    #[test]
+    fn plena_when_open_platform_and_probe_ok() {
+        assert_eq!(
+            derive_transparency_status("sapl", "ok", Some("https://sapl.x.leg.br")),
+            "plena"
+        );
+        assert_eq!(
+            derive_transparency_status("cespro", "ok", Some("https://x")),
+            "plena"
+        );
+        assert_eq!(
+            derive_transparency_status("camaraonline", "ok", Some("https://x")),
+            "plena"
+        );
+    }
+
+    #[test]
+    fn parcial_when_site_but_not_open_data() {
+        // CMS genérico com site, sem dados abertos.
+        assert_eq!(
+            derive_transparency_status("wordpress", "ok", Some("https://camara.x")),
+            "parcial"
+        );
+        // Plataforma plena porém probe não-ok = site existe, dados não conectados.
+        assert_eq!(
+            derive_transparency_status("sapl", "dead", Some("https://sapl.x")),
+            "parcial"
+        );
+    }
+
+    #[test]
+    fn ausente_when_no_portal() {
+        assert_eq!(derive_transparency_status("sapl", "ok", None), "ausente");
+        assert_eq!(
+            derive_transparency_status("unknown", "ok", Some("https://x")),
+            "ausente"
+        );
+        assert_eq!(
+            derive_transparency_status("none", "pending", None),
+            "ausente"
+        );
+    }
+}
