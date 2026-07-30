@@ -249,7 +249,7 @@
           {#each rows as r}
             <tr>
               <td>
-                <a href={`/politicos/${r.mandate_id}`}>{r.display_name}</a>
+                <a href={`/politicos/?id=${r.mandate_id}`}>{r.display_name}</a>
                 <span class="muted small">{r.office}</span>
               </td>
               <td>

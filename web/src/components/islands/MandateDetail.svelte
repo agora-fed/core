@@ -305,7 +305,7 @@
           Assim que houver um canal oficial, você poderá cobrar aqui — e o relógio de resposta começa a correr.
         </div>
       {/if}
-      <a class="btn btn-ghost cta-alt" href={`/politicos/${mandate.id}/placar`}>
+      <a class="btn btn-ghost cta-alt" href={`/politicos/?id=${mandate.id}`}>
         📊 Placar público
       </a>
       {#if opRounds.length > 0}

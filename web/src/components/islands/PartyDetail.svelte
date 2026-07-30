@@ -356,7 +356,7 @@
                 <ul class="grid">
                   {#each dirMembers[d.id] as m (m.mandate_id)}
                     <li class="card member">
-                      <a class="link" href={`/politicos/${m.mandate_id}`}>
+                      <a class="link" href={`/politicos/?id=${m.mandate_id}`}>
                         {#if m.avatar_url}
                           <img class="avatar" src={m.avatar_url} alt="" loading="lazy" />
                         {:else}
@@ -402,7 +402,7 @@
         <ul class="grid">
           {#each group as m (m.id)}
             <li class="card">
-              <a class="link" href={`/politicos/${m.id}`}>
+              <a class="link" href={`/politicos/?id=${m.id}`}>
                 {#if m.avatar_url}
                   <img class="avatar" src={m.avatar_url} alt="" loading="lazy" />
                 {:else}

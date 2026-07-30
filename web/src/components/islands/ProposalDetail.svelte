@@ -388,7 +388,7 @@
   <article class="proposal">
     <!-- Cabeçalho com o destinatário em destaque (o "a quem isto se dirige") -->
     {#if mandate}
-      <a class="target" href={`/politicos/${mandate.id}`}>
+      <a class="target" href={`/politicos/?id=${mandate.id}`}>
         {#if mandate.avatar_url}
           <img class="target-avatar" src={mandate.avatar_url} alt="" />
         {:else}
@@ -410,7 +410,7 @@
       <p class="co-targets">
         <span class="muted">Também dirigida a:</span>
         {#each proposal.targets.slice(1) as t (t.mandate_id)}
-          <a href={`/politicos/${t.mandate_id}`}>{t.display_name}</a>
+          <a href={`/politicos/?id=${t.mandate_id}`}>{t.display_name}</a>
         {/each}
       </p>
     {/if}

@@ -89,7 +89,7 @@
       {#if group.owner_handle}
         <a href={`/perfil/?u=${encodeURIComponent(group.owner_handle)}`}>{group.owner_display_name ?? '@' + group.owner_handle}</a>
       {:else}
-        <a href={`/politicos/${group.mandate_id}`}>{group.owner_display_name ?? 'político(a)'}</a>
+        <a href={`/politicos/?id=${group.mandate_id}`}>{group.owner_display_name ?? 'político(a)'}</a>
       {/if}
     </p>
     {#if group.description}

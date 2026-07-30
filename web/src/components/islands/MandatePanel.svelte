@@ -306,7 +306,7 @@
         Vínculo verificado em nível <strong>{mine.binding_level}</strong>.
       </p>
     </div>
-    <a class="btn btn-ghost placar" href={`/politicos/${mine.mandate.id}/placar`}>
+    <a class="btn btn-ghost placar" href={`/politicos/?id=${mine.mandate.id}`}>
       📊 Ver placar público
     </a>
   </header>

@@ -157,7 +157,7 @@
       >
         Publicar no fediverso
       </Button>
-      <a class="alt muted" href={`/politicos/${mandate.id}`}>Ver perfil completo →</a>
+      <a class="alt muted" href={`/politicos/?id=${mandate.id}`}>Ver perfil completo →</a>
     </footer>
     {#if msg}
       <p class={`msg ${msg.kind}`} role="status">{msg.text}</p>

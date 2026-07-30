@@ -118,7 +118,7 @@
         <ul class="grid">
           {#each group as m (m.id)}
             <li class="card member">
-              <a class="link" href={`/politicos/${m.id}`}>
+              <a class="link" href={`/politicos/?id=${m.id}`}>
                 {#if m.avatar_url}
                   <img class="avatar" src={m.avatar_url} alt="" loading="lazy" />
                 {:else}

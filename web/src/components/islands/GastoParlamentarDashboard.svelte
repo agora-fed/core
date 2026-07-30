@@ -211,7 +211,7 @@
     if (!report?.detail || filters.group_by !== 'partido' && filters.group_by !== 'uf' && filters.group_by !== 'casa' && filters.group_by !== 'esfera' && filters.group_by !== 'office') {
       // For politico group_by each bar is already one mandate — clicking is
       // less useful. Skip modal.
-      window.location.href = `/politicos/${key}`;
+      window.location.href = `/politicos/?id=${key}`;
       return;
     }
     if (!report.detail) return;
@@ -481,7 +481,7 @@
         {#each drillRows.slice(0, 100) as r (r.mandate_id)}
           <tr>
             <td>
-              <a href={`/politicos/${r.mandate_id}`}>{r.display_name}</a>
+              <a href={`/politicos/?id=${r.mandate_id}`}>{r.display_name}</a>
             </td>
             <td>
               <span class="party-tag">{r.party ?? 'SEM'}</span>

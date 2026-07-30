@@ -174,7 +174,7 @@
 
   function openDrill(label: string, key: string) {
     if (filters.group_by === 'politico') {
-      window.location.href = `/politicos/${key}`;
+      window.location.href = `/politicos/?id=${key}`;
       return;
     }
     if (!report?.detail) return;
@@ -409,7 +409,7 @@
         {#each drillRows.slice(0, 100) as r (r.mandate_id)}
           <tr>
             <td>
-              <a href={`/politicos/${r.mandate_id}`}>{r.display_name}</a>
+              <a href={`/politicos/?id=${r.mandate_id}`}>{r.display_name}</a>
             </td>
             <td>
               <span class="party-tag">{r.party ?? 'SEM'}</span>
