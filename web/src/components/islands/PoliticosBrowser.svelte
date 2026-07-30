@@ -206,22 +206,28 @@
     {#if needsMunicipio}
       <label class="mun">
         <span class="k">Município</span>
-        <select
+        <!-- Combobox digitável (type-ahead): com ~5.5k municípios, um <select> é
+             inviável de navegar. O <datalist> filtra enquanto se digita e mantém
+             a lista completa acessível; `municipio` continua sendo o nome exato. -->
+        <input
+          class="mun-input"
+          type="text"
+          list="pol-municipios"
           bind:value={municipio}
           onchange={onMunicipioChange}
           disabled={!uf || munLoading}
-        >
-          <option value="">
-            {munLoading
-              ? 'Carregando…'
-              : uf
-                ? `Escolher município (${municipios.length})…`
-                : 'Escolha um estado primeiro'}
-          </option>
+          autocomplete="off"
+          placeholder={munLoading
+            ? 'Carregando…'
+            : uf
+              ? `Digite o município (${municipios.length})…`
+              : 'Escolha um estado primeiro'}
+        />
+        <datalist id="pol-municipios">
           {#each municipios as m}
             <option value={m.nome}>{m.nome} ({m.count})</option>
           {/each}
-        </select>
+        </datalist>
       </label>
     {/if}
 
@@ -357,7 +363,8 @@
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }
-  .filters select {
+  .filters select,
+  .filters .mun-input {
     background: var(--surface-1);
     border: 1px solid var(--border-subtle);
     color: var(--text-1);
@@ -368,7 +375,13 @@
     cursor: pointer;
     height: 44px;
   }
-  .filters select:disabled {
+  /* Combobox digitável: cursor de texto, largura total da célula do grid. */
+  .filters .mun-input {
+    cursor: text;
+    width: 100%;
+  }
+  .filters select:disabled,
+  .filters .mun-input:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
