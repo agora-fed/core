@@ -244,7 +244,8 @@ pub struct SignupIdentity {
 pub fn normalize_handle(raw: &str) -> Result<String> {
     let h = raw.trim().trim_start_matches('@').to_lowercase();
     let ok = (3..=30).contains(&h.chars().count())
-        && h.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        && h.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
         && h.chars().next().is_some_and(|c| c.is_ascii_lowercase());
     if ok {
         Ok(h)

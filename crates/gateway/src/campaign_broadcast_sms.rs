@@ -24,7 +24,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::campaign_broadcast::authorized;
-use crate::intercoms::{config_key, Channel, MessageSender, OutboundMessage, SmsConfig, SmsGatewayProvider};
+use crate::intercoms::{
+    config_key, Channel, MessageSender, OutboundMessage, SmsConfig, SmsGatewayProvider,
+};
 
 /// Teto de destinatários por disparo (defesa; fase municipal é de baixo volume).
 const MAX_RECIPIENTS: i64 = 5000;
@@ -46,7 +48,11 @@ fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
     (status, Json(ApiResponse::<()>::fail(code, msg))).into_response()
 }
 fn storage_error() -> Response {
-    fail(StatusCode::INTERNAL_SERVER_ERROR, "storage_error", "Erro interno.")
+    fail(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "storage_error",
+        "Erro interno.",
+    )
 }
 
 #[derive(Deserialize)]
@@ -104,7 +110,11 @@ async fn broadcast_sms(
     match authorized(&state, &caller, &sigla, directory_id).await {
         Ok(true) => {}
         Ok(false) => {
-            return fail(StatusCode::FORBIDDEN, "http_403", "Você não administra este partido/diretório.")
+            return fail(
+                StatusCode::FORBIDDEN,
+                "http_403",
+                "Você não administra este partido/diretório.",
+            )
         }
         Err(r) => return r,
     }
@@ -123,7 +133,11 @@ async fn broadcast_sms(
 
     let msg_body = body.body.trim().to_owned();
     if msg_body.is_empty() || msg_body.chars().count() > MAX_SMS_BODY {
-        return fail(StatusCode::BAD_REQUEST, "invalid_body", "SMS de 1 a 300 caracteres.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_body",
+            "SMS de 1 a 300 caracteres.",
+        );
     }
 
     // Diretório precisa existir na org, ser deste partido e ser MUNICIPAL (uf + município).
@@ -144,7 +158,11 @@ async fn broadcast_sms(
         }
     };
     let Some((uf, municipio)) = dir else {
-        return fail(StatusCode::NOT_FOUND, "directory_not_found", "Diretório não encontrado.");
+        return fail(
+            StatusCode::NOT_FOUND,
+            "directory_not_found",
+            "Diretório não encontrado.",
+        );
     };
     let (Some(uf), Some(municipio)) = (uf, municipio) else {
         return fail(
@@ -273,7 +291,10 @@ async fn broadcast_sms(
 
     (
         StatusCode::OK,
-        Json(ApiResponse::ok(SmsResult { recipients, broadcast_id })),
+        Json(ApiResponse::ok(SmsResult {
+            recipients,
+            broadcast_id,
+        })),
     )
         .into_response()
 }

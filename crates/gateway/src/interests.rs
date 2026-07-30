@@ -41,16 +41,19 @@ struct AreaDto {
 }
 
 async fn list_areas(State(state): State<AppState>) -> Response {
-    let rows: Result<Vec<(String, String, Option<String>)>, sqlx::Error> = sqlx::query_as(
-        "SELECT slug, name, ministry FROM interest_area ORDER BY position, name",
-    )
-    .fetch_all(&state.db)
-    .await;
+    let rows: Result<Vec<(String, String, Option<String>)>, sqlx::Error> =
+        sqlx::query_as("SELECT slug, name, ministry FROM interest_area ORDER BY position, name")
+            .fetch_all(&state.db)
+            .await;
     match rows {
         Ok(items) => {
             let dtos: Vec<AreaDto> = items
                 .into_iter()
-                .map(|(slug, name, ministry)| AreaDto { slug, name, ministry })
+                .map(|(slug, name, ministry)| AreaDto {
+                    slug,
+                    name,
+                    ministry,
+                })
                 .collect();
             (StatusCode::OK, Json(ApiResponse::ok(dtos))).into_response()
         }
@@ -85,7 +88,11 @@ struct SetBody {
     areas: Vec<String>,
 }
 
-async fn set_interests(State(state): State<AppState>, caller: CallerId, Json(body): Json<SetBody>) -> Response {
+async fn set_interests(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Json(body): Json<SetBody>,
+) -> Response {
     let citizen = caller.citizen.as_uuid();
     // Substitui a seleção: apaga tudo e insere só as áreas VÁLIDAS (FK garante existência).
     let mut tx = match state.db.begin().await {
@@ -104,7 +111,12 @@ async fn set_interests(State(state): State<AppState>, caller: CallerId, Json(bod
         return storage_error();
     }
     let mut seen = std::collections::HashSet::new();
-    for slug in body.areas.iter().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+    for slug in body
+        .areas
+        .iter()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+    {
         if !seen.insert(slug) {
             continue;
         }
@@ -126,5 +138,9 @@ async fn set_interests(State(state): State<AppState>, caller: CallerId, Json(bod
     if tx.commit().await.is_err() {
         return storage_error();
     }
-    (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "saved": true })))).into_response()
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(serde_json::json!({ "saved": true }))),
+    )
+        .into_response()
 }

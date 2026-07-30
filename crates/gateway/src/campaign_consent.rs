@@ -27,7 +27,10 @@ use uuid::Uuid;
 
 pub fn routes(state: AppState) -> Router<()> {
     Router::new()
-        .route("/me/campaign-consent", get(list_consent).post(grant_consent))
+        .route(
+            "/me/campaign-consent",
+            get(list_consent).post(grant_consent),
+        )
         .route("/me/campaign-consent/{id}", delete(revoke_consent))
         .with_state(state)
 }
@@ -36,7 +39,11 @@ fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
     (status, Json(ApiResponse::<()>::fail(code, msg))).into_response()
 }
 fn storage_error() -> Response {
-    fail(StatusCode::INTERNAL_SERVER_ERROR, "storage_error", "Erro interno.")
+    fail(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "storage_error",
+        "Erro interno.",
+    )
 }
 
 #[derive(Serialize)]
@@ -51,29 +58,40 @@ struct ConsentDto {
 
 async fn list_consent(State(state): State<AppState>, caller: CallerId) -> Response {
     let (org, citizen) = (caller.org.as_uuid(), caller.citizen.as_uuid());
-    let rows: Result<Vec<(Uuid, String, Option<String>, Option<String>, Option<String>, DateTime<Utc>)>, sqlx::Error> =
-        sqlx::query_as(
-            r"SELECT id, scope, party_sigla, uf, municipio, granted_at
+    let rows: Result<
+        Vec<(
+            Uuid,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            DateTime<Utc>,
+        )>,
+        sqlx::Error,
+    > = sqlx::query_as(
+        r"SELECT id, scope, party_sigla, uf, municipio, granted_at
                 FROM citizen_campaign_consent
                WHERE citizen_id = $1 AND org_id = $2 AND revoked_at IS NULL
                ORDER BY granted_at DESC",
-        )
-        .bind(citizen)
-        .bind(org)
-        .fetch_all(&state.db)
-        .await;
+    )
+    .bind(citizen)
+    .bind(org)
+    .fetch_all(&state.db)
+    .await;
     match rows {
         Ok(items) => {
             let dtos: Vec<ConsentDto> = items
                 .into_iter()
-                .map(|(id, scope, party_sigla, uf, municipio, granted_at)| ConsentDto {
-                    id,
-                    scope,
-                    party_sigla,
-                    uf,
-                    municipio,
-                    granted_at,
-                })
+                .map(
+                    |(id, scope, party_sigla, uf, municipio, granted_at)| ConsentDto {
+                        id,
+                        scope,
+                        party_sigla,
+                        uf,
+                        municipio,
+                        granted_at,
+                    },
+                )
                 .collect();
             (StatusCode::OK, Json(ApiResponse::ok(dtos))).into_response()
         }
@@ -102,9 +120,24 @@ async fn grant_consent(
 ) -> Response {
     let (org, citizen) = (caller.org.as_uuid(), caller.citizen.as_uuid());
     let scope = body.scope.trim().to_lowercase();
-    let party = body.party_sigla.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned);
-    let uf = body.uf.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_uppercase);
-    let municipio = body.municipio.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned);
+    let party = body
+        .party_sigla
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned);
+    let uf = body
+        .uf
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_uppercase);
+    let municipio = body
+        .municipio
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned);
 
     // Shape por escopo (espelha o CHECK da 0654).
     let shape_ok = match scope.as_str() {
@@ -166,9 +199,11 @@ async fn revoke_consent(
     .execute(&state.db)
     .await;
     match res {
-        Ok(r) if r.rows_affected() == 0 => {
-            fail(StatusCode::NOT_FOUND, "not_found", "Consentimento não encontrado.")
-        }
+        Ok(r) if r.rows_affected() == 0 => fail(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "Consentimento não encontrado.",
+        ),
         Ok(_) => (StatusCode::OK, Json(ApiResponse::ok(()))).into_response(),
         Err(err) => {
             tracing::error!(?err, "revoke_consent");

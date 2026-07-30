@@ -36,7 +36,11 @@ fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
     (status, Json(ApiResponse::<()>::fail(code, msg))).into_response()
 }
 fn storage_error() -> Response {
-    fail(StatusCode::INTERNAL_SERVER_ERROR, "storage_error", "Erro interno.")
+    fail(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "storage_error",
+        "Erro interno.",
+    )
 }
 
 /// Normaliza para algo E.164-ish (+ e dígitos). Loose: não valida operadora.
@@ -51,7 +55,11 @@ fn normalize_phone(raw: &str) -> Option<String> {
     }
     let digits = out.trim_start_matches('+').len();
     if (8..=15).contains(&digits) {
-        Some(if out.starts_with('+') { out } else { format!("+{out}") })
+        Some(if out.starts_with('+') {
+            out
+        } else {
+            format!("+{out}")
+        })
     } else {
         None
     }
@@ -95,10 +103,18 @@ struct SetPhoneBody {
     phone: String,
 }
 
-async fn set_phone(State(state): State<AppState>, caller: CallerId, Json(body): Json<SetPhoneBody>) -> Response {
+async fn set_phone(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Json(body): Json<SetPhoneBody>,
+) -> Response {
     let citizen = caller.citizen.as_uuid();
     let Some(phone) = normalize_phone(&body.phone) else {
-        return fail(StatusCode::BAD_REQUEST, "invalid_phone", "Telefone inválido (use DDD e número).");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_phone",
+            "Telefone inválido (use DDD e número).",
+        );
     };
     // Cooldown de reenvio.
     let recent: bool = match sqlx::query_scalar(
@@ -117,7 +133,11 @@ async fn set_phone(State(state): State<AppState>, caller: CallerId, Json(body): 
         }
     };
     if recent {
-        return fail(StatusCode::TOO_MANY_REQUESTS, "cooldown", "Aguarde um minuto para pedir outro código.");
+        return fail(
+            StatusCode::TOO_MANY_REQUESTS,
+            "cooldown",
+            "Aguarde um minuto para pedir outro código.",
+        );
     }
 
     let code = format!("{:06}", rand::thread_rng().gen_range(0..1_000_000));
@@ -143,11 +163,17 @@ async fn set_phone(State(state): State<AppState>, caller: CallerId, Json(body): 
             channel: crate::intercoms::Channel::Sms,
             to: phone.clone(),
             subject: String::new(),
-            body: format!("DemocraciaBR: seu codigo de verificacao e {code}. Vale {OTP_TTL_MINUTES} min."),
+            body: format!(
+                "DemocraciaBR: seu codigo de verificacao e {code}. Vale {OTP_TTL_MINUTES} min."
+            ),
         };
         if let Err(err) = sender.send(&msg).await {
             tracing::warn!(?err, "phone: envio de OTP falhou");
-            return fail(StatusCode::BAD_GATEWAY, "sms_failed", "Não foi possível enviar o SMS agora.");
+            return fail(
+                StatusCode::BAD_GATEWAY,
+                "sms_failed",
+                "Não foi possível enviar o SMS agora.",
+            );
         }
     } else {
         tracing::warn!(%phone, "phone: SMSGateway não configurado — OTP não enviado");
@@ -158,7 +184,11 @@ async fn set_phone(State(state): State<AppState>, caller: CallerId, Json(body): 
         );
     }
 
-    (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "sent": true })))).into_response()
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(serde_json::json!({ "sent": true }))),
+    )
+        .into_response()
 }
 
 #[derive(Deserialize)]
@@ -166,11 +196,19 @@ struct VerifyBody {
     code: String,
 }
 
-async fn verify(State(state): State<AppState>, caller: CallerId, Json(body): Json<VerifyBody>) -> Response {
+async fn verify(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Json(body): Json<VerifyBody>,
+) -> Response {
     let citizen = caller.citizen.as_uuid();
     let code = body.code.trim();
     if code.len() != 6 || !code.chars().all(|c| c.is_ascii_digit()) {
-        return fail(StatusCode::BAD_REQUEST, "invalid_code", "Código de 6 dígitos.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_code",
+            "Código de 6 dígitos.",
+        );
     }
     // OTP mais recente, vivo e não usado.
     let row: Result<Option<(uuid::Uuid, String, Vec<u8>)>, sqlx::Error> = sqlx::query_as(
@@ -183,7 +221,13 @@ async fn verify(State(state): State<AppState>, caller: CallerId, Json(body): Jso
     .await;
     let (otp_id, phone, code_hash) = match row {
         Ok(Some(t)) => t,
-        Ok(None) => return fail(StatusCode::BAD_REQUEST, "no_pending", "Nenhum código pendente. Peça um novo."),
+        Ok(None) => {
+            return fail(
+                StatusCode::BAD_REQUEST,
+                "no_pending",
+                "Nenhum código pendente. Peça um novo.",
+            )
+        }
         Err(err) => {
             tracing::error!(?err, "phone verify: lookup");
             return storage_error();
@@ -208,11 +252,12 @@ async fn verify(State(state): State<AppState>, caller: CallerId, Json(body): Jso
         tracing::error!(?err, "phone verify: mark used");
         return storage_error();
     }
-    if let Err(err) = sqlx::query("UPDATE citizen SET phone = $2, phone_verified_at = now() WHERE id = $1")
-        .bind(citizen)
-        .bind(&phone)
-        .execute(&mut *tx)
-        .await
+    if let Err(err) =
+        sqlx::query("UPDATE citizen SET phone = $2, phone_verified_at = now() WHERE id = $1")
+            .bind(citizen)
+            .bind(&phone)
+            .execute(&mut *tx)
+            .await
     {
         tracing::error!(?err, "phone verify: set phone");
         return storage_error();
@@ -222,5 +267,9 @@ async fn verify(State(state): State<AppState>, caller: CallerId, Json(body): Jso
         return storage_error();
     }
 
-    (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "verified": true })))).into_response()
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(serde_json::json!({ "verified": true }))),
+    )
+        .into_response()
 }

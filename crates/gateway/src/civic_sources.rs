@@ -35,12 +35,20 @@ fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
     (status, axum::Json(ApiResponse::<()>::fail(code, msg))).into_response()
 }
 fn storage_error() -> Response {
-    fail(StatusCode::INTERNAL_SERVER_ERROR, "storage_error", "Erro interno.")
+    fail(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "storage_error",
+        "Erro interno.",
+    )
 }
 
 async fn require_admin(db: &PgPool, headers: &HeaderMap) -> Result<(), Response> {
     let Some(citizen) = caller_citizen(headers) else {
-        return Err(fail(StatusCode::UNAUTHORIZED, "unauthorized", "Autenticação necessária."));
+        return Err(fail(
+            StatusCode::UNAUTHORIZED,
+            "unauthorized",
+            "Autenticação necessária.",
+        ));
     };
     let is_admin: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM admin_role_binding WHERE citizen_id=$1 AND role IN ('owner','admin'))",
@@ -52,7 +60,11 @@ async fn require_admin(db: &PgPool, headers: &HeaderMap) -> Result<(), Response>
     if is_admin {
         Ok(())
     } else {
-        Err(fail(StatusCode::FORBIDDEN, "forbidden", "Requer administrador."))
+        Err(fail(
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            "Requer administrador.",
+        ))
     }
 }
 
@@ -141,7 +153,11 @@ fn push_where(
     }
 }
 
-async fn list(State(state): State<AppState>, headers: HeaderMap, Query(p): Query<ListParams>) -> Response {
+async fn list(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(p): Query<ListParams>,
+) -> Response {
     if let Err(r) = require_admin(&state.db, &headers).await {
         return r;
     }
@@ -165,7 +181,10 @@ async fn list(State(state): State<AppState>, headers: HeaderMap, Query(p): Query
          last_probed_at, last_extracted_at FROM civic_source",
     );
     push_where(&mut lb, &uf, &p.platform, &p.status, &q);
-    lb.push(" ORDER BY uf, municipio LIMIT ").push_bind(limit).push(" OFFSET ").push_bind(offset);
+    lb.push(" ORDER BY uf, municipio LIMIT ")
+        .push_bind(limit)
+        .push(" OFFSET ")
+        .push_bind(offset);
     let items: Vec<SourceRow> = match lb.build_query_as().fetch_all(&state.db).await {
         Ok(v) => v,
         Err(err) => {
@@ -173,5 +192,14 @@ async fn list(State(state): State<AppState>, headers: HeaderMap, Query(p): Query
             return storage_error();
         }
     };
-    (StatusCode::OK, axum::Json(ApiResponse::ok(ListResult { total, limit, offset, items }))).into_response()
+    (
+        StatusCode::OK,
+        axum::Json(ApiResponse::ok(ListResult {
+            total,
+            limit,
+            offset,
+            items,
+        })),
+    )
+        .into_response()
 }

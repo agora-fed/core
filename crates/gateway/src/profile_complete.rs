@@ -27,7 +27,11 @@ fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
     (status, Json(ApiResponse::<()>::fail(code, msg))).into_response()
 }
 fn storage_error() -> Response {
-    fail(StatusCode::INTERNAL_SERVER_ERROR, "storage_error", "Erro interno.")
+    fail(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "storage_error",
+        "Erro interno.",
+    )
 }
 
 /// Mapeia sexo do formulário (F/M) para o vocabulário de `citizen.gender`.
@@ -44,7 +48,8 @@ fn valid_handle(h: &str) -> bool {
     let n = h.chars().count();
     (3..=30).contains(&n)
         && h.chars().next().is_some_and(|c| c.is_ascii_lowercase())
-        && h.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        && h.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
 #[derive(Serialize)]
@@ -57,13 +62,20 @@ struct StatusDto {
 
 async fn status(State(state): State<AppState>, caller: CallerId) -> Response {
     let citizen = caller.citizen.as_uuid();
-    let row: Result<(Option<String>, Option<String>, Option<chrono::NaiveDate>, Option<String>), _> =
-        sqlx::query_as(
-            "SELECT NULLIF(display_name,''), gender, birth_date, handle FROM citizen WHERE id = $1",
-        )
-        .bind(citizen)
-        .fetch_one(&state.db)
-        .await;
+    let row: Result<
+        (
+            Option<String>,
+            Option<String>,
+            Option<chrono::NaiveDate>,
+            Option<String>,
+        ),
+        _,
+    > = sqlx::query_as(
+        "SELECT NULLIF(display_name,''), gender, birth_date, handle FROM citizen WHERE id = $1",
+    )
+    .bind(citizen)
+    .fetch_one(&state.db)
+    .await;
     match row {
         Ok((name, gender, birth, handle)) => {
             let mut missing = Vec::new();
@@ -105,23 +117,40 @@ struct CompleteBody {
     handle: Option<String>,
 }
 
-async fn complete(State(state): State<AppState>, caller: CallerId, Json(body): Json<CompleteBody>) -> Response {
+async fn complete(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Json(body): Json<CompleteBody>,
+) -> Response {
     let citizen = caller.citizen.as_uuid();
     let org = caller.org.as_uuid();
 
     let nome = body.nome.trim();
     if nome.split_whitespace().count() < 2 {
-        return fail(StatusCode::BAD_REQUEST, "invalid_name", "Informe nome e sobrenome.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_name",
+            "Informe nome e sobrenome.",
+        );
     }
     let Some(gender) = sexo_to_gender(&body.sexo) else {
         return fail(StatusCode::BAD_REQUEST, "invalid_sexo", "Informe seu sexo.");
     };
     let Ok(birth) = chrono::NaiveDate::parse_from_str(body.nascimento.trim(), "%Y-%m-%d") else {
-        return fail(StatusCode::BAD_REQUEST, "invalid_birth", "Data de nascimento inválida.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_birth",
+            "Data de nascimento inválida.",
+        );
     };
 
     // Troca de nick (opcional): só se o usuário informou um e ele é válido + livre + o atual é auto.
-    let new_handle: Option<String> = match body.handle.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    let new_handle: Option<String> = match body
+        .handle
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         Some(h) => {
             let h = h.trim_start_matches('@').to_lowercase();
             if !valid_handle(&h) {
@@ -141,7 +170,11 @@ async fn complete(State(state): State<AppState>, caller: CallerId, Json(body): J
             .await
             .unwrap_or(true);
             if taken {
-                return fail(StatusCode::CONFLICT, "handle_taken", "Esse nick já está em uso.");
+                return fail(
+                    StatusCode::CONFLICT,
+                    "handle_taken",
+                    "Esse nick já está em uso.",
+                );
             }
             Some(h)
         }
@@ -170,7 +203,11 @@ async fn complete(State(state): State<AppState>, caller: CallerId, Json(body): J
     .await;
 
     match res {
-        Ok(_) => (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "complete": true })))).into_response(),
+        Ok(_) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(serde_json::json!({ "complete": true }))),
+        )
+            .into_response(),
         Err(err) => {
             tracing::error!(?err, "complete-profile");
             storage_error()

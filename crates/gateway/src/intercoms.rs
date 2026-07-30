@@ -41,7 +41,11 @@ pub struct OutboundMessage {
 
 impl OutboundMessage {
     /// Constrói uma mensagem de e-mail.
-    pub fn email(to: impl Into<String>, subject: impl Into<String>, body: impl Into<String>) -> Self {
+    pub fn email(
+        to: impl Into<String>,
+        subject: impl Into<String>,
+        body: impl Into<String>,
+    ) -> Self {
         Self {
             channel: Channel::Email,
             to: to.into(),

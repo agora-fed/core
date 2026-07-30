@@ -42,13 +42,26 @@ fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
     (status, Json(ApiResponse::<()>::fail(code, msg))).into_response()
 }
 fn storage_error() -> Response {
-    fail(StatusCode::INTERNAL_SERVER_ERROR, "storage_error", "Erro interno.")
+    fail(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "storage_error",
+        "Erro interno.",
+    )
 }
 
-async fn gate(state: &AppState, caller: &CallerId, sigla: &str, directory_id: Uuid) -> Result<(), Response> {
+async fn gate(
+    state: &AppState,
+    caller: &CallerId,
+    sigla: &str,
+    directory_id: Uuid,
+) -> Result<(), Response> {
     match authorized(state, caller, sigla, directory_id).await {
         Ok(true) => Ok(()),
-        Ok(false) => Err(fail(StatusCode::FORBIDDEN, "http_403", "Você não administra este partido/diretório.")),
+        Ok(false) => Err(fail(
+            StatusCode::FORBIDDEN,
+            "http_403",
+            "Você não administra este partido/diretório.",
+        )),
         Err(r) => Err(r),
     }
 }
@@ -93,10 +106,20 @@ async fn import(
     }
     let legal_basis = match body.legal_basis.trim() {
         "consent" | "legitimate_interest" | "contract" => body.legal_basis.trim().to_owned(),
-        _ => return fail(StatusCode::BAD_REQUEST, "invalid_legal_basis", "Base legal inválida."),
+        _ => {
+            return fail(
+                StatusCode::BAD_REQUEST,
+                "invalid_legal_basis",
+                "Base legal inválida.",
+            )
+        }
     };
     if body.contacts.len() > MAX_IMPORT {
-        return fail(StatusCode::BAD_REQUEST, "too_many", "Máximo de 2000 contatos por importação.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "too_many",
+            "Máximo de 2000 contatos por importação.",
+        );
     }
     // O diretório precisa existir na org e ser deste partido.
     let exists: bool = match sqlx::query_scalar(
@@ -115,7 +138,11 @@ async fn import(
         }
     };
     if !exists {
-        return fail(StatusCode::NOT_FOUND, "directory_not_found", "Diretório não encontrado.");
+        return fail(
+            StatusCode::NOT_FOUND,
+            "directory_not_found",
+            "Diretório não encontrado.",
+        );
     }
 
     let mut res = ImportResult {
@@ -192,9 +219,11 @@ async fn stats(
     .fetch_one(&state.db)
     .await;
     match row {
-        Ok((total, matched)) => {
-            (StatusCode::OK, Json(ApiResponse::ok(ContactStats { total, matched }))).into_response()
-        }
+        Ok((total, matched)) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(ContactStats { total, matched })),
+        )
+            .into_response(),
         Err(err) => {
             tracing::error!(?err, "contacts stats");
             storage_error()
@@ -217,7 +246,9 @@ async fn clear(
     match res {
         Ok(r) => (
             StatusCode::OK,
-            Json(ApiResponse::ok(serde_json::json!({ "deleted": r.rows_affected() }))),
+            Json(ApiResponse::ok(
+                serde_json::json!({ "deleted": r.rows_affected() }),
+            )),
         )
             .into_response(),
         Err(err) => {

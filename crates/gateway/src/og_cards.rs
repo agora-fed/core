@@ -210,9 +210,9 @@ fn render_placar(
 /// Cor do selo por tier — reforça o mérito visualmente.
 fn tier_color(t: ResponsivenessTier) -> Rgba<u8> {
     match t {
-        ResponsivenessTier::Gold => Rgba([180, 83, 9, 255]),     // âmbar #b45309
+        ResponsivenessTier::Gold => Rgba([180, 83, 9, 255]), // âmbar #b45309
         ResponsivenessTier::Silver => Rgba([100, 116, 139, 255]), // slate #64748b
-        ResponsivenessTier::Bronze => Rgba([154, 52, 18, 255]),  // #9a3412
+        ResponsivenessTier::Bronze => Rgba([154, 52, 18, 255]), // #9a3412
         ResponsivenessTier::Building => Rgba([21, 128, 61, 255]), // verde brand
         ResponsivenessTier::Unrated => MUTED,
     }
@@ -226,9 +226,16 @@ async fn certificado_card(State(state): State<AppState>, Path(file): Path<String
         return (StatusCode::NOT_FOUND, "não encontrado").into_response();
     };
     // Contadores + latência mediana (percentile_cont no ledger) numa consulta só.
-    let row: Option<(String, String, Option<String>, Option<String>, i64, i64, Option<f64>)> =
-        sqlx::query_as(
-            r"SELECT m.display_name,
+    let row: Option<(
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        i64,
+        i64,
+        Option<f64>,
+    )> = sqlx::query_as(
+        r"SELECT m.display_name,
                      m.office,
                      m.party,
                      m.uf,
@@ -242,11 +249,11 @@ async fn certificado_card(State(state): State<AppState>, Path(file): Path<String
                 FROM mandate m
                 LEFT JOIN scorecard s ON s.mandate_id = m.id
                WHERE m.id = $1",
-        )
-        .bind(mandate_id)
-        .fetch_optional(&state.db)
-        .await
-        .unwrap_or(None);
+    )
+    .bind(mandate_id)
+    .fetch_optional(&state.db)
+    .await
+    .unwrap_or(None);
     let Some((name, office, party, uf, answered, ignored, median)) = row else {
         return (StatusCode::NOT_FOUND, "mandato não encontrado").into_response();
     };
@@ -272,7 +279,11 @@ async fn certificado_card(State(state): State<AppState>, Path(file): Path<String
             bytes,
         )
             .into_response(),
-        None => (StatusCode::INTERNAL_SERVER_ERROR, "erro ao gerar certificado").into_response(),
+        None => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "erro ao gerar certificado",
+        )
+            .into_response(),
     }
 }
 
@@ -524,11 +535,13 @@ mod tests {
             2026,
         )
         .expect("certificado Ouro renderiza");
-        assert_eq!(&gold[..8], &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]);
+        assert_eq!(
+            &gold[..8],
+            &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]
+        );
         assert!(gold.len() > 5_000);
 
-        let unrated =
-            render_certificate("Fulano", "Vereador", None, None, 0, 0, None, 2026);
+        let unrated = render_certificate("Fulano", "Vereador", None, None, 0, 0, None, 2026);
         assert!(unrated.is_some());
     }
 

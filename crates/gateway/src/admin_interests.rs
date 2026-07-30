@@ -25,7 +25,10 @@ use uuid::Uuid;
 pub(crate) fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/admin/interest-areas", get(list).post(create))
-        .route("/admin/interest-areas/{slug}", axum::routing::put(update).delete(remove))
+        .route(
+            "/admin/interest-areas/{slug}",
+            axum::routing::put(update).delete(remove),
+        )
         .with_state(state)
 }
 
@@ -39,12 +42,20 @@ fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
     (status, Json(ApiResponse::<()>::fail(code, msg))).into_response()
 }
 fn storage_error() -> Response {
-    fail(StatusCode::INTERNAL_SERVER_ERROR, "storage_error", "Erro interno.")
+    fail(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "storage_error",
+        "Erro interno.",
+    )
 }
 
 async fn require_admin(db: &PgPool, headers: &HeaderMap) -> Result<(), Response> {
     let Some(citizen) = caller_citizen(headers) else {
-        return Err(fail(StatusCode::UNAUTHORIZED, "unauthorized", "Autenticação necessária."));
+        return Err(fail(
+            StatusCode::UNAUTHORIZED,
+            "unauthorized",
+            "Autenticação necessária.",
+        ));
     };
     let is_admin: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM admin_role_binding WHERE citizen_id=$1 AND role IN ('owner','admin'))",
@@ -56,7 +67,11 @@ async fn require_admin(db: &PgPool, headers: &HeaderMap) -> Result<(), Response>
     if is_admin {
         Ok(())
     } else {
-        Err(fail(StatusCode::FORBIDDEN, "forbidden", "Requer administrador."))
+        Err(fail(
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            "Requer administrador.",
+        ))
     }
 }
 
@@ -110,16 +125,27 @@ fn clean_slug(raw: &str) -> String {
     raw.trim().to_lowercase()
 }
 
-async fn create(State(state): State<AppState>, headers: HeaderMap, Json(body): Json<CreateBody>) -> Response {
+async fn create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<CreateBody>,
+) -> Response {
     if let Err(r) = require_admin(&state.db, &headers).await {
         return r;
     }
     let slug = clean_slug(&body.slug);
     let name = body.name.trim().to_string();
     if slug.is_empty() || name.is_empty() {
-        return fail(StatusCode::BAD_REQUEST, "invalid_input", "Slug e nome são obrigatórios.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_input",
+            "Slug e nome são obrigatórios.",
+        );
     }
-    let ministry = body.ministry.map(|m| m.trim().to_string()).filter(|m| !m.is_empty());
+    let ministry = body
+        .ministry
+        .map(|m| m.trim().to_string())
+        .filter(|m| !m.is_empty());
     let position = body.position.unwrap_or(0);
 
     let res = sqlx::query(
@@ -135,12 +161,20 @@ async fn create(State(state): State<AppState>, headers: HeaderMap, Json(body): J
     match res {
         Ok(_) => (
             StatusCode::CREATED,
-            Json(ApiResponse::ok(AreaRow { slug, name, ministry, position, citizen_count: 0 })),
+            Json(ApiResponse::ok(AreaRow {
+                slug,
+                name,
+                ministry,
+                position,
+                citizen_count: 0,
+            })),
         )
             .into_response(),
-        Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
-            fail(StatusCode::CONFLICT, "duplicate", "Já existe uma área com esse slug.")
-        }
+        Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => fail(
+            StatusCode::CONFLICT,
+            "duplicate",
+            "Já existe uma área com esse slug.",
+        ),
         Err(err) => {
             tracing::error!(?err, "admin_interests create");
             storage_error()
@@ -169,9 +203,16 @@ async fn update(
     let slug = clean_slug(&slug);
     let name = body.name.trim().to_string();
     if name.is_empty() {
-        return fail(StatusCode::BAD_REQUEST, "invalid_input", "Nome é obrigatório.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_input",
+            "Nome é obrigatório.",
+        );
     }
-    let ministry = body.ministry.map(|m| m.trim().to_string()).filter(|m| !m.is_empty());
+    let ministry = body
+        .ministry
+        .map(|m| m.trim().to_string())
+        .filter(|m| !m.is_empty());
     let position = body.position.unwrap_or(0);
 
     let res = sqlx::query(
@@ -188,7 +229,10 @@ async fn update(
         Ok(r) if r.rows_affected() == 0 => {
             fail(StatusCode::NOT_FOUND, "not_found", "Área não encontrada.")
         }
-        Ok(_) => (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "updated": true }))))
+        Ok(_) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(serde_json::json!({ "updated": true }))),
+        )
             .into_response(),
         Err(err) => {
             tracing::error!(?err, "admin_interests update");
@@ -199,26 +243,29 @@ async fn update(
 
 // --- Delete: só se não houver cidadão usando ----------------------------------------------------
 
-async fn remove(State(state): State<AppState>, headers: HeaderMap, Path(slug): Path<String>) -> Response {
+async fn remove(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(slug): Path<String>,
+) -> Response {
     if let Err(r) = require_admin(&state.db, &headers).await {
         return r;
     }
     let slug = clean_slug(&slug);
 
     // Bloqueia a remoção se algum cidadão ainda tiver esta área marcada (409).
-    let in_use: i64 = match sqlx::query_scalar(
-        "SELECT count(*) FROM citizen_interest WHERE area_slug = $1",
-    )
-    .bind(&slug)
-    .fetch_one(&state.db)
-    .await
-    {
-        Ok(c) => c,
-        Err(err) => {
-            tracing::error!(?err, "admin_interests delete count");
-            return storage_error();
-        }
-    };
+    let in_use: i64 =
+        match sqlx::query_scalar("SELECT count(*) FROM citizen_interest WHERE area_slug = $1")
+            .bind(&slug)
+            .fetch_one(&state.db)
+            .await
+        {
+            Ok(c) => c,
+            Err(err) => {
+                tracing::error!(?err, "admin_interests delete count");
+                return storage_error();
+            }
+        };
     if in_use > 0 {
         return fail(
             StatusCode::CONFLICT,
@@ -236,7 +283,10 @@ async fn remove(State(state): State<AppState>, headers: HeaderMap, Path(slug): P
         Ok(r) if r.rows_affected() == 0 => {
             fail(StatusCode::NOT_FOUND, "not_found", "Área não encontrada.")
         }
-        Ok(_) => (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "deleted": true }))))
+        Ok(_) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(serde_json::json!({ "deleted": true }))),
+        )
             .into_response(),
         Err(err) => {
             tracing::error!(?err, "admin_interests delete");

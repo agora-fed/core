@@ -248,7 +248,9 @@ pub fn from_env() -> Arc<dyn IdentityVerifier> {
             Arc::new(v)
         }
         None => {
-            tracing::info!("cpf-verify: sem CPF_VERIFY_URL — verificação de identidade em modo Noop");
+            tracing::info!(
+                "cpf-verify: sem CPF_VERIFY_URL — verificação de identidade em modo Noop"
+            );
             Arc::new(NoopIdentityVerifier)
         }
     }

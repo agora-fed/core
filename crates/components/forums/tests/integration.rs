@@ -343,8 +343,14 @@ async fn municipal_transparency_parcial_when_only_placeholder_gabinete() {
     };
     let org = seed_org(&db).await;
     let municipio = unique_municipio();
-    seed_municipal_mandate(&db, org, "SP", &municipio, "morto@parlamento.democracia.social.br")
-        .await;
+    seed_municipal_mandate(
+        &db,
+        org,
+        "SP",
+        &municipio,
+        "morto@parlamento.democracia.social.br",
+    )
+    .await;
     seed_civic_source(&db, "SP", &municipio, Some("https://camara.example.gov.br")).await;
 
     let (status, url) = dsoc_forums::queries::municipal_transparency(&db, "SP", &municipio)
@@ -366,7 +372,10 @@ async fn municipal_transparency_ausente_when_nothing() {
         .await
         .expect("query transparency")
         .expect("always Some");
-    assert_eq!(status, "ausente", "nada catalogado, nenhum gabinete ⇒ ausente");
+    assert_eq!(
+        status, "ausente",
+        "nada catalogado, nenhum gabinete ⇒ ausente"
+    );
     assert_eq!(url, None);
 }
 

@@ -56,13 +56,21 @@ fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
     (status, axum::Json(ApiResponse::<()>::fail(code, msg))).into_response()
 }
 fn storage_error() -> Response {
-    fail(StatusCode::INTERNAL_SERVER_ERROR, "storage_error", "Erro interno.")
+    fail(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "storage_error",
+        "Erro interno.",
+    )
 }
 
 /// Exige admin de plataforma (owner/admin) na org do chamador. Retorna a org resolvida.
 async fn require_admin(db: &PgPool, headers: &HeaderMap) -> Result<Uuid, Response> {
     let Some(citizen) = caller_citizen(headers) else {
-        return Err(fail(StatusCode::UNAUTHORIZED, "unauthorized", "Autenticação necessária."));
+        return Err(fail(
+            StatusCode::UNAUTHORIZED,
+            "unauthorized",
+            "Autenticação necessária.",
+        ));
     };
     let org = caller_org(headers);
     let is_admin: bool = sqlx::query_scalar(
@@ -77,7 +85,11 @@ async fn require_admin(db: &PgPool, headers: &HeaderMap) -> Result<Uuid, Respons
     if is_admin {
         Ok(org)
     } else {
-        Err(fail(StatusCode::FORBIDDEN, "forbidden", "Requer administrador."))
+        Err(fail(
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            "Requer administrador.",
+        ))
     }
 }
 
@@ -129,7 +141,11 @@ fn push_where(
     }
 }
 
-async fn list(State(state): State<AppState>, headers: HeaderMap, Query(p): Query<ListParams>) -> Response {
+async fn list(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(p): Query<ListParams>,
+) -> Response {
     let org = match require_admin(&state.db, &headers).await {
         Ok(o) => o,
         Err(r) => return r,
@@ -172,7 +188,16 @@ async fn list(State(state): State<AppState>, headers: HeaderMap, Query(p): Query
             return storage_error();
         }
     };
-    (StatusCode::OK, axum::Json(ApiResponse::ok(ListResult { total, limit, offset, items }))).into_response()
+    (
+        StatusCode::OK,
+        axum::Json(ApiResponse::ok(ListResult {
+            total,
+            limit,
+            offset,
+            items,
+        })),
+    )
+        .into_response()
 }
 
 // --- Detalhe: consulta + perguntas com agregado --------------------------------------------------
@@ -199,32 +224,46 @@ struct ConsultationDetail {
     questions: Vec<QuestionDetail>,
 }
 
-async fn detail(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<Uuid>) -> Response {
+async fn detail(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Response {
     let org = match require_admin(&state.db, &headers).await {
         Ok(o) => o,
         Err(r) => return r,
     };
 
     // Cabeçalho da consulta, escopado por org.
-    let head: Option<(Uuid, String, String, DateTime<Utc>, DateTime<Utc>, DateTime<Utc>)> =
-        match sqlx::query_as(
-            r"SELECT id, title, status, opens_at, closes_at, created_at
+    let head: Option<(
+        Uuid,
+        String,
+        String,
+        DateTime<Utc>,
+        DateTime<Utc>,
+        DateTime<Utc>,
+    )> = match sqlx::query_as(
+        r"SELECT id, title, status, opens_at, closes_at, created_at
                 FROM consultations_consultation
                WHERE id = $1 AND org_id = $2",
-        )
-        .bind(id)
-        .bind(org)
-        .fetch_optional(&state.db)
-        .await
-        {
-            Ok(v) => v,
-            Err(err) => {
-                tracing::error!(?err, "admin_consultations detail head");
-                return storage_error();
-            }
-        };
+    )
+    .bind(id)
+    .bind(org)
+    .fetch_optional(&state.db)
+    .await
+    {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::error!(?err, "admin_consultations detail head");
+            return storage_error();
+        }
+    };
     let Some((cid, title, status, opens_at, closes_at, created_at)) = head else {
-        return fail(StatusCode::NOT_FOUND, "not_found", "Consulta não encontrada.");
+        return fail(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "Consulta não encontrada.",
+        );
     };
 
     // Perguntas ordenadas por posição.
@@ -262,7 +301,8 @@ async fn detail(State(state): State<AppState>, headers: HeaderMap, Path(id): Pat
             return storage_error();
         }
     };
-    let mut by_q: std::collections::HashMap<Uuid, (i64, i64, i64)> = std::collections::HashMap::new();
+    let mut by_q: std::collections::HashMap<Uuid, (i64, i64, i64)> =
+        std::collections::HashMap::new();
     for (qid, answer, n) in tallies {
         let e = by_q.entry(qid).or_insert((0, 0, 0));
         match answer.as_str() {
@@ -289,7 +329,15 @@ async fn detail(State(state): State<AppState>, headers: HeaderMap, Path(id): Pat
         })
         .collect();
 
-    let out = ConsultationDetail { id: cid, title, status, opens_at, closes_at, created_at, questions };
+    let out = ConsultationDetail {
+        id: cid,
+        title,
+        status,
+        opens_at,
+        closes_at,
+        created_at,
+        questions,
+    };
     (StatusCode::OK, axum::Json(ApiResponse::ok(out))).into_response()
 }
 
@@ -301,7 +349,11 @@ struct CloseResult {
     status: String,
 }
 
-async fn close(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<Uuid>) -> Response {
+async fn close(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Response {
     let org = match require_admin(&state.db, &headers).await {
         Ok(o) => o,
         Err(r) => return r,
@@ -328,7 +380,13 @@ async fn close(State(state): State<AppState>, headers: HeaderMap, Path(id): Path
     };
 
     if updated.is_some() {
-        return (StatusCode::OK, axum::Json(ApiResponse::ok(CloseResult { id, status: "closed".into() })))
+        return (
+            StatusCode::OK,
+            axum::Json(ApiResponse::ok(CloseResult {
+                id,
+                status: "closed".into(),
+            })),
+        )
             .into_response();
     }
 
@@ -344,7 +402,15 @@ async fn close(State(state): State<AppState>, headers: HeaderMap, Path(id): Path
 
     match exists {
         // Já fechada: devolve OK idempotente com o status atual.
-        Some(status) => (StatusCode::OK, axum::Json(ApiResponse::ok(CloseResult { id, status }))).into_response(),
-        None => fail(StatusCode::NOT_FOUND, "not_found", "Consulta não encontrada."),
+        Some(status) => (
+            StatusCode::OK,
+            axum::Json(ApiResponse::ok(CloseResult { id, status })),
+        )
+            .into_response(),
+        None => fail(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "Consulta não encontrada.",
+        ),
     }
 }

@@ -456,7 +456,10 @@ impl ForumService {
         let limit = limit.clamp(1, 20);
         let mut tx = self.db.begin().await.map_err(map_sqlx)?;
         // lock_topic serve de checagem de existência e dá o forum_id p/ o eleitorado.
-        let Some(topic) = queries::lock_topic(&mut *tx, topic_id).await.map_err(map_sqlx)? else {
+        let Some(topic) = queries::lock_topic(&mut *tx, topic_id)
+            .await
+            .map_err(map_sqlx)?
+        else {
             return Err(Error::NotFound("tópico não encontrado".to_owned()));
         };
         let rows = queries::list_bridge_comments(&mut *tx, topic_id)
@@ -744,7 +747,9 @@ impl ForumService {
         let fraction = env_f64("FORUM_THRESHOLD_FRACTION", DEFAULT_FORUM_FRACTION);
         let floor = env_i64("FORUM_THRESHOLD_FLOOR", DEFAULT_FORUM_FLOOR);
         let ceil = env_i64("FORUM_THRESHOLD_CEIL", DEFAULT_FORUM_CEIL);
-        Ok(dsoc_core::proportional_threshold(voters, fraction, floor, ceil))
+        Ok(dsoc_core::proportional_threshold(
+            voters, fraction, floor, ceil,
+        ))
     }
 }
 

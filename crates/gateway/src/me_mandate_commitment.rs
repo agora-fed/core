@@ -495,11 +495,12 @@ async fn load_aggregates(
         return Ok(HashMap::new());
     }
     // Título + status da consulta.
-    let metas: Vec<(Uuid, String, String)> =
-        sqlx::query_as("SELECT id, title, status FROM consultations_consultation WHERE id = ANY($1)")
-            .bind(consultation_ids)
-            .fetch_all(db)
-            .await?;
+    let metas: Vec<(Uuid, String, String)> = sqlx::query_as(
+        "SELECT id, title, status FROM consultations_consultation WHERE id = ANY($1)",
+    )
+    .bind(consultation_ids)
+    .fetch_all(db)
+    .await?;
 
     let mut map: HashMap<Uuid, ConsultationAggregate> = metas
         .into_iter()

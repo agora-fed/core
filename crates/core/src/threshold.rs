@@ -66,7 +66,10 @@ mod tests {
     #[test]
     fn escala_com_o_eleitorado_e_faz_clamp() {
         // 0,05% de 1M de eleitores = 500.
-        assert_eq!(proportional_threshold(Some(1_000_000), 0.0005, 25, 10_000), 500);
+        assert_eq!(
+            proportional_threshold(Some(1_000_000), 0.0005, 25, 10_000),
+            500
+        );
         // Município pequeno cai no piso (0,05% de 8k = 4 → piso 25).
         assert_eq!(proportional_threshold(Some(8_000), 0.0005, 25, 10_000), 25);
         // Nacional bate no teto (0,05% de 155M = 77.500 → teto 10.000).
@@ -87,11 +90,20 @@ mod tests {
         assert_eq!(proportional_threshold(None, 0.0005, 10, 10_000), 10);
         assert_eq!(proportional_threshold(Some(5_000), 0.0005, 10, 10_000), 10);
         // Cidade média (300k eleitores): 0,05% = 150 — proporcional, acima do piso.
-        assert_eq!(proportional_threshold(Some(300_000), 0.0005, 10, 10_000), 150);
+        assert_eq!(
+            proportional_threshold(Some(300_000), 0.0005, 10, 10_000),
+            150
+        );
         // Capital grande (~SP, 9M eleitores): 0,05% = 4.500 — proporcional, ainda sob o teto.
-        assert_eq!(proportional_threshold(Some(9_000_000), 0.0005, 10, 10_000), 4_500);
+        assert_eq!(
+            proportional_threshold(Some(9_000_000), 0.0005, 10, 10_000),
+            4_500
+        );
         // Escala nacional (155M eleitores): 0,05% = 77.500 → bate no teto 10.000.
-        assert_eq!(proportional_threshold(Some(155_000_000), 0.0005, 10, 10_000), 10_000);
+        assert_eq!(
+            proportional_threshold(Some(155_000_000), 0.0005, 10, 10_000),
+            10_000
+        );
     }
 
     #[test]

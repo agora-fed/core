@@ -52,7 +52,11 @@ fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
     (status, Json(ApiResponse::<()>::fail(code, msg))).into_response()
 }
 fn storage_error() -> Response {
-    fail(StatusCode::INTERNAL_SERVER_ERROR, "storage_error", "Erro interno.")
+    fail(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "storage_error",
+        "Erro interno.",
+    )
 }
 
 /// Registra em `admin_audit` (#71) — best-effort, não falha a requisição.
@@ -117,12 +121,14 @@ async fn list_parties(State(state): State<AppState>, caller: CallerId) -> Respon
         Ok(items) => {
             let dtos: Vec<PartyDto> = items
                 .into_iter()
-                .map(|(sigla, name, directory_count, administrator_count)| PartyDto {
-                    sigla,
-                    name,
-                    directory_count,
-                    administrator_count,
-                })
+                .map(
+                    |(sigla, name, directory_count, administrator_count)| PartyDto {
+                        sigla,
+                        name,
+                        directory_count,
+                        administrator_count,
+                    },
+                )
                 .collect();
             (StatusCode::OK, Json(ApiResponse::ok(dtos))).into_response()
         }
@@ -157,30 +163,44 @@ async fn list_directories(
     if let Err(r) = require_permission(&state, caller, keys::PARTY_MANAGE).await {
         return r;
     }
-    let rows: Result<Vec<(Uuid, String, Option<String>, Option<String>, String, Option<Uuid>, DateTime<Utc>)>, sqlx::Error> =
-        sqlx::query_as(
-            r"SELECT id, esfera, uf, municipio, name, parent_directory_id, created_at
+    let rows: Result<
+        Vec<(
+            Uuid,
+            String,
+            Option<String>,
+            Option<String>,
+            String,
+            Option<Uuid>,
+            DateTime<Utc>,
+        )>,
+        sqlx::Error,
+    > = sqlx::query_as(
+        r"SELECT id, esfera, uf, municipio, name, parent_directory_id, created_at
                 FROM party_directory
                WHERE org_id = $1 AND party_sigla = $2
                ORDER BY esfera, uf NULLS FIRST, municipio NULLS FIRST",
-        )
-        .bind(org)
-        .bind(&sigla)
-        .fetch_all(&state.db)
-        .await;
+    )
+    .bind(org)
+    .bind(&sigla)
+    .fetch_all(&state.db)
+    .await;
     match rows {
         Ok(items) => {
             let dtos: Vec<DirectoryDto> = items
                 .into_iter()
-                .map(|(id, esfera, uf, municipio, name, parent_directory_id, created_at)| DirectoryDto {
-                    id,
-                    esfera,
-                    uf,
-                    municipio,
-                    name,
-                    parent_directory_id,
-                    created_at,
-                })
+                .map(
+                    |(id, esfera, uf, municipio, name, parent_directory_id, created_at)| {
+                        DirectoryDto {
+                            id,
+                            esfera,
+                            uf,
+                            municipio,
+                            name,
+                            parent_directory_id,
+                            created_at,
+                        }
+                    },
+                )
                 .collect();
             (StatusCode::OK, Json(ApiResponse::ok(dtos))).into_response()
         }
@@ -215,11 +235,25 @@ async fn create_directory(
         return r;
     }
     let esfera = body.esfera.trim().to_lowercase();
-    let uf = body.uf.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_uppercase);
-    let municipio = body.municipio.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned);
+    let uf = body
+        .uf
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_uppercase);
+    let municipio = body
+        .municipio
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned);
     let name = body.name.trim().to_owned();
     if name.is_empty() {
-        return fail(StatusCode::BAD_REQUEST, "invalid_name", "Nome do diretório é obrigatório.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_name",
+            "Nome do diretório é obrigatório.",
+        );
     }
     // Federative shape (espelha o CHECK da 0204): federal ⇒ sem uf/municipio; estadual ⇒ uf,
     // sem municipio; municipal ⇒ uf + municipio.
@@ -227,7 +261,13 @@ async fn create_directory(
         "federal" => uf.is_none() && municipio.is_none(),
         "estadual" => uf.is_some() && municipio.is_none(),
         "municipal" => uf.is_some() && municipio.is_some(),
-        _ => return fail(StatusCode::BAD_REQUEST, "invalid_esfera", "Esfera deve ser federal, estadual ou municipal."),
+        _ => {
+            return fail(
+                StatusCode::BAD_REQUEST,
+                "invalid_esfera",
+                "Esfera deve ser federal, estadual ou municipal.",
+            )
+        }
     };
     if !shape_ok {
         return fail(
@@ -264,9 +304,11 @@ async fn create_directory(
             .await;
             (StatusCode::CREATED, Json(ApiResponse::ok(id))).into_response()
         }
-        Err(sqlx::Error::Database(e)) if e.is_foreign_key_violation() => {
-            fail(StatusCode::NOT_FOUND, "party_not_found", "Partido não encontrado.")
-        }
+        Err(sqlx::Error::Database(e)) if e.is_foreign_key_violation() => fail(
+            StatusCode::NOT_FOUND,
+            "party_not_found",
+            "Partido não encontrado.",
+        ),
         Err(err) => {
             tracing::error!(?err, "create_directory");
             storage_error()
@@ -297,30 +339,41 @@ async fn list_administrators(
     if let Err(r) = require_permission(&state, caller, keys::PARTY_MANAGE).await {
         return r;
     }
-    let rows: Result<Vec<(Uuid, Option<Uuid>, Uuid, Option<String>, String, DateTime<Utc>)>, sqlx::Error> =
-        sqlx::query_as(
-            r"SELECT a.id, a.directory_id, a.citizen_id, c.handle, a.role, a.created_at
+    let rows: Result<
+        Vec<(
+            Uuid,
+            Option<Uuid>,
+            Uuid,
+            Option<String>,
+            String,
+            DateTime<Utc>,
+        )>,
+        sqlx::Error,
+    > = sqlx::query_as(
+        r"SELECT a.id, a.directory_id, a.citizen_id, c.handle, a.role, a.created_at
                 FROM party_administrator a
                 LEFT JOIN citizen c ON c.id = a.citizen_id
                WHERE a.org_id = $1 AND a.party_sigla = $2
                ORDER BY a.created_at",
-        )
-        .bind(org)
-        .bind(&sigla)
-        .fetch_all(&state.db)
-        .await;
+    )
+    .bind(org)
+    .bind(&sigla)
+    .fetch_all(&state.db)
+    .await;
     match rows {
         Ok(items) => {
             let dtos: Vec<AdministratorDto> = items
                 .into_iter()
-                .map(|(id, directory_id, citizen_id, handle, role, created_at)| AdministratorDto {
-                    id,
-                    directory_id,
-                    citizen_id,
-                    handle,
-                    role,
-                    created_at,
-                })
+                .map(
+                    |(id, directory_id, citizen_id, handle, role, created_at)| AdministratorDto {
+                        id,
+                        directory_id,
+                        citizen_id,
+                        handle,
+                        role,
+                        created_at,
+                    },
+                )
                 .collect();
             (StatusCode::OK, Json(ApiResponse::ok(dtos))).into_response()
         }
@@ -356,12 +409,21 @@ async fn assign_administrator(
     }
     let role = body.role.trim().to_lowercase();
     if role != "admin" && role != "moderador" {
-        return fail(StatusCode::BAD_REQUEST, "invalid_role", "Papel deve ser admin ou moderador.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_role",
+            "Papel deve ser admin ou moderador.",
+        );
     }
     // Resolve the citizen: prefer an explicit id, else look the `@handle` up.
     let citizen_id = if let Some(id) = body.citizen_id {
         id
-    } else if let Some(handle) = body.handle.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    } else if let Some(handle) = body
+        .handle
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         let handle = handle.trim_start_matches('@');
         match sqlx::query_scalar::<_, Uuid>(
             "SELECT id FROM citizen WHERE handle = $1 AND org_id = $2",
@@ -373,7 +435,11 @@ async fn assign_administrator(
         {
             Ok(Some(id)) => id,
             Ok(None) => {
-                return fail(StatusCode::NOT_FOUND, "citizen_not_found", "Cidadão não encontrado por handle.")
+                return fail(
+                    StatusCode::NOT_FOUND,
+                    "citizen_not_found",
+                    "Cidadão não encontrado por handle.",
+                )
             }
             Err(err) => {
                 tracing::error!(?err, "assign_administrator: resolve handle");
@@ -381,7 +447,11 @@ async fn assign_administrator(
             }
         }
     } else {
-        return fail(StatusCode::BAD_REQUEST, "missing_citizen", "Informe o handle ou o id do cidadão.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "missing_citizen",
+            "Informe o handle ou o id do cidadão.",
+        );
     };
     let row: Result<(Uuid,), sqlx::Error> = sqlx::query_as(
         r"INSERT INTO party_administrator (org_id, party_sigla, directory_id, citizen_id, role, invited_by, accepted_at)
@@ -443,9 +513,11 @@ async fn remove_administrator(
         .execute(&state.db)
         .await;
     match res {
-        Ok(r) if r.rows_affected() == 0 => {
-            fail(StatusCode::NOT_FOUND, "not_found", "Administrador não encontrado.")
-        }
+        Ok(r) if r.rows_affected() == 0 => fail(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "Administrador não encontrado.",
+        ),
         Ok(_) => {
             audit(
                 &state.db,

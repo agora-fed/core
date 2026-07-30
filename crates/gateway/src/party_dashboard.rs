@@ -27,11 +27,19 @@ fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
     (status, Json(ApiResponse::<()>::fail(code, msg))).into_response()
 }
 fn storage_error() -> Response {
-    fail(StatusCode::INTERNAL_SERVER_ERROR, "storage_error", "Erro interno.")
+    fail(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "storage_error",
+        "Erro interno.",
+    )
 }
 
 /// Admin de plataforma OU qualquer party_administrator do partido.
-async fn party_authorized(state: &AppState, caller: &CallerId, sigla: &str) -> Result<bool, Response> {
+async fn party_authorized(
+    state: &AppState,
+    caller: &CallerId,
+    sigla: &str,
+) -> Result<bool, Response> {
     let org = caller.org.as_uuid();
     let citizen = caller.citizen.as_uuid();
     let perms = AdminService::from_state(state)
@@ -82,11 +90,21 @@ struct Dashboard {
     broadcasts: Vec<BroadcastRow>,
 }
 
-async fn dashboard(State(state): State<AppState>, caller: CallerId, Path(sigla): Path<String>) -> Response {
+async fn dashboard(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Path(sigla): Path<String>,
+) -> Response {
     let org = caller.org.as_uuid();
     match party_authorized(&state, &caller, &sigla).await {
         Ok(true) => {}
-        Ok(false) => return fail(StatusCode::FORBIDDEN, "http_403", "Você não administra este partido."),
+        Ok(false) => {
+            return fail(
+                StatusCode::FORBIDDEN,
+                "http_403",
+                "Você não administra este partido.",
+            )
+        }
         Err(r) => return r,
     }
 
@@ -159,36 +177,44 @@ async fn dashboard(State(state): State<AppState>, caller: CallerId, Path(sigla):
     .await
     .unwrap_or(0);
 
-    let rows: Vec<(String, i32, DateTime<Utc>, Option<Uuid>, Option<String>, Option<String>)> =
-        match sqlx::query_as(
-            r"SELECT b.subject, b.recipients, b.created_at, b.consultation_id, d.uf, d.municipio
+    let rows: Vec<(
+        String,
+        i32,
+        DateTime<Utc>,
+        Option<Uuid>,
+        Option<String>,
+        Option<String>,
+    )> = match sqlx::query_as(
+        r"SELECT b.subject, b.recipients, b.created_at, b.consultation_id, d.uf, d.municipio
                 FROM campaign_broadcast b
                 LEFT JOIN party_directory d ON d.id = b.directory_id
                WHERE b.org_id = $1 AND b.party_sigla = $2
                ORDER BY b.created_at DESC
                LIMIT 20",
-        )
-        .bind(org)
-        .bind(&sigla)
-        .fetch_all(&state.db)
-        .await
-        {
-            Ok(v) => v,
-            Err(err) => {
-                tracing::error!(?err, "dashboard: broadcasts");
-                return storage_error();
-            }
-        };
+    )
+    .bind(org)
+    .bind(&sigla)
+    .fetch_all(&state.db)
+    .await
+    {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::error!(?err, "dashboard: broadcasts");
+            return storage_error();
+        }
+    };
     let broadcasts = rows
         .into_iter()
-        .map(|(subject, recipients, created_at, consultation_id, uf, municipio)| BroadcastRow {
-            subject,
-            recipients,
-            created_at,
-            consultation_id,
-            uf,
-            municipio,
-        })
+        .map(
+            |(subject, recipients, created_at, consultation_id, uf, municipio)| BroadcastRow {
+                subject,
+                recipients,
+                created_at,
+                consultation_id,
+                uf,
+                municipio,
+            },
+        )
         .collect();
 
     (

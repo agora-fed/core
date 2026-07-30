@@ -40,7 +40,11 @@ fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
     (status, Json(ApiResponse::<()>::fail(code, msg))).into_response()
 }
 fn storage_error() -> Response {
-    fail(StatusCode::INTERNAL_SERVER_ERROR, "storage_error", "Erro interno.")
+    fail(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "storage_error",
+        "Erro interno.",
+    )
 }
 
 // --- base32 (RFC 4648, sem padding) ---
@@ -67,7 +71,9 @@ fn base32_decode(s: &str) -> Option<Vec<u8>> {
     let mut buffer = 0u32;
     let mut bits = 0u32;
     for c in s.trim().chars().filter(|c| *c != '=') {
-        let v = B32.iter().position(|&x| x as char == c.to_ascii_uppercase())? as u32;
+        let v = B32
+            .iter()
+            .position(|&x| x as char == c.to_ascii_uppercase())? as u32;
         buffer = (buffer << 5) | v;
         bits += 5;
         if bits >= 8 {
@@ -123,7 +129,13 @@ async fn status(State(state): State<AppState>, caller: CallerId) -> Response {
             .fetch_one(&state.db)
             .await;
     match enabled {
-        Ok(v) => (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "enabled": v.is_some() })))).into_response(),
+        Ok(v) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(
+                serde_json::json!({ "enabled": v.is_some() }),
+            )),
+        )
+            .into_response(),
         Err(err) => {
             tracing::error!(?err, "totp status");
             storage_error()
@@ -153,7 +165,11 @@ async fn setup(State(state): State<AppState>, caller: CallerId) -> Response {
         }
     };
     if enabled_at.is_some() {
-        return fail(StatusCode::CONFLICT, "already_enabled", "2FA já está ativo. Desative antes de reconfigurar.");
+        return fail(
+            StatusCode::CONFLICT,
+            "already_enabled",
+            "2FA já está ativo. Desative antes de reconfigurar.",
+        );
     }
     let mut raw = [0u8; 20];
     rand::thread_rng().fill(&mut raw);
@@ -171,7 +187,11 @@ async fn setup(State(state): State<AppState>, caller: CallerId) -> Response {
     let uri = format!(
         "otpauth://totp/{ISSUER}:{label}?secret={secret}&issuer={ISSUER}&algorithm=SHA1&digits=6&period=30"
     );
-    (StatusCode::OK, Json(ApiResponse::ok(SetupResult { secret, uri }))).into_response()
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(SetupResult { secret, uri })),
+    )
+        .into_response()
 }
 
 #[derive(Deserialize)]
@@ -188,10 +208,18 @@ fn parse_code(s: &str) -> Option<u32> {
     }
 }
 
-async fn enable(State(state): State<AppState>, caller: CallerId, Json(body): Json<CodeBody>) -> Response {
+async fn enable(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Json(body): Json<CodeBody>,
+) -> Response {
     let citizen = caller.citizen.as_uuid();
     let Some(code) = parse_code(&body.code) else {
-        return fail(StatusCode::BAD_REQUEST, "invalid_code", "Código de 6 dígitos.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_code",
+            "Código de 6 dígitos.",
+        );
     };
     let secret: Result<Option<String>, sqlx::Error> =
         sqlx::query_scalar("SELECT totp_secret FROM citizen WHERE id = $1")
@@ -200,14 +228,24 @@ async fn enable(State(state): State<AppState>, caller: CallerId, Json(body): Jso
             .await;
     let secret = match secret {
         Ok(Some(s)) => s,
-        Ok(None) => return fail(StatusCode::BAD_REQUEST, "no_setup", "Faça o setup primeiro."),
+        Ok(None) => {
+            return fail(
+                StatusCode::BAD_REQUEST,
+                "no_setup",
+                "Faça o setup primeiro.",
+            )
+        }
         Err(err) => {
             tracing::error!(?err, "totp enable: load");
             return storage_error();
         }
     };
     if !verify_totp(&secret, code) {
-        return fail(StatusCode::BAD_REQUEST, "wrong_code", "Código incorreto. Confira o app.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "wrong_code",
+            "Código incorreto. Confira o app.",
+        );
     }
     // Habilita + gera recovery codes (mostrados uma vez).
     let mut tx = match state.db.begin().await {
@@ -234,11 +272,12 @@ async fn enable(State(state): State<AppState>, caller: CallerId, Json(body): Jso
     for _ in 0..RECOVERY_COUNT {
         let n: u64 = rand::thread_rng().gen_range(0..100_000_000);
         let c = format!("{:04}-{:04}", n / 10_000, n % 10_000);
-        if let Err(err) = sqlx::query("INSERT INTO totp_recovery_code (citizen_id, code_hash) VALUES ($1, $2)")
-            .bind(citizen)
-            .bind(hash(&c))
-            .execute(&mut *tx)
-            .await
+        if let Err(err) =
+            sqlx::query("INSERT INTO totp_recovery_code (citizen_id, code_hash) VALUES ($1, $2)")
+                .bind(citizen)
+                .bind(hash(&c))
+                .execute(&mut *tx)
+                .await
         {
             tracing::error!(?err, "totp enable: recovery");
             return storage_error();
@@ -249,13 +288,27 @@ async fn enable(State(state): State<AppState>, caller: CallerId, Json(body): Jso
         tracing::error!(?err, "totp enable: commit");
         return storage_error();
     }
-    (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "enabled": true, "recovery_codes": codes })))).into_response()
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(
+            serde_json::json!({ "enabled": true, "recovery_codes": codes }),
+        )),
+    )
+        .into_response()
 }
 
-async fn disable(State(state): State<AppState>, caller: CallerId, Json(body): Json<CodeBody>) -> Response {
+async fn disable(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Json(body): Json<CodeBody>,
+) -> Response {
     let citizen = caller.citizen.as_uuid();
     let Some(code) = parse_code(&body.code) else {
-        return fail(StatusCode::BAD_REQUEST, "invalid_code", "Código de 6 dígitos.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_code",
+            "Código de 6 dígitos.",
+        );
     };
     let secret: Result<Option<String>, sqlx::Error> =
         sqlx::query_scalar("SELECT totp_secret FROM citizen WHERE id = $1")
@@ -264,7 +317,13 @@ async fn disable(State(state): State<AppState>, caller: CallerId, Json(body): Js
             .await;
     let secret = match secret {
         Ok(Some(s)) => s,
-        Ok(None) => return fail(StatusCode::BAD_REQUEST, "not_enabled", "2FA não está ativo."),
+        Ok(None) => {
+            return fail(
+                StatusCode::BAD_REQUEST,
+                "not_enabled",
+                "2FA não está ativo.",
+            )
+        }
         Err(err) => {
             tracing::error!(?err, "totp disable: load");
             return storage_error();
@@ -277,10 +336,11 @@ async fn disable(State(state): State<AppState>, caller: CallerId, Json(body): Js
         Ok(t) => t,
         Err(_) => return storage_error(),
     };
-    let _ = sqlx::query("UPDATE citizen SET totp_secret = NULL, totp_enabled_at = NULL WHERE id = $1")
-        .bind(citizen)
-        .execute(&mut *tx)
-        .await;
+    let _ =
+        sqlx::query("UPDATE citizen SET totp_secret = NULL, totp_enabled_at = NULL WHERE id = $1")
+            .bind(citizen)
+            .execute(&mut *tx)
+            .await;
     let _ = sqlx::query("DELETE FROM totp_recovery_code WHERE citizen_id = $1")
         .bind(citizen)
         .execute(&mut *tx)
@@ -288,7 +348,11 @@ async fn disable(State(state): State<AppState>, caller: CallerId, Json(body): Js
     if tx.commit().await.is_err() {
         return storage_error();
     }
-    (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "enabled": false })))).into_response()
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(serde_json::json!({ "enabled": false }))),
+    )
+        .into_response()
 }
 
 #[cfg(test)]
@@ -299,7 +363,9 @@ mod tests {
     #[test]
     fn hotp_rfc4226_vectors() {
         let secret = b"12345678901234567890";
-        let expected = [755224, 287082, 359152, 969429, 338314, 254676, 287922, 162583, 399871, 520489];
+        let expected = [
+            755224, 287082, 359152, 969429, 338314, 254676, 287922, 162583, 399871, 520489,
+        ];
         for (counter, exp) in expected.iter().enumerate() {
             assert_eq!(hotp(secret, counter as u64), *exp, "counter {counter}");
         }

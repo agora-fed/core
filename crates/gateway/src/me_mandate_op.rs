@@ -62,8 +62,7 @@ const ITEMS_LIMIT: i64 = 500;
 const ROUNDS_LIMIT: i64 = 100;
 
 const PHASES: [&str; 4] = ["propostas", "votacao", "resultado", "execucao"];
-const EXECUTION_STATUSES: [&str; 4] =
-    ["previsto", "em_andamento", "concluido", "nao_executado"];
+const EXECUTION_STATUSES: [&str; 4] = ["previsto", "em_andamento", "concluido", "nao_executado"];
 
 pub fn routes(state: AppState) -> Router<()> {
     Router::new()
@@ -163,7 +162,13 @@ fn rank_within_budget(items: &[RankInput], budget_cents: i64) -> Vec<RankOutput>
     let mut order: Vec<usize> = (0..items.len()).collect();
     order.sort_by(|&a, &b| items[b].votes.cmp(&items[a].votes).then_with(|| a.cmp(&b)));
 
-    let mut out = vec![RankOutput { rank: 0, fits: false }; items.len()];
+    let mut out = vec![
+        RankOutput {
+            rank: 0,
+            fits: false
+        };
+        items.len()
+    ];
     let mut spent: i64 = 0;
     for (pos, &idx) in order.iter().enumerate() {
         let rank = (pos as i32) + 1;
@@ -228,7 +233,11 @@ async fn create_round(
         None | Some("") => None,
         Some(v) if v.len() == 2 => Some(v.to_uppercase()),
         Some(_) => {
-            return fail(StatusCode::BAD_REQUEST, "invalid_uf", "UF deve ter 2 letras.")
+            return fail(
+                StatusCode::BAD_REQUEST,
+                "invalid_uf",
+                "UF deve ter 2 letras.",
+            )
         }
     };
     let id = Uuid::now_v7();
@@ -789,7 +798,11 @@ mod tests {
     fn fits_marks_the_winning_set_within_budget() {
         // Orçamento 250. Por votos desc: a(300,cost150), b(200,cost150), c(100,cost90).
         // a cabe (150 ≤ 250). b NÃO cabe (150+150=300 > 250). c cabe (150+90=240 ≤ 250).
-        let items = [item(300, Some(150)), item(200, Some(150)), item(100, Some(90))];
+        let items = [
+            item(300, Some(150)),
+            item(200, Some(150)),
+            item(100, Some(90)),
+        ];
         let out = rank_within_budget(&items, 250);
         assert!(out[0].fits, "a deve caber");
         assert!(!out[1].fits, "b não deve caber");

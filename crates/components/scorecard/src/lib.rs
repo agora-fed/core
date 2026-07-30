@@ -21,12 +21,12 @@ pub mod service;
 pub mod tier;
 
 pub use events::{handle_event, scorecard_updated};
+pub use http::routes;
+pub use service::ScorecardService;
 pub use tier::{
     average_rate, better_than_pct, current_answer_streak, responds_in_days, response_rate_pct,
     responsiveness_tier, top_pct, ResponsivenessTier,
 };
-pub use http::routes;
-pub use service::ScorecardService;
 
 /// Compile-time marker proving the crate name is wired into the workspace.
 pub const CRATE_NAME: &str = "dsoc-scorecard";

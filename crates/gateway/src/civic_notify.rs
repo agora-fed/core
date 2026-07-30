@@ -621,7 +621,14 @@ impl CivicNotifySub {
         match self
             .profiles
             .create_public_note(
-                citizen, &actor_url, origin, &content, &[], None, false, None,
+                citizen,
+                &actor_url,
+                origin,
+                &content,
+                &[],
+                None,
+                false,
+                None,
             )
             .await
         {

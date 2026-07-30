@@ -494,13 +494,13 @@ async fn list_topics(
         Ok((forum, topics)) => {
             // Banner de transparência: só para fórum municipal, cruzando com o
             // catálogo civic_source. ADITIVO — degrada para `None` sem quebrar.
-            let transparency = svc
-                .municipal_transparency(&forum)
-                .await
-                .map(|(status, official_url)| TransparencyDto {
-                    status,
-                    official_url,
-                });
+            let transparency =
+                svc.municipal_transparency(&forum)
+                    .await
+                    .map(|(status, official_url)| TransparencyDto {
+                        status,
+                        official_url,
+                    });
             let dto = serde_json::json!({
                 "forum": forum_dto(forum),
                 "topics": topics.into_iter().map(topic_dto).collect::<Vec<_>>(),

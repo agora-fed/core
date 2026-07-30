@@ -35,13 +35,21 @@ fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
     (status, Json(ApiResponse::<()>::fail(code, msg))).into_response()
 }
 fn storage_error() -> Response {
-    fail(StatusCode::INTERNAL_SERVER_ERROR, "storage_error", "Erro interno.")
+    fail(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "storage_error",
+        "Erro interno.",
+    )
 }
 
 async fn gate(state: &AppState, caller: &CallerId, sigla: &str, dir: Uuid) -> Result<(), Response> {
     match authorized(state, caller, sigla, dir).await {
         Ok(true) => Ok(()),
-        Ok(false) => Err(fail(StatusCode::FORBIDDEN, "http_403", "Você não administra este diretório.")),
+        Ok(false) => Err(fail(
+            StatusCode::FORBIDDEN,
+            "http_403",
+            "Você não administra este diretório.",
+        )),
         Err(r) => Err(r),
     }
 }
@@ -61,7 +69,14 @@ async fn get_config(
         return r;
     }
     let Some(key) = config_key() else {
-        return (StatusCode::OK, Json(ApiResponse::ok(ConfigStatus { configured: false, url: None }))).into_response();
+        return (
+            StatusCode::OK,
+            Json(ApiResponse::ok(ConfigStatus {
+                configured: false,
+                url: None,
+            })),
+        )
+            .into_response();
     };
     // Decifra e devolve SÓ a url (credenciais nunca voltam).
     let row: Result<Option<(String,)>, sqlx::Error> = sqlx::query_as(
@@ -77,9 +92,23 @@ async fn get_config(
             let url = serde_json::from_str::<serde_json::Value>(&json)
                 .ok()
                 .and_then(|v| v.get("url").and_then(|u| u.as_str()).map(str::to_owned));
-            (StatusCode::OK, Json(ApiResponse::ok(ConfigStatus { configured: true, url }))).into_response()
+            (
+                StatusCode::OK,
+                Json(ApiResponse::ok(ConfigStatus {
+                    configured: true,
+                    url,
+                })),
+            )
+                .into_response()
         }
-        Ok(None) => (StatusCode::OK, Json(ApiResponse::ok(ConfigStatus { configured: false, url: None }))).into_response(),
+        Ok(None) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(ConfigStatus {
+                configured: false,
+                url: None,
+            })),
+        )
+            .into_response(),
         Err(err) => {
             tracing::error!(?err, "sms-gateway get");
             storage_error()
@@ -115,7 +144,11 @@ async fn set_config(
     };
     let url = body.url.trim();
     if !(url.starts_with("http://") || url.starts_with("https://")) {
-        return fail(StatusCode::BAD_REQUEST, "invalid_url", "URL do SMSGateway deve começar com http(s)://.");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_url",
+            "URL do SMSGateway deve começar com http(s)://.",
+        );
     }
     let json = serde_json::json!({
         "url": url,
@@ -129,11 +162,13 @@ async fn set_config(
         Ok(t) => t,
         Err(_) => return storage_error(),
     };
-    if sqlx::query("DELETE FROM intercoms_provider_config WHERE directory_id = $1 AND channel = 'sms'")
-        .bind(dir)
-        .execute(&mut *tx)
-        .await
-        .is_err()
+    if sqlx::query(
+        "DELETE FROM intercoms_provider_config WHERE directory_id = $1 AND channel = 'sms'",
+    )
+    .bind(dir)
+    .execute(&mut *tx)
+    .await
+    .is_err()
     {
         return storage_error();
     }
@@ -151,7 +186,11 @@ async fn set_config(
         // FK do diretório inválido → 404.
         if let sqlx::Error::Database(e) = &err {
             if e.is_foreign_key_violation() {
-                return fail(StatusCode::NOT_FOUND, "directory_not_found", "Diretório não encontrado.");
+                return fail(
+                    StatusCode::NOT_FOUND,
+                    "directory_not_found",
+                    "Diretório não encontrado.",
+                );
             }
         }
         tracing::error!(?err, "sms-gateway set");
@@ -160,7 +199,11 @@ async fn set_config(
     if tx.commit().await.is_err() {
         return storage_error();
     }
-    (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "configured": true })))).into_response()
+    (
+        StatusCode::OK,
+        Json(ApiResponse::ok(serde_json::json!({ "configured": true }))),
+    )
+        .into_response()
 }
 
 async fn delete_config(
@@ -171,12 +214,20 @@ async fn delete_config(
     if let Err(r) = gate(&state, &caller, &sigla, dir).await {
         return r;
     }
-    let res = sqlx::query("DELETE FROM intercoms_provider_config WHERE directory_id = $1 AND channel = 'sms'")
-        .bind(dir)
-        .execute(&state.db)
-        .await;
+    let res = sqlx::query(
+        "DELETE FROM intercoms_provider_config WHERE directory_id = $1 AND channel = 'sms'",
+    )
+    .bind(dir)
+    .execute(&state.db)
+    .await;
     match res {
-        Ok(r) => (StatusCode::OK, Json(ApiResponse::ok(serde_json::json!({ "deleted": r.rows_affected() })))).into_response(),
+        Ok(r) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(
+                serde_json::json!({ "deleted": r.rows_affected() }),
+            )),
+        )
+            .into_response(),
         Err(err) => {
             tracing::error!(?err, "sms-gateway delete");
             storage_error()
