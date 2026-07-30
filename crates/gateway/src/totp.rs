@@ -1,7 +1,7 @@
 //! `/me/2fa/totp` — 2FA por TOTP (RFC 6238) do cidadão (ÁGORA F6, #63, migration 0659).
 //!
-//! TOTP é o 2FA **recomendado** (app autenticador), opt-in. Implementação própria (HOTP RFC 4226
-//! + HMAC-SHA1, compatível com Google Authenticator) — sem dependência pesada. Segredo base32 em
+//! TOTP é o 2FA **recomendado** (app autenticador), opt-in. Implementação própria (HOTP RFC 4226 +
+//! HMAC-SHA1, compatível com Google Authenticator) — sem dependência pesada. Segredo base32 em
 //! `citizen.totp_secret`; códigos de recuperação (só hash) em `totp_recovery_code`. F6.1 =
 //! enrollment/gestão; forçar no login é a fatia seguinte (F6.2). English API, runtime queries.
 //!
@@ -86,7 +86,11 @@ fn base32_decode(s: &str) -> Option<Vec<u8>> {
 
 // --- HOTP (RFC 4226) / TOTP (RFC 6238) ---
 fn hotp(secret: &[u8], counter: u64) -> u32 {
-    let mut mac = Hmac::<Sha1>::new_from_slice(secret).expect("hmac key");
+    // HMAC-SHA1 aceita chave de qualquer tamanho: `new_from_slice` nunca falha aqui.
+    // Ainda assim, tratamos em vez de `expect` (clippy::expect_used no gate do CI).
+    let Ok(mut mac) = Hmac::<Sha1>::new_from_slice(secret) else {
+        return 0;
+    };
     mac.update(&counter.to_be_bytes());
     let r = mac.finalize().into_bytes();
     let offset = (r[19] & 0x0f) as usize;

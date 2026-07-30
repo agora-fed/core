@@ -8,8 +8,8 @@
 //!
 //! Vocabulário de `status` idêntico ao schema (`ConsultationStatus`): 'open' e 'closed'.
 //!
-//! - `GET  /admin/consultations`            — lista paginada (título, status, janela, nº perguntas,
-//!                                            nº respostas). Filtros: status, q (busca no título).
+//! - `GET  /admin/consultations` — lista paginada (título, status, janela, nº perguntas,
+//!   nº respostas). Filtros: status, q (busca no título).
 //! - `GET  /admin/consultations/{id}`       — detalhe + perguntas (com agregado por resposta).
 //! - `POST /admin/consultations/{id}/close` — encerra (status→'closed'), idempotente.
 

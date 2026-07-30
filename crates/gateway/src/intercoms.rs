@@ -63,6 +63,7 @@ pub trait MessageSender: Send + Sync {
 
 /// Provider de e-mail via SMTP (lettre), pelo relay soberano — 1º provider do
 /// INTERCOMS. Envia multipart (texto-plano + HTML da marca). Só o canal `Email`.
+#[derive(Debug)]
 pub struct SmtpProvider {
     cfg: SmtpConfig,
 }
@@ -126,6 +127,18 @@ pub(crate) struct SmsConfig {
     pub pass: Option<String>,
 }
 
+/// `Debug` MANUAL (não derive): `user`/`pass` são o basic auth do SMSGateway.
+/// Só a presença da credencial é observável, nunca o valor.
+impl std::fmt::Debug for SmsConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SmsConfig")
+            .field("url", &self.url)
+            .field("user", &self.user.as_ref().map(|_| "<redacted>"))
+            .field("pass", &self.pass.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
+}
+
 pub(crate) fn sms_from_env() -> Option<SmsConfig> {
     let url = std::env::var("SMS_GATEWAY_URL").ok()?;
     Some(SmsConfig {
@@ -137,6 +150,7 @@ pub(crate) fn sms_from_env() -> Option<SmsConfig> {
 
 /// Provider de SMS via SMSGateway (app Android sms-gate.app). POST JSON
 /// `{message, phoneNumbers:[...]}` com basic auth. Só o canal `Sms`.
+#[derive(Debug)]
 pub struct SmsGatewayProvider {
     cfg: SmsConfig,
 }

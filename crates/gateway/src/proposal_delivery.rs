@@ -382,6 +382,21 @@ pub(crate) struct SmtpConfig {
     pub(crate) from: String,
 }
 
+/// `Debug` MANUAL (não derive): `user`/`pass` são credenciais do relay soberano —
+/// derivar cru vazaria a senha SMTP em qualquer `tracing::debug!`/panic. Só a
+/// presença é observável.
+impl std::fmt::Debug for SmtpConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SmtpConfig")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("from", &self.from)
+            .field("user", &self.user.as_ref().map(|_| "<redacted>"))
+            .field("pass", &self.pass.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
+}
+
 pub(crate) fn smtp_from_env() -> Option<SmtpConfig> {
     let host = std::env::var("SMTP_HOST").ok()?;
     let from = std::env::var("SMTP_FROM").ok()?;

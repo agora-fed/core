@@ -1,7 +1,7 @@
 //! # Referência de municípios IBGE (migration 0651) — selector do cadastro.
 //!
-//! `GET /municipios?uf=XX` — lista PÚBLICA dos municípios de uma UF (código IBGE
-//! + nome), ordenada por nome, para o selector UF→município do cadastro
+//! `GET /municipios?uf=XX` — lista PÚBLICA dos municípios de uma UF (código IBGE +
+//! nome), ordenada por nome, para o selector UF→município do cadastro
 //! (0652/0653: domicílio obrigatório). Runtime query — sem regen do cache sqlx.
 
 use axum::extract::{Query, State};

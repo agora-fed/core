@@ -409,7 +409,7 @@ async fn submit_item(
         );
     }
     if let Some(cost) = body.estimated_cents {
-        if cost < 0 || cost > MAX_BUDGET_CENTS {
+        if !(0..=MAX_BUDGET_CENTS).contains(&cost) {
             return fail(
                 StatusCode::BAD_REQUEST,
                 "invalid_estimate",
