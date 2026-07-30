@@ -357,16 +357,23 @@ struct MandateListQuery {
     /// Any other value is silently ignored (returns unfiltered) so a stale client never 400s.
     #[serde(default)]
     sphere: Option<String>,
+    /// Optional UF filter (case-insensitive), e.g. `SP`. Pairs with `municipio` to scope a
+    /// municipal câmara (migration 0504) — drives the "Vereadores desta Câmara" forum card.
+    #[serde(default)]
+    uf: Option<String>,
+    /// Optional município filter (case-insensitive), e.g. `Santana de Parnaíba`.
+    #[serde(default)]
+    municipio: Option<String>,
     #[serde(default)]
     limit: Option<u32>,
     #[serde(default)]
     offset: Option<u32>,
 }
 
-/// `GET /mandates?org_id=&sphere=&limit=&offset=` — directory of mandates in an org, ordered
-/// by display name. Public; used by the front-end picker so people don't have to type a UUID
-/// by hand. `sphere` sub-filters the federative level (introduced in F1.2 alongside the
-/// /politicos UI chips).
+/// `GET /mandates?org_id=&sphere=&uf=&municipio=&limit=&offset=` — directory of mandates in an
+/// org, ordered by display name. Public; used by the front-end picker so people don't have to
+/// type a UUID by hand. `sphere` sub-filters the federative level (introduced in F1.2 alongside
+/// the /politicos UI chips); `uf`+`municipio` scope to one municipal câmara (case-insensitive).
 async fn list_mandates(
     State(state): State<AppState>,
     Query(query): Query<MandateListQuery>,
@@ -376,10 +383,19 @@ async fn list_mandates(
         .sphere
         .as_deref()
         .filter(|s| matches!(*s, "federal" | "estadual" | "municipal"));
+    // Empty query strings mean "no filter" (a stale/absent client sends `uf=`), not "match empty".
+    let uf = query.uf.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let municipio = query
+        .municipio
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
     let views = svc
         .list_mandates(
             OrgId::from_uuid(query.org_id),
             sphere,
+            uf,
+            municipio,
             query.limit,
             query.offset,
         )

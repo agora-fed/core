@@ -541,14 +541,17 @@ impl MandateRegistry {
         &self,
         org: OrgId,
         sphere: Option<&str>,
+        uf: Option<&str>,
+        municipio: Option<&str>,
         limit: Option<u32>,
         offset: Option<u32>,
     ) -> Result<Vec<MandateView>> {
         let limit = clamp_limit(limit);
         let offset = offset.unwrap_or(0) as i64;
-        let rows = queries::list_mandates(&self.db, org.as_uuid(), sphere, limit, offset)
-            .await
-            .map_err(map_sqlx)?;
+        let rows =
+            queries::list_mandates(&self.db, org.as_uuid(), sphere, uf, municipio, limit, offset)
+                .await
+                .map_err(map_sqlx)?;
         let mut views = Vec::with_capacity(rows.len());
         for row in rows {
             // Same derived status as `get_mandate`: collapse the (onboarded_at, has_invitation)
