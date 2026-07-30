@@ -62,16 +62,29 @@ def _fetch(url: str) -> str | None:
 
 
 def is_cespro(base_url: str) -> tuple[bool, int | None]:
-    """(é_cespro, nº de vereadores na listagem ou None). Exige assinatura CESPRO E
-    listagem de vereadores — evita falso-positivo de um link solto pro cespro."""
-    home = _fetch(base_url)
-    if not home or not _CESPRO_RE.search(home):
-        return (False, None)
-    listing = _fetch(f"{base_url.rstrip('/')}/vereadores/")
+    """(é_cespro, nº de vereadores na listagem ou None).
+
+    Muitas câmaras citam `cespro.com.br` só pelo repositório de LEGISLAÇÃO enquanto
+    rodam WordPress no resto (falso-positivo: `/vereadores/feed/`, "Vereadores
+    Archive", slugs `ver-nome/`). O discriminador REAL é o TEMPLATE de detalhe do
+    CESPRO — rótulos `Nome:</span>` e (quando há) `Email:</span>`. Só confirma se um
+    detalhe de vereador tem essa estrutura."""
+    base = base_url.rstrip("/")
+    listing = _fetch(f"{base}/vereadores/")
     if not listing:
         return (False, None)
-    ids = {m.group(1) for m in _LINK_RE.finditer(listing)}
+    ids = []
+    seen = set()
+    for m in _LINK_RE.finditer(listing):
+        vid = m.group(1)
+        if vid not in seen and vid.lower() != "feed":
+            seen.add(vid)
+            ids.append(vid)
     if not ids:
+        return (False, None)
+    # Confirma no 1º detalhe: template CESPRO tem `Nome:</span>`. WordPress não.
+    detail = _fetch(f"{base}/vereadores/{ids[0]}/")
+    if not detail or not _NOME_RE.search(detail):
         return (False, None)
     return (True, len(ids))
 
@@ -87,7 +100,7 @@ def fetch_current_vereadores(base_url: str) -> list[Parlamentar]:
     seen = set()
     for m in _LINK_RE.finditer(listing):
         vid = m.group(1)
-        if vid not in seen:
+        if vid not in seen and vid.lower() != "feed":
             seen.add(vid)
             ids.append(vid)
     out: list[Parlamentar] = []
