@@ -1,0 +1,27 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminSocratesPanel from '../../components/islands/AdminSocratesPanel.svelte';
+---
+
+<AdminLayout
+  title="SOCRATES — e-Cidadania (admin)"
+  description="Espelhar Ideias Legislativas do e-Cidadania (Senado) como tópicos do fórum Senado Federal, assinados pelo SOCRATES, para abrir o debate completo."
+>
+  <header class="head">
+    <h1>SOCRATES — Ideias do e-Cidadania</h1>
+    <p class="muted">
+      No portal e-Cidadania do Senado o cidadão <strong>só pode apoiar</strong> uma Ideia
+      Legislativa — não há voto contra nem argumento. Aqui o SOCRATES (agente cívico da
+      plataforma) espelha a ideia como tópico do fórum <strong>Senado Federal</strong>, com
+      atribuição e link para o original, abrindo o debate completo: argumentos a favor e contra,
+      votos e afirmações-ponte.
+    </p>
+  </header>
+  <AdminSocratesPanel client:load />
+</AdminLayout>
+
+<style>
+  .head { margin-bottom: var(--sp-5); }
+  h1 { margin: 0 0 var(--sp-1); }
+  .head p { max-width: 48rem; }
+</style>

@@ -3609,3 +3609,25 @@ export const getMandateOpRounds = (mandateId: string) =>
 /** Rodadas recentes (descoberta + build-time SSG). Usa o GET simples (Fetched). */
 export const getRecentOpRounds = () =>
   apiGet<{ rounds: OpRoundSummaryDto[] }>('/api/v1/op/rounds');
+
+// SOCRATES — espelho de Ideias Legislativas do e-Cidadania (Senado) como
+// tópicos do fórum `senado` (admin-curado, migration 0670).
+export interface SocratesMirrorEntry {
+  ideia_id: string;
+  source_url: string;
+  topic_id: string;
+  topic_title: string;
+  /** Caminho navegável do tópico no front (`/f/topico/<id>`). */
+  path: string;
+  created_at: string;
+}
+export interface SocratesMirrorCreated {
+  topic_id: string;
+  path: string;
+}
+export const getSocratesMirrors = () =>
+  apiGetCredentialed<SocratesMirrorEntry[]>('/api/v1/admin/socrates/mirrors');
+/** Espelha uma ideia (URL do e-Cidadania ou id numérico). 409 = já espelhada
+ *  (`error.code === 'already_mirrored'`, com o tópico existente em `data`). */
+export const socratesMirrorIdea = (url_or_id: string) =>
+  apiPost<SocratesMirrorCreated>('/api/v1/admin/socrates/mirror', { url_or_id });
