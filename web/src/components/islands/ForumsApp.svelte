@@ -675,7 +675,7 @@
       <ul class="f-ver-grid">
         {#each vereadores as v (v.id)}
           <li>
-            <a class="f-ver-card" href={`/politicos/?mandate=${v.id}`}>
+            <a class="f-ver-card" href={`/politicos/?id=${v.id}`}>
               {#if v.avatar_url}
                 <img class="f-ver-avatar" src={v.avatar_url} alt="" loading="lazy" />
               {:else}
