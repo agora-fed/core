@@ -2969,3 +2969,194 @@ async fn op_operator_cannot_touch_other_mandate_round() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
+
+// ---------------------------------------------------------------------------
+// SOCRATES — espelho de Ideias Legislativas do e-Cidadania (migration 0670)
+// ---------------------------------------------------------------------------
+// SECURITY: os dois endpoints são gate owner/admin (anônimo → 401, cidadão
+// comum → 403). FUNCTIONAL: dedup por `ideia_id` → 409 `already_mirrored` com
+// o tópico existente no `data` — checado ANTES do fetch, então o teste NUNCA
+// dispara rede pro Senado.
+
+#[tokio::test]
+async fn anonymous_cannot_mirror_socrates_idea() {
+    let (app, _) = app().await;
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/admin/socrates/mirror",
+            None,
+            r#"{"url_or_id":"165188"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn non_admin_cannot_mirror_socrates_idea() {
+    let (app, st) = app().await;
+    let (_org, _citizen, cookie) = seed_session(&st.db).await;
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/admin/socrates/mirror",
+            Some(&cookie),
+            r#"{"url_or_id":"165188"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn anonymous_cannot_list_socrates_mirrors() {
+    let (app, _) = app().await;
+    let resp = app
+        .oneshot(get("/api/v1/admin/socrates/mirrors"))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn non_admin_cannot_list_socrates_mirrors() {
+    let (app, st) = app().await;
+    let (_org, _citizen, cookie) = seed_session(&st.db).await;
+    let resp = app
+        .oneshot(get_with_cookie("/api/v1/admin/socrates/mirrors", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_mirror_rejects_invalid_input() {
+    let (app, st) = app().await;
+    let (org, citizen, cookie) = seed_session(&st.db).await;
+    grant_admin(&st.db, org, citizen).await;
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/admin/socrates/mirror",
+            Some(&cookie),
+            r#"{"url_or_id":"não é id nem URL"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let v = body_json(resp).await;
+    assert_eq!(v["error"]["code"], "invalid_input");
+}
+
+/// Semeia um espelho existente (fórum + tópico + linha em socrates_mirror) e
+/// devolve `(ideia_id, topic_id)`. O autor do tópico é o próprio cidadão do
+/// teste — a FK só exige um `citizen` válido.
+async fn seed_socrates_mirror(db: &Db, org: Uuid, author: Uuid) -> (String, Uuid) {
+    let now = Utc::now();
+    let forum = Uuid::now_v7();
+    let slug = format!("sen-teste-{}", &forum.simple().to_string()[..12]);
+    sqlx::query(
+        "INSERT INTO forum (id, org_id, slug, full_path, name, kind, created_at)
+         VALUES ($1, $2, $3, $3, 'Senado (teste)', 'institucional', $4)",
+    )
+    .bind(forum)
+    .bind(org)
+    .bind(&slug)
+    .bind(now)
+    .execute(db)
+    .await
+    .expect("seed forum");
+    let topic = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO forum_topic (id, forum_id, author_id, title, body, created_at)
+         VALUES ($1, $2, $3, 'Ideia espelhada (teste)', 'corpo', $4)",
+    )
+    .bind(topic)
+    .bind(forum)
+    .bind(author)
+    .bind(now)
+    .execute(db)
+    .await
+    .expect("seed topic");
+    // ideia_id numérica única por execução (dedup é UNIQUE global).
+    let ideia_id = format!("9{:011}", topic.as_u128() % 100_000_000_000);
+    sqlx::query(
+        "INSERT INTO socrates_mirror (id, ideia_id, source_url, topic_id, created_at)
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(&ideia_id)
+    .bind(format!(
+        "https://www12.senado.leg.br/ecidadania/visualizacaoideia?id={ideia_id}"
+    ))
+    .bind(topic)
+    .bind(now)
+    .execute(db)
+    .await
+    .expect("seed mirror");
+    (ideia_id, topic)
+}
+
+/// Dedup: uma ideia já espelhada responde 409 `already_mirrored` com o tópico
+/// existente no `data` — e o check vem ANTES do fetch (nenhuma chamada de rede).
+#[tokio::test]
+async fn admin_mirror_dedups_with_409_and_existing_topic() {
+    let (app, st) = app().await;
+    let (org, citizen, cookie) = seed_session(&st.db).await;
+    grant_admin(&st.db, org, citizen).await;
+    let (ideia_id, topic_id) = seed_socrates_mirror(&st.db, org, citizen).await;
+
+    // Id puro.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/admin/socrates/mirror",
+            Some(&cookie),
+            &format!(r#"{{"url_or_id":"{ideia_id}"}}"#),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let v = body_json(resp).await;
+    assert_eq!(v["error"]["code"], "already_mirrored");
+    assert_eq!(v["data"]["topic_id"], topic_id.to_string());
+
+    // A URL completa da mesma ideia deduplica igual.
+    let url = format!("https://www12.senado.leg.br/ecidadania/visualizacaoideia?id={ideia_id}");
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/admin/socrates/mirror",
+            Some(&cookie),
+            &format!(r#"{{"url_or_id":"{url}"}}"#),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+}
+
+/// A listagem admin inclui o espelho semeado, com título do tópico e caminho.
+#[tokio::test]
+async fn admin_lists_socrates_mirrors() {
+    let (app, st) = app().await;
+    let (org, citizen, cookie) = seed_session(&st.db).await;
+    grant_admin(&st.db, org, citizen).await;
+    let (ideia_id, topic_id) = seed_socrates_mirror(&st.db, org, citizen).await;
+
+    let resp = app
+        .oneshot(get_with_cookie("/api/v1/admin/socrates/mirrors", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let v = body_json(resp).await;
+    let list = v["data"].as_array().expect("lista");
+    let entry = list
+        .iter()
+        .find(|e| e["ideia_id"] == ideia_id.as_str())
+        .expect("espelho semeado na lista");
+    assert_eq!(entry["topic_id"], topic_id.to_string());
+    assert_eq!(entry["path"], format!("/f/topico/{topic_id}"));
+    assert_eq!(entry["topic_title"], "Ideia espelhada (teste)");
+}

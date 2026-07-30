@@ -11,3 +11,6 @@
 0532_campaign_group_polls.sql campaign_group
 # mandato coletivo (D8.1): o compromisso pode ligar-se a uma consulta à base (crate consultations).
 0666_mandate_commitment.sql consultations_consultation
+# SOCRATES (0670): o espelho de Ideia Legislativa aponta pro tópico de fórum criado —
+# vínculo 1:1 deliberado com a crate forums (o espelho SÓ existe em função do tópico).
+0670_socrates_mirror.sql forum_topic

@@ -83,6 +83,7 @@ pub mod responsiveness;
 pub mod respond_link;
 pub mod signup_gates;
 pub mod social_graph;
+pub mod socrates_mirror;
 pub mod threshold_policy;
 pub mod titulo_eleitor;
 pub mod totp;
@@ -297,6 +298,9 @@ pub fn api_router(state: AppState) -> Router {
         .merge(admin_interests::routes(state.clone()))
         .merge(admin_consultations::routes(state.clone()))
         .merge(admin_forums::routes(state.clone()))
+        // SOCRATES: espelha Ideias Legislativas do e-Cidadania como tópicos do
+        // fórum `senado` (admin-curado, migration 0670).
+        .merge(socrates_mirror::routes(state.clone()))
         // Formulário de contato público — nenhum e-mail exposto no site.
         .merge(contact::routes(state.clone()))
         .merge(webhooks::routes(state.clone()))
