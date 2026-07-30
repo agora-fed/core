@@ -31,6 +31,7 @@
     type ForumTopicConsensusDto,
     type ForumTopicDetailDto,
     type ForumTopicDto,
+    type TransparencyDto,
   } from '../../lib/api';
   import { mdToHtml, titleSlug } from '../../lib/markdown';
   import { toast } from '../../lib/toasts';
@@ -53,6 +54,9 @@
   let forum = $state<ForumDto | null>(null);
   let children = $state<ForumChildDto[]>([]);
   let topics = $state<ForumTopicDto[]>([]);
+  // Transparência da câmara (só fórum municipal): banner âmbar quando faltam
+  // dados abertos, selo verde quando os gabinetes estão conectados.
+  let transparency = $state<TransparencyDto | null>(null);
   let sort = $state<'hot' | 'new'>('hot');
   let muniFilter = $state('');
   // topic
@@ -189,6 +193,7 @@
         return;
       }
       topics = tp.ok && tp.data ? tp.data.topics : [];
+      transparency = tp.ok && tp.data ? (tp.data.transparency ?? null) : null;
       void loadAdminInline(path);
     } else {
       // Detalhe + consenso (D8.2) em paralelo. O consenso é ADITIVO: se falhar,
@@ -624,6 +629,18 @@
     {/if}
   </header>
 
+  {#if transparency && (transparency.status === 'parcial' || transparency.status === 'ausente')}
+    <aside class="f-transparency" role="note" aria-label="Aviso de transparência da Câmara">
+      {#if transparency.status === 'parcial'}
+        <p>📋 Transparência limitada nesta Câmara. Ela mantém um site oficial, mas ainda não publica os dados dos vereadores — contatos, agendas e gastos — em formato aberto e legível por máquina. Por isso o DemocraciaBR ainda não conseguiu conectar automaticamente os gabinetes desta cidade. Site oficial: {#if transparency.official_url}<a href={transparency.official_url} target="_blank" rel="noopener">{transparency.official_url}</a>{/if}. Dados abertos são um direito da população (Lei de Acesso à Informação — Lei nº 12.527/2011).</p>
+      {:else}
+        <p>🔍 Portal de transparência não localizado. Não encontramos um site oficial desta Câmara com dados abertos sobre vereadores, agendas e gastos públicos. A ausência dessas informações em formato acessível enfraquece o controle social garantido pela Lei de Acesso à Informação. Conhece o site oficial? Ajude a comunidade a cadastrá-lo pelo <a href="/contato">/contato</a>.</p>
+      {/if}
+    </aside>
+  {:else if transparency && transparency.status === 'plena'}
+    <p class="f-transparency-ok" role="note">✓ Câmara com dados abertos — gabinetes conectados.</p>
+  {/if}
+
   {#if isEstado}
     {#if secoesEstado.length > 0}
       <div class="f-chips">
@@ -1031,6 +1048,37 @@
   .f-chip-virtual { opacity: 0.75; border-style: dashed; }
   .f-crumbs { display: flex; gap: 0.4rem; flex-wrap: wrap; font-size: 0.9rem; margin-bottom: 0.75rem; }
   .f-badge { font-size: 0.9rem; }
+  /* Banner de transparência (câmara municipal): âmbar/atenção, tema-aware via
+     tokens --warning/--warning-soft (0662/0669). Cobrança pública da ausência. */
+  .f-transparency {
+    margin: 0.9rem 0;
+    padding: 0.8rem 1rem;
+    border-radius: 12px;
+    background: var(--warning-soft, #fff7ed);
+    border: 1px solid var(--warning, #b45309);
+    border-left-width: 4px;
+    color: var(--text-1, #0f172a);
+  }
+  .f-transparency p { margin: 0; font-size: 0.92rem; line-height: 1.5; }
+  .f-transparency a {
+    color: var(--warning, #b45309);
+    font-weight: 600;
+    word-break: break-word;
+  }
+  /* Selo discreto (dados abertos, gabinetes conectados): verde, não-banner. */
+  .f-transparency-ok {
+    margin: 0.9rem 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    background: var(--success-soft, #e7f3ec);
+    color: var(--success, #15803d);
+    border: 1px solid var(--success, #15803d);
+  }
   .f-topics-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
   .f-sort button {
     background: none; border: 1px solid var(--c-border, #ccc);
