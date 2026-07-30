@@ -48,7 +48,7 @@ SIGNATURES: list[tuple[str, re.Pattern[str]]] = [
     ("betha", re.compile(r"betha\.com\.br|betha sistemas", re.I)),
     ("fiorilli", re.compile(r"fiorilli", re.I)),
     ("elegis", re.compile(r"e-?legis", re.I)),
-    ("sem-papel-familia", re.compile(r"camarasempapel|1doc\.com\.br|agapesistemas|nopaper|spl2?/parlamentares\.aspx", re.I)),
+    ("camarasempapel", re.compile(r"camarasempapel|1doc\.com\.br|agapesistemas|nopaper|spl2?/parlamentares\.aspx", re.I)),
     ("vialink", re.compile(r"vialink", re.I)),
     ("wordpress", re.compile(r"wp-content|wp-includes", re.I)),
     ("joomla", re.compile(r"/media/jui/|joomla", re.I)),
@@ -206,7 +206,9 @@ def main() -> int:
     sql = emit_apply_sql(results)
     print(f"SQL → {sql}", flush=True)
     if args.apply:
-        subprocess.run(["psql", args.db, "-f", str(sql)], check=True)
+        # ON_ERROR_STOP: sem isso o psql sai 0 mesmo com a transação abortada
+        # e o "APLICADO" abaixo mentiria (aconteceu na 1ª rodada — constraint).
+        subprocess.run(["psql", args.db, "-v", "ON_ERROR_STOP=1", "-f", str(sql)], check=True)
         print("APLICADO em civic_source.", flush=True)
     else:
         print("DRY-RUN (use --apply para gravar).", flush=True)
