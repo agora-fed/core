@@ -64,6 +64,9 @@ ck "op do mandato público → 200" 200 "$(code "$API/politicos/$FEDID/op")"
 OP401=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"title":"t","budget_cents":1}' "$API/me/mandate/op/rounds")
 ck "criar rodada sem sessão → 401" 401 "$OP401"
 
+echo "[SOCRATES — espelho e-Cidadania (admin-gated)]"
+ck "admin/socrates/mirrors → 401" 401 "$(code "$API/admin/socrates/mirrors")"
+
 echo "[território (cadastro)]"
 NMUN=$(curl -s "$API/municipios?uf=SP" | python3 -c "import sys,json;d=json.load(sys.stdin);a=(d.get('data') or d);print(len(a))" 2>/dev/null)
 ck "municípios SP = 645" 645 "$NMUN"
