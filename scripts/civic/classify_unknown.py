@@ -47,7 +47,6 @@ SIGNATURES: list[tuple[str, re.Pattern[str]]] = [
     ("cespro", re.compile(r"cespro", re.I)),
     ("betha", re.compile(r"betha\.com\.br|betha sistemas", re.I)),
     ("fiorilli", re.compile(r"fiorilli", re.I)),
-    ("elegis", re.compile(r"e-?legis", re.I)),
     ("camarasempapel", re.compile(r"camarasempapel|1doc\.com\.br|agapesistemas|nopaper|spl2?/parlamentares\.aspx", re.I)),
     ("vialink", re.compile(r"vialink", re.I)),
     ("wordpress", re.compile(r"wp-content|wp-includes", re.I)),
