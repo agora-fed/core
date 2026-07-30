@@ -140,10 +140,17 @@ pub(crate) async fn find_mandate<'e, E: PgExecutor<'e>>(
 /// `limit` rows starting at `offset`. Used by the front-end picker on the "propose" page so people
 /// don't have to type a UUID by hand — there is no compelling threat model for a hidden mandate, so
 /// the read is public.
+///
+/// `uf`/`municipio` narrow the list to a single territory (case-insensitive via `upper()` on both
+/// sides — the same comparison the `civic_source` catalog uses). Both are optional; absent means no
+/// filter (backwards-compatible with the pre-municipal callers). Drives the "Vereadores desta
+/// Câmara" card on a municipal forum.
 pub(crate) async fn list_mandates<'e, E: PgExecutor<'e>>(
     exec: E,
     org_id: Uuid,
     sphere: Option<&str>,
+    uf: Option<&str>,
+    municipio: Option<&str>,
     limit: i64,
     offset: i64,
 ) -> Result<Vec<MandateRow>, sqlx::Error> {
@@ -156,11 +163,15 @@ pub(crate) async fn list_mandates<'e, E: PgExecutor<'e>>(
         WHERE org_id = $1
           AND hidden_at IS NULL
           AND ($2::text IS NULL OR sphere = $2)
+          AND ($3::text IS NULL OR upper(uf) = upper($3))
+          AND ($4::text IS NULL OR upper(municipio) = upper($4))
         ORDER BY display_name ASC
-        LIMIT $3 OFFSET $4
+        LIMIT $5 OFFSET $6
         "#,
         org_id,
         sphere,
+        uf,
+        municipio,
         limit,
         offset,
     )

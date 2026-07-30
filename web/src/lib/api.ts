@@ -315,16 +315,33 @@ export const getMandateActivity = (mandateId: string, orgId = DEFAULT_ORG_ID) =>
   );
 
 /** Directory of mandates in an org — drives the "Propor" form's picker so the user does not have
- *  to type a UUID by hand. Public read. */
+ *  to type a UUID by hand. Public read. `uf`+`municipio` scope to one municipal câmara
+ *  (case-insensitive server-side, migration 0504). */
 export const getMandates = (
   orgId = DEFAULT_ORG_ID,
   limit = 50,
   offset = 0,
   sphere?: 'federal' | 'estadual' | 'municipal',
+  uf?: string,
+  municipio?: string,
 ) =>
   apiGet<MandateDto[]>(
-    `/api/v1/mandates${orgQuery(orgId, `&limit=${limit}&offset=${offset}${sphere ? `&sphere=${sphere}` : ''}`)}`,
+    `/api/v1/mandates${orgQuery(
+      orgId,
+      `&limit=${limit}&offset=${offset}${sphere ? `&sphere=${sphere}` : ''}${
+        uf ? `&uf=${encodeURIComponent(uf)}` : ''
+      }${municipio ? `&municipio=${encodeURIComponent(municipio)}` : ''}`,
+    )}`,
   );
+
+/** Vereadores de uma câmara municipal (sphere=municipal, escopo uf+municipio) — drives the
+ *  "Vereadores desta Câmara" card on a municipal forum. Best-effort; a câmara caps well under
+ *  the server's 100-row page, so a single call suffices. */
+export const getCamaraVereadores = (
+  uf: string,
+  municipio: string,
+  orgId = DEFAULT_ORG_ID,
+) => getMandates(orgId, 100, 0, 'municipal', uf, municipio);
 
 /** Full mandate directory, walking the server's `offset`/`limit` window (server caps a single
  *  page at 100). Optional `sphere` filter is critical now that we have 70k municipal rows —

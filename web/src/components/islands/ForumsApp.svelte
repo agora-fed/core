@@ -16,6 +16,7 @@
     getForumTopics,
     getForumTree,
     getRecentForumTopics,
+    getCamaraVereadores,
     getMyPermissions,
     moderateRemoveTopic,
     moderateRemoveComment,
@@ -31,6 +32,7 @@
     type ForumTopicConsensusDto,
     type ForumTopicDetailDto,
     type ForumTopicDto,
+    type MandateDto,
     type TransparencyDto,
   } from '../../lib/api';
   import { mdToHtml, titleSlug } from '../../lib/markdown';
@@ -57,6 +59,9 @@
   // Transparência da câmara (só fórum municipal): banner âmbar quando faltam
   // dados abertos, selo verde quando os gabinetes estão conectados.
   let transparency = $state<TransparencyDto | null>(null);
+  // Vereadores desta câmara (só fórum municipal): carregado best-effort, o card
+  // só aparece quando a lista vem preenchida.
+  let vereadores = $state<MandateDto[]>([]);
   let sort = $state<'hot' | 'new'>('hot');
   let muniFilter = $state('');
   // topic
@@ -135,6 +140,15 @@
     if (res.success) void load();
   }
 
+  // Iniciais para o avatar-placeholder do vereador sem foto (1–2 letras).
+  function initials(name: string): string {
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '?';
+    const first = parts[0][0] ?? '';
+    const last = parts.length > 1 ? (parts[parts.length - 1][0] ?? '') : '';
+    return (first + last).toUpperCase();
+  }
+
   function isLogged(): boolean {
     try {
       return Boolean(localStorage.getItem('dsoc_citizen'));
@@ -194,6 +208,20 @@
       }
       topics = tp.ok && tp.data ? tp.data.topics : [];
       transparency = tp.ok && tp.data ? (tp.data.transparency ?? null) : null;
+      // Vereadores desta câmara — só em fórum municipal com uf+municipio. Fetch
+      // best-effort e não-bloqueante: uma falha nunca derruba a listagem.
+      vereadores = [];
+      if (forum.esfera === 'municipal' && forum.uf && forum.municipio) {
+        const uf = forum.uf;
+        const municipio = forum.municipio;
+        void getCamaraVereadores(uf, municipio)
+          .then((vs) => {
+            vereadores = vs.ok && vs.data ? vs.data : [];
+          })
+          .catch(() => {
+            vereadores = [];
+          });
+      }
       void loadAdminInline(path);
     } else {
       // Detalhe + consenso (D8.2) em paralelo. O consenso é ADITIVO: se falhar,
@@ -641,6 +669,34 @@
     <p class="f-transparency-ok" role="note">✓ Câmara com dados abertos — gabinetes conectados.</p>
   {/if}
 
+  {#if vereadores.length > 0}
+    <section class="f-vereadores" aria-labelledby="f-vereadores-title">
+      <h2 id="f-vereadores-title" class="f-vereadores-title">Vereadores desta Câmara</h2>
+      <ul class="f-ver-grid">
+        {#each vereadores as v (v.id)}
+          <li>
+            <a class="f-ver-card" href={`/politicos/${v.id}/placar`}>
+              {#if v.avatar_url}
+                <img class="f-ver-avatar" src={v.avatar_url} alt="" loading="lazy" />
+              {:else}
+                <span class="f-ver-avatar f-ver-avatar-ph" aria-hidden="true">{initials(v.display_name)}</span>
+              {/if}
+              <span class="f-ver-body">
+                <span class="f-ver-name">{v.display_name}</span>
+                {#if v.party}<span class="f-ver-party">{v.party}</span>{/if}
+                {#if v.is_reachable}
+                  <span class="f-ver-badge f-ver-on">🟢 conectado</span>
+                {:else}
+                  <span class="f-ver-badge f-ver-off">🕓 ainda não conectado</span>
+                {/if}
+              </span>
+            </a>
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/if}
+
   {#if isEstado}
     {#if secoesEstado.length > 0}
       <div class="f-chips">
@@ -1079,6 +1135,63 @@
     color: var(--success, #15803d);
     border: 1px solid var(--success, #15803d);
   }
+  /* Vereadores desta câmara: grid de cards clicáveis (→ /politicos/<id>/placar),
+     com selo de alcançabilidade. Tema-aware via os mesmos tokens do resto. */
+  .f-vereadores { margin: 1.25rem 0; }
+  .f-vereadores-title { font-size: 1.05rem; margin: 0 0 0.6rem; }
+  .f-ver-grid {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+    gap: 0.6rem;
+  }
+  .f-ver-card {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--c-border, #ccc);
+    border-radius: 0.7rem;
+    text-decoration: none;
+    color: inherit;
+    height: 100%;
+  }
+  .f-ver-card:hover { border-color: var(--c-primary, #2a9d54); }
+  .f-ver-card:focus-visible {
+    outline: 2px solid var(--c-primary, #2a9d54);
+    outline-offset: 2px;
+  }
+  .f-ver-avatar {
+    width: 2.6rem;
+    height: 2.6rem;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    object-fit: cover;
+    background: var(--c-border, #e2e8f0);
+  }
+  .f-ver-avatar-ph {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-1, #0f172a);
+  }
+  .f-ver-body { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+  .f-ver-name { font-weight: 600; font-size: 0.95rem; }
+  .f-ver-party { font-size: 0.82rem; opacity: 0.75; }
+  .f-ver-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    margin-top: 0.1rem;
+  }
+  .f-ver-on { color: var(--success, #15803d); }
+  .f-ver-off { color: var(--warning, #b45309); }
   .f-topics-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
   .f-sort button {
     background: none; border: 1px solid var(--c-border, #ccc);

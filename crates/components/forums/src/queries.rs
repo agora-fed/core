@@ -1152,44 +1152,37 @@ pub async fn effective_contact_email(
     Ok(r.and_then(|r| r.contact_email))
 }
 
-/// Deriva o status de transparência (`plena` | `parcial` | `ausente`) de uma
-/// linha do catálogo `civic_source` (0662/0669), a partir de `platform`,
-/// `probe_status` e da presença de `base_url`.
+/// Deriva o status de transparência (`plena` | `parcial` | `ausente`) a partir do
+/// SINAL REAL de alcançabilidade dos gabinetes, não mais de `probe_status` do
+/// catálogo `civic_source` (que ficava desatualizado e mostrava `parcial` errado
+/// em câmaras cujos vereadores já têm e-mail real).
 ///
-/// - `ausente`: sem portal utilizável — `base_url` NULL ou plataforma
-///   `unknown`/`none`.
-/// - `plena`: plataforma legislativa com dados abertos
-///   (`sapl`/`cespro`/`camaraonline`) E probe `ok`.
-/// - `parcial`: existe site (`base_url`), mas não é uma das plataformas plenas
-///   OU o probe não está `ok` (dados não legíveis por máquina).
+/// - `plena`: existe ≥1 vereador DESTA câmara com e-mail institucional REAL
+///   (alcançável) — gabinetes conectados de verdade. `has_reachable_mandate`.
+/// - `parcial`: não há gabinete conectado, mas a câmara mantém um site oficial
+///   (`base_url` presente no catálogo).
+/// - `ausente`: nem gabinete conectado nem site oficial catalogado.
 #[must_use]
-fn derive_transparency_status(
-    platform: &str,
-    probe_status: &str,
-    base_url: Option<&str>,
-) -> String {
-    /// Plataformas legislativas com dados abertos estruturados + e-mail extraível.
-    const PLENA_PLATFORMS: [&str; 3] = ["sapl", "cespro", "camaraonline"];
-
-    if base_url.is_none() || platform == "unknown" || platform == "none" {
-        return "ausente".to_owned();
-    }
-    if PLENA_PLATFORMS.contains(&platform) && probe_status == "ok" {
+fn derive_transparency_status(has_reachable_mandate: bool, base_url: Option<&str>) -> String {
+    if has_reachable_mandate {
         return "plena".to_owned();
     }
-    "parcial".to_owned()
+    if base_url.is_some() {
+        return "parcial".to_owned();
+    }
+    "ausente".to_owned()
 }
 
-/// Consulta a transparência da câmara de um município no catálogo `civic_source`
-/// (0662/0669). RUNTIME (`sqlx::query_as` sem macro): a tabela é um catálogo
-/// cívico independente, fora do schema compile-time-checked dos fóruns — não há
-/// entrada `.sqlx` para ela e não a regeneramos.
+/// Consulta a transparência da câmara de um município. RUNTIME (`sqlx::query_as`
+/// sem macro): cruza o catálogo cívico independente `civic_source` (0662/0669) —
+/// fora do schema compile-time-checked dos fóruns — com a tabela `mandate`, então
+/// não regeneramos `.sqlx` para esta consulta.
 ///
 /// Casa por `(uf, municipio)` case-insensitive via `upper()` dos dois lados — a
-/// mesma comparação usada no resto do código (o índice único de `civic_source`
-/// é `(uf, upper(municipio))`). Retorna `(status, base_url)` quando há linha;
-/// `None` quando o município não está catalogado (o chamador trata como
-/// `ausente`).
+/// mesma comparação usada no resto do código. O sinal `plena` vem do EXISTS de um
+/// vereador (`sphere='municipal'` + `house='camara_municipal'`) com e-mail REAL
+/// (não o placeholder `@parlamento.democracia.social.br`); `official_url` continua
+/// vindo de `civic_source.base_url`. Retorna sempre `Some((status, base_url))`.
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -1198,21 +1191,38 @@ pub async fn municipal_transparency(
     uf: &str,
     municipio: &str,
 ) -> Result<Option<(String, Option<String>)>, sqlx::Error> {
-    let row: Option<(String, String, Option<String>)> = sqlx::query_as(
-        r#"SELECT platform, probe_status, base_url
-           FROM civic_source
-           WHERE upper(uf) = upper($1) AND upper(municipio) = upper($2)
-           LIMIT 1"#,
+    // Uma única passagem: o LEFT JOIN LATERAL traz o site oficial (se catalogado)
+    // e o EXISTS traz o sinal real de gabinete conectado — sem consumir o executor
+    // duas vezes.
+    let (base_url, has_reachable): (Option<String>, bool) = sqlx::query_as(
+        r#"
+        SELECT
+            cs.base_url AS base_url,
+            EXISTS (
+                SELECT 1 FROM mandate
+                 WHERE sphere = 'municipal'
+                   AND house = 'camara_municipal'
+                   AND upper(uf) = upper($1)
+                   AND upper(municipio) = upper($2)
+                   AND public_email <> ''
+                   AND public_email NOT ILIKE '%@parlamento.democracia.social.br'
+            ) AS has_reachable
+        FROM (SELECT 1) AS d
+        LEFT JOIN LATERAL (
+            SELECT base_url
+              FROM civic_source
+             WHERE upper(uf) = upper($1) AND upper(municipio) = upper($2)
+             LIMIT 1
+        ) cs ON true
+        "#,
     )
     .bind(uf)
     .bind(municipio)
-    .fetch_optional(executor)
+    .fetch_one(executor)
     .await?;
 
-    Ok(row.map(|(platform, probe_status, base_url)| {
-        let status = derive_transparency_status(&platform, &probe_status, base_url.as_deref());
-        (status, base_url)
-    }))
+    let status = derive_transparency_status(has_reachable, base_url.as_deref());
+    Ok(Some((status, base_url)))
 }
 
 #[cfg(test)]
@@ -1220,45 +1230,26 @@ mod transparency_tests {
     use super::derive_transparency_status;
 
     #[test]
-    fn plena_when_open_platform_and_probe_ok() {
+    fn plena_when_a_reachable_gabinete_exists() {
+        // O sinal `plena` é o gabinete alcançável — independe do site oficial.
         assert_eq!(
-            derive_transparency_status("sapl", "ok", Some("https://sapl.x.leg.br")),
+            derive_transparency_status(true, Some("https://sapl.x.leg.br")),
             "plena"
         );
-        assert_eq!(
-            derive_transparency_status("cespro", "ok", Some("https://x")),
-            "plena"
-        );
-        assert_eq!(
-            derive_transparency_status("camaraonline", "ok", Some("https://x")),
-            "plena"
-        );
+        assert_eq!(derive_transparency_status(true, None), "plena");
     }
 
     #[test]
-    fn parcial_when_site_but_not_open_data() {
-        // CMS genérico com site, sem dados abertos.
+    fn parcial_when_site_but_no_reachable_gabinete() {
+        // Câmara com site oficial, porém nenhum vereador conectado ainda.
         assert_eq!(
-            derive_transparency_status("wordpress", "ok", Some("https://camara.x")),
-            "parcial"
-        );
-        // Plataforma plena porém probe não-ok = site existe, dados não conectados.
-        assert_eq!(
-            derive_transparency_status("sapl", "dead", Some("https://sapl.x")),
+            derive_transparency_status(false, Some("https://camara.x")),
             "parcial"
         );
     }
 
     #[test]
-    fn ausente_when_no_portal() {
-        assert_eq!(derive_transparency_status("sapl", "ok", None), "ausente");
-        assert_eq!(
-            derive_transparency_status("unknown", "ok", Some("https://x")),
-            "ausente"
-        );
-        assert_eq!(
-            derive_transparency_status("none", "pending", None),
-            "ausente"
-        );
+    fn ausente_when_no_gabinete_and_no_site() {
+        assert_eq!(derive_transparency_status(false, None), "ausente");
     }
 }

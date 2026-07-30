@@ -268,6 +268,108 @@ async fn multi_target_dispatches_only_to_reachable() {
     assert_eq!(next_threshold_idx(&db, topic.id).await, 1, "escalou 1x");
 }
 
+/// A unique municipio name so each transparency test is isolated in the shared DB
+/// (`municipal_transparency` matches on `(uf, municipio)` across all orgs).
+fn unique_municipio() -> String {
+    format!("Cidade {}", Uuid::now_v7().as_simple())
+}
+
+/// Seed a MUNICIPAL vereador mandate (sphere/house/uf/municipio explicit) with an
+/// explicit public email — the real signal the transparency banner now derives from.
+async fn seed_municipal_mandate(
+    db: &PgPool,
+    org: OrgId,
+    uf: &str,
+    municipio: &str,
+    email: &str,
+) -> MandateId {
+    let mandate = MandateId::new();
+    sqlx::query(
+        "INSERT INTO mandate \
+           (id, org_id, office, display_name, public_email, sphere, house, uf, municipio, created_at) \
+         VALUES ($1, $2, 'vereador', 'Vereador Teste', $3, 'municipal', 'camara_municipal', $4, $5, now())",
+    )
+    .bind(mandate.as_uuid())
+    .bind(org.as_uuid())
+    .bind(email)
+    .bind(uf)
+    .bind(municipio)
+    .execute(db)
+    .await
+    .expect("seed municipal mandate");
+    mandate
+}
+
+/// Seed a `civic_source` catalog row (the site oficial signal → `official_url`).
+async fn seed_civic_source(db: &PgPool, uf: &str, municipio: &str, base_url: Option<&str>) {
+    sqlx::query(
+        "INSERT INTO civic_source (uf, municipio, platform, base_url, probe_status, created_at) \
+         VALUES ($1, $2, 'wordpress', $3, 'ok', now())",
+    )
+    .bind(uf)
+    .bind(municipio)
+    .bind(base_url)
+    .execute(db)
+    .await
+    .expect("seed civic_source");
+}
+
+/// `plena` deriva do sinal REAL: ≥1 vereador com e-mail alcançável — mesmo SEM
+/// linha `civic_source` (o `probe_status` desatualizado não mais rebaixa a câmara).
+#[tokio::test]
+async fn municipal_transparency_plena_when_reachable_gabinete() {
+    let Some(db) = pool_or_skip("transp_plena").await else {
+        return;
+    };
+    let org = seed_org(&db).await;
+    let municipio = unique_municipio();
+    seed_municipal_mandate(&db, org, "SP", &municipio, "vereador@camara.sp.gov.br").await;
+
+    // uf em minúsculas prova o casamento case-insensitive (upper() dos dois lados).
+    let (status, url) = dsoc_forums::queries::municipal_transparency(&db, "sp", &municipio)
+        .await
+        .expect("query transparency")
+        .expect("always Some");
+    assert_eq!(status, "plena", "gabinete alcançável ⇒ plena");
+    assert_eq!(url, None, "sem civic_source ⇒ sem site oficial");
+}
+
+/// Placeholder da plataforma NÃO conta como gabinete conectado: com site oficial
+/// catalogado mas só e-mail placeholder ⇒ `parcial` (corrige o falso-`plena`).
+#[tokio::test]
+async fn municipal_transparency_parcial_when_only_placeholder_gabinete() {
+    let Some(db) = pool_or_skip("transp_parcial").await else {
+        return;
+    };
+    let org = seed_org(&db).await;
+    let municipio = unique_municipio();
+    seed_municipal_mandate(&db, org, "SP", &municipio, "morto@parlamento.democracia.social.br")
+        .await;
+    seed_civic_source(&db, "SP", &municipio, Some("https://camara.example.gov.br")).await;
+
+    let (status, url) = dsoc_forums::queries::municipal_transparency(&db, "SP", &municipio)
+        .await
+        .expect("query transparency")
+        .expect("always Some");
+    assert_eq!(status, "parcial", "só placeholder + site ⇒ parcial");
+    assert_eq!(url.as_deref(), Some("https://camara.example.gov.br"));
+}
+
+/// Sem gabinete conectado e sem site oficial catalogado ⇒ `ausente`.
+#[tokio::test]
+async fn municipal_transparency_ausente_when_nothing() {
+    let Some(db) = pool_or_skip("transp_ausente").await else {
+        return;
+    };
+    let municipio = unique_municipio();
+    let (status, url) = dsoc_forums::queries::municipal_transparency(&db, "SP", &municipio)
+        .await
+        .expect("query transparency")
+        .expect("always Some");
+    assert_eq!(status, "ausente", "nada catalogado, nenhum gabinete ⇒ ausente");
+    assert_eq!(url, None);
+}
+
 #[tokio::test]
 async fn create_topic_rejects_nonexistent_target() {
     let Some(db) = pool_or_skip("nonexistent_target").await else {
