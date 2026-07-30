@@ -3611,7 +3611,7 @@ export const getRecentOpRounds = () =>
   apiGet<{ rounds: OpRoundSummaryDto[] }>('/api/v1/op/rounds');
 
 // SOCRATES — espelho de Ideias Legislativas do e-Cidadania (Senado) como
-// tópicos do fórum `senado` (admin-curado, migration 0670).
+// tópicos do fórum `senado`. Curadoria admin (0670) + sweep automático (0671).
 export interface SocratesMirrorEntry {
   ideia_id: string;
   source_url: string;
@@ -3620,10 +3620,35 @@ export interface SocratesMirrorEntry {
   /** Caminho navegável do tópico no front (`/f/topico/<id>`). */
   path: string;
   created_at: string;
+  /** Contador de apoios no e-Cidadania, na formatação do Senado ("20.771").
+   *  `null` enquanto nenhum sweep viu a ideia na coleção. */
+  apoiamentos: string | null;
+  porcentagem_favor: number | null;
+  apoios_updated_at: string | null;
+  /** `manual` = admin colou a URL; `sweep` = o worker descobriu. */
+  origin: string;
 }
 export interface SocratesMirrorCreated {
   topic_id: string;
   path: string;
+}
+/** Resultado de uma rodada de sweep (o que o POST devolve na hora). */
+export interface SocratesSweepStats {
+  found: number;
+  mirrored: number;
+  skipped: number;
+  updated: number;
+  errors: string[];
+}
+/** Uma rodada no log durável — `finished_at` nulo = rodada em curso/interrompida. */
+export interface SocratesSweepRun {
+  id: string;
+  started_at: string;
+  finished_at: string | null;
+  found: number;
+  mirrored: number;
+  skipped: number;
+  error: string | null;
 }
 export const getSocratesMirrors = () =>
   apiGetCredentialed<SocratesMirrorEntry[]>('/api/v1/admin/socrates/mirrors');
@@ -3631,3 +3656,10 @@ export const getSocratesMirrors = () =>
  *  (`error.code === 'already_mirrored'`, com o tópico existente em `data`). */
 export const socratesMirrorIdea = (url_or_id: string) =>
   apiPost<SocratesMirrorCreated>('/api/v1/admin/socrates/mirror', { url_or_id });
+/** Dispara UMA rodada de sweep agora. Síncrono: fala com o portal do Senado,
+ *  então pode levar alguns segundos. */
+export const runSocratesSweep = () =>
+  apiPost<SocratesSweepStats>('/api/v1/admin/socrates/sweep', {});
+/** As últimas rodadas do sweep (log de `socrates_sweep_run`). */
+export const getSocratesSweepRuns = () =>
+  apiGetCredentialed<SocratesSweepRun[]>('/api/v1/admin/socrates/runs');

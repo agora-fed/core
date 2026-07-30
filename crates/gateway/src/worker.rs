@@ -63,6 +63,10 @@ const DEFAULT_SIGNUP_CLEANUP_MS: u64 = 3_600_000;
 /// Idade (em dias) que uma pending expirada precisa ter pra ser apagada. Guardamos
 /// uns dias após o vencimento pra auditoria/ops. Override com `AUTH_SIGNUP_CLEANUP_DAYS`.
 const DEFAULT_SIGNUP_CLEANUP_DAYS: i64 = 7;
+/// Cadência default do sweep do SOCRATES (6 h). A coleção do e-Cidadania muda
+/// devagar (é um ranking de apoios) — bater mais que isso só gasta a paciência
+/// do portal do Senado. Override com `SOCRATES_SWEEP_MS`.
+const DEFAULT_SOCRATES_SWEEP_MS: u64 = 6 * 60 * 60 * 1000;
 
 /// Read a millisecond interval from the environment, falling back to `default`.
 fn env_ms(key: &str, default: u64) -> u64 {
@@ -467,6 +471,18 @@ pub fn spawn(state: AppState) {
     // ao gabinete escala D+1 e D+2 — cada reenvio vira recibo hash-encadeado.
     tokio::spawn(notification_escalation_loop(state.clone()));
 
+    // SOCRATES v2 (0671): sweep das Ideias Legislativas em alta no e-Cidadania.
+    // DESLIGADO por default — este loop PUBLICA conteúdo no fórum em nome do
+    // bot, então precisa de um "sim" explícito por instalação, não de um deploy.
+    let socrates_enabled = std::env::var("SOCRATES_SWEEP_ENABLED")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+    if socrates_enabled {
+        tokio::spawn(socrates_sweep_loop(state.clone()));
+    } else {
+        tracing::info!("socrates sweep desligado (defina SOCRATES_SWEEP_ENABLED=true pra ligar)");
+    }
+
     tracing::info!(
         subscriptions = count,
         dispatch_ms,
@@ -647,6 +663,37 @@ async fn notification_escalation_loop(state: AppState) {
                 &outcome,
             )
             .await;
+        }
+    }
+}
+
+/// SOCRATES v2 (0671): a cada `SOCRATES_SWEEP_MS` (default 6 h) descobre as
+/// Ideias Legislativas em alta no e-Cidadania, espelha as novas como tópicos do
+/// fórum `senado` (até `SOCRATES_SWEEP_MAX` por rodada) e re-sincroniza o
+/// contador de apoios das já espelhadas. Só roda com `SOCRATES_SWEEP_ENABLED=true`.
+///
+/// Rodada com erro é LOGADA e retentada no próximo tick — o portal do Senado é
+/// de terceiros e cair não pode derrubar o worker. O log durável fica em
+/// `socrates_sweep_run` (o painel admin lê de lá).
+async fn socrates_sweep_loop(state: AppState) {
+    let period_ms = env_ms("SOCRATES_SWEEP_MS", DEFAULT_SOCRATES_SWEEP_MS);
+    let mut ticker = interval(Duration::from_millis(period_ms));
+    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    tracing::info!(period_ms, "socrates sweep ligado");
+    loop {
+        ticker.tick().await;
+        match crate::socrates_mirror::sweep_once(&state).await {
+            Ok(stats) => tracing::info!(
+                found = stats.found,
+                mirrored = stats.mirrored,
+                skipped = stats.skipped,
+                updated = stats.updated,
+                errors = stats.errors.len(),
+                "socrates sweep tick"
+            ),
+            Err(err) => {
+                tracing::warn!(error = %err, "socrates sweep falhou; retenta no próximo tick");
+            }
         }
     }
 }

@@ -1,22 +1,39 @@
-//! # SOCRATES espelha Ideias Legislativas do e-Cidadania (migration 0670).
+//! # SOCRATES espelha Ideias Legislativas do e-Cidadania (migrations 0670/0671).
 //!
 //! No portal e-Cidadania do Senado o cidadão SÓ pode apoiar uma Ideia
 //! Legislativa — não existe votar contra nem argumentar. Aqui o debate é
 //! completo (favor × contra + afirmação-ponte), então o SOCRATES (cidadão-bot
 //! institucional, UUID fixo em 0670) espelha a ideia como tópico do fórum
-//! `senado` pra abrir o debate que o portal não permite. MVP ADMIN-CURADO:
-//! o admin cola a URL/ID → o gateway busca o título server-rendered
-//! (`<title>` / `og:description`; a descrição longa é SPA e NÃO vem no HTML
-//! estático) → cria o tópico assinado pelo bot + grava o espelho, na MESMA
-//! transação.
+//! `senado` pra abrir o debate que o portal não permite.
+//!
+//! Dois caminhos alimentam o mesmo espelho:
+//!
+//! 1. **Curadoria admin** (MVP, 0670): o admin cola a URL/ID → o gateway busca
+//!    o título server-rendered (`<title>` / `og:description`; a descrição longa
+//!    é SPA e NÃO vem no HTML estático) → cria o tópico assinado pelo bot.
+//! 2. **Sweep automático** (v2, 0671): [`sweep_once`] lê a API pública JSON
+//!    `restcolecaomaisideia` (as ideias EM ALTA, já com título e contador de
+//!    apoios — nenhum fetch por ideia é necessário) e complementa com os ids
+//!    linkados na página `principalideia`. As NOVAS viram tópico; as já
+//!    espelhadas têm o contador de apoios re-sincronizado. Cada rodada vira uma
+//!    linha em `socrates_sweep_run`.
+//!
+//! A coleção devolve ~5 itens e não pagina: o sweep é ACUMULATIVO por natureza
+//! (roda a cada 6 h no worker e vai juntando o que o Senado promove ao topo),
+//! e o teto `SOCRATES_SWEEP_MAX` impede que uma rodada anômala inunde o fórum.
 //!
 //! - `POST /admin/socrates/mirror`  — `{url_or_id}` → espelha (gate owner/admin).
 //! - `GET  /admin/socrates/mirrors` — lista os espelhos existentes.
+//! - `POST /admin/socrates/sweep`   — dispara uma rodada agora (gate owner/admin).
+//! - `GET  /admin/socrates/runs`    — log das últimas rodadas.
 //!
 //! Autor-bot: o `create_topic` HTTP dos fóruns exige caller verificado; aqui o
 //! gateway insere via `dsoc_forums::queries::insert_topic` DIRETO (mesma query
 //! do service, contadores default idênticos), dentro de uma transação junto com
 //! a linha `socrates_mirror` — atômico e sem passar pelo gate de sessão.
+//!
+//! Nenhum host vem de input: as três URLs do Senado são constantes deste
+//! módulo, montadas a partir de um id NUMÉRICO validado — sem SSRF possível.
 
 use axum::extract::{Json, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -44,6 +61,25 @@ const FETCH_TIMEOUT_SECS: u64 = 10;
 const MAX_IDEIA_ID_DIGITS: usize = 12;
 /// Teto da listagem de espelhos (painel admin; sem paginação no MVP).
 const LIST_LIMIT: i64 = 200;
+/// Teto da listagem de rodadas do sweep (o painel só mostra o histórico recente).
+const RUNS_LIMIT: i64 = 50;
+/// API pública JSON (sem auth) com as Ideias Legislativas EM ALTA. Devolve ~5
+/// itens e NÃO pagina — por isso o sweep é incremental/acumulativo.
+const COLLECTION_URL: &str = "https://www12.senado.leg.br/ecidadania/restcolecaomaisideia";
+/// Página HTML de entrada das Ideias Legislativas; complementa a coleção com
+/// ids que ainda não subiram pro topo (só temos o id, o título vem do fetch).
+const PRINCIPAL_URL: &str = "https://www12.senado.leg.br/ecidadania/principalideia";
+/// Marcador dos links de ideia dentro do HTML de `principalideia`.
+const IDEIA_LINK_MARKER: &str = "visualizacaoideia?id=";
+/// Teto default de espelhos NOVOS por rodada (env `SOCRATES_SWEEP_MAX`). Uma
+/// rodada que estoure o teto deixa o resto pra próxima — o fórum nunca inunda.
+const DEFAULT_SWEEP_MAX: usize = 10;
+/// `socrates_mirror.origin` de um espelho colado por admin.
+const ORIGIN_MANUAL: &str = "manual";
+/// `socrates_mirror.origin` de um espelho descoberto pelo sweep.
+const ORIGIN_SWEEP: &str = "sweep";
+/// Teto do texto de erro consolidado gravado em `socrates_sweep_run.error`.
+const RUN_ERROR_MAX_CHARS: usize = 500;
 /// Prefixo server-rendered do `<title>` da página da ideia.
 const TITLE_PREFIX: &str = "Ideia Legislativa - ";
 /// Separador do sufixo institucional do `<title>` (":: Portal e-Cidadania …").
@@ -55,6 +91,8 @@ pub fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/admin/socrates/mirror", post(mirror))
         .route("/admin/socrates/mirrors", get(list_mirrors))
+        .route("/admin/socrates/sweep", post(run_sweep))
+        .route("/admin/socrates/runs", get(list_runs))
         .with_state(state)
 }
 
@@ -234,10 +272,19 @@ fn extract_title(html: &str) -> Option<String> {
 
 /// Corpo (markdown) do tópico espelhado — o texto integral não vem no HTML
 /// estático (SPA), então o corpo aponta pro link canônico com atribuição.
-fn topic_body(title: &str, url: &str) -> String {
+///
+/// `apoiamentos` é o contador COMO O SENADO FORMATA ("20.771"): quando o sweep
+/// o traz na coleção, ele entra como contexto ("quantos já apoiaram lá") logo
+/// abaixo do título. No caminho admin (sem coleção) o bloco simplesmente some.
+fn topic_body(title: &str, url: &str, apoiamentos: Option<&str>) -> String {
+    let apoios_line = match apoiamentos {
+        Some(a) => format!("📊 **{a} apoios** no e-Cidadania até agora.\n\n"),
+        None => String::new(),
+    };
     format!(
         "**Ideia Legislativa espelhada do e-Cidadania (Senado Federal)** 🏛️\n\n\
          > {title}\n\n\
+         {apoios_line}\
          No portal do Senado, cidadãos só podem **apoiar** esta ideia — não há como argumentar \
          contra, ponderar ou debater. Aqui no DemocraciaBR o debate é completo: **argumente a \
          favor ou contra e vote**.\n\n\
@@ -247,6 +294,111 @@ fn topic_body(title: &str, url: &str) -> String {
          — *SOCRATES, agente cívico da plataforma. Conteúdo público do Senado Federal, \
          espelhado com atribuição.*"
     )
+}
+
+// ---------------------------------------------------------------------------
+// Descoberta automática: coleção JSON + ids linkados no HTML
+// ---------------------------------------------------------------------------
+
+/// Uma ideia candidata a espelho. O `titulo`/`apoiamentos` só existem quando a
+/// candidata veio da coleção JSON; vindo do HTML (ou do painel admin) só há id,
+/// e o título é buscado na página canônica.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IdeaCandidate {
+    ideia_id: String,
+    titulo: Option<String>,
+    /// Contador de apoios COMO O SENADO FORMATA ("20.771").
+    apoiamentos: Option<String>,
+    porcentagem_favor: Option<i32>,
+}
+
+impl IdeaCandidate {
+    /// Candidata sem metadados — o caminho do painel admin e do HTML.
+    fn bare(ideia_id: String) -> Self {
+        Self {
+            ideia_id,
+            titulo: None,
+            apoiamentos: None,
+            porcentagem_favor: None,
+        }
+    }
+
+    /// Há dado de apoios pra gravar/re-sincronizar?
+    fn has_apoios(&self) -> bool {
+        self.apoiamentos.is_some() || self.porcentagem_favor.is_some()
+    }
+}
+
+/// Texto de um campo JSON que o portal ora manda como string ("20.771"), ora
+/// poderia mandar como número — os dois viram texto, nada é reinterpretado.
+fn json_text(value: &serde_json::Value) -> Option<String> {
+    let text = match value {
+        serde_json::Value::String(s) => s.trim().to_owned(),
+        serde_json::Value::Number(n) => n.to_string(),
+        _ => return None,
+    };
+    (!text.is_empty()).then_some(text)
+}
+
+/// Parseia o array de `restcolecaomaisideia`. Item fora do formato esperado é
+/// DESCARTADO em silêncio (a rodada segue com o resto) — o portal é de
+/// terceiros e uma mudança de shape não pode derrubar o sweep.
+fn parse_collection(json: &str) -> Vec<IdeaCandidate> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
+        return Vec::new();
+    };
+    let Some(items) = value.as_array() else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter_map(|item| {
+            // O id é numérico na prática; `parse_ideia_id` valida os dois casos
+            // (número ou string) contra o mesmo teto de dígitos do painel.
+            let ideia_id = parse_ideia_id(&json_text(item.get("id")?)?)?;
+            Some(IdeaCandidate {
+                ideia_id,
+                titulo: item
+                    .get("titulo")
+                    .and_then(json_text)
+                    .map(|t| decode_entities(&t).trim().to_owned())
+                    .filter(|t| !t.is_empty()),
+                apoiamentos: item.get("apoiamentos").and_then(json_text),
+                porcentagem_favor: item
+                    .get("porcentagemFavor")
+                    .and_then(serde_json::Value::as_i64)
+                    .and_then(|n| i32::try_from(n).ok()),
+            })
+        })
+        .collect()
+}
+
+/// Ids das ideias linkadas no HTML de `principalideia` (`visualizacaoideia?id=NNNNNN`),
+/// na ordem de aparição e sem repetição.
+fn extract_ideia_ids(html: &str) -> Vec<String> {
+    let mut ids: Vec<String> = Vec::new();
+    let mut rest = html;
+    while let Some(pos) = rest.find(IDEIA_LINK_MARKER) {
+        let after = &rest[pos + IDEIA_LINK_MARKER.len()..];
+        let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
+        if !digits.is_empty() && digits.len() <= MAX_IDEIA_ID_DIGITS && !ids.contains(&digits) {
+            ids.push(digits);
+        }
+        rest = after;
+    }
+    ids
+}
+
+/// Junta as duas fontes: a coleção manda (traz título + apoios) e o HTML só
+/// acrescenta os ids que ela não cobriu.
+fn merge_candidates(collection: Vec<IdeaCandidate>, html_ids: Vec<String>) -> Vec<IdeaCandidate> {
+    let mut merged = collection;
+    for id in html_ids {
+        if !merged.iter().any(|c| c.ideia_id == id) {
+            merged.push(IdeaCandidate::bare(id));
+        }
+    }
+    merged
 }
 
 /// Trunca o título ao teto dos fóruns preservando caracteres inteiros.
@@ -285,6 +437,67 @@ struct MirrorEntry {
     topic_title: String,
     path: String,
     created_at: DateTime<Utc>,
+    /// Contador de apoios no e-Cidadania (formatação do Senado); `null` até o
+    /// primeiro sweep que vir a ideia na coleção.
+    apoiamentos: Option<String>,
+    porcentagem_favor: Option<i32>,
+    apoios_updated_at: Option<DateTime<Utc>>,
+    /// `manual` (admin colou) ou `sweep` (descoberto pelo worker).
+    origin: String,
+}
+
+/// Resultado de uma rodada de sweep — o que o painel mostra e o que vai pro log.
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct SweepStats {
+    /// Ideias distintas vistas nas duas fontes.
+    pub found: usize,
+    /// Ideias que viraram tópico novo nesta rodada.
+    pub mirrored: usize,
+    /// Ideias ignoradas: já espelhadas, teto da rodada estourado, ou falha.
+    pub skipped: usize,
+    /// Espelhos existentes que tiveram o contador de apoios re-sincronizado.
+    pub updated: usize,
+    /// Erros não-fatais da rodada (fetch de uma fonte, espelho de uma ideia).
+    pub errors: Vec<String>,
+}
+
+impl SweepStats {
+    /// Erros consolidados pro `socrates_sweep_run.error` (`None` = rodada limpa).
+    fn error_text(&self) -> Option<String> {
+        if self.errors.is_empty() {
+            return None;
+        }
+        let mut joined = self.errors.join(" | ");
+        if joined.chars().count() > RUN_ERROR_MAX_CHARS {
+            joined = joined.chars().take(RUN_ERROR_MAX_CHARS).collect();
+        }
+        Some(joined)
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct SweepRunEntry {
+    id: Uuid,
+    started_at: DateTime<Utc>,
+    finished_at: Option<DateTime<Utc>>,
+    found: i32,
+    mirrored: i32,
+    skipped: i32,
+    error: Option<String>,
+}
+
+/// Por que uma ideia NÃO virou tópico. O caminho admin traduz cada variante num
+/// status HTTP; o sweep só conta e loga.
+#[derive(Debug)]
+enum MirrorError {
+    /// Já existe espelho — o `Uuid` é o tópico existente (o painel linka nele).
+    AlreadyMirrored(Uuid),
+    /// O portal do Senado não respondeu / respondeu fora do formato.
+    Upstream(String),
+    /// O fórum `senado` não existe nesta instalação.
+    ForumMissing,
+    /// Falha de banco (já logada com contexto no ponto de origem).
+    Storage,
 }
 
 /// 409 com o tópico existente no `data` (o painel linka direto) — o envelope
@@ -309,6 +522,144 @@ fn already_mirrored(ideia_id: &str, topic_id: Uuid) -> Response {
 // Handlers
 // ---------------------------------------------------------------------------
 
+/// Espelha UMA ideia: dedup → título → tópico + linha `socrates_mirror` na
+/// MESMA transação. É o núcleo compartilhado pelos dois caminhos (painel admin
+/// e sweep); devolve o id do tópico criado.
+///
+/// O título só custa um fetch quando a candidata não trouxe um (caso do painel
+/// e dos ids vindos do HTML) — pela coleção JSON ele já vem pronto.
+async fn mirror_candidate(
+    state: &AppState,
+    candidate: &IdeaCandidate,
+    origin: &str,
+) -> Result<Uuid, MirrorError> {
+    let ideia_id = &candidate.ideia_id;
+
+    // Dedup ANTES do fetch: ideia já espelhada nunca dispara rede.
+    match sqlx::query_scalar::<_, Uuid>("SELECT topic_id FROM socrates_mirror WHERE ideia_id = $1")
+        .bind(ideia_id)
+        .fetch_optional(&state.db)
+        .await
+    {
+        Ok(Some(existing)) => return Err(MirrorError::AlreadyMirrored(existing)),
+        Ok(None) => {}
+        Err(err) => {
+            tracing::error!(?err, "socrates: dedup lookup falhou");
+            return Err(MirrorError::Storage);
+        }
+    }
+
+    let source_url = canonical_url(ideia_id);
+    let title = match candidate.titulo.clone() {
+        Some(title) => title,
+        None => {
+            let html = fetch_text(&source_url)
+                .await
+                .map_err(MirrorError::Upstream)?;
+            extract_title(&html).ok_or_else(|| {
+                MirrorError::Upstream(
+                    "A página do e-Cidadania respondeu, mas não foi possível extrair o título da \
+                     ideia (formato inesperado — a ideia existe?)."
+                        .to_owned(),
+                )
+            })?
+        }
+    };
+    let title = clamp_title(&title);
+    let body = topic_body(&title, &source_url, candidate.apoiamentos.as_deref());
+    let new = dsoc_forums::domain::NewTopic::validate(&title, &body).map_err(|err| {
+        tracing::error!(?err, "socrates: título/corpo fora dos limites dos fóruns");
+        MirrorError::Upstream(
+            "O título extraído do e-Cidadania não passou na validação dos fóruns.".to_owned(),
+        )
+    })?;
+
+    // Fórum destino: a raiz `senado` (institucional, semeada — nunca é
+    // materializável on-demand como as seções territoriais).
+    let forum_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM forum WHERE org_id = $1 AND full_path = $2")
+            .bind(DEFAULT_ORG_UUID)
+            .bind(SENADO_FORUM_PATH)
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|err| {
+                tracing::error!(?err, "socrates: lookup do fórum senado falhou");
+                MirrorError::Storage
+            })?;
+    let Some(forum_id) = forum_id else {
+        return Err(MirrorError::ForumMissing);
+    };
+
+    // Tópico + espelho na MESMA transação: ou os dois existem, ou nenhum.
+    // `insert_topic` é a MESMA query do ForumService::create_topic (contadores
+    // default idênticos); inserir direto evita o gate de sessão/verificação do
+    // caminho HTTP — o autor é o cidadão-bot, sem credencial.
+    let now = state.clock.now();
+    let mut tx = state.db.begin().await.map_err(|err| {
+        tracing::error!(?err, "socrates: begin falhou");
+        MirrorError::Storage
+    })?;
+    let topic = dsoc_forums::queries::insert_topic(
+        &mut *tx,
+        Uuid::now_v7(),
+        forum_id,
+        SOCRATES_CITIZEN_ID,
+        &new.title,
+        &new.body,
+        now,
+    )
+    .await
+    .map_err(|err| {
+        tracing::error!(?err, "socrates: insert_topic falhou");
+        MirrorError::Storage
+    })?;
+    let inserted = sqlx::query(
+        "INSERT INTO socrates_mirror
+             (id, ideia_id, source_url, topic_id, created_at,
+              apoiamentos, porcentagem_favor, apoios_updated_at, origin)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (ideia_id) DO NOTHING",
+    )
+    .bind(Uuid::now_v7())
+    .bind(ideia_id)
+    .bind(&source_url)
+    .bind(topic.id)
+    .bind(now)
+    .bind(candidate.apoiamentos.as_deref())
+    .bind(candidate.porcentagem_favor)
+    .bind(candidate.has_apoios().then_some(now))
+    .bind(origin)
+    .execute(&mut *tx)
+    .await;
+    match inserted {
+        // Corrida: outro caminho espelhou entre o dedup e o commit — aborta o
+        // tópico (rollback implícito no drop da tx) e reporta o conflito.
+        Ok(r) if r.rows_affected() == 0 => {
+            drop(tx);
+            return match sqlx::query_scalar::<_, Uuid>(
+                "SELECT topic_id FROM socrates_mirror WHERE ideia_id = $1",
+            )
+            .bind(ideia_id)
+            .fetch_optional(&state.db)
+            .await
+            {
+                Ok(Some(existing)) => Err(MirrorError::AlreadyMirrored(existing)),
+                _ => Err(MirrorError::Storage),
+            };
+        }
+        Ok(_) => {}
+        Err(err) => {
+            tracing::error!(?err, "socrates: insert do espelho falhou");
+            return Err(MirrorError::Storage);
+        }
+    }
+    tx.commit().await.map_err(|err| {
+        tracing::error!(?err, "socrates: commit falhou");
+        MirrorError::Storage
+    })?;
+    Ok(topic.id)
+}
+
 /// `POST /admin/socrates/mirror` — espelha uma Ideia Legislativa como tópico
 /// do fórum `senado`, assinado pelo cidadão-bot SOCRATES.
 async fn mirror(
@@ -326,144 +677,24 @@ async fn mirror(
             "Informe a URL da ideia no e-Cidadania (…visualizacaoideia?id=NNNNNN) ou o id numérico.",
         );
     };
-
-    // Dedup ANTES do fetch: ideia já espelhada nunca dispara rede.
-    match sqlx::query_scalar::<_, Uuid>("SELECT topic_id FROM socrates_mirror WHERE ideia_id = $1")
-        .bind(&ideia_id)
-        .fetch_optional(&state.db)
-        .await
-    {
-        Ok(Some(existing)) => return already_mirrored(&ideia_id, existing),
-        Ok(None) => {}
-        Err(err) => {
-            tracing::error!(?err, "socrates: dedup lookup falhou");
-            return storage_error();
+    let candidate = IdeaCandidate::bare(ideia_id.clone());
+    match mirror_candidate(&state, &candidate, ORIGIN_MANUAL).await {
+        Ok(topic_id) => {
+            let dto = MirrorCreated {
+                topic_id,
+                path: format!("/f/topico/{topic_id}"),
+            };
+            (StatusCode::CREATED, Json(ApiResponse::ok(dto))).into_response()
         }
-    }
-
-    let source_url = canonical_url(&ideia_id);
-    let html = match fetch_ideia(&source_url).await {
-        Ok(html) => html,
-        Err(msg) => return fail(StatusCode::BAD_GATEWAY, "upstream_error", &msg),
-    };
-    let Some(title) = extract_title(&html) else {
-        return fail(
-            StatusCode::BAD_GATEWAY,
-            "upstream_error",
-            "A página do e-Cidadania respondeu, mas não foi possível extrair o título da ideia \
-             (formato inesperado — a ideia existe?).",
-        );
-    };
-    let title = clamp_title(&title);
-    let body = topic_body(&title, &source_url);
-    let new = match dsoc_forums::domain::NewTopic::validate(&title, &body) {
-        Ok(n) => n,
-        Err(err) => {
-            tracing::error!(?err, "socrates: título/corpo fora dos limites dos fóruns");
-            return fail(
-                StatusCode::BAD_GATEWAY,
-                "upstream_error",
-                "O título extraído do e-Cidadania não passou na validação dos fóruns.",
-            );
-        }
-    };
-
-    // Fórum destino: a raiz `senado` (institucional, semeada — nunca é
-    // materializável on-demand como as seções territoriais).
-    let forum_id: Option<Uuid> =
-        match sqlx::query_scalar("SELECT id FROM forum WHERE org_id = $1 AND full_path = $2")
-            .bind(DEFAULT_ORG_UUID)
-            .bind(SENADO_FORUM_PATH)
-            .fetch_optional(&state.db)
-            .await
-        {
-            Ok(f) => f,
-            Err(err) => {
-                tracing::error!(?err, "socrates: lookup do fórum senado falhou");
-                return storage_error();
-            }
-        };
-    let Some(forum_id) = forum_id else {
-        return fail(
+        Err(MirrorError::AlreadyMirrored(existing)) => already_mirrored(&ideia_id, existing),
+        Err(MirrorError::Upstream(msg)) => fail(StatusCode::BAD_GATEWAY, "upstream_error", &msg),
+        Err(MirrorError::ForumMissing) => fail(
             StatusCode::INTERNAL_SERVER_ERROR,
             "forum_missing",
             "O fórum 'senado' não existe nesta instalação (rode scripts/seed-forums.sql).",
-        );
-    };
-
-    // Tópico + espelho na MESMA transação: ou os dois existem, ou nenhum.
-    // `insert_topic` é a MESMA query do ForumService::create_topic (contadores
-    // default idênticos); inserir direto evita o gate de sessão/verificação do
-    // caminho HTTP — o autor é o cidadão-bot, sem credencial.
-    let now = state.clock.now();
-    let mut tx = match state.db.begin().await {
-        Ok(tx) => tx,
-        Err(err) => {
-            tracing::error!(?err, "socrates: begin falhou");
-            return storage_error();
-        }
-    };
-    let topic = match dsoc_forums::queries::insert_topic(
-        &mut *tx,
-        Uuid::now_v7(),
-        forum_id,
-        SOCRATES_CITIZEN_ID,
-        &new.title,
-        &new.body,
-        now,
-    )
-    .await
-    {
-        Ok(t) => t,
-        Err(err) => {
-            tracing::error!(?err, "socrates: insert_topic falhou");
-            return storage_error();
-        }
-    };
-    let inserted = sqlx::query(
-        "INSERT INTO socrates_mirror (id, ideia_id, source_url, topic_id, created_at)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (ideia_id) DO NOTHING",
-    )
-    .bind(Uuid::now_v7())
-    .bind(&ideia_id)
-    .bind(&source_url)
-    .bind(topic.id)
-    .bind(now)
-    .execute(&mut *tx)
-    .await;
-    match inserted {
-        // Corrida: outro admin espelhou entre o dedup e o commit — aborta o
-        // tópico (rollback implícito no drop da tx) e responde 409.
-        Ok(r) if r.rows_affected() == 0 => {
-            drop(tx);
-            match sqlx::query_scalar::<_, Uuid>(
-                "SELECT topic_id FROM socrates_mirror WHERE ideia_id = $1",
-            )
-            .bind(&ideia_id)
-            .fetch_optional(&state.db)
-            .await
-            {
-                Ok(Some(existing)) => return already_mirrored(&ideia_id, existing),
-                _ => return storage_error(),
-            }
-        }
-        Ok(_) => {}
-        Err(err) => {
-            tracing::error!(?err, "socrates: insert do espelho falhou");
-            return storage_error();
-        }
+        ),
+        Err(MirrorError::Storage) => storage_error(),
     }
-    if let Err(err) = tx.commit().await {
-        tracing::error!(?err, "socrates: commit falhou");
-        return storage_error();
-    }
-
-    let dto = MirrorCreated {
-        topic_id: topic.id,
-        path: format!("/f/topico/{}", topic.id),
-    };
-    (StatusCode::CREATED, Json(ApiResponse::ok(dto))).into_response()
 }
 
 /// `GET /admin/socrates/mirrors` — os espelhos existentes, mais recentes primeiro.
@@ -471,29 +702,54 @@ async fn list_mirrors(State(state): State<AppState>, headers: HeaderMap) -> Resp
     if let Err(resp) = require_admin(&state.db, &headers).await {
         return resp;
     }
-    let rows: Result<Vec<(String, String, Uuid, String, DateTime<Utc>)>, sqlx::Error> =
-        sqlx::query_as(
-            "SELECT m.ideia_id, m.source_url, m.topic_id, t.title, m.created_at
-               FROM socrates_mirror m
-               JOIN forum_topic t ON t.id = m.topic_id
-              ORDER BY m.created_at DESC
-              LIMIT $1",
-        )
-        .bind(LIST_LIMIT)
-        .fetch_all(&state.db)
-        .await;
+    type Row = (
+        String,
+        String,
+        Uuid,
+        String,
+        DateTime<Utc>,
+        Option<String>,
+        Option<i32>,
+        Option<DateTime<Utc>>,
+        String,
+    );
+    let rows: Result<Vec<Row>, sqlx::Error> = sqlx::query_as(
+        "SELECT m.ideia_id, m.source_url, m.topic_id, t.title, m.created_at,
+                m.apoiamentos, m.porcentagem_favor, m.apoios_updated_at, m.origin
+           FROM socrates_mirror m
+           JOIN forum_topic t ON t.id = m.topic_id
+          ORDER BY m.created_at DESC
+          LIMIT $1",
+    )
+    .bind(LIST_LIMIT)
+    .fetch_all(&state.db)
+    .await;
     match rows {
         Ok(rows) => {
             let dtos: Vec<MirrorEntry> = rows
                 .into_iter()
                 .map(
-                    |(ideia_id, source_url, topic_id, topic_title, created_at)| MirrorEntry {
+                    |(
+                        ideia_id,
+                        source_url,
+                        topic_id,
+                        topic_title,
+                        created_at,
+                        apoiamentos,
+                        porcentagem_favor,
+                        apoios_updated_at,
+                        origin,
+                    )| MirrorEntry {
                         ideia_id,
                         source_url,
                         topic_id,
                         topic_title,
                         path: format!("/f/topico/{topic_id}"),
                         created_at,
+                        apoiamentos,
+                        porcentagem_favor,
+                        apoios_updated_at,
+                        origin,
                     },
                 )
                 .collect();
@@ -506,8 +762,249 @@ async fn list_mirrors(State(state): State<AppState>, headers: HeaderMap) -> Resp
     }
 }
 
-/// GET simples na página da ideia (server-rendered basta pro título).
-async fn fetch_ideia(url: &str) -> Result<String, String> {
+/// `POST /admin/socrates/sweep` — dispara UMA rodada agora e devolve o
+/// resultado. Síncrono de propósito: o admin quer ver o que aconteceu.
+async fn run_sweep(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(resp) = require_admin(&state.db, &headers).await {
+        return resp;
+    }
+    match sweep_once(&state).await {
+        Ok(stats) => (StatusCode::OK, Json(ApiResponse::ok(stats))).into_response(),
+        Err(msg) => fail(StatusCode::BAD_GATEWAY, "upstream_error", &msg),
+    }
+}
+
+/// `GET /admin/socrates/runs` — as últimas rodadas do sweep, recentes primeiro.
+async fn list_runs(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(resp) = require_admin(&state.db, &headers).await {
+        return resp;
+    }
+    type Row = (
+        Uuid,
+        DateTime<Utc>,
+        Option<DateTime<Utc>>,
+        i32,
+        i32,
+        i32,
+        Option<String>,
+    );
+    let rows: Result<Vec<Row>, sqlx::Error> = sqlx::query_as(
+        "SELECT id, started_at, finished_at, found, mirrored, skipped, error
+           FROM socrates_sweep_run
+          ORDER BY started_at DESC
+          LIMIT $1",
+    )
+    .bind(RUNS_LIMIT)
+    .fetch_all(&state.db)
+    .await;
+    match rows {
+        Ok(rows) => {
+            let dtos: Vec<SweepRunEntry> = rows
+                .into_iter()
+                .map(
+                    |(id, started_at, finished_at, found, mirrored, skipped, error)| {
+                        SweepRunEntry {
+                            id,
+                            started_at,
+                            finished_at,
+                            found,
+                            mirrored,
+                            skipped,
+                            error,
+                        }
+                    },
+                )
+                .collect();
+            (StatusCode::OK, Json(ApiResponse::ok(dtos))).into_response()
+        }
+        Err(err) => {
+            tracing::error!(?err, "socrates: listagem de rodadas falhou");
+            storage_error()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sweep automático (v2)
+// ---------------------------------------------------------------------------
+
+/// Teto de espelhos NOVOS por rodada (`SOCRATES_SWEEP_MAX`, default 10).
+fn sweep_max() -> usize {
+    parse_sweep_max(std::env::var("SOCRATES_SWEEP_MAX").ok().as_deref())
+}
+
+/// Lê o teto da rodada. Valor ausente, ilegível ou zero cai no default — um
+/// teto 0 desligaria o sweep silenciosamente, o que nunca é a intenção.
+fn parse_sweep_max(raw: Option<&str>) -> usize {
+    raw.and_then(|v| v.trim().parse().ok())
+        .filter(|&v: &usize| v > 0)
+        .unwrap_or(DEFAULT_SWEEP_MAX)
+}
+
+/// UMA rodada do sweep: descobre as ideias em alta, espelha as novas (até o
+/// teto) e re-sincroniza o contador de apoios das já espelhadas. Grava a rodada
+/// em `socrates_sweep_run` — inclusive quando ela falha, pra que "o sweep está
+/// quebrado" seja visível no painel em vez de silencioso.
+///
+/// `Err` só quando NENHUMA fonte respondeu: aí não há o que espelhar e a
+/// diferença entre "o Senado está fora" e "não há ideia nova" importa.
+pub async fn sweep_once(state: &AppState) -> Result<SweepStats, String> {
+    let run_id = Uuid::now_v7();
+    let started_at = state.clock.now();
+    // A linha nasce ANTES da rede: uma rodada travada aparece no painel com
+    // `finished_at` nulo em vez de sumir.
+    if let Err(err) = sqlx::query(
+        "INSERT INTO socrates_sweep_run (id, started_at, found, mirrored, skipped)
+         VALUES ($1, $2, 0, 0, 0)",
+    )
+    .bind(run_id)
+    .bind(started_at)
+    .execute(&state.db)
+    .await
+    {
+        tracing::error!(?err, "socrates sweep: abertura da rodada falhou");
+    }
+
+    let outcome = sweep_inner(state, sweep_max()).await;
+    let (stats, error_text) = match &outcome {
+        Ok(stats) => (stats.clone(), stats.error_text()),
+        Err(msg) => (SweepStats::default(), Some(msg.clone())),
+    };
+    if let Err(err) = sqlx::query(
+        "UPDATE socrates_sweep_run
+            SET finished_at = $2, found = $3, mirrored = $4, skipped = $5, error = $6
+          WHERE id = $1",
+    )
+    .bind(run_id)
+    .bind(state.clock.now())
+    .bind(i32::try_from(stats.found).unwrap_or(i32::MAX))
+    .bind(i32::try_from(stats.mirrored).unwrap_or(i32::MAX))
+    .bind(i32::try_from(stats.skipped).unwrap_or(i32::MAX))
+    .bind(error_text)
+    .execute(&state.db)
+    .await
+    {
+        tracing::error!(?err, "socrates sweep: fechamento da rodada falhou");
+    }
+    outcome
+}
+
+/// O trabalho da rodada, sem o log (que [`sweep_once`] gerencia).
+async fn sweep_inner(state: &AppState, max_new: usize) -> Result<SweepStats, String> {
+    let mut stats = SweepStats::default();
+
+    // As duas fontes são independentes: a queda de uma não cancela a outra.
+    let collection = match fetch_text(COLLECTION_URL).await {
+        Ok(json) => parse_collection(&json),
+        Err(msg) => {
+            stats.errors.push(format!("coleção: {msg}"));
+            Vec::new()
+        }
+    };
+    let html_ids = match fetch_text(PRINCIPAL_URL).await {
+        Ok(html) => extract_ideia_ids(&html),
+        Err(msg) => {
+            stats.errors.push(format!("principalideia: {msg}"));
+            Vec::new()
+        }
+    };
+    if collection.is_empty() && html_ids.is_empty() {
+        return Err(if stats.errors.is_empty() {
+            "Nenhuma Ideia Legislativa encontrada nas fontes do e-Cidadania.".to_owned()
+        } else {
+            stats.errors.join(" | ")
+        });
+    }
+
+    let candidates = merge_candidates(collection, html_ids);
+    stats.found = candidates.len();
+
+    // Uma consulta pra saber quem já está espelhado — evita N lookups.
+    let ids: Vec<String> = candidates.iter().map(|c| c.ideia_id.clone()).collect();
+    let existing: Vec<String> =
+        sqlx::query_scalar("SELECT ideia_id FROM socrates_mirror WHERE ideia_id = ANY($1)")
+            .bind(&ids)
+            .fetch_all(&state.db)
+            .await
+            .map_err(|err| {
+                tracing::error!(?err, "socrates sweep: dedup em lote falhou");
+                "Erro ao consultar os espelhos existentes.".to_owned()
+            })?;
+
+    let now = state.clock.now();
+    for candidate in &candidates {
+        if existing.contains(&candidate.ideia_id) {
+            stats.skipped += 1;
+            // Já espelhada: o que muda com o tempo é só o contador de apoios.
+            if candidate.has_apoios() && refresh_apoios(state, candidate, now).await {
+                stats.updated += 1;
+            }
+            continue;
+        }
+        if stats.mirrored >= max_new {
+            // Teto da rodada: o resto entra na próxima (a cada 6 h).
+            stats.skipped += 1;
+            continue;
+        }
+        match mirror_candidate(state, candidate, ORIGIN_SWEEP).await {
+            Ok(topic_id) => {
+                stats.mirrored += 1;
+                tracing::info!(
+                    ideia_id = %candidate.ideia_id,
+                    %topic_id,
+                    "socrates sweep: ideia espelhada"
+                );
+            }
+            // Corrida com o painel admin — não é erro, só não é nova.
+            Err(MirrorError::AlreadyMirrored(_)) => stats.skipped += 1,
+            Err(err) => {
+                stats.skipped += 1;
+                let msg = match err {
+                    MirrorError::Upstream(msg) => msg,
+                    MirrorError::ForumMissing => {
+                        "o fórum 'senado' não existe nesta instalação".to_owned()
+                    }
+                    _ => "erro de armazenamento".to_owned(),
+                };
+                stats
+                    .errors
+                    .push(format!("ideia {}: {msg}", candidate.ideia_id));
+            }
+        }
+    }
+    Ok(stats)
+}
+
+/// Re-sincroniza `apoiamentos`/`porcentagem_favor`/`apoios_updated_at` de um
+/// espelho existente. `false` = nada foi atualizado (falha logada, rodada segue).
+async fn refresh_apoios(state: &AppState, candidate: &IdeaCandidate, now: DateTime<Utc>) -> bool {
+    let updated = sqlx::query(
+        "UPDATE socrates_mirror
+            SET apoiamentos = $2, porcentagem_favor = $3, apoios_updated_at = $4
+          WHERE ideia_id = $1",
+    )
+    .bind(&candidate.ideia_id)
+    .bind(candidate.apoiamentos.as_deref())
+    .bind(candidate.porcentagem_favor)
+    .bind(now)
+    .execute(&state.db)
+    .await;
+    match updated {
+        Ok(r) => r.rows_affected() > 0,
+        Err(err) => {
+            tracing::warn!(
+                ?err,
+                ideia_id = %candidate.ideia_id,
+                "socrates sweep: refresh de apoios falhou"
+            );
+            false
+        }
+    }
+}
+
+/// GET simples numa URL do portal do Senado (constante deste módulo). Serve
+/// tanto a página da ideia (HTML) quanto a coleção (JSON) — o corpo é texto.
+async fn fetch_text(url: &str) -> Result<String, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(FETCH_TIMEOUT_SECS))
         .user_agent(FETCH_USER_AGENT)
@@ -658,10 +1155,131 @@ mod tests {
 
     #[test]
     fn topic_body_carries_attribution_and_link() {
-        let b = topic_body("Título X", "https://exemplo/id=1");
+        let b = topic_body("Título X", "https://exemplo/id=1", None);
         assert!(b.contains("> Título X"));
         assert!(b.contains("https://exemplo/id=1"));
         assert!(b.contains("SOCRATES"));
         assert!(b.contains("20.000 apoios"));
+        // Sem contador do Senado, o bloco de apoios não aparece.
+        assert!(!b.contains("📊"));
+    }
+
+    #[test]
+    fn topic_body_shows_senado_support_count_when_known() {
+        let b = topic_body("Gasolina pura", "https://exemplo/id=1", Some("20.771"));
+        assert!(b.contains("📊 **20.771 apoios** no e-Cidadania"));
+        // A mensagem-tese continua lá — o contador é contexto, não substituto.
+        assert!(b.contains("argumente a favor ou contra"));
+        assert!(b.contains("SOCRATES"));
+    }
+
+    // --- Sweep: parse das duas fontes públicas do e-Cidadania ---------------
+    // Fixtures inline com o shape REAL observado ao vivo; o Senado nunca é
+    // chamado em teste.
+
+    /// Shape real de `GET /ecidadania/restcolecaomaisideia` (array, ~5 itens).
+    const COLLECTION_FIXTURE: &str = r#"[
+        {"count":"3.235","titulo":"Disponibilização de Gasolina Pura","id":227319,
+         "porcentagemFavor":103,"apoiamentos":"20.771"},
+        {"count":"1.002","titulo":"Piso nacional da enfermagem","id":165188,
+         "porcentagemFavor":98,"apoiamentos":"9.418"}
+    ]"#;
+
+    #[test]
+    fn parses_collection_json_with_real_shape() {
+        let items = parse_collection(COLLECTION_FIXTURE);
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].ideia_id, "227319");
+        assert_eq!(
+            items[0].titulo.as_deref(),
+            Some("Disponibilização de Gasolina Pura")
+        );
+        // O ponto de milhar é do Senado e é preservado literalmente.
+        assert_eq!(items[0].apoiamentos.as_deref(), Some("20.771"));
+        assert_eq!(items[0].porcentagem_favor, Some(103));
+        assert_eq!(items[1].ideia_id, "165188");
+        assert_eq!(items[1].apoiamentos.as_deref(), Some("9.418"));
+    }
+
+    #[test]
+    fn collection_parse_decodes_entities_and_survives_bad_items() {
+        let json = r#"[
+            {"id":1,"titulo":"Sa&uacute;de &amp; Educa&ccedil;&atilde;o","apoiamentos":"7"},
+            {"titulo":"sem id"},
+            {"id":"não numérico","titulo":"id inválido"},
+            "string solta",
+            {"id":2}
+        ]"#;
+        let items = parse_collection(json);
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].ideia_id, "1");
+        assert!(items[0].titulo.as_deref().unwrap().contains('&'));
+        assert_eq!(items[0].apoiamentos.as_deref(), Some("7"));
+        // Item só com id: candidata válida, título vem do fetch depois.
+        assert_eq!(items[1].ideia_id, "2");
+        assert!(items[1].titulo.is_none());
+        assert!(!items[1].has_apoios());
+    }
+
+    #[test]
+    fn collection_parse_is_empty_on_garbage() {
+        assert!(parse_collection("não é json").is_empty());
+        assert!(parse_collection(r#"{"erro":"objeto, não array"}"#).is_empty());
+        assert!(parse_collection("[]").is_empty());
+    }
+
+    #[test]
+    fn extracts_ideia_ids_from_principal_html() {
+        let html = r#"<div class="lista">
+            <a href="/ecidadania/visualizacaoideia?id=227319">Gasolina pura</a>
+            <a href="https://www12.senado.leg.br/ecidadania/visualizacaoideia?id=165188#apoios">Piso</a>
+            <a href="/ecidadania/visualizacaoideia?id=227319">duplicata ignorada</a>
+            <a href="/ecidadania/visualizacaoideia?id=">sem id</a>
+            <a href="/ecidadania/outracoisa?id=999">outra rota</a>
+        </div>"#;
+        assert_eq!(extract_ideia_ids(html), vec!["227319", "165188"]);
+    }
+
+    #[test]
+    fn extract_ideia_ids_empty_without_links() {
+        assert!(extract_ideia_ids("<html><body>nada aqui</body></html>").is_empty());
+    }
+
+    #[test]
+    fn merge_prefers_collection_metadata_and_adds_html_only_ids() {
+        let collection = parse_collection(COLLECTION_FIXTURE);
+        let merged = merge_candidates(collection, vec!["227319".to_owned(), "999001".to_owned()]);
+        // 227319 já vinha da coleção: não duplica e mantém o título/apoios.
+        assert_eq!(merged.len(), 3);
+        assert_eq!(merged[0].ideia_id, "227319");
+        assert_eq!(merged[0].apoiamentos.as_deref(), Some("20.771"));
+        // O id só-HTML entra sem metadados.
+        assert_eq!(merged[2], IdeaCandidate::bare("999001".to_owned()));
+    }
+
+    #[test]
+    fn sweep_error_text_joins_and_clamps() {
+        let clean = SweepStats::default();
+        assert!(clean.error_text().is_none());
+        let mut noisy = SweepStats {
+            errors: vec!["a".repeat(400), "b".repeat(400)],
+            ..SweepStats::default()
+        };
+        let text = noisy.error_text().expect("erros consolidados");
+        assert_eq!(text.chars().count(), RUN_ERROR_MAX_CHARS);
+        noisy.errors = vec!["coleção: timeout".to_owned(), "ideia 1: 404".to_owned()];
+        assert_eq!(
+            noisy.error_text().as_deref(),
+            Some("coleção: timeout | ideia 1: 404")
+        );
+    }
+
+    #[test]
+    fn sweep_max_falls_back_to_default_on_bad_values() {
+        assert_eq!(parse_sweep_max(Some(" 3 ")), 3);
+        assert_eq!(parse_sweep_max(None), DEFAULT_SWEEP_MAX);
+        assert_eq!(parse_sweep_max(Some("abc")), DEFAULT_SWEEP_MAX);
+        // Teto 0 desligaria o sweep sem ninguém perceber.
+        assert_eq!(parse_sweep_max(Some("0")), DEFAULT_SWEEP_MAX);
     }
 }
