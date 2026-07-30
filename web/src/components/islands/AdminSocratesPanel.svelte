@@ -1,15 +1,20 @@
 <script lang="ts">
-  // Painel admin do SOCRATES (migration 0670): cola a URL/ID de uma Ideia
-  // Legislativa do e-Cidadania (Senado) → o gateway busca o título e cria um
-  // tópico no fórum `senado` assinado pelo bot, abrindo o debate completo
-  // (favor × contra) que o portal do Senado não permite. Dedup por ideia:
-  // 409 = já espelhada (o backend devolve o tópico existente em `data`).
+  // Painel admin do SOCRATES (migrations 0670/0671). Dois caminhos pro mesmo
+  // espelho: (a) colar a URL/ID de uma Ideia Legislativa do e-Cidadania, e
+  // (b) o sweep automático, que descobre as ideias em alta no portal do Senado.
+  // Nos dois casos o gateway cria um tópico no fórum `senado` assinado pelo bot,
+  // abrindo o debate completo (favor × contra) que o portal não permite.
+  // Dedup por ideia: 409 = já espelhada (o backend devolve o tópico em `data`).
   import { onMount } from 'svelte';
   import {
     getSocratesMirrors,
+    getSocratesSweepRuns,
+    runSocratesSweep,
     socratesMirrorIdea,
     type SocratesMirrorEntry,
     type SocratesMirrorCreated,
+    type SocratesSweepRun,
+    type SocratesSweepStats,
   } from '../../lib/api';
 
   let items = $state<SocratesMirrorEntry[]>([]);
@@ -21,6 +26,12 @@
   /** Último resultado (criado OU já existente) pra mostrar o link do tópico. */
   let result = $state<{ kind: 'created' | 'duplicate'; path: string } | null>(null);
 
+  let runs = $state<SocratesSweepRun[]>([]);
+  let sweeping = $state(false);
+  /** Resultado da última rodada disparada nesta sessão do painel. */
+  let sweepResult = $state<SocratesSweepStats | null>(null);
+  let sweepError = $state<string | null>(null);
+
   async function load() {
     loading = true;
     const res = await getSocratesMirrors();
@@ -29,6 +40,13 @@
       items = res.data;
     } else {
       error = res.error?.message ?? 'Não foi possível carregar os espelhos.';
+    }
+  }
+
+  async function loadRuns() {
+    const res = await getSocratesSweepRuns();
+    if (res.success && res.data) {
+      runs = res.data;
     }
   }
 
@@ -59,6 +77,22 @@
     error = res.error?.message ?? 'Não foi possível espelhar a ideia.';
   }
 
+  async function sweep() {
+    sweeping = true;
+    sweepError = null;
+    sweepResult = null;
+    const res = await runSocratesSweep();
+    sweeping = false;
+    if (res.success && res.data) {
+      sweepResult = res.data;
+      // A rodada pode ter criado tópicos e atualizado apoios: recarrega as duas.
+      await Promise.all([load(), loadRuns()]);
+      return;
+    }
+    sweepError = res.error?.message ?? 'Não foi possível rodar o sweep.';
+    await loadRuns();
+  }
+
   function fmtDate(iso: string): string {
     try {
       return new Date(iso).toLocaleDateString('pt-BR', {
@@ -73,7 +107,10 @@
     }
   }
 
-  onMount(load);
+  onMount(() => {
+    void load();
+    void loadRuns();
+  });
 </script>
 
 <div class="create card">
@@ -114,24 +151,124 @@
   </div>
 {/if}
 
+<div class="create card">
+  <h2>Sweep automático</h2>
+  <p class="muted small">
+    O sweep lê as Ideias Legislativas <strong>em alta</strong> no e-Cidadania, espelha as que ainda
+    não têm tópico e atualiza o número de apoios das já espelhadas. No servidor ele roda a cada 6
+    horas quando ligado (<code>SOCRATES_SWEEP_ENABLED=true</code>); aqui você dispara uma rodada na
+    hora.
+  </p>
+  <div class="fields">
+    <button class="btn" onclick={sweep} disabled={sweeping}>
+      {sweeping ? 'Rodando…' : 'Rodar sweep agora'}
+    </button>
+  </div>
+</div>
+
+{#if sweepResult}
+  <div class="card ok" role="status">
+    Rodada concluída: <strong>{sweepResult.found}</strong> ideias encontradas,
+    <strong>{sweepResult.mirrored}</strong> espelhadas, <strong>{sweepResult.skipped}</strong>
+    puladas, <strong>{sweepResult.updated}</strong> com apoios atualizados.
+    {#if sweepResult.errors.length > 0}
+      <ul class="small">
+        {#each sweepResult.errors as e (e)}
+          <li>{e}</li>
+        {/each}
+      </ul>
+    {/if}
+  </div>
+{/if}
+{#if sweepError}
+  <div class="card err" role="alert">{sweepError}</div>
+{/if}
+
+<h3>Ideias espelhadas</h3>
 <div class="table-wrap">
   <table>
     <thead>
-      <tr><th>Ideia</th><th>Tópico</th><th>Espelhada em</th><th>Original</th></tr>
+      <tr>
+        <th>Ideia</th>
+        <th>Tópico</th>
+        <th>Apoios no Senado</th>
+        <th>Origem</th>
+        <th>Espelhada em</th>
+        <th>Original</th>
+      </tr>
     </thead>
     <tbody>
       {#if loading}
-        <tr><td colspan="4" class="muted center">Carregando…</td></tr>
+        <tr><td colspan="6" class="muted center">Carregando…</td></tr>
       {:else if items.length === 0}
-        <tr><td colspan="4" class="muted center">Nenhuma ideia espelhada ainda.</td></tr>
+        <tr><td colspan="6" class="muted center">Nenhuma ideia espelhada ainda.</td></tr>
       {:else}
         {#each items as m (m.ideia_id)}
           <tr>
             <td class="mono small">#{m.ideia_id}</td>
             <td><a href={m.path}>{m.topic_title}</a></td>
+            <td class="small">
+              {#if m.apoiamentos}
+                <strong>{m.apoiamentos}</strong>
+                {#if m.apoios_updated_at}
+                  <span class="muted"> · lido em {fmtDate(m.apoios_updated_at)}</span>
+                {/if}
+              {:else}
+                <span class="muted">—</span>
+              {/if}
+            </td>
+            <td class="small">
+              <span class="tag" class:sweep={m.origin === 'sweep'}>
+                {m.origin === 'sweep' ? 'sweep' : 'manual'}
+              </span>
+            </td>
             <td class="small">{fmtDate(m.created_at)}</td>
             <td class="small">
               <a href={m.source_url} target="_blank" rel="noopener noreferrer">e-Cidadania ↗</a>
+            </td>
+          </tr>
+        {/each}
+      {/if}
+    </tbody>
+  </table>
+</div>
+
+<h3>Últimas rodadas do sweep</h3>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Início</th>
+        <th>Fim</th>
+        <th>Encontradas</th>
+        <th>Espelhadas</th>
+        <th>Puladas</th>
+        <th>Erro</th>
+      </tr>
+    </thead>
+    <tbody>
+      {#if runs.length === 0}
+        <tr><td colspan="6" class="muted center">Nenhuma rodada registrada ainda.</td></tr>
+      {:else}
+        {#each runs as r (r.id)}
+          <tr>
+            <td class="small">{fmtDate(r.started_at)}</td>
+            <td class="small">
+              {#if r.finished_at}
+                {fmtDate(r.finished_at)}
+              {:else}
+                <span class="muted">em curso…</span>
+              {/if}
+            </td>
+            <td class="small">{r.found}</td>
+            <td class="small">{r.mirrored}</td>
+            <td class="small">{r.skipped}</td>
+            <td class="small">
+              {#if r.error}
+                <span class="failed">{r.error}</span>
+              {:else}
+                <span class="muted">—</span>
+              {/if}
             </td>
           </tr>
         {/each}
@@ -145,8 +282,10 @@
   .ok { color: #15803d; border-color: #15803d; }
   .err { color: #dc2626; border-color: #dc2626; }
   .err a, .ok a { color: inherit; font-weight: 600; }
+  .ok ul { margin: 0.5rem 0 0; padding-left: 1.2rem; }
   .create h2 { margin: 0 0 0.4rem; font-size: 1rem; }
   .create p { margin: 0 0 0.8rem; }
+  h3 { font-size: 0.95rem; margin: 1.4rem 0 0.5rem; }
   code { font-size: 0.8em; word-break: break-all; }
   .fields { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: end; }
   label { display: grid; gap: 0.2rem; font-size: 0.8rem; color: var(--muted, #64748b); }
@@ -162,4 +301,7 @@
   .center { text-align: center; }
   .mono { font-family: ui-monospace, monospace; }
   .muted { color: var(--muted, #64748b); }
+  .failed { color: #dc2626; }
+  .tag { display: inline-block; padding: 0.1rem 0.45rem; border-radius: 999px; border: 1px solid var(--border-subtle, #cbd5e1); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted, #64748b); }
+  .tag.sweep { border-color: #15803d; color: #15803d; }
 </style>

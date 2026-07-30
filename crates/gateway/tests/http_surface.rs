@@ -2542,8 +2542,7 @@ async fn mandate_crm_scoped_to_operator_only() {
     .expect("author profile");
     let prop_a =
         seed_directed_proposal(&st.db, org, mandate_a, author, "Falta médico no posto").await;
-    let prop_b =
-        seed_directed_proposal(&st.db, org, mandate_b, author, "Buraco na rua do B").await;
+    let prop_b = seed_directed_proposal(&st.db, org, mandate_b, author, "Buraco na rua do B").await;
 
     // Operador A vê o CRM DELE: exatamente a demanda de A, nunca a de B.
     let resp = app
@@ -2631,7 +2630,10 @@ async fn commitments_write_is_gated_read_is_public() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let json = body_json(resp).await;
-    assert_eq!(json["data"]["commitments"].as_array().map(Vec::len), Some(0));
+    assert_eq!(
+        json["data"]["commitments"].as_array().map(Vec::len),
+        Some(0)
+    );
 
     // O operador cria um compromisso válido e tenta um outcome inválido → 400.
     let resp = app
@@ -2757,7 +2759,6 @@ async fn commitment_declare_consult_and_outcome_flow() {
     assert_eq!(c["consultation"]["consultation_id"], consultation_id);
     assert_eq!(c["consultation"]["total"], 0);
 }
-
 
 // ---------------------------------------------------------------------------
 // Orçamento participativo — piloto de mandato (D8.3)
@@ -3159,4 +3160,107 @@ async fn admin_lists_socrates_mirrors() {
     assert_eq!(entry["topic_id"], topic_id.to_string());
     assert_eq!(entry["path"], format!("/f/topico/{topic_id}"));
     assert_eq!(entry["topic_title"], "Ideia espelhada (teste)");
+    // 0671: espelho sem sweep sai como 'manual', ainda sem contador de apoios.
+    assert_eq!(entry["origin"], "manual");
+    assert!(entry["apoiamentos"].is_null());
+    assert!(entry["apoios_updated_at"].is_null());
+}
+
+// ---------------------------------------------------------------------------
+// SOCRATES v2 — sweep automático (migration 0671)
+// ---------------------------------------------------------------------------
+// SECURITY: os dois endpoints novos têm o MESMO gate owner/admin (anônimo →
+// 401, cidadão comum → 403). Nenhum teste chama o portal do Senado: o gate
+// barra antes do sweep, e a listagem de rodadas só lê o log local.
+
+#[tokio::test]
+async fn anonymous_cannot_run_socrates_sweep() {
+    let (app, _) = app().await;
+    let resp = app
+        .oneshot(json_req("POST", "/api/v1/admin/socrates/sweep", None, "{}"))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn non_admin_cannot_run_socrates_sweep() {
+    let (app, st) = app().await;
+    let (_org, _citizen, cookie) = seed_session(&st.db).await;
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/admin/socrates/sweep",
+            Some(&cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn anonymous_cannot_list_socrates_runs() {
+    let (app, _) = app().await;
+    let resp = app
+        .oneshot(get("/api/v1/admin/socrates/runs"))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn non_admin_cannot_list_socrates_runs() {
+    let (app, st) = app().await;
+    let (_org, _citizen, cookie) = seed_session(&st.db).await;
+    let resp = app
+        .oneshot(get_with_cookie("/api/v1/admin/socrates/runs", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+/// Semeia uma rodada FECHADA no log e devolve o id — o admin lê o mesmo shape
+/// que o worker grava, sem que nenhuma rodada real precise rodar.
+async fn seed_socrates_run(db: &Db) -> Uuid {
+    let id = Uuid::now_v7();
+    let now = Utc::now();
+    sqlx::query(
+        "INSERT INTO socrates_sweep_run
+             (id, started_at, finished_at, found, mirrored, skipped, error)
+         VALUES ($1, $2, $3, 5, 2, 3, NULL)",
+    )
+    .bind(id)
+    .bind(now)
+    .bind(now)
+    .execute(db)
+    .await
+    .expect("seed sweep run");
+    id
+}
+
+/// A listagem de rodadas devolve o log com as contagens da rodada.
+#[tokio::test]
+async fn admin_lists_socrates_sweep_runs() {
+    let (app, st) = app().await;
+    let (org, citizen, cookie) = seed_session(&st.db).await;
+    grant_admin(&st.db, org, citizen).await;
+    let run_id = seed_socrates_run(&st.db).await;
+
+    let resp = app
+        .oneshot(get_with_cookie("/api/v1/admin/socrates/runs", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let v = body_json(resp).await;
+    let list = v["data"].as_array().expect("lista de rodadas");
+    let entry = list
+        .iter()
+        .find(|e| e["id"] == run_id.to_string())
+        .expect("rodada semeada na lista");
+    assert_eq!(entry["found"], 5);
+    assert_eq!(entry["mirrored"], 2);
+    assert_eq!(entry["skipped"], 3);
+    assert!(entry["error"].is_null());
+    assert!(!entry["finished_at"].is_null());
 }
