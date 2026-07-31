@@ -3627,6 +3627,14 @@ export interface SocratesMirrorEntry {
   apoios_updated_at: string | null;
   /** `manual` = admin colou a URL; `sweep` = o worker descobriu. */
   origin: string;
+  /** Contador de apoios como NÚMERO (v3, endpoint `restideialegislativa`).
+   *  Preferir este ao texto `apoiamentos` — o painel formata em pt-BR. */
+  apoiamentos_num: number | null;
+  /** Situação institucional no Senado ("Convertida em Proposição", …). */
+  situacao: string | null;
+  /** Quando o corpo do tópico foi reescrito com pauta/apoios/situação.
+   *  `null` = espelho pré-v3 (corpo só com o título) — precisa de backfill. */
+  body_synced_at: string | null;
 }
 export interface SocratesMirrorCreated {
   topic_id: string;
@@ -3637,7 +3645,16 @@ export interface SocratesSweepStats {
   found: number;
   mirrored: number;
   skipped: number;
+  /** Apoios re-sincronizados a partir da coleção (sem fetch por ideia). */
   updated: number;
+  /** Espelhos cujo CORPO do tópico foi reescrito com pauta/apoios/situação. */
+  refreshed: number;
+  errors: string[];
+}
+/** Resultado do backfill: quantos espelhos foram vistos × reescritos. */
+export interface SocratesBackfillStats {
+  total: number;
+  refreshed: number;
   errors: string[];
 }
 /** Uma rodada no log durável — `finished_at` nulo = rodada em curso/interrompida. */
@@ -3663,3 +3680,9 @@ export const runSocratesSweep = () =>
 /** As últimas rodadas do sweep (log de `socrates_sweep_run`). */
 export const getSocratesSweepRuns = () =>
   apiGetCredentialed<SocratesSweepRun[]>('/api/v1/admin/socrates/runs');
+/** Re-sincroniza TODOS os espelhos: busca cada ideia no e-Cidadania e reescreve
+ *  o corpo do tópico com pauta, apoios e situação. Conserta os espelhos antigos
+ *  (criados quando o corpo só tinha o título). Síncrono: fala com o Senado uma
+ *  vez por espelho, então pode levar alguns segundos. */
+export const socratesBackfill = () =>
+  apiPost<SocratesBackfillStats>('/api/v1/admin/socrates/backfill', {});

@@ -10,7 +10,9 @@
     getSocratesMirrors,
     getSocratesSweepRuns,
     runSocratesSweep,
+    socratesBackfill,
     socratesMirrorIdea,
+    type SocratesBackfillStats,
     type SocratesMirrorEntry,
     type SocratesMirrorCreated,
     type SocratesSweepRun,
@@ -31,6 +33,14 @@
   /** Resultado da última rodada disparada nesta sessão do painel. */
   let sweepResult = $state<SocratesSweepStats | null>(null);
   let sweepError = $state<string | null>(null);
+
+  let backfilling = $state(false);
+  let backfillResult = $state<SocratesBackfillStats | null>(null);
+  let backfillError = $state<string | null>(null);
+
+  /** Espelhos ainda no formato pré-v3 (corpo só com o título): o número que
+   *  justifica o botão de backfill. */
+  const pendentes = $derived(items.filter((m) => !m.body_synced_at).length);
 
   async function load() {
     loading = true;
@@ -91,6 +101,27 @@
     }
     sweepError = res.error?.message ?? 'Não foi possível rodar o sweep.';
     await loadRuns();
+  }
+
+  async function backfill() {
+    backfilling = true;
+    backfillError = null;
+    backfillResult = null;
+    const res = await socratesBackfill();
+    backfilling = false;
+    if (res.success && res.data) {
+      backfillResult = res.data;
+      await load();
+      return;
+    }
+    backfillError = res.error?.message ?? 'Não foi possível preencher os espelhos.';
+  }
+
+  /** Apoios como o painel mostra: o número da v3 formatado em pt-BR; na falta
+   *  dele, o texto que o Senado já formatou. */
+  function fmtApoios(m: SocratesMirrorEntry): string | null {
+    if (m.apoiamentos_num !== null) return m.apoiamentos_num.toLocaleString('pt-BR');
+    return m.apoiamentos;
   }
 
   function fmtDate(iso: string): string {
@@ -170,7 +201,8 @@
   <div class="card ok" role="status">
     Rodada concluída: <strong>{sweepResult.found}</strong> ideias encontradas,
     <strong>{sweepResult.mirrored}</strong> espelhadas, <strong>{sweepResult.skipped}</strong>
-    puladas, <strong>{sweepResult.updated}</strong> com apoios atualizados.
+    puladas, <strong>{sweepResult.updated}</strong> com apoios atualizados,
+    <strong>{sweepResult.refreshed}</strong> com o texto do tópico reescrito.
     {#if sweepResult.errors.length > 0}
       <ul class="small">
         {#each sweepResult.errors as e (e)}
@@ -184,6 +216,44 @@
   <div class="card err" role="alert">{sweepError}</div>
 {/if}
 
+<div class="create card">
+  <h2>Preencher espelhos antigos</h2>
+  <p class="muted small">
+    Os espelhos criados antes desta versão têm no tópico <strong>só o título</strong> da ideia — sem
+    a proposta, sem o número de apoios e sem a situação no Senado. Este botão busca cada ideia
+    espelhada no e-Cidadania e <strong>reescreve o texto do tópico</strong> com a pauta completa, os
+    apoios e a situação. Só o texto de abertura muda: votos, comentários e pontuação do debate
+    continuam intactos. Pode rodar quantas vezes quiser — o que já está em dia não é reescrito.
+    {#if pendentes > 0}
+      <br /><strong>{pendentes}</strong>
+      {pendentes === 1 ? 'espelho ainda está' : 'espelhos ainda estão'} no formato antigo.
+    {/if}
+  </p>
+  <div class="fields">
+    <button class="btn" onclick={backfill} disabled={backfilling}>
+      {backfilling ? 'Preenchendo…' : 'Preencher espelhos antigos'}
+    </button>
+  </div>
+</div>
+
+{#if backfillResult}
+  <div class="card ok" role="status">
+    Backfill concluído: <strong>{backfillResult.total}</strong>
+    {backfillResult.total === 1 ? 'espelho verificado' : 'espelhos verificados'},
+    <strong>{backfillResult.refreshed}</strong> atualizados.
+    {#if backfillResult.errors.length > 0}
+      <ul class="small">
+        {#each backfillResult.errors as e (e)}
+          <li>{e}</li>
+        {/each}
+      </ul>
+    {/if}
+  </div>
+{/if}
+{#if backfillError}
+  <div class="card err" role="alert">{backfillError}</div>
+{/if}
+
 <h3>Ideias espelhadas</h3>
 <div class="table-wrap">
   <table>
@@ -192,6 +262,7 @@
         <th>Ideia</th>
         <th>Tópico</th>
         <th>Apoios no Senado</th>
+        <th>Situação</th>
         <th>Origem</th>
         <th>Espelhada em</th>
         <th>Original</th>
@@ -199,20 +270,34 @@
     </thead>
     <tbody>
       {#if loading}
-        <tr><td colspan="6" class="muted center">Carregando…</td></tr>
+        <tr><td colspan="7" class="muted center">Carregando…</td></tr>
       {:else if items.length === 0}
-        <tr><td colspan="6" class="muted center">Nenhuma ideia espelhada ainda.</td></tr>
+        <tr><td colspan="7" class="muted center">Nenhuma ideia espelhada ainda.</td></tr>
       {:else}
         {#each items as m (m.ideia_id)}
           <tr>
             <td class="mono small">#{m.ideia_id}</td>
-            <td><a href={m.path}>{m.topic_title}</a></td>
+            <td>
+              <a href={m.path}>{m.topic_title}</a>
+              {#if !m.body_synced_at}
+                <span class="tag pendente" title="O tópico ainda tem só o título da ideia">
+                  sem pauta
+                </span>
+              {/if}
+            </td>
             <td class="small">
-              {#if m.apoiamentos}
-                <strong>{m.apoiamentos}</strong>
+              {#if fmtApoios(m)}
+                <strong>{fmtApoios(m)}</strong>
                 {#if m.apoios_updated_at}
                   <span class="muted"> · lido em {fmtDate(m.apoios_updated_at)}</span>
                 {/if}
+              {:else}
+                <span class="muted">—</span>
+              {/if}
+            </td>
+            <td class="small">
+              {#if m.situacao}
+                {m.situacao}
               {:else}
                 <span class="muted">—</span>
               {/if}
@@ -304,4 +389,5 @@
   .failed { color: #dc2626; }
   .tag { display: inline-block; padding: 0.1rem 0.45rem; border-radius: 999px; border: 1px solid var(--border-subtle, #cbd5e1); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted, #64748b); }
   .tag.sweep { border-color: #15803d; color: #15803d; }
+  .tag.pendente { border-color: #b45309; color: #b45309; margin-left: 0.4rem; }
 </style>
