@@ -3164,6 +3164,11 @@ async fn admin_lists_socrates_mirrors() {
     assert_eq!(entry["origin"], "manual");
     assert!(entry["apoiamentos"].is_null());
     assert!(entry["apoios_updated_at"].is_null());
+    // 0672: espelho pré-v3 vem com os campos da ideia vazios e `body_synced_at`
+    // nulo — é esse nulo que o painel usa pra oferecer o backfill.
+    assert!(entry["apoiamentos_num"].is_null());
+    assert!(entry["situacao"].is_null());
+    assert!(entry["body_synced_at"].is_null());
 }
 
 // ---------------------------------------------------------------------------
@@ -3218,6 +3223,49 @@ async fn non_admin_cannot_list_socrates_runs() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+// ---------------------------------------------------------------------------
+// SOCRATES v3 — backfill dos espelhos antigos (migration 0672)
+// ---------------------------------------------------------------------------
+// SECURITY: o backfill reescreve o corpo de TODOS os tópicos espelhados, então
+// o gate owner/admin é o que impede um cidadão comum de disparar N chamadas ao
+// portal do Senado e N escritas no fórum. O gate barra ANTES de qualquer fetch
+// — nenhum teste aqui toca o Senado.
+
+#[tokio::test]
+async fn anonymous_cannot_backfill_socrates_mirrors() {
+    let (app, _) = app().await;
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/admin/socrates/backfill",
+            None,
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    let v = body_json(resp).await;
+    assert_eq!(v["error"]["code"], "unauthorized");
+}
+
+#[tokio::test]
+async fn non_admin_cannot_backfill_socrates_mirrors() {
+    let (app, st) = app().await;
+    let (_org, _citizen, cookie) = seed_session(&st.db).await;
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/admin/socrates/backfill",
+            Some(&cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    let v = body_json(resp).await;
+    assert_eq!(v["error"]["code"], "forbidden");
 }
 
 /// Semeia uma rodada FECHADA no log e devolve o id — o admin lê o mesmo shape

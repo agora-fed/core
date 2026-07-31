@@ -8,6 +8,21 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.58.0-socrates-v3 — o espelho carrega a IDEIA INTEIRA, e viva**: o tópico
+  espelhado do e-Cidadania tinha só o TÍTULO da Ideia Legislativa — o cidadão
+  chegava no fórum sem a proposta, sem o que debater — e o número de apoios,
+  embora re-sincronizado no banco pelo sweep, era invisível, porque o corpo do
+  tópico era escrito UMA vez na criação e nunca reescrito. Agora o SOCRATES lê
+  o endpoint JSON público **por ideia** (`restideialegislativa?id=`), que dá a
+  **pauta integral**, os apoios como número e a **situação institucional**
+  ("Convertida em Proposição", "Aguardando envio à CDH"); o scrape de
+  `<title>`/`og:description` vira só fallback. O corpo do tópico passa a trazer
+  a proposta, o placar de apoios (formatado em pt-BR) e a situação — seção
+  vazia é seção omitida. E o sweep **reescreve o corpo** dos tópicos já
+  espelhados quando apoios/situação/pauta mudam (só o `body`: votos, comentários
+  e pontuação são do debate daqui). `POST /admin/socrates/backfill` conserta de
+  uma vez os espelhos criados antes desta versão. Migration
+  `0672_socrates_idea_body`.
 - **0.57.0-votos-argumentos — votar no argumento, não só no tópico** (estilo
   StackOverflow): às vezes o comentário vale mais que o tópico. Cada argumento
   aceita a favor/contra/ponderação (uma posição por cidadão, mutável; local
