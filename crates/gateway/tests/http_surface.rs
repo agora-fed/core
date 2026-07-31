@@ -3327,3 +3327,103 @@ async fn admin_lists_socrates_sweep_runs() {
     assert!(entry["error"].is_null());
     assert!(!entry["finished_at"].is_null());
 }
+
+// ---------------------------------------------------------------------------
+// ÁGORA — criação de diretório exige responsável (party_administrator nasce junto)
+// ---------------------------------------------------------------------------
+
+/// Sem responsável no corpo → 400 e nenhum diretório criado; com responsável
+/// (por citizen_id) → 201 e o vínculo admin nasce na mesma transação.
+#[tokio::test]
+async fn admin_create_directory_requires_and_binds_responsavel() {
+    let (app, st) = app().await;
+    let (org, citizen, cookie) = seed_session(&st.db).await;
+    // A rota é gated por permissão (R0.3): papel com `directory.manage` + binding.
+    let role_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO user_role (id, org_id, name, position, permissions)
+         VALUES ($1, $2, 'Dirigente', 10, ARRAY['directory.manage','party.manage'])",
+    )
+    .bind(role_id)
+    .bind(org)
+    .execute(&st.db)
+    .await
+    .expect("seed role");
+    sqlx::query(
+        "INSERT INTO citizen_role_binding (id, org_id, citizen_id, role_id, created_at)
+         VALUES ($1, $2, $3, $4, now())",
+    )
+    .bind(Uuid::now_v7())
+    .bind(org)
+    .bind(citizen)
+    .bind(role_id)
+    .execute(&st.db)
+    .await
+    .expect("bind role");
+    sqlx::query("INSERT INTO party (org_id, sigla, name) VALUES ($1, 'PT', 'PT')")
+        .bind(org)
+        .execute(&st.db)
+        .await
+        .expect("seed party");
+    let responsavel = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO citizen (id, org_id, verification_level, created_at)
+         VALUES ($1, $2, 'directory', $3)",
+    )
+    .bind(responsavel)
+    .bind(org)
+    .bind(Utc::now())
+    .execute(&st.db)
+    .await
+    .expect("seed responsável");
+
+    // Sem responsável → 400 missing_responsavel, nada criado.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/admin/parties/PT/directories",
+            Some(&cookie),
+            r#"{"esfera":"estadual","uf":"RS","name":"Diretório sem dono"}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let v = body_json(resp).await;
+    assert_eq!(v["error"]["code"], "missing_responsavel");
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM party_directory WHERE org_id = $1 AND name = 'Diretório sem dono'",
+    )
+    .bind(org)
+    .fetch_one(&st.db)
+    .await
+    .unwrap();
+    assert_eq!(count, 0);
+
+    // Com responsável → 201 + vínculo admin no escopo do diretório.
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            "/api/v1/admin/parties/PT/directories",
+            Some(&cookie),
+            &format!(
+                r#"{{"esfera":"estadual","uf":"RS","name":"Diretório Estadual — RS","responsavel_citizen_id":"{responsavel}"}}"#
+            ),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let v = body_json(resp).await;
+    let dir_id = Uuid::parse_str(v["data"].as_str().expect("id do diretório")).unwrap();
+    let (bound_citizen, bound_role): (Uuid, String) = sqlx::query_as(
+        "SELECT citizen_id, role FROM party_administrator
+         WHERE org_id = $1 AND party_sigla = 'PT' AND directory_id = $2",
+    )
+    .bind(org)
+    .bind(dir_id)
+    .fetch_one(&st.db)
+    .await
+    .expect("responsável vinculado na criação");
+    assert_eq!(bound_citizen, responsavel);
+    assert_eq!(bound_role, "admin");
+}

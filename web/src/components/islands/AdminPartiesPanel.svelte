@@ -40,6 +40,9 @@
   let dirUf = $state('');
   let dirMunicipio = $state('');
   let dirName = $state('');
+  // Responsável (@handle) — obrigatório; o backend cria o vínculo admin do
+  // diretório na mesma transação (400 missing_responsavel sem ele).
+  let dirResponsavel = $state('');
 
   // Form: atribuir administrador
   let admHandle = $state('');
@@ -170,9 +173,21 @@
       toast.error('Informe o nome do diretório');
       return;
     }
-    const body: { esfera: string; uf?: string; municipio?: string; name: string } = {
+    const responsavel = dirResponsavel.trim();
+    if (!responsavel) {
+      toast.error('Informe o @handle do responsável pelo diretório');
+      return;
+    }
+    const body: {
+      esfera: string;
+      uf?: string;
+      municipio?: string;
+      name: string;
+      responsavel_handle: string;
+    } = {
       esfera: dirEsfera,
       name,
+      responsavel_handle: responsavel,
     };
     if (dirEsfera !== 'federal') body.uf = dirUf;
     if (dirEsfera === 'municipal') body.municipio = dirMunicipio.trim();
@@ -186,6 +201,7 @@
     toast.success('Diretório criado');
     dirName = '';
     dirMunicipio = '';
+    dirResponsavel = '';
     await selectParty(selected);
   }
 
@@ -369,6 +385,12 @@
               <input bind:value={dirMunicipio} class="input" placeholder="Município" required />
             {/if}
             <input bind:value={dirName} class="input grow" placeholder="Nome do diretório" required />
+            <input
+              bind:value={dirResponsavel}
+              class="input"
+              placeholder="@handle do responsável"
+              required
+            />
             <button class="btn" disabled={scopeBusy}>Criar diretório</button>
           </form>
 

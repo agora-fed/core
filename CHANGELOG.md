@@ -8,6 +8,18 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **0.66.0-diretorio-responsavel — todo diretório nasce com responsável**: criar
+  um diretório partidário agora EXIGE designar um cidadão responsável
+  (`responsavel_citizen_id` ou `responsavel_handle` — `@` opcional) nas duas
+  rotas de criação (`POST /parties/{sigla}/directories` e
+  `POST /admin/parties/{sigla}/directories`). O responsável vira
+  `party_administrator` role `admin` no escopo do diretório, **na mesma
+  transação** da criação — sem responsável válido, o diretório não nasce
+  (400 `missing_responsavel`; handle/id inexistente → 404
+  `responsavel_not_found`, nada gravado). Formulários de criação
+  (PartyDetail e AdminPartiesPanel) ganham o campo "@handle do responsável".
+  Sem migração: reusa `party_administrator` (0204). Diretórios pré-existentes
+  sem responsável ficam como legado (backfill manual se necessário).
 - **0.58.0-socrates-v3 — o espelho carrega a IDEIA INTEIRA, e viva**: o tópico
   espelhado do e-Cidadania tinha só o TÍTULO da Ideia Legislativa — o cidadão
   chegava no fórum sem a proposta, sem o que debater — e o número de apoios,

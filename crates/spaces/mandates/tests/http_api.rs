@@ -524,6 +524,22 @@ async fn seed_citizen(db: &Db, org: OrgId) -> CitizenId {
     c
 }
 
+async fn seed_citizen_with_handle(db: &Db, org: OrgId, handle: &str) -> CitizenId {
+    let c = CitizenId::new();
+    sqlx::query(
+        "INSERT INTO citizen (id, org_id, verification_level, handle, created_at) \
+         VALUES ($1, $2, 'directory', $3, $4)",
+    )
+    .bind(c.as_uuid())
+    .bind(org.as_uuid())
+    .bind(handle)
+    .bind(now())
+    .execute(db)
+    .await
+    .expect("seed citizen with handle");
+    c
+}
+
 async fn seed_party(db: &Db, org: OrgId, sigla: &str) {
     sqlx::query("INSERT INTO party (org_id, sigla, name) VALUES ($1, $2, $2)")
         .bind(org.as_uuid())
@@ -558,8 +574,9 @@ async fn platform_admin_creates_municipal_directory_and_lists_members() {
     seed_party(&db, org, "PT").await;
     let admin = seed_citizen(&db, org).await;
     grant_platform_admin(&db, org, admin).await;
+    let responsavel = seed_citizen(&db, org).await;
 
-    // Cria o diretório municipal do PT em Porto Alegre/RS.
+    // Cria o diretório municipal do PT em Porto Alegre/RS, já com responsável.
     let app = parties_app(db.clone());
     let resp = app
         .oneshot(
@@ -575,7 +592,8 @@ async fn platform_admin_creates_municipal_directory_and_lists_members() {
                         "esfera": "municipal",
                         "uf": "rs",
                         "municipio": "Porto Alegre",
-                        "name": "Diretório Municipal do PT — Porto Alegre"
+                        "name": "Diretório Municipal do PT — Porto Alegre",
+                        "responsavel_citizen_id": responsavel.as_uuid()
                     })
                     .to_string(),
                 ))
@@ -586,6 +604,19 @@ async fn platform_admin_creates_municipal_directory_and_lists_members() {
     let (status, body) = read(resp).await;
     assert_eq!(status, StatusCode::CREATED, "body={body}");
     let dir_id = body["data"]["id"].as_str().unwrap().to_owned();
+
+    // O responsável nasce junto: vínculo admin no escopo do diretório recém-criado.
+    let (resp_citizen, resp_role): (Uuid, String) = sqlx::query_as(
+        "SELECT citizen_id, role FROM party_administrator \
+         WHERE org_id = $1 AND party_sigla = 'PT' AND directory_id = $2::uuid",
+    )
+    .bind(org.as_uuid())
+    .bind(Uuid::parse_str(&dir_id).unwrap())
+    .fetch_one(&db)
+    .await
+    .expect("responsável gravado na criação");
+    assert_eq!(resp_citizen, responsavel.as_uuid());
+    assert_eq!(resp_role, "admin");
 
     // Dois vereadores do PT em Porto Alegre + um de outra cidade (não deve entrar).
     for (name, city) in [
@@ -712,4 +743,133 @@ async fn municipal_directory_rejects_missing_municipio() {
     let (status, body) = read(resp).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"]["code"], json!("federative_shape"));
+}
+
+#[tokio::test]
+async fn create_directory_without_responsavel_is_rejected() {
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    seed_party(&db, org, "PT").await;
+    let admin = seed_citizen(&db, org).await;
+    grant_platform_admin(&db, org, admin).await;
+
+    let app = parties_app(db);
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/parties/PT/directories")
+                .header(CITIZEN_HEADER, admin.as_uuid().to_string())
+                .header(ORG_HEADER, org.as_uuid().to_string())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "org_id": org.as_uuid(),
+                        "esfera": "estadual",
+                        "uf": "RS",
+                        "name": "Diretório sem responsável"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let (status, body) = read(resp).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body={body}");
+    assert_eq!(body["error"]["code"], json!("missing_responsavel"));
+}
+
+#[tokio::test]
+async fn create_directory_resolves_responsavel_by_handle() {
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    seed_party(&db, org, "PT").await;
+    let admin = seed_citizen(&db, org).await;
+    grant_platform_admin(&db, org, admin).await;
+    let responsavel = seed_citizen_with_handle(&db, org, "maria_dirigente").await;
+
+    let app = parties_app(db.clone());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/parties/PT/directories")
+                .header(CITIZEN_HEADER, admin.as_uuid().to_string())
+                .header(ORG_HEADER, org.as_uuid().to_string())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "org_id": org.as_uuid(),
+                        "esfera": "estadual",
+                        "uf": "RS",
+                        "name": "Diretório Estadual do PT — RS",
+                        "responsavel_handle": "@maria_dirigente"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let (status, body) = read(resp).await;
+    assert_eq!(status, StatusCode::CREATED, "body={body}");
+    let dir_id = Uuid::parse_str(body["data"]["id"].as_str().unwrap()).unwrap();
+
+    let citizen: Uuid = sqlx::query_scalar(
+        "SELECT citizen_id FROM party_administrator \
+         WHERE org_id = $1 AND party_sigla = 'PT' AND directory_id = $2 AND role = 'admin'",
+    )
+    .bind(org.as_uuid())
+    .bind(dir_id)
+    .fetch_one(&db)
+    .await
+    .expect("responsável resolvido por handle");
+    assert_eq!(citizen, responsavel.as_uuid());
+}
+
+#[tokio::test]
+async fn create_directory_with_unknown_responsavel_creates_nothing() {
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    seed_party(&db, org, "PT").await;
+    let admin = seed_citizen(&db, org).await;
+    grant_platform_admin(&db, org, admin).await;
+
+    let app = parties_app(db.clone());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/parties/PT/directories")
+                .header(CITIZEN_HEADER, admin.as_uuid().to_string())
+                .header(ORG_HEADER, org.as_uuid().to_string())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "org_id": org.as_uuid(),
+                        "esfera": "estadual",
+                        "uf": "RS",
+                        "name": "Diretório fantasma",
+                        "responsavel_handle": "@nao_existe"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let (status, body) = read(resp).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "body={body}");
+    assert_eq!(body["error"]["code"], json!("responsavel_not_found"));
+
+    // Transação única: sem responsável válido, o diretório NÃO pode ter nascido.
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM party_directory WHERE org_id = $1 AND name = 'Diretório fantasma'",
+    )
+    .bind(org.as_uuid())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(count, 0, "diretório órfão criado apesar do 404");
 }

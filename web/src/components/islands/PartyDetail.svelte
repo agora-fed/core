@@ -93,6 +93,10 @@
   let fUf = $state('');
   let fMunicipio = $state('');
   let fName = $state('');
+  // Responsável pelo diretório (@handle) — obrigatório: o backend recusa
+  // criação sem responsável (missing_responsavel) e grava o vínculo admin
+  // do diretório na mesma transação.
+  let fResponsavel = $state('');
   let submitting = $state(false);
   let formError = $state<string | null>(null);
 
@@ -120,6 +124,7 @@
 
   let formValid = $derived(
     fName.trim().length > 0 &&
+      fResponsavel.trim().length > 0 &&
       (fEsfera === 'federal' || fUf !== '') &&
       (fEsfera !== 'municipal' || fMunicipio.trim().length > 0),
   );
@@ -159,6 +164,7 @@
     const fields: CreateDirectoryFields = {
       esfera: fEsfera,
       name: fName.trim(),
+      responsavel_handle: fResponsavel.trim(),
       ...(fEsfera !== 'federal' ? { uf: fUf } : {}),
       ...(fEsfera === 'municipal' ? { municipio: fMunicipio.trim() } : {}),
     };
@@ -168,6 +174,7 @@
     if (res.success) {
       fName = '';
       fMunicipio = '';
+      fResponsavel = '';
       showForm = false;
       await loadDirectories();
     } else {
@@ -313,6 +320,14 @@
           type="text"
           bind:value={fName}
           placeholder="Ex.: Diretório Municipal do {sigla} — Porto Alegre"
+        />
+      </label>
+      <label>
+        <span>Responsável (@handle)</span>
+        <input
+          type="text"
+          bind:value={fResponsavel}
+          placeholder="@handle de quem responde pelo diretório"
         />
       </label>
       {#if formError}

@@ -166,6 +166,12 @@ pub struct CreateDirectoryBody {
     pub name: String,
     /// Pai na árvore (municipal→estadual→federal). Opcional.
     pub parent_directory_id: Option<Uuid>,
+    /// Responsável pelo diretório — obrigatório informar este campo OU
+    /// `responsavel_handle`. Nasce como `party_administrator` role `admin`
+    /// no escopo do diretório, na mesma transação (nunca há diretório órfão).
+    pub responsavel_citizen_id: Option<Uuid>,
+    /// Responsável por `@handle` (resolvido no servidor, `@` opcional).
+    pub responsavel_handle: Option<String>,
 }
 
 /// Membro derivado de um diretório: um mandato do partido naquele território.
@@ -313,34 +319,110 @@ async fn create_directory(
         }
     }
 
-    let id: Result<Uuid, sqlx::Error> = sqlx::query_scalar(
-        r"INSERT INTO party_directory
-            (org_id, party_sigla, esfera, uf, municipio, name, parent_directory_id)
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
-          RETURNING id",
-    )
-    .bind(body.org_id)
-    .bind(&sigla)
-    .bind(&esfera)
-    .bind(uf.as_deref())
-    .bind(municipio.as_deref())
-    .bind(name)
-    .bind(body.parent_directory_id)
-    .fetch_one(&state.db)
+    // Responsável obrigatório: todo diretório nasce com um cidadão respondendo
+    // por ele (party_administrator role 'admin' no escopo do diretório).
+    let responsavel = if let Some(id) = body.responsavel_citizen_id {
+        id
+    } else if let Some(handle) = body
+        .responsavel_handle
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        let handle = handle.trim_start_matches('@');
+        match sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM citizen WHERE handle = $1 AND org_id = $2",
+        )
+        .bind(handle)
+        .bind(body.org_id)
+        .fetch_optional(&state.db)
+        .await
+        {
+            Ok(Some(id)) => id,
+            Ok(None) => {
+                return fail(
+                    StatusCode::NOT_FOUND,
+                    "responsavel_not_found",
+                    "Responsável não encontrado por handle nesta organização.",
+                )
+            }
+            Err(err) => {
+                tracing::error!(error = ?err, "party directory: resolve responsável");
+                return fail(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "storage",
+                    "Erro interno.",
+                );
+            }
+        }
+    } else {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "missing_responsavel",
+            "Informe o responsável pelo diretório (responsavel_citizen_id ou responsavel_handle).",
+        );
+    };
+
+    // Transação única: diretório + vínculo do responsável, ou nada.
+    let created: Result<Uuid, sqlx::Error> = async {
+        let mut tx = state.db.begin().await?;
+        let id: Uuid = sqlx::query_scalar(
+            r"INSERT INTO party_directory
+                (org_id, party_sigla, esfera, uf, municipio, name, parent_directory_id)
+              VALUES ($1, $2, $3, $4, $5, $6, $7)
+              RETURNING id",
+        )
+        .bind(body.org_id)
+        .bind(&sigla)
+        .bind(&esfera)
+        .bind(uf.as_deref())
+        .bind(municipio.as_deref())
+        .bind(name)
+        .bind(body.parent_directory_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        // `accepted_at = now()`: designação direta por quem já tem poder de escrita
+        // no partido, mesmo shape do assign do gateway (admin_parties).
+        sqlx::query(
+            r"INSERT INTO party_administrator
+                (org_id, party_sigla, directory_id, citizen_id, role, invited_by, accepted_at)
+              VALUES ($1, $2, $3, $4, 'admin', $5, now())",
+        )
+        .bind(body.org_id)
+        .bind(&sigla)
+        .bind(id)
+        .bind(responsavel)
+        .bind(caller.citizen.as_uuid())
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(id)
+    }
     .await;
 
-    match id {
+    match created {
         Ok(id) => (
             StatusCode::CREATED,
             Json(ApiResponse::ok(serde_json::json!({ "id": id }))),
         )
             .into_response(),
-        // FK falha (sigla inexistente na org, ou parent inválido) → 404/409 amigável.
-        Err(sqlx::Error::Database(dberr)) if dberr.is_foreign_key_violation() => fail(
-            StatusCode::NOT_FOUND,
-            "party_or_parent_not_found",
-            "Partido não encontrado nesta organização, ou diretório-pai inválido.",
-        ),
+        // FK falha: sigla inexistente na org, parent inválido, ou o citizen do
+        // responsável (por id direto) não existe → 404 amigável.
+        Err(sqlx::Error::Database(dberr)) if dberr.is_foreign_key_violation() => {
+            if dberr.constraint().is_some_and(|c| c.contains("citizen")) {
+                fail(
+                    StatusCode::NOT_FOUND,
+                    "responsavel_not_found",
+                    "Responsável não encontrado nesta organização.",
+                )
+            } else {
+                fail(
+                    StatusCode::NOT_FOUND,
+                    "party_or_parent_not_found",
+                    "Partido não encontrado nesta organização, ou diretório-pai inválido.",
+                )
+            }
+        }
         Err(err) => {
             tracing::error!(error = ?err, sigla, "party directory: insert");
             fail(

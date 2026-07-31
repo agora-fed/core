@@ -395,13 +395,18 @@ export const getDirectoryMembers = (
     `/api/v1/parties/${encodeURIComponent(sigla)}/directories/${dirId}/members${orgQuery(orgId)}`,
   );
 
-/** Campos para criar um diretório partidário. */
+/** Campos para criar um diretório partidário. Todo diretório nasce com um
+ * responsável (vira `party_administrator` role admin do diretório): informe
+ * `responsavel_handle` OU `responsavel_citizen_id` — sem um deles o backend
+ * responde 400 `missing_responsavel`. */
 export interface CreateDirectoryFields {
   esfera: 'federal' | 'estadual' | 'municipal';
   uf?: string;
   municipio?: string;
   name: string;
   parent_directory_id?: string;
+  responsavel_handle?: string;
+  responsavel_citizen_id?: string;
 }
 
 /** Cria um diretório do partido (admin de plataforma ou do partido). 0.37.0. */
@@ -3358,7 +3363,16 @@ export const listDirectories = (sigla: string) =>
   );
 export const createDirectory = (
   sigla: string,
-  body: { esfera: string; uf?: string; municipio?: string; name: string; parent_directory_id?: string },
+  body: {
+    esfera: string;
+    uf?: string;
+    municipio?: string;
+    name: string;
+    parent_directory_id?: string;
+    /** Obrigatório informar este OU responsavel_citizen_id (400 missing_responsavel sem um). */
+    responsavel_handle?: string;
+    responsavel_citizen_id?: string;
+  },
 ) => apiPost<string>(`/api/v1/admin/parties/${encodeURIComponent(sigla)}/directories`, body);
 export const listPartyAdministrators = (sigla: string) =>
   apiGetCredentialed<PartyAdministratorDto[]>(
