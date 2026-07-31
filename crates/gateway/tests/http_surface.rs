@@ -1271,10 +1271,25 @@ async fn lists_crud_roundtrip() {
 async fn register_with_valid_cpf_starts_verification() {
     // Sem SMTP no ambiente de teste o serviço entra em DEV mode (loga a URL)
     // mas o contrato HTTP é o mesmo: 202 + status verification_sent.
+    //
+    // O cadastro do cidadão exige, desde a 0.65.0 (migrations 0651/0652/0653),
+    // o DOMICÍLIO (UF + município IBGE que exista e pertença à UF) além de nome
+    // completo e nascimento — este teste ficou parado no payload antigo (só
+    // e-mail/senha/CPF) e passou a bater 400. O município vem semeado aqui:
+    // `municipio_ibge` é tabela de referência populada por script
+    // (`scripts/seed-municipios-ibge.sql`), não por migration, então um banco de
+    // teste limpo não tem nenhuma linha — o teste planta a sua.
     let (app, st) = app().await;
     let (org, citizen, _) = seed_session(&st.db).await;
+    sqlx::query(
+        "INSERT INTO municipio_ibge (codigo_ibge, nome, uf) VALUES (3550308, 'São Paulo', 'SP')
+         ON CONFLICT (codigo_ibge) DO NOTHING",
+    )
+    .execute(&st.db)
+    .await
+    .expect("seed municipio");
     let body = format!(
-        r#"{{"org_id":"{org}","email":"novo-{}@example.org","password":"senha-forte-123","cpf":"52998224725"}}"#,
+        r#"{{"org_id":"{org}","email":"novo-{}@example.org","password":"senha-forte-123","cpf":"52998224725","nome_completo":"Maria Aparecida Silva","nascimento":"1985-03-12","uf":"SP","municipio_ibge":3550308}}"#,
         citizen.simple()
     );
     let resp = app
