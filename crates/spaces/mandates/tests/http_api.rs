@@ -873,3 +873,62 @@ async fn create_directory_with_unknown_responsavel_creates_nothing() {
     .unwrap();
     assert_eq!(count, 0, "diretório órfão criado apesar do 404");
 }
+
+/// Índice territorial 0673 (incidente PT-Ubatuba): o mesmo território do mesmo
+/// partido não pode ter dois diretórios — a segunda criação responde 409, mesmo
+/// com nome diferente (território é a identidade, não o rótulo).
+#[tokio::test]
+async fn duplicate_territorial_directory_is_conflict() {
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    seed_party(&db, org, "PT").await;
+    let admin = seed_citizen(&db, org).await;
+    grant_platform_admin(&db, org, admin).await;
+    let responsavel = seed_citizen(&db, org).await;
+
+    let payload = |name: &str| {
+        json!({
+            "org_id": org.as_uuid(),
+            "esfera": "municipal",
+            "uf": "SP",
+            "municipio": "Ubatuba",
+            "name": name,
+            "responsavel_citizen_id": responsavel.as_uuid()
+        })
+        .to_string()
+    };
+    let req = |body: String| {
+        Request::builder()
+            .method("POST")
+            .uri("/parties/PT/directories")
+            .header(CITIZEN_HEADER, admin.as_uuid().to_string())
+            .header(ORG_HEADER, org.as_uuid().to_string())
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap()
+    };
+
+    let resp = parties_app(db.clone())
+        .oneshot(req(payload("Diretório Municipal PT-Ubatuba")))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    let resp = parties_app(db.clone())
+        .oneshot(req(payload("Diretório Municipal PT-Ubatuba (de novo)")))
+        .await
+        .unwrap();
+    let (status, body) = read(resp).await;
+    assert_eq!(status, StatusCode::CONFLICT, "body={body}");
+    assert_eq!(body["error"]["code"], json!("directory_exists"));
+
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM party_directory \
+         WHERE org_id = $1 AND party_sigla = 'PT' AND municipio = 'Ubatuba'",
+    )
+    .bind(org.as_uuid())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(count, 1, "duplicata territorial persistida");
+}

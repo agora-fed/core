@@ -8,7 +8,16 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
-- **0.66.0-diretorio-responsavel — todo diretório nasce com responsável**: criar
+- **0.95.0-diretorio-responsavel — território único por partido**: incidente
+  2026-07-31 — dois "Diretório Municipal PT-Ubatuba" idênticos criados com 49s
+  de intervalo (duplo submit sem retorno visível; o banco aceitava). Migration
+  `0673`: índice único `(org_id, party_sigla, esfera, uf, municipio)` **NULLS
+  NOT DISTINCT** (federal/estadual têm NULL no território) — no máximo 1
+  federal, 1 estadual por UF, 1 municipal por município, por partido/org. As
+  duas rotas de criação respondem **409 `directory_exists`** na duplicata; o
+  duplicado de Ubatuba (`bac0cda9`, sem filhos/admins) foi removido de prod
+  antes do índice.
+- **0.95.0-diretorio-responsavel — todo diretório nasce com responsável**: criar
   um diretório partidário agora EXIGE designar um cidadão responsável
   (`responsavel_citizen_id` ou `responsavel_handle` — `@` opcional) nas duas
   rotas de criação (`POST /parties/{sigla}/directories` e

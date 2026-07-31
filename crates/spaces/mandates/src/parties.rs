@@ -406,6 +406,13 @@ async fn create_directory(
             Json(ApiResponse::ok(serde_json::json!({ "id": id }))),
         )
             .into_response(),
+        // Índice territorial (0673): já existe diretório deste partido neste
+        // território — duplo clique/retry não cria outro.
+        Err(sqlx::Error::Database(dberr)) if dberr.is_unique_violation() => fail(
+            StatusCode::CONFLICT,
+            "directory_exists",
+            "Já existe um diretório deste partido neste território.",
+        ),
         // FK falha: sigla inexistente na org, parent inválido, ou o citizen do
         // responsável (por id direto) não existe → 404 amigável.
         Err(sqlx::Error::Database(dberr)) if dberr.is_foreign_key_violation() => {

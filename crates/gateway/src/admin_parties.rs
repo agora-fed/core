@@ -369,6 +369,12 @@ async fn create_directory(
             .await;
             (StatusCode::CREATED, Json(ApiResponse::ok(id))).into_response()
         }
+        // Índice territorial (0673): duplo clique/retry não duplica diretório.
+        Err(sqlx::Error::Database(e)) if e.is_unique_violation() => fail(
+            StatusCode::CONFLICT,
+            "directory_exists",
+            "Já existe um diretório deste partido neste território.",
+        ),
         Err(sqlx::Error::Database(e)) if e.is_foreign_key_violation() => {
             if e.constraint().is_some_and(|c| c.contains("citizen")) {
                 fail(
