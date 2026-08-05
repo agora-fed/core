@@ -3739,3 +3739,31 @@ export const getChapter = (sigla: string, id: string, orgId = DEFAULT_ORG_ID) =>
   apiGet<ChapterDto | null>(
     `/api/v1/parties/${encodeURIComponent(sigla)}/chapters/${encodeURIComponent(id)}${orgQuery(orgId)}`,
   );
+
+// --- Tag-a-representative (issue #3, migration 0676) ------------------------
+/** Aggregate view of one tagged mandate on a topic (never lists citizens). */
+export interface TopicRepresentativeDto {
+  mandate_id: string;
+  display_name: string;
+  office: string;
+  party: string | null;
+  state: string | null;
+  avatar_url: string | null;
+  tag_count: number;
+}
+export interface TopicRepresentativesDto {
+  representatives: TopicRepresentativeDto[];
+  total_tags: number;
+  /** The mandate the CALLER tagged (null when anonymous or untagged). */
+  mine: string | null;
+}
+export const getTopicRepresentatives = (topicId: string) =>
+  apiGet<TopicRepresentativesDto>(
+    `/api/v1/topics/${encodeURIComponent(topicId)}/representatives`,
+  );
+export const tagTopicRepresentative = (topicId: string, mandateId: string) =>
+  apiPost<null>(`/api/v1/topics/${encodeURIComponent(topicId)}/representatives`, {
+    mandate_id: mandateId,
+  });
+export const untagTopicRepresentative = (topicId: string) =>
+  apiDelete<null>(`/api/v1/topics/${encodeURIComponent(topicId)}/representatives`);

@@ -39,6 +39,7 @@
   import { toast } from '../../lib/toasts';
   import Modal from '../ui/Modal.svelte';
   import Button from '../ui/Button.svelte';
+  import RepresentativeTagWidget from '../RepresentativeTagWidget.svelte';
 
   type View = 'home' | 'forum' | 'topic';
 
@@ -816,6 +817,11 @@
         <!-- eslint-disable-next-line svelte/no-at-html-tags — mdToHtml escapa TODO o input antes das regras -->
         {@html mdToHtml(detail.topic.body)}
       </div>
+
+      <!-- Tag-a-representative (issue #3): the citizen marks the mandate who
+           should care about this cause; the mandate gets a daily consolidated
+           e-mail (aggregates only — LGPD). -->
+      <RepresentativeTagWidget topicId={detail.topic.id} />
 
       <!-- 🌉 Pontos de consenso (D8.2): ACIMA do placar de torcida. A síntese
            estilo Polis/vTaiwan — os argumentos-ponte, endossados pelos DOIS

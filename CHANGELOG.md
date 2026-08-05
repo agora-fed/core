@@ -7,6 +7,25 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 
 ## [Unreleased]
 
+## [0.69.0] — 2026-08-05
+
+### Added
+- **Tag-a-representative** (issue #3): on any forum topic, a citizen marks the
+  mandate (deputy/senator) who should represent them on that cause — widget on
+  the topic page with the public aggregate ranking (never individual citizens
+  — LGPD/ADR-0005 posture) and one pick per citizen per topic (re-tagging
+  replaces). Once a day the worker compiles each mandate's new tags and sends
+  ONE consolidated e-mail to the mandate's public address ("here is what the
+  population is alerting you about"), with the claim-your-mandate path in the
+  footer; onboarded mandates (identity binding) are skipped — they will get
+  the in-platform feed instead. Sweep is idempotent per (mandate, day);
+  federated interactions can never trigger it (tags require a local session).
+  API: `GET/POST/DELETE /api/v1/topics/{id}/representatives` (English
+  contract). Full pyramid: 2 backend integration tests (lifecycle + privacy
+  wall, sweep idempotency/consolidation), 5 frontend contract tests, 3
+  post-deploy Playwright checks (aggregate shape, anonymous 401, widget
+  render), all wired in CI.
+
 ## [0.68.0] — 2026-08-05
 
 ### Added

@@ -29,3 +29,6 @@
 # SOCRATES (0670): o espelho de Ideia Legislativa aponta pro tópico de fórum criado —
 # vínculo 1:1 deliberado com a crate forums (o espelho SÓ existe em função do tópico).
 0670_socrates_mirror.sql forum_topic
+# Tag-a-representative (issue #3): tags join a forum topic (forums crate) and a mandate
+# (mandates crate) — the deliberate cross-module link IS the feature.
+0676_topic_representative_tags.sql forum_topic

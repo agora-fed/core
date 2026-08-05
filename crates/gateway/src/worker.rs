@@ -409,6 +409,10 @@ pub fn spawn(state: AppState) {
             loop {
                 ticker.tick().await;
                 crate::forum_mailer::sweep(&db, &origin).await;
+                // Daily consolidated representative alert (0676, issue #3):
+                // self-gating — the (mandate, day) claim makes every extra
+                // tick a no-op, so riding the 60s loop is free.
+                crate::topic_representatives::daily_alert_sweep(&db, &origin).await;
             }
         });
     }

@@ -87,6 +87,7 @@ pub mod social_graph;
 pub mod socrates_mirror;
 pub mod threshold_policy;
 pub mod titulo_eleitor;
+pub mod topic_representatives;
 pub mod totp;
 pub mod web_push;
 pub mod webhooks;
@@ -205,6 +206,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(admin_content::routes(state.clone()))
         // Runtime branding: admin-editable logo/name/colors (Odoo-style, 0674).
         .merge(admin_branding::routes(state.clone()))
+        // Tag-a-representative: citizens mark a mandate on a cause (0676, issue #3).
+        .merge(topic_representatives::routes(state.clone()))
         // spaces
         .merge(dsoc_processes::routes(state.clone()))
         .merge(dsoc_assemblies::routes(state.clone()))

@@ -3524,3 +3524,237 @@ async fn branding_public_defaults_gates_and_roundtrip() {
         assert_eq!(body["data"]["colors"]["accent-strong"], "#115c2d");
     }
 }
+
+// ---------------------------------------------------------------------------
+// TAG-A-REPRESENTATIVE — citizens mark a mandate on a cause (0676, issue #3)
+// ---------------------------------------------------------------------------
+
+/// Seed forum + visible topic; returns the topic id.
+async fn seed_topic(db: &Db, org: Uuid, author: Uuid) -> Uuid {
+    let now = Utc::now();
+    let forum = Uuid::now_v7();
+    let slug = format!("rep-teste-{}", &forum.simple().to_string()[..12]);
+    sqlx::query(
+        "INSERT INTO forum (id, org_id, slug, full_path, name, kind, created_at)
+         VALUES ($1, $2, $3, $3, 'Fórum (teste)', 'institucional', $4)",
+    )
+    .bind(forum)
+    .bind(org)
+    .bind(&slug)
+    .bind(now)
+    .execute(db)
+    .await
+    .expect("seed forum");
+    let topic = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO forum_topic (id, forum_id, author_id, title, body, created_at)
+         VALUES ($1, $2, $3, 'Isenção teste (causa)', 'corpo', $4)",
+    )
+    .bind(topic)
+    .bind(forum)
+    .bind(author)
+    .bind(now)
+    .execute(db)
+    .await
+    .expect("seed topic");
+    topic
+}
+
+/// Seed a mandate with a public e-mail; returns the mandate id.
+async fn seed_rep_mandate(db: &Db, org: Uuid, name: &str) -> Uuid {
+    let id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO mandate (id, org_id, office, display_name, public_email, is_candidate, \
+         created_at, party, uf, sphere) \
+         VALUES ($1, $2, 'deputado_federal', $3, $4, false, $5, 'PT', 'SP', 'federal')",
+    )
+    .bind(id)
+    .bind(org)
+    .bind(name)
+    .bind(format!("gab-{}@camara.test", id.simple()))
+    .bind(Utc::now())
+    .execute(db)
+    .await
+    .expect("seed mandate");
+    id
+}
+
+#[tokio::test]
+async fn representative_tag_full_lifecycle_and_privacy() {
+    let (app, st) = app().await;
+    let (org, citizen, cookie) = seed_session(&st.db).await;
+    let topic = seed_topic(&st.db, org, citizen).await;
+    let mandate = seed_rep_mandate(&st.db, org, "Dep. Teste").await;
+
+    // Anonymous cannot tag.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/topics/{topic}/representatives"),
+            None,
+            &format!("{{\"mandate_id\":\"{mandate}\"}}"),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+    // The citizen tags their representative.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/topics/{topic}/representatives"),
+            Some(&cookie),
+            &format!("{{\"mandate_id\":\"{mandate}\"}}"),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Re-tagging the SAME citizen replaces, never duplicates (one per citizen).
+    let mandate2 = seed_rep_mandate(&st.db, org, "Dep. Dois").await;
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/topics/{topic}/representatives"),
+            Some(&cookie),
+            &format!("{{\"mandate_id\":\"{mandate2}\"}}"),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Public aggregate: one tag total, on mandate2, `mine` set for the caller —
+    // and the raw payload NEVER contains the citizen's UUID (LGPD posture).
+    let resp = app
+        .clone()
+        .oneshot(get_with_cookie(
+            &format!("/api/v1/topics/{topic}/representatives"),
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_json(resp).await;
+    assert_eq!(body["data"]["total_tags"], 1, "body={body}");
+    assert_eq!(
+        body["data"]["representatives"][0]["mandate_id"],
+        mandate2.to_string()
+    );
+    assert_eq!(body["data"]["representatives"][0]["tag_count"], 1);
+    assert_eq!(body["data"]["mine"], mandate2.to_string());
+    assert!(
+        !body.to_string().contains(&citizen.to_string()),
+        "citizen UUID leaked in aggregate payload"
+    );
+
+    // Unknown mandate is a validation error; unknown topic a 404.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/topics/{topic}/representatives"),
+            Some(&cookie),
+            &format!("{{\"mandate_id\":\"{}\"}}", Uuid::now_v7()),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let resp = app
+        .clone()
+        .oneshot(get(&format!(
+            "/api/v1/topics/{}/representatives",
+            Uuid::now_v7()
+        )))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+    // Untag: aggregate returns to zero.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "DELETE",
+            &format!("/api/v1/topics/{topic}/representatives"),
+            Some(&cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp = app
+        .clone()
+        .oneshot(get_with_cookie(
+            &format!("/api/v1/topics/{topic}/representatives"),
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    let body = body_json(resp).await;
+    assert_eq!(body["data"]["total_tags"], 0);
+    assert!(body["data"]["mine"].is_null());
+}
+
+#[tokio::test]
+async fn representative_daily_sweep_is_idempotent_and_consolidated() {
+    let (_, st) = app().await;
+    let (org, citizen, _) = seed_session(&st.db).await;
+    let topic = seed_topic(&st.db, org, citizen).await;
+    let mandate = seed_rep_mandate(&st.db, org, "Dep. Sweep").await;
+
+    // Two citizens tagged YESTERDAY (the sweep's window).
+    let yesterday = Utc::now() - Duration::hours(26);
+    for _ in 0..2 {
+        let other = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO citizen (id, org_id, oidc_subject, verification_level, created_at) \
+             VALUES ($1, $2, $3, 'email', $4)",
+        )
+        .bind(other)
+        .bind(org)
+        .bind(format!("sub-{}", other.simple()))
+        .bind(Utc::now())
+        .execute(&st.db)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO topic_representative_tag \
+             (org_id, topic_id, mandate_id, citizen_id, created_at) \
+             VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(org)
+        .bind(topic)
+        .bind(mandate)
+        .bind(other)
+        .bind(yesterday)
+        .execute(&st.db)
+        .await
+        .unwrap();
+    }
+
+    // First sweep: claims (mandate, day) with the consolidated count.
+    // No SMTP in tests -> DEV mode (logged), still marked sent.
+    dsoc_gateway::topic_representatives::daily_alert_sweep(&st.db, "https://test.example").await;
+    let (count, sent): (i32, bool) = sqlx::query_as(
+        "SELECT tag_count, sent_at IS NOT NULL FROM mandate_alert_delivery \
+         WHERE mandate_id = $1",
+    )
+    .bind(mandate)
+    .fetch_one(&st.db)
+    .await
+    .expect("delivery row");
+    assert_eq!(count, 2, "consolidated: ONE row for TWO tags");
+    assert!(sent, "DEV mode still marks the daily send as satisfied");
+
+    // Second sweep: idempotent — still exactly one delivery row.
+    dsoc_gateway::topic_representatives::daily_alert_sweep(&st.db, "https://test.example").await;
+    let rows: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM mandate_alert_delivery WHERE mandate_id = $1")
+            .bind(mandate)
+            .fetch_one(&st.db)
+            .await
+            .unwrap();
+    assert_eq!(rows, 1, "sweep must never double-send a day");
+}
