@@ -1,36 +1,37 @@
-//! Localização (l10n): as abstrações **agnósticas de país** do core (ADR-0015, estilo Odoo
-//! `l10n_br`). O núcleo do ÁGORA não conhece CPF, Título de Eleitor ou IBGE — só conhece os
-//! três traits deste módulo. Cada país pluga um módulo `l10n_<cc>` (ex.: `dsoc-l10n-br`) que os
-//! implementa. Identificadores em inglês (ADR-0013); a cópia de UI específica fica na localização.
+//! Localization (l10n): the core's **country-agnostic** abstractions (ADR-0015, Odoo
+//! `l10n_br` style). The AGORA core knows nothing about CPF, voter registry or IBGE — it knows
+//! only the three traits in this module. Each country plugs an `l10n_<cc>` module (e.g.
+//! `dsoc-l10n-br`) that implements them. Identifiers in English (ADR-0013); country-specific UI
+//! copy lives in the localization module.
 //!
-//! - [`IdentityVerifier`]   — confronta um **documento de identidade** (CPF, SSN, DNI, …).
-//! - [`TerritorialProvider`] — hierarquia **país → estado → município** (eixo de escopo de
-//!   sorteio/federação/campanha).
-//! - [`VoterRegistration`]  — conceito **opcional** de registro eleitoral (Título, etc.).
+//! - [`IdentityVerifier`]    — checks an **identity document** (CPF, SSN, DNI, …).
+//! - [`TerritorialProvider`] — the **country → state → municipality** hierarchy (the scope axis
+//!   for sortition/federation/campaigns).
+//! - [`VoterRegistration`]   — the **optional** notion of an electoral registry.
 
 use crate::error::Result;
 
 // ---------------------------------------------------------------------------
-// IdentityVerifier — documento de identidade
+// IdentityVerifier — identity document
 // ---------------------------------------------------------------------------
 
-/// Nível de garantia de um documento de identidade — do menos ao mais forte.
+/// Assurance level of an identity document — weakest to strongest.
 ///
-/// Mapeia diretamente o antigo `CpfStatus` do `l10n_br`, mas em termos neutros: `Validated` é a
-/// checagem algorítmica (dígitos verificadores), `Verified` é a confirmação contra uma fonte
-/// oficial do país.
+/// Maps directly onto the former `CpfStatus` from `l10n_br`, in neutral terms: `Validated` is
+/// the algorithmic check (check digits), `Verified` is confirmation against an official source
+/// of the country.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum IdentityAssurance {
-    /// Ainda não checado.
+    /// Not checked yet.
     Unverified,
-    /// Válido algoritmicamente (dígitos verificadores).
+    /// Algorithmically valid (check digits).
     Validated,
-    /// Confirmado contra a fonte oficial do país (KYC/registro).
+    /// Confirmed against the country's official source (KYC/registry).
     Verified,
 }
 
 impl IdentityAssurance {
-    /// Forma estável pra persistência/auditoria (compatível com o schema atual: `unverified` /
+    /// Stable form for persistence/audit (compatible with the current schema: `unverified` /
     /// `validated` / `verified`).
     #[must_use]
     pub fn as_str(self) -> &'static str {
@@ -42,47 +43,47 @@ impl IdentityAssurance {
     }
 }
 
-/// Faixa de confiança de um confronto de identidade contra a base autorizada do país (não é
-/// probabilidade, é faixa calibrada). Neutra: cada localização mapeia sua nomenclatura de serviço
-/// (ex.: `ACEITA`/`REVISA`/`ESCALA`/`REJEITA` no BR) pra estas variantes.
+/// Confidence band of an identity match against the country's authorized base (not a
+/// probability — a calibrated band). Neutral: each localization maps its service's own
+/// vocabulary (e.g. `ACEITA`/`REVISA`/`ESCALA`/`REJEITA` in BR) onto these variants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdentityBand {
-    /// Bate com folga — identidade forte.
+    /// Clear match — strong identity.
     Accept,
-    /// Bate, mas merece revisão humana.
+    /// Matches, but warrants human review.
     Review,
-    /// Sinal ambíguo — escalar.
+    /// Ambiguous signal — escalate.
     Escalate,
-    /// Não bate — bloquear.
+    /// No match — block.
     Reject,
-    /// Verificação não executada (serviço ausente/fora) — degradação graciosa.
+    /// Verification not performed (service absent/down) — graceful degradation.
     Skipped,
 }
 
-/// O que se envia pra confrontar um documento com a base autorizada (agnóstico de país).
+/// What is submitted to match a document against the authorized base (country-agnostic).
 #[derive(Debug, Clone)]
 pub struct IdentityCheck {
-    /// Número do documento normalizado (CPF, SSN, DNI, …), sem pontuação.
+    /// Normalized document number (CPF, SSN, DNI, …), punctuation stripped.
     pub document_id: String,
-    /// Nome completo informado pela pessoa.
+    /// Full name as given by the person.
     pub full_name: String,
-    /// Data de nascimento `YYYY-MM-DD`, se informada.
+    /// Date of birth `YYYY-MM-DD`, when provided.
     pub birth_date: Option<String>,
-    /// Sexo (`M`/`F`), se informado.
+    /// Sex (`M`/`F`), when provided.
     pub sex: Option<String>,
 }
 
-/// Veredito verdict-only de um confronto de identidade (nunca devolve o dado armazenado).
+/// Verdict-only outcome of an identity match (never returns the stored data).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct IdentityOutcome {
-    /// A base encontrou o documento?
+    /// Did the base find the document?
     pub found: bool,
-    /// A faixa calibrada do confronto.
+    /// The calibrated band of the match.
     pub band: IdentityBand,
 }
 
 impl IdentityOutcome {
-    /// Veredito de "não verificado" — usado na degradação graciosa (fail-open).
+    /// The "not verified" verdict — used for graceful degradation (fail-open).
     #[must_use]
     pub fn skipped() -> Self {
         Self {
@@ -91,61 +92,62 @@ impl IdentityOutcome {
         }
     }
 
-    /// Cadastro pode prosseguir? Tudo menos `Reject` segue (Skipped inclusive — fail-open).
+    /// May registration proceed? Everything but `Reject` does (including Skipped — fail-open).
     #[must_use]
     pub fn allows_registration(&self) -> bool {
         !matches!(self.band, IdentityBand::Reject)
     }
 
-    /// Identidade fortemente confirmada (`Accept`) → candidata a `IdentityAssurance::Verified`.
+    /// Strongly confirmed identity (`Accept`) → candidate for `IdentityAssurance::Verified`.
     #[must_use]
     pub fn is_strong(&self) -> bool {
         matches!(self.band, IdentityBand::Accept)
     }
 
-    /// Precisa de revisão humana (`Review`/`Escalate`).
+    /// Needs human review (`Review`/`Escalate`).
     #[must_use]
     pub fn needs_review(&self) -> bool {
         matches!(self.band, IdentityBand::Review | IdentityBand::Escalate)
     }
 }
 
-/// Porta plugável de verificação de **documento de identidade** do país. A localização pluga a
-/// implementação (BR = CPF: dígitos verificadores + SaaS cpf-verify). Nunca entra em pânico; erro
-/// de transporte vira [`IdentityOutcome::skipped`].
+/// Pluggable port for verifying the country's **identity document**. The localization plugs in
+/// the implementation (BR = CPF: check digits + the cpf-verify SaaS). Never panics; a transport
+/// error becomes [`IdentityOutcome::skipped`].
 #[async_trait::async_trait]
 pub trait IdentityVerifier: Send + Sync {
-    /// Confronta a consulta com a base autorizada do país.
+    /// Match the query against the country's authorized base.
     async fn verify_identity(&self, check: &IdentityCheck) -> IdentityOutcome;
 }
 
 // ---------------------------------------------------------------------------
-// TerritorialProvider — país → estado → município
+// TerritorialProvider — country → state → municipality
 // ---------------------------------------------------------------------------
 
-/// Um município (unidade territorial de base). Neutro: no BR o `code` é o código IBGE.
+/// A municipality (the base territorial unit). Neutral: in BR the `code` is the IBGE code.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Municipality {
-    /// Código estável da unidade (IBGE no BR).
+    /// Stable code of the unit (IBGE in BR).
     pub code: i32,
-    /// Nome apresentável.
+    /// Display name.
     pub name: String,
 }
 
-/// Porta plugável da hierarquia territorial do país. A localização pluga a fonte (BR = tabela
-/// `municipio_ibge`). É o eixo de escopo de sorteio/federação/campanha (ADR-0014).
+/// Pluggable port for the country's territorial hierarchy. The localization plugs in the source
+/// (BR = the `municipio_ibge` table). This is the scope axis for sortition/federation/campaigns
+/// (ADR-0014).
 #[async_trait::async_trait]
 pub trait TerritorialProvider: Send + Sync {
-    /// Municípios de uma subdivisão de 1º nível (UF no BR), ordenados por nome.
+    /// Municipalities of a first-level subdivision (UF in BR), ordered by name.
     ///
     /// # Errors
-    /// [`crate::Error::Storage`] em falha de persistência.
+    /// [`crate::Error::Storage`] on a persistence failure.
     async fn municipalities(&self, subdivision: &str) -> Result<Vec<Municipality>>;
 
-    /// O município `code` pertence à subdivisão `subdivision`? (Validação de domicílio.)
+    /// Does municipality `code` belong to `subdivision`? (Residence validation.)
     ///
     /// # Errors
-    /// [`crate::Error::Storage`] em falha de persistência.
+    /// [`crate::Error::Storage`] on a persistence failure.
     async fn municipality_in_subdivision(&self, code: i32, subdivision: &str) -> Result<bool>;
 }
 
@@ -153,28 +155,29 @@ pub trait TerritorialProvider: Send + Sync {
 // VoterRegistration — registro eleitoral opcional
 // ---------------------------------------------------------------------------
 
-/// Porta plugável do **registro eleitoral** do país (conceito opcional; âncora fraca). BR = Título
-/// de Eleitor (12 dígitos + 2 DV, algoritmo TSE). A validação é pura/offline; a promoção a
-/// `verified` (cross-check com a fonte oficial) fica a cargo da localização.
+/// Pluggable port for the country's **electoral registry** (optional concept; weak anchor).
+/// BR = Título de Eleitor (12 digits + 2 check digits, TSE algorithm). Validation is
+/// pure/offline; promotion to `verified` (cross-check against the official source) is the
+/// localization's responsibility.
 pub trait VoterRegistration: Send + Sync {
-    /// Valida algoritmicamente o número do registro e devolve a forma **normalizada** (só dígitos).
+    /// Algorithmically validate the registry number and return the **normalized** form (digits only).
     ///
     /// # Errors
-    /// [`crate::Error::Validation`] com mensagem pública (pt-BR na instalação BR) quando inválido.
+    /// [`crate::Error::Validation`] with a public message (pt-BR on the BR installation) when invalid.
     fn validate(&self, raw: &str) -> Result<String>;
 }
 
 // ---------------------------------------------------------------------------
-// Localization — o bundle resolvido da configuração da instalação
+// Localization — the bundle resolved from the installation's configuration
 // ---------------------------------------------------------------------------
 
-/// A localização ativa da instalação (Pindorama → `l10n_br`). Agrupa os provedores pra que o
-/// wiring resolva um único `Arc<dyn Localization>` a partir do código do país configurado.
+/// The installation's active localization (Pindorama → `l10n_br`). Groups the providers so the
+/// wiring resolves a single `Arc<dyn Localization>` from the configured country code.
 pub trait Localization: Send + Sync {
-    /// Código ISO-3166-1 alfa-2 do país (ex.: `"BR"`).
+    /// ISO-3166-1 alpha-2 country code (e.g. `"BR"`).
     fn country_code(&self) -> &'static str;
 
-    /// Verificação de registro eleitoral, se o país tiver o conceito.
+    /// Electoral-registry verification, when the country has the concept.
     fn voter_registration(&self) -> Option<&dyn VoterRegistration>;
 }
 

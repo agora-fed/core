@@ -76,8 +76,8 @@ pub enum Event {
         cluster: ClusterId,
         /// The PRINCIPAL target (kept for wire/back-compat with events already in the log).
         mandate: MandateId,
-        /// TODOS os destinatários da proposta, principal incluído (0537 multi-gabinete).
-        /// Vazio em eventos antigos — consumidores caem pra `vec![mandate]`.
+        /// ALL recipients of the proposal, primary included (0537 multi-office).
+        /// Empty on legacy events — consumers fall back to `vec![mandate]`.
         #[serde(default)]
         mandates: Vec<MandateId>,
     },

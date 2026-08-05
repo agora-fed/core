@@ -48,7 +48,7 @@ pub enum Error {
 
     /// O chamador estourou um limite de taxa (por IP, por citizen, etc.).
     /// Mensagem em pt-BR (public-safe) segue no wrapper — a domain layer
-    /// escolhe *quantos*/em *que janela* segundo a política do caso.
+    /// picks *how many* / *in which window* according to the policy at hand.
     #[error("rate limited: {0}")]
     RateLimit(String),
 }

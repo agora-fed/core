@@ -6,9 +6,10 @@
 //! system introspects to build the permission matrix (R4), gate routes/nav per org (R0.5/R0.7),
 //! and validate the registry in CI.
 //!
-//! Enxuto por decisão da revisão adversarial (ADR-0011 emenda 4): sem `vertical`/`kind`/
-//! `migration_ranges` até haver consumidor. E **sem** `git mv` de crates — os módulos seguem nos
-//! tiers `platform/spaces/components/clients` que já existem; o manifesto é o metadado, não a pasta.
+//! Kept lean by the adversarial review (ADR-0011 amendment 4): no `vertical`/`kind`/
+//! `migration_ranges` until a consumer exists. And **no** `git mv` of crates — modules stay in
+//! the existing `platform/spaces/components/clients` tiers; the manifest is the metadata, not
+//! the folder.
 
 use dsoc_core::VerificationLevel;
 
@@ -110,7 +111,7 @@ pub struct ModuleManifest {
     pub core: bool,
     /// The `admin_feature_flag` key that toggles it per org (convention `module.<id>`).
     pub flag_key: &'static str,
-    /// Whether the "política-BR" default profile ships it enabled.
+    /// Whether the Brazilian-politics default profile ships it enabled.
     pub default_enabled: bool,
     /// Whether an org admin may actually toggle it (false = locked cluster, e.g. the consequence
     /// loop, or core). Emenda ADR-0011 P2.3.

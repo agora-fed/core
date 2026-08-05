@@ -42,6 +42,7 @@ jobs:
           ./scripts/check-fk-targets.sh
           ./scripts/check-lints-optin.sh
           ./scripts/scan-secrets.sh
+          ./scripts/check-english-docs.sh
 
   test:
     runs-on: ubuntu-latest

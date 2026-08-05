@@ -1,20 +1,20 @@
-//! Renderização dos templates de e-mail editáveis (`email_template`,
+//! Rendering of the editable e-mail templates (`email_template`,
 //! migrations 0151 + 0524).
 //!
 //! Mora no Tier-0 porque tanto o gateway (proposal_delivery, civic_notify,
 //! worker) quanto `dsoc-auth` (signup_verify, password_reset, mandate_invite)
-//! enviam e-mail — e o crate de auth não pode depender do gateway. O CRUD
-//! admin (`/admin/email-templates`) continua no gateway; aqui é só leitura.
+//! send e-mail — and the auth crate cannot depend on the gateway. The admin
+//! CRUD (`/admin/email-templates`) stays in the gateway; this is read-only.
 //!
 //! Sintaxe do template: apenas `{{var}}`. Sem loops, sem if, sem escape HTML
-//! (todos os e-mails são text/plain). Placeholder desconhecido fica literal
-//! `{{foo}}` na saída — sinaliza pro admin que a variável está errada.
+//! (every e-mail is text/plain). An unknown placeholder stays literal as
+//! `{{foo}}` in the output — it signals to the admin that the variable is wrong.
 
 use sqlx::PgPool;
 use std::collections::HashMap;
 
 /// Busca o template `key` no DB e renderiza subject/body com o contexto.
-/// Retorna `(subject_final, body_final)` ou `None` se a chave não existe ou
+/// Returns `(final_subject, final_body)`, or `None` when the key does not exist or
 /// o lookup falhou (o caller cai no fallback hardcoded — e-mail nunca deixa
 /// de sair porque o DB piscou).
 pub async fn render(
@@ -51,7 +51,7 @@ pub async fn render(
     Some((substitute(&subject, vars), substitute(&body, vars)))
 }
 
-/// Substitui `{{var_name}}` no texto pelo valor no HashMap. Variáveis não
+/// Replaces `{{var_name}}` in the text with the HashMap value. Variables not
 /// encontradas ficam literais `{{var_name}}`.
 pub fn substitute(input: &str, vars: &HashMap<&str, String>) -> String {
     let mut out = String::with_capacity(input.len());
@@ -64,7 +64,7 @@ pub fn substitute(input: &str, vars: &HashMap<&str, String>) -> String {
                     Some(val) => out.push_str(val),
                     None => out.push_str(&input[i..i + 2 + end + 2]),
                 }
-                // pula até `}}` inclusive
+                // skip through `}}` inclusive
                 for _ in 0..(end + 3) {
                     chars.next();
                 }
@@ -77,10 +77,10 @@ pub fn substitute(input: &str, vars: &HashMap<&str, String>) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Camada visual (0.32.1): os templates continuam TEXTO SIMPLES — o admin não
+// Presentation layer (0.32.1): templates remain PLAIN TEXT — the admin does not
 // precisa saber HTML — e o wrapper embrulha o corpo renderizado num layout
 // de marca (logo + cores + links estilizados). Os senders mandam
-// multipart/alternative: texto puro como fallback, HTML como apresentação.
+// multipart/alternative: plain text as the fallback, HTML as the presentation.
 // ---------------------------------------------------------------------------
 
 /// Escapa entidades HTML.
@@ -92,8 +92,8 @@ fn esc(s: &str) -> String {
 }
 
 /// Converte o corpo texto-plano em HTML: escapa, transforma URLs `http(s)://`
-/// em links estilizados e quebra de linha em `<br>`. Heurística de fim de URL:
-/// espaço/quebra encerra; pontuação final comum (`.,;:!?)`) fica fora do link.
+/// into styled links and newlines into `<br>`. URL-end heuristic: whitespace or a
+/// line break ends it; common trailing punctuation (`.,;:!?)`) stays outside the link.
 fn body_to_html(text: &str) -> String {
     let mut out = String::with_capacity(text.len() * 2);
     for (i, line) in text.split('\n').enumerate() {
@@ -105,14 +105,14 @@ fn body_to_html(text: &str) -> String {
     out
 }
 
-/// Renderiza uma linha: escapa o texto, transforma `[rótulo](url)` em link com o
-/// rótulo visível (nome-vira-link) e URLs http(s) nuas em link com a própria URL.
+/// Render one line: escape the text, turn `[label](url)` into a link showing the
+/// label, and bare http(s) URLs into a link showing the URL itself.
 fn render_inline(line: &str, out: &mut String) {
     let bytes = line.as_bytes();
     let mut i = 0;
     let mut plain_start = 0;
     while i < line.len() {
-        // 1) Link markdown [rótulo](url)
+        // 1) Markdown link [label](url)
         if bytes[i] == b'[' {
             if let Some((label, url, consumed)) = parse_md_link(&line[i..]) {
                 out.push_str(&esc(&line[plain_start..i]));
@@ -126,7 +126,7 @@ fn render_inline(line: &str, out: &mut String) {
                 continue;
             }
         }
-        // 2) URL nua http(s):// — o link mostra a própria URL.
+        // 2) Bare http(s):// URL — the link shows the URL itself.
         let tail = &line[i..];
         if tail.starts_with("http://") || tail.starts_with("https://") {
             out.push_str(&esc(&line[plain_start..i]));
@@ -147,14 +147,14 @@ fn render_inline(line: &str, out: &mut String) {
             plain_start = i;
             continue;
         }
-        // Avança um char UTF-8.
+        // Advance one UTF-8 char.
         i += tail.chars().next().map_or(1, char::len_utf8);
     }
     out.push_str(&esc(&line[plain_start..]));
 }
 
-/// `[rótulo](http…url)` → `(rótulo, url, bytes_consumidos)`. `None` se malformado
-/// ou se a URL não for http(s) — assim `[x](foo)` fica literal (retrocompatível).
+/// `[label](http…url)` → `(label, url, bytes_consumed)`. `None` when malformed or
+/// when the URL is not http(s) — so `[x](foo)` stays literal (backward-compatible).
 fn parse_md_link(s: &str) -> Option<(&str, &str, usize)> {
     let close = s.find("](")?;
     let label = &s[1..close];
@@ -170,8 +170,8 @@ fn parse_md_link(s: &str) -> Option<(&str, &str, usize)> {
     Some((label, url, close + 2 + end_paren + 1))
 }
 
-/// Versão texto-puro do corpo: `[rótulo](url)` → `rótulo (url)`; o resto intacto.
-/// Usada no part `text/plain` do multipart, pra não vazar sintaxe markdown crua.
+/// Plain-text version of the body: `[label](url)` → `label (url)`; the rest untouched.
+/// Used in the multipart `text/plain` part so raw markdown syntax never leaks.
 pub fn body_to_plain(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
@@ -192,8 +192,8 @@ pub fn body_to_plain(text: &str) -> String {
     out
 }
 
-/// Embrulha o corpo (texto plano já renderizado) no layout de e-mail da
-/// marca: cabeçalho com a logo, card branco, rodapé institucional. HTML de
+/// Wrap the body (already-rendered plain text) in the brand e-mail layout:
+/// header with the logo, white card, institutional footer. HTML from
 /// e-mail conservador — tabelas + estilos inline, sem CSS externo — pra
 /// renderizar igual em Gmail/Outlook/Apple Mail.
 pub fn html_wrap(body_text: &str) -> String {
@@ -253,7 +253,7 @@ mod tests {
 
     #[test]
     fn body_to_html_markdown_link_name_becomes_anchor() {
-        // O nome vira link; o texto ao redor (inclusive parênteses e "(a)") fica intacto.
+        // The name becomes the link; surrounding text (parentheses included) stays intact.
         let html = body_to_html(
             "Perfil: [Enfermeira Nelci](https://democracia.social.br/politicos/?id=abc) (PDT/SP — Vereador(a)).",
         );
@@ -261,7 +261,7 @@ mod tests {
             "<a href=\"https://democracia.social.br/politicos/?id=abc\" style=\"color:#15803d;font-weight:600;\">Enfermeira Nelci</a>"
         ));
         assert!(html.contains("(PDT/SP — Vereador(a))."));
-        // Rótulo com < é escapado.
+        // A label containing < is escaped.
         let evil = body_to_html("[<b>x</b>](https://a.b)");
         assert!(evil.contains(">&lt;b&gt;x&lt;/b&gt;</a>"));
     }
