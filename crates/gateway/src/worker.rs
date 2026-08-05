@@ -452,10 +452,10 @@ pub fn spawn(state: AppState) {
     // 1 tick per hour — cheap, indexed. Never blocks the other loops.
     tokio::spawn(auto_delete_notes_loop(state.clone()));
 
-    // Retry de entrega de proposta: reenvia os e-mails (autor/gabinete) que NÃO
-    // saíram porque o SMTP falhou na 1ª tentativa — o envio é fire-and-forget e o
-    // cursor do evento avança mesmo em falha, então sem isto o e-mail some. Idempotente
-    // (só reenvia o lado com notified_*_at NULL). Reusa a cadência do sweep de SLA.
+    // Proposal delivery retry: resends the e-mails (author/office) that did NOT
+    // go out because SMTP failed on the 1st attempt — the send is fire-and-forget and the
+    // event cursor advances even on failure, so without this the e-mail vanishes. Idempotent
+    // (only resends the side with notified_*_at NULL). Reuses the SLA sweep's cadence.
     tokio::spawn(proposal_delivery_retry_loop(
         crate::proposal_delivery::ProposalDeliverySub {
             db: state.db.clone(),
@@ -466,18 +466,18 @@ pub fn spawn(state: AppState) {
     ));
 
     // 0.28.4 (fatia 2a): re-embeda o backlog da era do stub FNV — rows de
-    // consensus_embedding sem text_sample ganham vetor real + assinatura de
-    // direção + amostra NLI, e o centroide do cluster é recomputado. Some
-    // sozinho quando o backlog seca.
+    // consensus_embedding rows without a text_sample gain a real vector + a direction
+    // signature + an NLI sample, and the cluster's centroid is recomputed. It goes
+    // quiet on its own once the backlog dries up.
     tokio::spawn(reembed_backlog_loop(state.clone()));
 
-    // 0.29 (AR digital do silêncio): enquanto o SLA está pendente, o aviso
-    // ao gabinete escala D+1 e D+2 — cada reenvio vira recibo hash-encadeado.
+    // 0.29 (digital registered mail of silence): while the SLA is pending, the warning
+    // to the office escalates on D+1 and D+2 — each resend becomes a hash-chained receipt.
     tokio::spawn(notification_escalation_loop(state.clone()));
 
-    // SOCRATES v2 (0671): sweep das Ideias Legislativas em alta no e-Cidadania.
-    // DESLIGADO por default — este loop PUBLICA conteúdo no fórum em nome do
-    // bot, então precisa de um "sim" explícito por instalação, não de um deploy.
+    // SOCRATES v2 (0671): sweep of trending Legislative Ideas on e-Cidadania.
+    // OFF by default — this loop PUBLISHES content in the forum on the bot's
+    // behalf, so it needs an explicit "yes" per installation, not a deploy.
     let socrates_enabled = std::env::var("SOCRATES_SWEEP_ENABLED")
         .map(|v| v == "true")
         .unwrap_or(false);
@@ -497,11 +497,11 @@ pub fn spawn(state: AppState) {
     );
 }
 
-/// Fatia 2a (0.28.4): drena o backlog de embeddings da era do stub. Cada
-/// tick pega até [`REEMBED_BATCH`] propostas com `text_sample` vazio, busca
-/// o texto no composition root (tabela de outro crate — mesmo padrão do
+/// Slice 2a (0.28.4): drains the backlog of stub-era embeddings. Each
+/// tick takes up to [`REEMBED_BATCH`] proposals with an empty `text_sample`, fetches
+/// the text in the composition root (another crate's table — the same pattern as
 /// [`ConsensusSub`]) e re-embeda via [`dsoc_consensus::ClusterService::re_embed`].
-/// Proposta cujo fetch falhe fica no backlog e é retentada no próximo tick
+/// A proposal whose fetch fails stays in the backlog and is retried on the next tick
 /// (log em warn); o loop nunca derruba o worker.
 async fn reembed_backlog_loop(state: AppState) {
     let reembed_ms = env_ms("WORKER_REEMBED_MS", DEFAULT_REEMBED_MS);
@@ -526,8 +526,8 @@ async fn reembed_backlog_loop(state: AppState) {
             let row = match proposals.get(proposal).await {
                 Ok(row) => row,
                 Err(dsoc_core::Error::NotFound(_)) => {
-                    // Proposta apagada (purge/LGPD) — a embedding é órfã e
-                    // sairia do backlog só via purge, senão retry eterno.
+                    // Deleted proposal (purge/LGPD) — the embedding is orphaned and
+                    // would only leave the backlog via a purge, otherwise retrying forever.
                     match consensus.purge_orphan(proposal).await {
                         Ok(()) => tracing::info!(
                             %proposal,
@@ -558,10 +558,10 @@ async fn reembed_backlog_loop(state: AppState) {
 }
 
 /// 0.29 — escada de avisos do "AR digital do silêncio": SLA `pending`
-/// dentro do prazo, com 1–2 recibos e o último há mais de 24h, recebe um
-/// lembrete (D+1, depois D+2) — e cada reenvio vira recibo hash-encadeado
-/// via [`crate::notification_receipts::record`]. Para quando o gabinete
-/// responde (status muda), quando o SLA vence, ou na 3ª tentativa.
+/// within the deadline, with 1–2 receipts and the last one over 24h old, receives a
+/// reminder (D+1, then D+2) — and each resend becomes a hash-chained receipt
+/// via [`crate::notification_receipts::record`]. It stops when the office
+/// answers (the status changes), when the SLA expires, or on the 3rd attempt.
 async fn notification_escalation_loop(state: AppState) {
     let escalation_ms = env_ms("WORKER_ESCALATION_MS", DEFAULT_ESCALATION_MS);
     let mut ticker = interval(Duration::from_millis(escalation_ms));
@@ -615,15 +615,15 @@ async fn notification_escalation_loop(state: AppState) {
         for (proposal_id, title, mandate_id, email, display_name, last_attempt, sla_id) in due {
             let attempt = last_attempt + 1;
             // Reply-to-respond (0.30): link assinado responde SEM conta —
-            // atrito zero pro gabinete. Sem RESPOND_LINK_SECRET, cai no
-            // link da proposta (que exige operador logado).
+            // zero friction for the office. Without RESPOND_LINK_SECRET, it falls back to
+            // the proposal's link (which requires a logged-in operator).
             let origin = public_origin.trim_end_matches('/');
             let respond_url = match crate::respond_link::respond_token(sla_id) {
                 Some(token) => format!("{origin}/responder/?sla={sla_id}&t={token}"),
                 None => format!("{origin}/propostas/{proposal_id}"),
             };
             let proposal_url = format!("{origin}/propostas/{proposal_id}");
-            // Template editável pelo admin (0.32.0); fallback = texto original.
+            // Template editable by the admin (0.32.0); fallback = the original text.
             let mut ctx: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
             ctx.insert("mandate_name", display_name.clone());
             ctx.insert("proposal_title", title.clone());
@@ -671,14 +671,14 @@ async fn notification_escalation_loop(state: AppState) {
     }
 }
 
-/// SOCRATES v2 (0671): a cada `SOCRATES_SWEEP_MS` (default 6 h) descobre as
-/// Ideias Legislativas em alta no e-Cidadania, espelha as novas como tópicos do
-/// fórum `senado` (até `SOCRATES_SWEEP_MAX` por rodada) e re-sincroniza o
-/// contador de apoios das já espelhadas. Só roda com `SOCRATES_SWEEP_ENABLED=true`.
+/// SOCRATES v2 (0671): every `SOCRATES_SWEEP_MS` (6h by default) it discovers the
+/// trending Legislative Ideas on e-Cidadania, mirrors the new ones as topics of the
+/// `senado` forum (up to `SOCRATES_SWEEP_MAX` per round) and re-syncs the
+/// support counter of those already mirrored. It only runs with `SOCRATES_SWEEP_ENABLED=true`.
 ///
-/// Rodada com erro é LOGADA e retentada no próximo tick — o portal do Senado é
-/// de terceiros e cair não pode derrubar o worker. O log durável fica em
-/// `socrates_sweep_run` (o painel admin lê de lá).
+/// A failed round is LOGGED and retried on the next tick — the Senate portal is
+/// third-party and its going down must never bring the worker down. The durable log lives in
+/// `socrates_sweep_run` (the admin panel reads from there).
 async fn socrates_sweep_loop(state: AppState) {
     let period_ms = env_ms("SOCRATES_SWEEP_MS", DEFAULT_SOCRATES_SWEEP_MS);
     let mut ticker = interval(Duration::from_millis(period_ms));
@@ -702,9 +702,9 @@ async fn socrates_sweep_loop(state: AppState) {
     }
 }
 
-/// Percorre todas as contas com preferência `auto_delete_notes_older_than_days`
-/// setada e marca `deleted_at = now()` nas notas próprias que passam do prazo.
-/// Idempotente; uma nota já marcada como deleted não é remexida.
+/// Walks every account with the `auto_delete_notes_older_than_days` preference
+/// set and marks `deleted_at = now()` on its own notes past the deadline.
+/// Idempotent; a note already marked deleted is never touched again.
 async fn auto_delete_notes_loop(state: AppState) {
     let mut ticker = interval(Duration::from_secs(60 * 60)); // 1h
     ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -731,9 +731,9 @@ async fn auto_delete_notes_loop(state: AppState) {
     }
 }
 
-/// Loop de cleanup do `auth_pending_signup` + `auth_login_attempt`. Faz
+/// Cleanup loop for `auth_pending_signup` + `auth_login_attempt`. It performs
 /// dois DELETEs por tick (barato, indexed); nunca falha o processo.
-/// Reenvia a entrega de propostas cujo e-mail não confirmou (`notified_*_at` NULL).
+/// Resends delivery of proposals whose e-mail never confirmed (`notified_*_at` NULL).
 /// Ver [`crate::proposal_delivery::ProposalDeliverySub::sweep_undelivered`].
 async fn proposal_delivery_retry_loop(
     sub: crate::proposal_delivery::ProposalDeliverySub,
@@ -758,7 +758,7 @@ async fn signup_cleanup_loop(state: AppState, period_ms: u64, cutoff_days: i64) 
             Ok(n) => tracing::info!(deleted = n, cutoff_days, "signup_verify cleanup"),
             Err(err) => tracing::warn!(error = ?err, "signup_verify cleanup falhou"),
         }
-        // login_attempt: TTL curto (mesmo cutoff) — só interessa pra rate + audit.
+        // login_attempt: a short TTL (the same cutoff) — it only matters for rate + audit.
         match dsoc_auth::signup_verify::SignupVerifyService::cleanup_login_attempts_via(
             &state,
             cutoff_days,

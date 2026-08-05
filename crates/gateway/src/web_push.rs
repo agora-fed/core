@@ -1,18 +1,18 @@
-//! # Web Push (RFC 8291) — envio de notificações pro navegador do cidadão.
+//! # Web Push (RFC 8291) — sending notifications to the citizen's browser.
 //!
-//! 0.25.0-fediverso: complementa o feed `user_notification` com push real.
-//! Quando `civic_notify.rs` insere uma linha, a gente também dispara um push
-//! pra qualquer subscription ativa do citizen — o navegador mostra
-//! notificação nativa (mesmo com a aba fechada, via service worker).
+//! 0.25.0-fediverse: complements the `user_notification` feed with real push.
+//! When `civic_notify.rs` inserts a row, we also fire a push
+//! to every active subscription of that citizen — the browser shows a
+//! native notification (even with the tab closed, via the service worker).
 //!
-//! Config via env (nunca hardcoded, PLAN.md princípio 8):
-//! - `VAPID_PUBLIC_KEY` — chave pública EC P-256, base64url (65 bytes uncompressed).
-//! - `VAPID_PRIVATE_KEY` — chave privada, base64url (32 bytes).
-//! - `VAPID_SUBJECT` — `mailto:sistema@democracia.social.br` ou similar.
+//! Config via env (never hardcoded, PLAN.md principle 8):
+//! - `VAPID_PUBLIC_KEY` — EC P-256 public key, base64url (65 uncompressed bytes).
+//! - `VAPID_PRIVATE_KEY` — private key, base64url (32 bytes).
+//! - `VAPID_SUBJECT` — `mailto:sistema@democracia.social.br` or similar.
 //!
-//! Sem VAPID configurado, a gente **não** dispara push (log em INFO). A
-//! subscription do lado do front continua funcionando — só não chega
-//! notificação nativa.
+//! Without VAPID configured we do **not** fire push (logged at INFO). The
+//! front-end subscription keeps working — only the native notification
+//! never arrives.
 
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
@@ -40,7 +40,7 @@ pub fn routes(state: AppState) -> Router<()> {
         .with_state(state)
 }
 
-/// Body do `POST /me/push-subscriptions`. Casada com a shape produzida pelo
+/// Body of `POST /me/push-subscriptions`. Matched to the shape produced by the
 /// `PushSubscription.toJSON()` do navegador (endpoint + keys.{p256dh, auth}).
 #[derive(Debug, Deserialize)]
 struct SubscribeRequest {
@@ -93,8 +93,8 @@ async fn subscribe(
     }
 }
 
-/// GET público: navegador precisa da chave pública em base64url pra criar a
-/// subscription. Retorna 503 se não configurada — o front esconde o botão.
+/// Public GET: the browser needs the public key in base64url to create the
+/// subscription. Returns 503 when unconfigured — the front end hides the button.
 async fn vapid_pub() -> Response {
     match std::env::var("VAPID_PUBLIC_KEY")
         .ok()
@@ -117,12 +117,12 @@ async fn vapid_pub() -> Response {
 }
 
 // ---------------------------------------------------------------------------
-// Envio de push (chamado por civic_notify após insert)
+// Push sending (called by civic_notify after the insert)
 // ---------------------------------------------------------------------------
 
-/// Dispatch de todas as subscriptions ativas do cidadão. Idempotente-ish: um
-/// endpoint que retornar 410 Gone é marcado `dead_at = now` e nunca mais
-/// tenta. Falha isolada não bloqueia outras subs.
+/// Dispatch to every active subscription of the citizen. Idempotent-ish: an
+/// endpoint returning 410 Gone is marked `dead_at = now` and never
+/// retried. An isolated failure never blocks the other subscriptions.
 ///
 /// `payload_json` chega ao service worker como `event.data.text()` — front
 /// espera `{title, body, url}` e mostra `showNotification(title, {body, ...})`.
@@ -182,9 +182,9 @@ struct VapidConfig {
 
 impl VapidConfig {
     fn from_env() -> Option<Self> {
-        // Public key não é consumida aqui (o front pede via GET /vapid-public-key
-        // e usa direto pra criar a subscription); só validamos que existe pra
-        // não enviar push com config parcial.
+        // The public key is not consumed here (the front end asks for it via GET /vapid-public-key
+        // and uses it directly to create the subscription); we only validate that it exists so we
+        // never send push with a partial config.
         let _pub = std::env::var("VAPID_PUBLIC_KEY")
             .ok()
             .filter(|s| !s.is_empty())?;
@@ -223,7 +223,7 @@ async fn send_one(
             auth: sub.auth.clone(),
         },
     };
-    // Priv key: base64url no-pad dos 32 bytes puros.
+    // Priv key: base64url no-pad of the raw 32 bytes.
     let mut sig_builder =
         VapidSignatureBuilder::from_base64(&cfg.private_key, URL_SAFE_NO_PAD, &sub_info)
             .map_err(|_| WebPushSendError::Other)?;

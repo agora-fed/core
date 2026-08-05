@@ -1,10 +1,10 @@
-//! # INTERCOMS — vertical de comunicação externa (ADR-0016).
+//! # INTERCOMS — the external-communication vertical (ADR-0016).
 //!
-//! Camada única e **plugável** de envio outbound: features falam com o trait
-//! [`MessageSender`], não com um provider específico. Increment 1 (#68): o trait,
+//! A single, **pluggable** outbound layer: features talk to the
+//! [`MessageSender`] trait, not to a specific provider. Increment 1 (#68): the trait,
 //! o [`Channel`], e o [`SmtpProvider`] (e-mail via SMTP/lettre — o `mailer::send_html`
-//! passa a delegar aqui). Próximos passos (mesma issue #68 / #69): extrair para um
-//! crate compartilhado (para o auth usar em OTP/2FA), `MailgunProvider` + disparo em
+//! now delegates here). Next steps (same issue #68 / #69): extract into a
+//! shared crate (so auth can use it for OTP/2FA), `MailgunProvider` + bulk
 //! massa, `SmsGatewayProvider`, config por escopo cifrada e rate-limit (SMS 1/semana).
 
 use async_trait::async_trait;
@@ -13,8 +13,8 @@ use crate::proposal_delivery::SmtpConfig;
 
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
-/// Chave simétrica para cifrar/decifrar config de provider por escopo (pgcrypto, #69).
-/// Vem de `INTERCOMS_CONFIG_KEY` (Secret). `None` = feature de config por diretório indisponível.
+/// Symmetric key to encrypt/decrypt per-scope provider config (pgcrypto, #69).
+/// Comes from `INTERCOMS_CONFIG_KEY` (a Secret). `None` = the per-directory config feature is unavailable.
 pub(crate) fn config_key() -> Option<String> {
     std::env::var("INTERCOMS_CONFIG_KEY")
         .ok()
@@ -28,19 +28,19 @@ pub enum Channel {
     Sms,
 }
 
-/// Uma mensagem outbound. `body` é **texto-plano**; o provider de e-mail embrulha
-/// no HTML da marca (`email_templates::html_wrap`). `subject` é ignorado por SMS.
+/// An outbound message. `body` is **plain text**; the e-mail provider wraps it
+/// in the brand's HTML (`email_templates::html_wrap`). `subject` is ignored by SMS.
 #[derive(Debug, Clone)]
 pub struct OutboundMessage {
     pub channel: Channel,
-    /// Endereço de e-mail ou telefone E.164, conforme o canal.
+    /// An e-mail address or an E.164 phone number, depending on the channel.
     pub to: String,
     pub subject: String,
     pub body: String,
 }
 
 impl OutboundMessage {
-    /// Constrói uma mensagem de e-mail.
+    /// Build an e-mail message.
     pub fn email(
         to: impl Into<String>,
         subject: impl Into<String>,
@@ -55,14 +55,14 @@ impl OutboundMessage {
     }
 }
 
-/// Provider plugável de envio. As features consomem `&dyn MessageSender`.
+/// Pluggable send provider. Features consume `&dyn MessageSender`.
 #[async_trait]
 pub trait MessageSender: Send + Sync {
     async fn send(&self, msg: &OutboundMessage) -> Result<(), BoxError>;
 }
 
-/// Provider de e-mail via SMTP (lettre), pelo relay soberano — 1º provider do
-/// INTERCOMS. Envia multipart (texto-plano + HTML da marca). Só o canal `Email`.
+/// E-mail provider via SMTP (lettre), through the sovereign relay — INTERCOMS'
+/// 1st provider. Sends multipart (plain text + the brand's HTML). The `Email` channel only.
 #[derive(Debug)]
 pub struct SmtpProvider {
     cfg: SmtpConfig,
@@ -73,8 +73,8 @@ impl SmtpProvider {
         Self { cfg }
     }
 
-    /// Lê a config do ambiente (`SMTP_*`); `None` quando o relay não está configurado.
-    /// (usado pelas próximas fases — F3 broadcast, F6 OTP.)
+    /// Read the config from the environment (`SMTP_*`); `None` when the relay is not configured.
+    /// (used by the next phases — F3 broadcast, F6 OTP.)
     #[allow(dead_code)]
     pub(crate) fn from_env() -> Option<Self> {
         crate::proposal_delivery::smtp_from_env().map(Self::new)
@@ -118,8 +118,8 @@ impl MessageSender for SmtpProvider {
 }
 
 /// Config de um SMSGateway (app Android sms-gate.app) — URL do endpoint de mensagem + basic auth.
-/// Increment 1 (#69): config por env (nível plataforma). Config por escopo (diretório/campanha)
-/// cifrada = próximo passo.
+/// Increment 1 (#69): config from env (platform level). Per-scope config (directory/campaign)
+/// encrypted = the next step.
 #[derive(Clone)]
 pub(crate) struct SmsConfig {
     pub url: String,
@@ -127,8 +127,8 @@ pub(crate) struct SmsConfig {
     pub pass: Option<String>,
 }
 
-/// `Debug` MANUAL (não derive): `user`/`pass` são o basic auth do SMSGateway.
-/// Só a presença da credencial é observável, nunca o valor.
+/// MANUAL `Debug` (not derived): `user`/`pass` are the SMSGateway's basic auth.
+/// Only the credential's presence is observable, never its value.
 impl std::fmt::Debug for SmsConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SmsConfig")
@@ -149,7 +149,7 @@ pub(crate) fn sms_from_env() -> Option<SmsConfig> {
 }
 
 /// Provider de SMS via SMSGateway (app Android sms-gate.app). POST JSON
-/// `{message, phoneNumbers:[...]}` com basic auth. Só o canal `Sms`.
+/// `{message, phoneNumbers:[...]}` with basic auth. The `Sms` channel only.
 #[derive(Debug)]
 pub struct SmsGatewayProvider {
     cfg: SmsConfig,
@@ -160,7 +160,7 @@ impl SmsGatewayProvider {
         Self { cfg }
     }
 
-    /// Lê a config do ambiente (`SMS_GATEWAY_*`); `None` quando não há gateway configurado.
+    /// Read the config from the environment (`SMS_GATEWAY_*`); `None` when no gateway is configured.
     pub(crate) fn from_env() -> Option<Self> {
         sms_from_env().map(Self::new)
     }

@@ -1,17 +1,17 @@
 //! # Consultas participativas (0.44.0, migration 0531) — Fase 3.3.
 //!
-//! O crate `dsoc-consultations` modela consulta + perguntas com janela de
-//! resposta, mas: (1) toda leitura exigia login (org-scoping por `CallerId`) e
-//! (2) NÃO havia como o cidadão responder. Esta superfície fecha as duas coisas
-//! — leitura PÚBLICA e um mecanismo real de resposta (concordo/neutro/discordo,
-//! uma por cidadão por pergunta, editável) — reusando as tabelas existentes +
-//! `consultation_response` (0531). Runtime queries (sem regen do cache sqlx).
+//! The `dsoc-consultations` crate models a consultation + questions with an answer
+//! window, but: (1) every read required a login (org-scoping via `CallerId`) and
+//! (2) there was NO way for a citizen to answer. This surface closes both
+//! — a PUBLIC read and a real answering mechanism (agree/neutral/disagree,
+//! one per citizen per question, editable) — reusing the existing tables +
+//! `consultation_response` (0531). Runtime queries (no sqlx cache regeneration).
 //!
-//! - `GET  /consultas`                 — lista PÚBLICA (título, status, janela, nº perguntas).
-//! - `GET  /consultas/{id}`            — detalhe PÚBLICO: perguntas + agregado + minha resposta.
-//! - `POST /consultas`                 — cria (gate: admin de plataforma OU político).
-//! - `POST /consultas/{id}/responder`  — cidadão logado responde (só com a consulta aberta).
-//! - `POST /consultas/{id}/close`      — encerra (gate: admin de plataforma OU político).
+//! - `GET  /consultas`                 — PUBLIC list (title, status, window, question count).
+//! - `GET  /consultas/{id}`            — PUBLIC detail: questions + aggregate + my answer.
+//! - `POST /consultas`                 — create (gate: platform admin OR politician).
+//! - `POST /consultas/{id}/responder`  — a logged-in citizen answers (only while the consultation is open).
+//! - `POST /consultas/{id}/close`      — close (gate: platform admin OR politician).
 
 use std::collections::{HashMap, HashSet};
 
@@ -78,9 +78,9 @@ fn storage_error() -> Response {
     )
 }
 
-/// Gate de gestão: admin de plataforma (owner/admin) OU conta vinculada a
-/// mandato (político). Consultas são a plataforma/o político perguntando à
-/// população. Retorna Err(resposta pronta) quando não passa.
+/// Management gate: platform admin (owner/admin) OR an account bound to a
+/// mandate (a politician). Consultations are the platform/the politician asking
+/// the population. Returns Err(a ready response) when it does not pass.
 async fn require_manager(db: &PgPool, headers: &HeaderMap) -> Result<Uuid, Response> {
     let Some(citizen) = caller_citizen(headers) else {
         return Err(unauthorized());
@@ -135,7 +135,7 @@ struct QuestionResult {
     prompt: String,
     position: i32,
     tally: Tally,
-    /// Resposta do caller autenticado (`None` = não respondeu / anônimo).
+    /// The authenticated caller's answer (`None` = did not answer / anonymous).
     my_answer: Option<String>,
 }
 
@@ -169,7 +169,7 @@ struct ResponderBody {
 }
 
 // ---------------------------------------------------------------------------
-// GET /consultas — lista pública
+// GET /consultas — public list
 // ---------------------------------------------------------------------------
 
 async fn list(State(state): State<AppState>) -> Response {
@@ -196,7 +196,7 @@ async fn list(State(state): State<AppState>) -> Response {
 }
 
 // ---------------------------------------------------------------------------
-// GET /consultas/{id} — detalhe público com agregado + minha resposta
+// GET /consultas/{id} — public detail with aggregate + my answer
 // ---------------------------------------------------------------------------
 
 async fn detail(
@@ -269,7 +269,7 @@ async fn detail(
         }
     }
 
-    // Minhas respostas (só com caller autenticado).
+    // My answers (only with an authenticated caller).
     let mut mine: HashMap<Uuid, String> = HashMap::new();
     if let Some(citizen) = caller_citizen(&headers) {
         match sqlx::query_as::<_, (Uuid, String)>(
@@ -320,7 +320,7 @@ async fn detail(
 }
 
 // ---------------------------------------------------------------------------
-// POST /consultas — cria (admin OU político)
+// POST /consultas — create (admin OR politician)
 // ---------------------------------------------------------------------------
 
 async fn create(
@@ -419,7 +419,7 @@ async fn create(
 }
 
 // ---------------------------------------------------------------------------
-// POST /consultas/{id}/responder — cidadão responde
+// POST /consultas/{id}/responder — a citizen answers
 // ---------------------------------------------------------------------------
 
 async fn responder(
@@ -439,7 +439,7 @@ async fn responder(
         );
     }
 
-    // A consulta existe e está aberta?
+    // Does the consultation exist and is it open?
     let status: Option<String> =
         match sqlx::query_scalar("SELECT status FROM consultations_consultation WHERE id = $1")
             .bind(id)
@@ -470,7 +470,7 @@ async fn responder(
         }
     }
 
-    // Conjunto de perguntas válidas desta consulta.
+    // The set of valid questions of this consultation.
     let valid: HashSet<Uuid> = match sqlx::query_scalar::<_, Uuid>(
         "SELECT id FROM consultations_consultation_question WHERE consultation_id = $1",
     )

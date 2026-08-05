@@ -1,16 +1,16 @@
-//! # Gestão admin de consultas — painel de listagem/detalhe/encerramento.
+//! # Admin management of consultations — the list/detail/close panel.
 //!
-//! O subsistema de consultas (`dsoc-consultations`, migration 0531) já existe e o broadcast de
-//! campanha (`campaign_broadcast.rs`) cria micro-consultas, mas o admin não tinha tela para
-//! **listar/detalhar/fechar** essas consultas. Este módulo cobre isso, seguindo o padrão de
-//! `civic_sources.rs`: admin-gated via header `x-dsoc-citizen-id` + `admin_role_binding`, com
-//! **runtime queries** (sqlx::query/query_as — sem o cache do macro `sqlx::query!`).
+//! The consultations subsystem (`dsoc-consultations`, migration 0531) already exists and the
+//! campaign broadcast (`campaign_broadcast.rs`) creates micro-consultations, but the admin had no
+//! screen to **list/detail/close** them. This module covers that, following the pattern of
+//! `civic_sources.rs`: admin-gated via the `x-dsoc-citizen-id` header + `admin_role_binding`, with
+//! **runtime queries** (sqlx::query/query_as — without the `sqlx::query!` macro's cache).
 //!
-//! Vocabulário de `status` idêntico ao schema (`ConsultationStatus`): 'open' e 'closed'.
+//! The `status` vocabulary is identical to the schema (`ConsultationStatus`): 'open' and 'closed'.
 //!
-//! - `GET  /admin/consultations` — lista paginada (título, status, janela, nº perguntas,
-//!   nº respostas). Filtros: status, q (busca no título).
-//! - `GET  /admin/consultations/{id}`       — detalhe + perguntas (com agregado por resposta).
+//! - `GET  /admin/consultations` — a paginated list (title, status, window, question count,
+//!   answer count). Filters: status, q (title search).
+//! - `GET  /admin/consultations/{id}`       — detail + questions (with an aggregate per answer).
 //! - `POST /admin/consultations/{id}/close` — encerra (status→'closed'), idempotente.
 
 use axum::extract::{Path, Query, State};
@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-/// Org padrão da instalação (Pindorama) quando o header não vem preenchido.
+/// The installation's default org (Pindorama) when the header is absent.
 const DEFAULT_ORG_UUID: Uuid = uuid::uuid!("11111111-1111-1111-1111-111111111111");
 
 pub(crate) fn routes(state: AppState) -> Router<()> {
@@ -43,7 +43,7 @@ fn caller_citizen(headers: &HeaderMap) -> Option<Uuid> {
         .and_then(|s| s.parse().ok())
 }
 
-/// Org do chamador (header injetado pela auth de sessão), com fallback para a org padrão.
+/// The caller's org (a header injected by the session auth), falling back to the default org.
 fn caller_org(headers: &HeaderMap) -> Uuid {
     headers
         .get("x-dsoc-org-id")
@@ -99,7 +99,7 @@ async fn require_admin(db: &PgPool, headers: &HeaderMap) -> Result<Uuid, Respons
 struct ListParams {
     /// Filtro por status ('open' | 'closed').
     status: Option<String>,
-    /// Busca (ILIKE) no título.
+    /// Search (ILIKE) in the title.
     q: Option<String>,
     limit: Option<i64>,
     offset: Option<i64>,
@@ -125,7 +125,7 @@ struct ListResult {
     items: Vec<ConsultationRow>,
 }
 
-/// Cláusula WHERE compartilhada entre o count e a listagem (org + filtros opcionais).
+/// WHERE clause shared by the count and the listing (org + optional filters).
 fn push_where(
     qb: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
     org: Uuid,
@@ -165,8 +165,8 @@ async fn list(
         }
     };
 
-    // Contagens por subquery: nº de perguntas e nº de respostas (respostas ligadas à consulta
-    // através da pergunta, pois consultation_response referencia question_id).
+    // Counts by subquery: number of questions and number of answers (answers link to the
+    // consultation through the question, since consultation_response references question_id).
     let mut lb = sqlx::QueryBuilder::new(
         "SELECT c.id, c.title, c.status, c.opens_at, c.closes_at, c.created_at, \
          (SELECT count(*) FROM consultations_consultation_question q \
@@ -200,7 +200,7 @@ async fn list(
         .into_response()
 }
 
-// --- Detalhe: consulta + perguntas com agregado --------------------------------------------------
+// --- Detail: consultation + questions with aggregate ---------------------------------------------
 
 #[derive(Debug, Serialize)]
 struct QuestionDetail {
@@ -234,7 +234,7 @@ async fn detail(
         Err(r) => return r,
     };
 
-    // Cabeçalho da consulta, escopado por org.
+    // The consultation's header, scoped by org.
     let head: Option<(
         Uuid,
         String,
@@ -266,7 +266,7 @@ async fn detail(
         );
     };
 
-    // Perguntas ordenadas por posição.
+    // Questions ordered by position.
     let questions: Vec<(Uuid, String, i32)> = match sqlx::query_as(
         r"SELECT id, prompt, position
             FROM consultations_consultation_question
@@ -284,7 +284,7 @@ async fn detail(
     };
     let qids: Vec<Uuid> = questions.iter().map(|(qid, _, _)| *qid).collect();
 
-    // Agregado por (pergunta, resposta) num único SELECT.
+    // Aggregate by (question, answer) in a single SELECT.
     let tallies: Vec<(Uuid, String, i64)> = match sqlx::query_as(
         r"SELECT question_id, answer, count(*)
             FROM consultation_response
@@ -359,8 +359,8 @@ async fn close(
         Err(r) => return r,
     };
 
-    // A cláusula `status = 'open'` torna o UPDATE naturalmente idempotente e impede reabrir uma
-    // consulta já fechada (não há reopen no domínio).
+    // The `status = 'open'` clause makes the UPDATE naturally idempotent and prevents reopening a
+    // consultation that is already closed (the domain has no reopen).
     let updated: Option<Uuid> = match sqlx::query_scalar(
         r"UPDATE consultations_consultation
              SET status = 'closed'
@@ -390,7 +390,7 @@ async fn close(
             .into_response();
     }
 
-    // Nada atualizado: ou não existe (na org) ou já estava fechada. Distingue os dois casos.
+    // Nothing updated: it either does not exist (in the org) or was already closed. Distinguish both.
     let exists: Option<String> = sqlx::query_scalar(
         "SELECT status FROM consultations_consultation WHERE id = $1 AND org_id = $2",
     )
@@ -401,7 +401,7 @@ async fn close(
     .unwrap_or(None);
 
     match exists {
-        // Já fechada: devolve OK idempotente com o status atual.
+        // Already closed: return an idempotent OK with the current status.
         Some(status) => (
             StatusCode::OK,
             axum::Json(ApiResponse::ok(CloseResult { id, status })),

@@ -1,31 +1,31 @@
-//! Login com gov.br (OIDC Authorization Code Flow) — 0.25.0-fediverso.
+//! Login with gov.br (OIDC Authorization Code Flow) — 0.25.0-fediverse.
 //!
 //! Fluxo:
-//! 1. Front chama `GET /auth/govbr/start` → redireciona pro gov.br com
+//! 1. The front end calls `GET /auth/govbr/start` → redirects to gov.br with
 //!    state+nonce assinados no cookie.
-//! 2. gov.br autentica o cidadão (senha/2FA/biometria) e volta pra
+//! 2. gov.br authenticates the citizen (password/2FA/biometrics) and returns to
 //!    `GET /auth/govbr/callback?code=...&state=...`.
 //! 3. Callback:
 //!    a. valida state (CSRF) contra o cookie.
 //!    b. troca code por tokens no `/token` do gov.br.
 //!    c. valida id_token JWT (issuer, aud, exp).
-//!    d. lê `sub`, `name`, `email`, `amr` (confiabilidade).
-//!    e. faz upsert em `citizen` (govbr_sub como chave):
-//!       - conta nova: cria com display_name=nome, legal_name=nome,
+//!    d. reads `sub`, `name`, `email`, `amr` (assurance).
+//!    e. upserts into `citizen` (govbr_sub as the key):
+//!       - a new account: created with display_name=name, legal_name=name,
 //!         is_public=true, verification_level=directory.
 //!       - existente: atualiza legal_name e confiabilidade.
 //!
-//!    f. cria sessão + cookie e redireciona pra /feed.
+//!    f. creates the session + cookie and redirects to /feed.
 //!
 //! Config (env, prod k8s Secret):
-//! - `GOVBR_CLIENT_ID`, `GOVBR_CLIENT_SECRET` (required — sem eles, path retorna 503).
-//! - `GOVBR_ISSUER` (default `https://sso.acesso.gov.br`; homologação
+//! - `GOVBR_CLIENT_ID`, `GOVBR_CLIENT_SECRET` (required — without them the path returns 503).
+//! - `GOVBR_ISSUER` (default `https://sso.acesso.gov.br`; staging
 //!   `https://sso.staging.acesso.gov.br`).
 //! - `GOVBR_REDIRECT_URI` (default `<PUBLIC_ORIGIN>/auth/govbr/callback`).
 //!
-//! Segurança:
+//! Security:
 //! - `state` (32 bytes random) + `nonce` (32 bytes random) em cookie HttpOnly
-//!   com TTL de 10 min. Callback valida OS DOIS.
+//!   with a 10-minute TTL. The callback validates BOTH.
 //! - `id_token` conferido por JWKS do gov.br (cached por 1 h).
 //! - `client_secret` NUNCA sai do backend.
 
@@ -42,7 +42,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 /// Rotas montadas na RAIZ do gateway (fora do `/api/v1`) — o gov.br exige
-/// que `redirect_uri` seja exatamente `<origin>/auth/govbr/callback`.
+/// that `redirect_uri` be exactly `<origin>/auth/govbr/callback`.
 pub fn root_routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/auth/govbr/start", get(start))
@@ -50,8 +50,8 @@ pub fn root_routes(state: AppState) -> Router<()> {
         .with_state(state)
 }
 
-/// Rota "status" (`GET /api/v1/auth/govbr/status`) — usada pelo front pra
-/// decidir se mostra o botão "Entrar com gov.br".
+/// The "status" route (`GET /api/v1/auth/govbr/status`) — used by the front end to
+/// decide whether to show the "Sign in with gov.br" button.
 pub fn api_routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/auth/govbr/status", get(status))
@@ -98,7 +98,7 @@ impl Cfg {
 }
 
 // ---------------------------------------------------------------------------
-// GET /auth/govbr/status — o front usa pra decidir se mostra o botão
+// GET /auth/govbr/status — the front end uses it to decide whether to show the button
 // ---------------------------------------------------------------------------
 
 async fn status() -> Response {
@@ -194,9 +194,9 @@ async fn callback(
         }
     };
 
-    // 2. Decoda id_token — nesta primeira fatia, sem verificação criptográfica
-    // do JWKS (fica pra fatia próxima). O gov.br é o único que assinou +
-    // o TLS já garante integridade do transport. O nonce ainda precisa bater.
+    // 2. Decode the id_token — in this first slice, without cryptographic verification
+    // against the JWKS (left for the next slice). gov.br is the only signer +
+    // TLS already guarantees transport integrity. The nonce still has to match.
     let claims = match decode_id_token(&token_resp.id_token) {
         Ok(c) => c,
         Err(err) => {
@@ -220,7 +220,7 @@ async fn callback(
         }
     };
 
-    // 4. Cookie de sessão + limpa cookie de state gov.br.
+    // 4. Session cookie + clear the gov.br state cookie.
     let session_cookie = format!(
         "dsoc_session={}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age={}",
         session.session_id, session.max_age_secs,
@@ -322,7 +322,7 @@ async fn exchange_code(cfg: &Cfg, code: &str) -> Result<TokenResp, reqwest::Erro
 }
 
 // ---------------------------------------------------------------------------
-// id_token decode (SEM verificação JWKS — TODO fatia próxima)
+// id_token decode (WITHOUT JWKS verification — TODO next slice)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
@@ -336,7 +336,7 @@ struct IdClaims {
     aud: Option<String>,
     #[serde(default)]
     nonce: Option<String>,
-    /// gov.br: array de níveis alcançados ("1", "2", "3" — bronze/prata/ouro)
+    /// gov.br: array of levels reached ("1", "2", "3" — bronze/silver/gold)
     /// ou strings equivalentes. Pega o mais alto.
     #[serde(default)]
     #[allow(dead_code)]
@@ -344,7 +344,7 @@ struct IdClaims {
     #[serde(default)]
     #[allow(dead_code)]
     acr: Option<String>,
-    /// Se pediu escopo `cpf` (não pediu neste primeiro momento).
+    /// Set when the `cpf` scope was requested (not requested at this first stage).
     #[serde(default)]
     cpf: Option<String>,
 }
@@ -377,7 +377,7 @@ async fn upsert_citizen_and_session(
     db: &PgPool,
     claims: &IdClaims,
 ) -> Result<SessionOut, sqlx::Error> {
-    // Assume single-org (11111...1). Uma fatia próxima aceita org por env.
+    // Assumes a single org (11111...1). A next slice accepts the org from env.
     let org_id: Uuid = uuid::uuid!("11111111-1111-1111-1111-111111111111");
     let now = chrono::Utc::now();
     let ttl_secs: i64 = 30 * 24 * 3600;
@@ -385,7 +385,7 @@ async fn upsert_citizen_and_session(
 
     let mut tx = db.begin().await?;
 
-    // Tenta achar pelo govbr_sub. Se achou, atualiza legal_name (o nome pode
+    // Try to find them by govbr_sub. If found, update legal_name (the name may
     // ter mudado no gov.br entre logins) e devolve o id.
     let existing: Option<Uuid> = sqlx::query_scalar("SELECT id FROM citizen WHERE govbr_sub = $1")
         .bind(&claims.sub)
@@ -424,7 +424,7 @@ async fn upsert_citizen_and_session(
         id
     };
 
-    // Se veio email/cpf, guarda em auth_credential (opcional — sem senha).
+    // When an email/document arrives, store it in auth_credential (optional — no password).
     if let Some(email) = &claims.email {
         let email_lc = email.to_lowercase();
         sqlx::query(
