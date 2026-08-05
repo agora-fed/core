@@ -1,22 +1,22 @@
--- 0666_forum_topic_target — direcionamento OPCIONAL do tópico de fórum a mandato(s) (B1).
+-- 0666_forum_topic_target — OPTIONAL direction of a forum topic at mandate(s) (B1).
 --
--- Fusão Propor ≡ Fórum: o tópico de fórum passa a ser a ÚNICA unidade
--- deliberativa e ganha o poder que a "proposta" tinha — direcionar uma demanda
--- a gabinete(s) ESPECÍFICO(s). Uma porta, uma régua: o mesmo placar por pontos e
+-- The Propose ≡ Forum merge: the forum topic becomes the ONLY deliberative
+-- unit and gains the power the "proposal" had — directing a demand
+-- at SPECIFIC office(s). One door, one yardstick: the same points scoreboard and
 -- o mesmo patamar proporcional (dsoc_core::proportional_threshold, piso 10) do
--- fórum; o alvo só troca PARA ONDE o encaminhamento vai quando o patamar cruza.
+-- forum; the target only changes WHERE the dispatch goes once the threshold crosses.
 --
--- Tópico SEM alvo → contato curado da seção (comportamento atual, ADR-0019/D3).
--- Tópico COM alvo → encaminha ao public_email de cada mandato alcançável (o
--- placeholder @parlamento.democracia.social.br é filtrado no serviço — Tier 0,
+-- A topic WITHOUT a target → the section's curated contact (current behaviour, ADR-0019/D3).
+-- A topic WITH a target → dispatches to each reachable mandate's public_email (the
+-- @parlamento.democracia.social.br placeholder is filtered in the service — Tier 0,
 -- igual proposal_delivery: nunca entregamos num inbox morto nem carimbamos SLA).
 --
--- FKs: forum_topic é intra-arquivo (forums, 0540); mandate é tabela de
--- identidade core — ambos permitidos pela regra do REGISTRY.md.
+-- FKs: forum_topic is intra-file (forums, 0540); mandate is a core identity
+-- table — both allowed by the REGISTRY.md rule.
 --
--- OWNER: aplicar em prod com ALTER TABLE ... OWNER TO dsoc — em prod as migrations
--- rodam como `postgres`, mas o gateway conecta como `dsoc` (gotcha documentado nas
--- 0106/0537/0540). Índice novo em forum_dispatch nasce no schema da tabela dsoc.
+-- OWNER: apply in production with ALTER TABLE ... OWNER TO dsoc — in production the migrations
+-- run as `postgres`, but the gateway connects as `dsoc` (the gotcha documented in
+-- 0106/0537/0540). The new index on forum_dispatch is born in the dsoc table's schema.
 
 BEGIN;
 
@@ -34,11 +34,11 @@ CREATE INDEX IF NOT EXISTS forum_topic_target_mandate_idx
 COMMENT ON TABLE forum_topic_target IS
     'Alvos opcionais de um tópico de fórum (B1): gabinete(s) que recebem o encaminhamento quando o patamar cruza; vazio = contato curado da seção.';
 
--- Recibo por ALVO: um tópico direcionado a N gabinetes registra N recibos no
--- MESMO patamar. Precisamos discriminar o destinatário no UNIQUE, senão o
--- ON CONFLICT (topic_id, threshold) colapsaria todos num só recibo. mandate_id
--- NULL = envio à seção (comportamento atual); NULLS NOT DISTINCT preserva o
--- "1x por patamar" da seção (PG15+, mesmo recurso já usado na 0540).
+-- Receipt per TARGET: a topic directed at N offices records N receipts at the
+-- SAME threshold. We must discriminate the recipient in the UNIQUE, otherwise
+-- ON CONFLICT (topic_id, threshold) would collapse them all into one receipt. mandate_id
+-- NULL = a dispatch to the section (current behaviour); NULLS NOT DISTINCT preserves the
+-- section's "once per threshold" (PG15+, the same feature already used in 0540).
 ALTER TABLE forum_dispatch
     ADD COLUMN IF NOT EXISTS mandate_id uuid REFERENCES mandate(id);
 ALTER TABLE forum_dispatch

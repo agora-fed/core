@@ -1,37 +1,37 @@
 -- 0506_reports_and_domain_blocks.sql
 --
--- Duas peças que fecham o menu-de-post estilo Mastodon:
+-- Two pieces that complete the Mastodon-style post menu:
 --
--- 1. `note_report` — denúncias submetidas por cidadãos sobre publicações
---    (nossas OU do fediverso). Vira fila de trabalho pra moderação humana.
---    Categoria segue o vocabulário do Mastodon (spam / violation / other)
---    pra ser fácil de reciclar numa exportação futura.
--- 2. `domain_block` — bloqueio a nível de HOST inteiro (ex.: bloquear todos
+-- 1. `note_report` — reports submitted by citizens about publications
+--    (ours OR the fediverse's). It becomes a work queue for human moderation.
+--    The category follows Mastodon's vocabulary (spam / violation / other)
+--    so it is easy to recycle in a future export.
+-- 2. `domain_block` — a block at the whole-HOST level (e.g. blocking every
 --    de `pravda.social.example`). Escondemos qualquer nota vindo desse host
---    do feed do cidadão. Isso é diferente de `actor_block`, que é por conta.
+--    from the citizen's feed. This differs from `actor_block`, which is per account.
 
 CREATE TABLE note_report (
     id                 uuid PRIMARY KEY,
-    -- Quem denuncia. Sem CASCADE porque queremos o registro histórico
-    -- mesmo que a conta suma (auditoria de moderação).
+    -- Who reports. No CASCADE because we want the historical record
+    -- even if the account disappears (moderation audit).
     reporter_id        uuid NOT NULL REFERENCES citizen(id),
-    -- object_uri da nota denunciada. Como as notas remotas não têm FK, deixamos
+    -- object_uri of the reported note. Since remote notes have no FK, we leave
     -- solto igual a note_bookmark — sobrevive a purge do timeline remoto.
     object_uri         text NOT NULL,
-    -- Autor da nota (actor_url) — pra facilitar agregação "quantas denúncias
+    -- Author of the note (actor_url) — to ease the "how many reports
     -- essa conta acumulou".
     author_actor_url   text NOT NULL,
-    -- Categoria fixa da denúncia. Vocabulário compatível Mastodon.
+    -- Fixed category of the report. A Mastodon-compatible vocabulary.
     category           text NOT NULL CHECK (category IN ('spam', 'violation', 'other')),
-    -- Texto livre do denunciante (opcional, até 2000 chars).
+    -- Free text from the reporter (optional, up to 2000 chars).
     reason             text,
     created_at         timestamptz NOT NULL DEFAULT now(),
-    -- Moderação humana atualiza. NULL = fila.
+    -- Human moderation updates it. NULL = the queue.
     resolved_at        timestamptz,
     resolved_by        uuid REFERENCES citizen(id),
-    -- Notas do moderador (não expostas ao denunciante).
+    -- The moderator's notes (never exposed to the reporter).
     resolution_notes   text,
-    -- Um cidadão só denuncia a mesma nota uma vez.
+    -- A citizen reports the same note only once.
     UNIQUE (reporter_id, object_uri)
 );
 
@@ -47,12 +47,12 @@ COMMENT ON TABLE note_report IS
 ALTER TABLE note_report OWNER TO dsoc;
 
 -- ─────────────────────────────────────────────────────────────
--- Bloqueio de domínio inteiro
+-- Whole-domain block
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE domain_block (
     id            uuid PRIMARY KEY,
     citizen_id    uuid NOT NULL REFERENCES citizen(id) ON DELETE CASCADE,
-    -- Host normalizado em lowercase (sem esquema, sem porta). Ex.: "pravda.example".
+    -- Host normalized to lowercase (no scheme, no port). E.g. "pravda.example".
     domain        text NOT NULL,
     created_at    timestamptz NOT NULL DEFAULT now(),
     UNIQUE (citizen_id, domain)

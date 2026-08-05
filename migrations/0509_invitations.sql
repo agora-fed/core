@@ -1,42 +1,42 @@
 -- 0509_invitations.sql — convites de conta (invitation).
 --
--- Um cidadão gera um token que outra pessoa usa no cadastro pra criar conta
--- na instância. Diferente do "mandate_invite" (que atribui um mandato a um
--- político — migration 0140s). Aqui é conta-nova de qualquer cidadão.
+-- A citizen mints a token another person uses at signup to create an account
+-- on the instance. Different from the "mandate_invite" (which assigns a mandate to an
+-- official — migrations 0140s). This one is a new account for any citizen.
 --
--- Padrão mastodon:
+-- The Mastodon pattern:
 --   - Token URL-safe curto (~24 chars).
---   - Expiração opcional (default: 7 dias).
---   - Uso múltiplo opcional (`max_uses` default 1).
---   - Notes livres pra o convidante lembrar quem/porquê.
---   - Revogação por delete.
+--   - Optional expiry (default: 7 days).
+--   - Optional multiple use (`max_uses` default 1).
+--   - Free-form notes so the inviter remembers who/why.
+--   - Revocation by delete.
 
 CREATE TABLE invitation (
     id                    uuid PRIMARY KEY,
-    -- Cidadão que gerou o convite. Sem CASCADE — o registro histórico fica
+    -- The citizen who minted the invitation. No CASCADE — the historical record stays
     -- se o convidante sumir.
     invited_by_citizen_id uuid NOT NULL REFERENCES citizen(id),
     -- Token URL-safe. Case-sensitive; a UNIQUE cobre o lookup.
     token                 text NOT NULL UNIQUE,
-    -- Convite direcionado a um e-mail específico. Se NULL, aceita qualquer
-    -- endereço no cadastro. Se preenchido, o handler compara case-insensitive.
+    -- An invitation directed at a specific e-mail. When NULL it accepts any
+    -- address at signup. When filled, the handler compares case-insensitively.
     target_email          text,
-    -- Notas do convidante — não aparecem pro convidado.
+    -- The inviter's notes — never shown to the invitee.
     notes                 text,
-    -- Quantas vezes ainda pode ser usado. Zero = esgotado.
+    -- How many times it can still be used. Zero = exhausted.
     uses_left             integer NOT NULL DEFAULT 1 CHECK (uses_left >= 0),
-    -- Total original — pra a UI mostrar "usado 2 de 5".
+    -- The original total — so the UI can show "used 2 of 5".
     max_uses              integer NOT NULL DEFAULT 1 CHECK (max_uses > 0),
     created_at            timestamptz NOT NULL DEFAULT now(),
     expires_at            timestamptz,
-    -- Último uso — pra mostrar "usado por primeira vez em".
+    -- Last use — to show "first used on".
     first_used_at         timestamptz,
     last_used_at          timestamptz
 );
 
 CREATE INDEX invitation_by_citizen_idx
     ON invitation (invited_by_citizen_id, created_at DESC);
--- O UNIQUE em token já cria índice; para lookups o handler filtra uses_left
+-- The UNIQUE on token already creates an index; for lookups the handler filters uses_left
 -- e expires_at em runtime.
 
 COMMENT ON TABLE invitation IS
@@ -45,7 +45,7 @@ COMMENT ON TABLE invitation IS
 ALTER TABLE invitation OWNER TO dsoc;
 
 -- Vincular signup a um convite: adiciona coluna opcional em citizen apontando
--- pro convite usado. Facilita "quem convidou quem" no admin.
+-- for the used invitation. It eases "who invited whom" in the admin.
 ALTER TABLE citizen
     ADD COLUMN IF NOT EXISTS invited_via_invitation_id uuid REFERENCES invitation(id);
 

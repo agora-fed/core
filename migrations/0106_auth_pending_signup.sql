@@ -1,52 +1,52 @@
--- Migration 0106 — verificação de e-mail antes da criação da conta.
+-- Migration 0106 — e-mail verification before the account is created.
 --
--- Fluxo hoje: POST /auth/register cria citizen + credential + session
+-- Today's flow: POST /auth/register creates citizen + credential + session
 -- imediatamente. Fluxo novo: /auth/register grava um pending_signup +
--- envia link por e-mail; /auth/register/confirm redime o token e cria a
--- conta atomicamente. Nenhuma linha em `citizen` até a verificação passar
--- — CPF não fica "preso" por e-mails inválidos ou sock-puppets.
+-- sends a link by e-mail; /auth/register/confirm redeems the token and creates the
+-- account atomically. No row in `citizen` until verification passes
+-- — the identity document never gets "stuck" behind invalid e-mails or sock puppets.
 --
--- O token é HASHEADO em repouso (SHA-256, mesmo padrão de
--- auth_password_reset — migration 0103). O plaintext só existe no e-mail.
+-- The token is HASHED at rest (SHA-256, the same pattern as
+-- auth_password_reset — migration 0103). The plaintext exists only in the e-mail.
 --
--- Também: muda o default de `citizen.is_public` para true. Cidadãos
--- verificados por e-mail já apareceriam nas buscas / no fediverso —
--- alinhamento com padrão Mastodon (opt-out em Configurações, não opt-in).
--- (Backfill de contas antigas fica a critério do operador.)
+-- Also: changes the default of `citizen.is_public` to true. Citizens
+-- verified by e-mail would already appear in searches / on the fediverse —
+-- aligned with the Mastodon standard (opt-out in Settings, not opt-in).
+-- (Backfilling old accounts is left to the operator.)
 
 BEGIN;
 
 CREATE TABLE auth_pending_signup (
     id             uuid PRIMARY KEY,
     org_id         uuid NOT NULL REFERENCES org(id),
-    -- E-mail normalizado (trim + lowercase). Não é UNIQUE: pode haver duas
-    -- pending pra mesmo e-mail — o vencedor é quem confirmar primeiro, e o
-    -- perdedor recebe conflito no INSERT em auth_credential (que É unique
+    -- Normalized e-mail (trim + lowercase). Not UNIQUE: there may be two
+    -- pendings for the same e-mail — the winner is whoever confirms first, and the
+    -- loser gets a conflict on the INSERT into auth_credential (which IS unique
     -- por (org_id, email) via migration 0101).
     email          text NOT NULL,
     -- Argon2id hash da senha, produzido no request e reutilizado no confirm.
     password_hash  text NOT NULL,
-    -- CPF só normalizado (11 dígitos, algorítmico já checado).
+    -- The identity document, only normalized (11 digits, algorithmically checked already).
     cpf            text NOT NULL,
-    -- 'cidadao' | 'politico'. Determina qual serviço materializa a conta
+    -- 'cidadao' | 'politico'. Determines which service materializes the account
     -- no confirm (register vs register_politician).
     role           text NOT NULL
         CHECK (role IN ('cidadao','politico')),
-    -- Só populado quando role='politico'. Validação já feita no request
-    -- (email == mandate.public_email) — o confirm só re-materializa.
+    -- Populated only when role='politico'. Validation already happened at request time
+    -- (email == mandate.public_email) — confirm merely re-materializes.
     mandate_id     uuid,
-    -- SHA-256 do token URL-safe. Plaintext nunca persistido (mesmo padrão
+    -- SHA-256 of the URL-safe token. The plaintext is never persisted (the same pattern
     -- do password_reset).
     token_hash     bytea NOT NULL,
     -- TTL curto (ver AUTH_SIGNUP_VERIFY_TTL_SECS, default 24h).
     expires_at     timestamptz NOT NULL,
-    -- Set em confirmação bem-sucedida. NULL = redimível.
+    -- Set on a successful confirmation. NULL = redeemable.
     used_at        timestamptz,
     -- IP de origem, best-effort (audit).
     request_ip     text,
     created_at     timestamptz NOT NULL,
 
-    -- Consistência role/mandate: politico ⇒ mandate_id NOT NULL.
+    -- role/mandate consistency: politico ⇒ mandate_id NOT NULL.
     CHECK (role = 'cidadao' OR mandate_id IS NOT NULL)
 );
 
@@ -68,14 +68,14 @@ COMMENT ON COLUMN auth_pending_signup.token_hash IS
     'sha256(token); plaintext nunca persistido.';
 
 -- Default de is_public: agora true. Novos cadastros aparecem em buscas /
--- webfinger sem exigir opt-in. Usuário desativa em Configurações → perfil.
--- (Contas já existentes ficam como estavam — sem backfill automático.)
+-- webfinger without requiring an opt-in. The user disables it in Settings → profile.
+-- (Existing accounts stay as they were — no automatic backfill.)
 ALTER TABLE citizen ALTER COLUMN is_public SET DEFAULT true;
 
 -- Em prod, migrations rodam como `postgres` (via runbook) enquanto o gateway
--- conecta como `dsoc`. Sem OWNER explícito, novas tabelas ficam propriedade
--- do usuário rodando o script → 42501 "permission denied" em runtime.
--- Alinhado com o padrão do `citizen` (dsoc-owned). Idempotente.
+-- connects as `dsoc`. Without an explicit OWNER, new tables end up owned
+-- by the user running the script → a 42501 "permission denied" at runtime.
+-- Aligned with the `citizen` pattern (dsoc-owned). Idempotent.
 ALTER TABLE auth_pending_signup OWNER TO dsoc;
 
 COMMIT;

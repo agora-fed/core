@@ -1,18 +1,18 @@
 -- 0670_socrates_mirror — SOCRATES espelha Ideias Legislativas do e-Cidadania (Senado).
 --
--- Tese: no portal e-Cidadania o cidadão SÓ pode apoiar uma Ideia Legislativa —
--- não há voto contra nem argumento. O SOCRATES (bot institucional da
--- plataforma) espelha a ideia como tópico do fórum `senado` pra abrir o debate
--- completo (favor × contra + afirmação-ponte). MVP admin-curado: o admin cola a
--- URL/ID no painel e o gateway busca título + cria o tópico assinado pelo bot.
+-- Thesis: on the e-Cidadania portal a citizen can ONLY support a Legislative Idea —
+-- there is no vote against and no argument. SOCRATES (the platform's institutional
+-- bot) mirrors the idea as a topic of the `senado` forum to open the full
+-- debate (for × against + bridging claims). An admin-curated MVP: the admin pastes the
+-- URL/ID into the panel and the gateway fetches the title + creates the bot-signed topic.
 --
--- `socrates_mirror` deduplica por `ideia_id` (UNIQUE): cada ideia do Senado é
--- espelhada NO MÁXIMO uma vez, e a linha guarda o vínculo com o tópico criado.
+-- `socrates_mirror` deduplicates by `ideia_id` (UNIQUE): each Senate idea is
+-- mirrored AT MOST once, and the row keeps the link to the created topic.
 --
--- O cidadão-bot tem UUID FIXO (50c7a7e5-…-0001) pra ser referenciável no código
--- sem lookup, `oidc_subject` sintético 'system:socrates' (nunca emitido por
--- IdP — não há credencial de login) e `is_public = true` (perfil visível;
--- ADR-0010: a federação só materializa Actor de perfil público).
+-- The citizen-bot has a FIXED UUID (50c7a7e5-…-0001) so it is referenceable in code
+-- without a lookup, a synthetic `oidc_subject` 'system:socrates' (never issued by an
+-- IdP — there is no login credential) and `is_public = true` (a visible profile;
+-- ADR-0010: federation only materializes an Actor for a public profile).
 --
 -- OWNER: ALTER TABLE socrates_mirror OWNER TO dsoc
 --
@@ -22,20 +22,20 @@ BEGIN;
 
 CREATE TABLE IF NOT EXISTS socrates_mirror (
     id         uuid PRIMARY KEY,
-    -- Id numérico da ideia no e-Cidadania (o `?id=NNNNNN` da URL) — chave de dedup.
+    -- Numeric id of the idea on e-Cidadania (the URL's `?id=NNNNNN`) — the dedup key.
     ideia_id   text NOT NULL UNIQUE,
-    -- URL canônica da ideia no portal do Senado (atribuição no corpo do tópico).
+    -- Canonical URL of the idea on the Senate portal (attribution in the topic body).
     source_url text NOT NULL,
-    -- O tópico criado no fórum `senado` em nome do SOCRATES.
+    -- The topic created in the `senado` forum on SOCRATES' behalf.
     topic_id   uuid NOT NULL REFERENCES forum_topic(id),
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
 ALTER TABLE socrates_mirror OWNER TO dsoc;
 
--- Cidadão-bot SOCRATES: autor institucional dos tópicos espelhados. Sem
--- credencial (auth_credential/auth_session nunca apontam pra ele); nível
--- 'email' satisfaz o piso de verificação das superfícies de leitura.
+-- The SOCRATES citizen-bot: institutional author of the mirrored topics. It has no
+-- credential (auth_credential/auth_session never point at it); the 'email'
+-- level satisfies the verification floor of the read surfaces.
 INSERT INTO citizen (
     id, org_id, oidc_subject, verification_level,
     display_name, bio, is_public, created_at

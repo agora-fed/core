@@ -1,34 +1,34 @@
 -- 0672_socrates_idea_body — SOCRATES v3: o espelho passa a carregar a IDEIA
--- INTEIRA (pauta + apoios + situação), e não só o título.
+-- ENTIRE idea (agenda + support + status), not just the title.
 --
--- O que estava quebrado: o tópico espelhado tinha só o título da ideia. O
--- cidadão chegava no fórum sem a proposta em si — não havia o que debater. E o
--- número de apoios, que o sweep re-sincronizava em `apoiamentos`, ficava
--- INVISÍVEL: o corpo do tópico era escrito uma única vez na criação e nunca
--- reescrito, então o banco atualizava e o fórum continuava mostrando o número
--- do dia do espelhamento (quando mostrava — 6 dos 11 espelhos têm `apoiamentos`
--- NULL porque vieram da fonte HTML, que só dá ids).
+-- What was broken: the mirrored topic carried only the idea's title. The
+-- citizen arrived at the forum without the proposal itself — there was nothing to debate. And the
+-- support count, which the sweep re-synced into `apoiamentos`, stayed
+-- INVISIBLE: the topic body was written once at creation and never
+-- rewritten, so the database updated and the forum kept showing the number
+-- from the mirroring day (when it showed one at all — 6 of the 11 mirrors have `apoiamentos`
+-- NULL because they came from the HTML source, which only gives ids).
 --
--- A correção usa o endpoint JSON público POR IDEIA do e-Cidadania
--- (`restideialegislativa?id=<ID>`), que devolve a descrição integral, o
--- contador de apoios como INTEIRO puro e a situação institucional da ideia.
--- Daí as colunas novas:
+-- The fix uses e-Cidadania's public PER-IDEA JSON endpoint
+-- (`restideialegislativa?id=<ID>`), which returns the full description, the
+-- support counter as a bare INTEGER and the idea's institutional status.
+-- Hence the new columns:
 --
---   * `descricao`       — a PAUTA: o texto integral da proposta, o que faltava
---                         no corpo do tópico. Guardado pra que o refresh saiba
---                         se mudou sem reescrever o tópico à toa;
---   * `situacao`        — a situação institucional ("Convertida em Proposição",
---                         "Aguardando envio à CDH", …), o dado que diz se a
---                         ideia ainda está viva no Senado;
---   * `apoiamentos_num` — o contador como NÚMERO. A coluna `apoiamentos` (text)
+--   * `descricao`       — the AGENDA: the proposal's full text, what was missing
+--                         from the topic body. Stored so the refresh knows
+--                         whether it changed without rewriting the topic needlessly;
+--   * `situacao`        — the institutional status ("Convertida em Proposição",
+--                         "Aguardando envio à CDH", …), the datum that says whether the
+--                         idea is still alive in the Senate;
+--   * `apoiamentos_num` — the counter as a NUMBER. The `apoiamentos` column (text)
 --                         continua existindo por compatibilidade: ela guarda a
---                         formatação do Senado ("20.771", com ponto de milhar),
---                         que não dá pra comparar nem ordenar. O endpoint por
---                         ideia dá o inteiro, então aqui ele fica inteiro;
---   * `body_synced_at`  — quando o CORPO do tópico foi reescrito pela última vez
---                         com esses dados. NULL = o tópico ainda tem o corpo
---                         antigo (só título): é exatamente esse o critério que o
---                         backfill usa pra saber quem precisa ser preenchido.
+--                         the Senate's formatting ("20.771", with a thousands dot),
+--                         which cannot be compared or sorted. The per-idea
+--                         endpoint gives the integer, so here it stays an integer;
+--   * `body_synced_at`  — when the topic's BODY was last rewritten
+--                         with this data. NULL = the topic still has the old
+--                         body (title only): that is exactly the criterion the
+--                         backfill uses to know who needs filling in.
 --
 -- OWNER: ALTER TABLE socrates_mirror OWNER TO dsoc
 --
@@ -41,8 +41,8 @@ ALTER TABLE socrates_mirror ADD COLUMN IF NOT EXISTS situacao        text;
 ALTER TABLE socrates_mirror ADD COLUMN IF NOT EXISTS apoiamentos_num bigint;
 ALTER TABLE socrates_mirror ADD COLUMN IF NOT EXISTS body_synced_at  timestamptz;
 
--- O refresh do sweep prioriza quem está mais desatualizado (NULLS FIRST = os
--- espelhos que nunca tiveram o corpo preenchido vêm na frente).
+-- The sweep's refresh prioritizes the most stale ones (NULLS FIRST = mirrors
+-- that never had their body filled come first).
 CREATE INDEX IF NOT EXISTS socrates_mirror_body_synced_idx
     ON socrates_mirror (body_synced_at NULLS FIRST);
 

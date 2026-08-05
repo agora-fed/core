@@ -1,16 +1,16 @@
--- 0507_moderation_state.sql — estado de moderação por conta + audit log.
+-- 0507_moderation_state.sql — per-account moderation state + audit log.
 --
--- Ações que a moderação faz numa conta e são visíveis no comportamento do
--- sistema (não é só marcar um checkbox — o feed, o inbox e a API de
--- publicação todos leem esses campos):
+-- Actions moderation takes on an account that are visible in the system's
+-- behaviour (it is not just ticking a checkbox — the feed, the inbox and the
+-- publishing API all read these fields):
 --
---  * `suspended_at`  — conta banida da instância. Não pode logar, publicar,
---                      seguir ou ser encontrada. Sessões ativas caem no
---                      próximo request. `deleted_at` continua reservado
---                      para a exclusão iniciada pelo próprio cidadão (LGPD).
---  * `silenced_at`   — soft ban. Posts do citizen não aparecem no feed
---                      público nem no diretório; quem já segue continua
---                      recebendo. Não bloqueia login.
+--  * `suspended_at`  — the account is banned from the instance. It cannot log in, publish,
+--                      follow or be found. Active sessions drop on the
+--                      next request. `deleted_at` remains reserved
+--                      for erasure initiated by the citizen themselves (LGPD).
+--  * `silenced_at`   — a soft ban. The citizen's posts do not appear in the public
+--                      feed nor in the directory; existing followers keep
+--                      receiving them. It does not block login.
 
 ALTER TABLE citizen
     ADD COLUMN IF NOT EXISTS suspended_at timestamptz,
@@ -28,15 +28,15 @@ COMMENT ON COLUMN citizen.silenced_at IS
     '0.26.11: quando NOT NULL, posts saem do feed público e do diretório; quem já segue continua vendo.';
 
 -- ─────────────────────────────────────────────────────────────
--- Audit log — ações moderativas ficam registradas.
+-- Audit log — moderation actions stay recorded.
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE admin_audit (
     id             uuid PRIMARY KEY,
-    -- Quem tomou a ação. Sem CASCADE: se o admin for excluído, o registro
-    -- permanece pra rastro.
+    -- Who took the action. No CASCADE: if the admin is deleted, the record
+    -- remains as a trail.
     admin_id       uuid NOT NULL REFERENCES citizen(id),
     -- Categoria fixa. Cobre a lista curta esperada: contas + reports +
-    -- federação. Cresce com o produto.
+    -- federation. It grows with the product.
     action         text NOT NULL CHECK (action IN (
         'account_suspend', 'account_unsuspend',
         'account_silence', 'account_unsilence',
@@ -45,13 +45,13 @@ CREATE TABLE admin_audit (
         'server_domain_block', 'server_domain_unblock',
         'note_hide'
     )),
-    -- Alvo da ação. Pode ser um citizen (target_citizen_id), um domínio
-    -- remoto (target_domain), ou um report (target_id genérico).
+    -- Target of the action. It may be a citizen (target_citizen_id), a remote
+    -- domain (target_domain), or a report (the generic target_id).
     target_citizen_id  uuid,
     target_domain      text,
     target_id          uuid,
-    -- JSON livre com detalhes da ação (novo role, antes/depois, reason,
-    -- etc). O consumidor histórico não precisa parsing rígido.
+    -- Free JSON with the action's details (new role, before/after, reason,
+    -- etc). The historical consumer needs no rigid parsing.
     detail             jsonb,
     created_at         timestamptz NOT NULL DEFAULT now()
 );

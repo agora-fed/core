@@ -1,18 +1,18 @@
--- 0540_forums_core — FÓRUNS institucionais hierárquicos (plano v3, 2026-07-25).
+-- 0540_forums_core — hierarchical institutional FORUMS (plan v3, 2026-07-25).
 --
--- A tese da plataforma aplicada a fóruns: a sociedade delibera em /f/<caminho>,
--- as interações LOCAIS (votos + comentários de cidadãos) cruzam patamares
--- configuráveis e cada patamar dispara UM e-mail à instituição responsável
--- (comissão, ministério, secretaria) com recibo público. Participação federada
--- (fediverso) existe e aparece, mas conta SEPARADO e nunca dispara envio.
+-- The platform's thesis applied to forums: society deliberates at /f/<path>,
+-- LOCAL interactions (citizen votes + comments) cross configurable
+-- thresholds and each threshold fires ONE e-mail to the responsible institution
+-- (committee, ministry, department) with a public receipt. Federated participation
+-- (fediverse) exists and is shown, but counts SEPARATELY and never fires a dispatch.
 --
--- Hierarquia: /f/senado/ccj, /f/sp/santos/saude — um nível de pai é suficiente
--- (profundidade máx. 3 segmentos). Sub-fóruns territoriais padrão (7 por
--- estado/município) são MATERIALIZADOS SOB DEMANDA no primeiro tópico — o seed
--- cria só as raízes (~5,7k linhas), não as ~39k folhas.
+-- Hierarchy: /f/senado/ccj, /f/sp/santos/saude — one parent level suffices
+-- (max depth 3 segments). Default territorial sub-forums (7 per
+-- state/municipality) are MATERIALIZED ON DEMAND at the first topic — the seed
+-- creates only the roots (~5.7k rows), not the ~39k leaves.
 --
--- Cross-crate FKs: apenas core (org, citizen); demais são intra-arquivo.
--- Chaves do ator Group (federação, fase F4) são geradas sob demanda — colunas
+-- Cross-crate FKs: core only (org, citizen); the rest are intra-file.
+-- Group actor keys (federation, phase F4) are generated on demand — the columns
 -- nascem NULL.
 
 BEGIN;
@@ -21,9 +21,9 @@ CREATE TABLE forum (
     id               uuid PRIMARY KEY,
     org_id           uuid NOT NULL REFERENCES org(id),
     parent_id        uuid REFERENCES forum(id),
-    -- Segmento do caminho ('ccj', 'santos', 'saude') — [a-z0-9-], único por pai.
+    -- Path segment ('ccj', 'santos', 'saude') — [a-z0-9-], unique per parent.
     slug             text NOT NULL CHECK (slug ~ '^[a-z0-9][a-z0-9-]{0,78}$'),
-    -- Caminho completo ('senado/ccj', 'sp/santos/saude') — cache pra lookup O(1).
+    -- Full path ('senado/ccj', 'sp/santos/saude') — a cache for O(1) lookup.
     full_path        text NOT NULL,
     name             text NOT NULL CHECK (length(btrim(name)) > 0),
     description      text NOT NULL DEFAULT '',
@@ -31,10 +31,10 @@ CREATE TABLE forum (
     esfera           text CHECK (esfera IN ('federal', 'estadual', 'municipal')),
     uf               text,
     municipio        text,
-    -- E-mail responsável (comissão/ouvidoria/secretaria). NULL = herda do pai;
-    -- curadoria via painel admin (nunca semeado sem verificação).
+    -- Responsible e-mail (committee/ombudsman/department). NULL = inherit from the parent;
+    -- curated through the admin panel (never seeded without verification).
     contact_email    text,
-    -- Patamares de envio em interações CONTÁVEIS, ordem crescente, editável por fórum.
+    -- Dispatch thresholds in COUNTABLE interactions, ascending, editable per forum.
     thresholds       integer[] NOT NULL DEFAULT '{1000,10000,100000}',
     federated        boolean NOT NULL DEFAULT true,
     -- Chaves do ator Group (geradas no primeiro seguidor remoto — fase F4).
@@ -55,14 +55,14 @@ CREATE TABLE forum_topic (
     author_id         uuid NOT NULL REFERENCES citizen(id),
     title             text NOT NULL CHECK (length(btrim(title)) > 0),
     body              text NOT NULL CHECK (length(btrim(body)) > 0),
-    -- Interações CONTÁVEIS (votos + comentários locais) — disparam patamares.
+    -- COUNTABLE interactions (votes + local comments) — these fire thresholds.
     interaction_count bigint NOT NULL DEFAULT 0,
-    -- Interações FEDERADAS (fediverso) — exibidas, nunca disparam.
+    -- FEDERATED interactions (fediverse) — displayed, they never fire.
     federated_interaction_count bigint NOT NULL DEFAULT 0,
-    -- Soma dos votos ±1 (ordenação "quente").
+    -- Sum of the ±1 votes (the "hot" ordering).
     score             bigint NOT NULL DEFAULT 0,
     comment_count     bigint NOT NULL DEFAULT 0,
-    -- Índice do PRÓXIMO patamar de forum.thresholds a disparar (envio 1x por patamar).
+    -- Index of the NEXT forum.thresholds entry to fire (one dispatch per threshold).
     next_threshold_idx integer NOT NULL DEFAULT 0,
     ap_object_uri     text,
     hidden_at         timestamptz,
@@ -71,8 +71,8 @@ CREATE TABLE forum_topic (
 CREATE INDEX forum_topic_forum_idx ON forum_topic (forum_id, id);
 CREATE INDEX forum_topic_hot_idx ON forum_topic (forum_id, score DESC, id DESC);
 
--- Voto ±1 — PK (topic, citizen): um voto por cidadão, e a FK pra `citizen`
--- torna ESTRUTURAL a regra "só usuário local vota" (ator remoto não existe aqui).
+-- A ±1 vote — PK (topic, citizen): one vote per citizen, and the FK to `citizen`
+-- makes the rule "only a local user votes" STRUCTURAL (a remote actor does not exist here).
 CREATE TABLE forum_topic_vote (
     topic_id    uuid NOT NULL REFERENCES forum_topic(id),
     citizen_id  uuid NOT NULL REFERENCES citizen(id),
@@ -81,7 +81,7 @@ CREATE TABLE forum_topic_vote (
     PRIMARY KEY (topic_id, citizen_id)
 );
 
--- Comentário local (author_id) OU federado (remote_actor_url + moderação).
+-- A local comment (author_id) OR a federated one (remote_actor_url + moderation).
 CREATE TABLE forum_topic_comment (
     id                uuid PRIMARY KEY,
     topic_id          uuid NOT NULL REFERENCES forum_topic(id),
@@ -89,7 +89,7 @@ CREATE TABLE forum_topic_comment (
     remote_actor_url  text,
     remote_handle     text,
     federated         boolean NOT NULL DEFAULT false,
-    -- Moderação só se aplica a federados; locais nascem aprovados.
+    -- Moderation applies to federated ones only; local ones are born approved.
     moderation        text NOT NULL DEFAULT 'approved'
                       CHECK (moderation IN ('pending', 'approved', 'rejected')),
     body              text NOT NULL CHECK (length(btrim(body)) > 0),
@@ -99,7 +99,7 @@ CREATE TABLE forum_topic_comment (
 );
 CREATE INDEX forum_topic_comment_topic_idx ON forum_topic_comment (topic_id, id);
 
--- Envio institucional por patamar — UNIQUE garante 1x por patamar; recibo público.
+-- Institutional dispatch per threshold — the UNIQUE guarantees once per threshold; public receipt.
 CREATE TABLE forum_dispatch (
     id             uuid PRIMARY KEY,
     topic_id       uuid NOT NULL REFERENCES forum_topic(id),

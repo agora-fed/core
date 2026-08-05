@@ -1,23 +1,23 @@
--- Migration 0600 — Papéis flexíveis estilo Mastodon (R0.2 / issue #39, ADR-0011).
+-- Migration 0600 — Mastodon-style flexible roles (R0.2 / issue #39, ADR-0011).
 --
--- Reserva: 0600–0649 é a faixa CORE (base/identidade) definida no ADR-0011 (R0.8),
--- corrigindo a causa-raiz do vazamento histórico de migrações de `citizen`.
+-- Reservation: 0600–0649 is the CORE range (base/identity) defined in ADR-0011 (R0.8),
+-- fixing the root cause of the historical leakage of `citizen` migrations.
 --
--- Substitui o CHECK duro de `admin_role_binding` (owner|admin|auditor) por papéis
--- CONFIGURÁVEIS: cada org tem N papéis, cada papel carrega um conjunto ABERTO de
--- chaves de permissão `modulo.acao` (permissions text[]); a matriz de checkboxes do
--- /admin/papeis (R4) se monta dos módulos ativos. Hierarquia por `position` (Mastodon:
--- só gerencia papel de posição menor). `administrator` na lista bypassa tudo.
+-- Replaces the hard CHECK of `admin_role_binding` (owner|admin|auditor) with CONFIGURABLE
+-- roles: each org has N roles, each role carries an OPEN set of
+-- `module.action` permission keys (permissions text[]); the checkbox matrix of
+-- /admin/papeis (R4) is built from the active modules. Hierarchy by `position` (Mastodon:
+-- you only manage a role of a lower position). `administrator` in the list bypasses everything.
 --
--- `admin_role_binding` NÃO é dropado aqui — os gates interinos da fila de segurança
--- (0.59.2/0.59.3) ainda o leem; sai quando o RequirePermission migrar (R0.3).
+-- `admin_role_binding` is NOT dropped here — the interim gates of the security queue
+-- (0.59.2/0.59.3) still read it; it goes when RequirePermission migrates (R0.3).
 --
 -- Idempotente: rerun-safe.
 
 BEGIN;
 
 -- ---------------------------------------------------------------------------
--- user_role — um papel configurável dentro de uma org.
+-- user_role — a configurable role within an org.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS user_role (
     id           uuid PRIMARY KEY,
@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS user_role (
     highlighted  boolean NOT NULL DEFAULT false,    -- exibe badge no perfil público
     created_at   timestamptz NOT NULL DEFAULT now(),
     updated_at   timestamptz NOT NULL DEFAULT now(),
-    -- Nome único por org (o id distingue; o nome é a etiqueta humana).
+    -- Name unique per org (the id distinguishes; the name is the human label).
     UNIQUE (org_id, name)
 );
 CREATE INDEX IF NOT EXISTS user_role_org_position_idx
@@ -37,9 +37,9 @@ CREATE INDEX IF NOT EXISTS user_role_org_position_idx
 ALTER TABLE user_role OWNER TO dsoc;
 
 -- ---------------------------------------------------------------------------
--- citizen_role_binding — concede um papel a um cidadão numa org (N papéis/cidadão).
--- O papel Base (position 0) NÃO é bindado: o resolver de permissões sempre o
--- agrega pra todo caller da org (equivale ao papel "everyone" id -99 do Mastodon).
+-- citizen_role_binding — grants a role to a citizen in an org (N roles/citizen).
+-- The Base role (position 0) is NOT bound: the permission resolver always
+-- aggregates it for every caller of the org (equivalent to Mastodon's "everyone" role id -99).
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS citizen_role_binding (
     id          uuid PRIMARY KEY,
@@ -55,9 +55,9 @@ CREATE INDEX IF NOT EXISTS citizen_role_binding_citizen_idx
 ALTER TABLE citizen_role_binding OWNER TO dsoc;
 
 -- ---------------------------------------------------------------------------
--- Seeds: 5 papéis padrão por org existente. Idempotente via ON CONFLICT (org,name).
--- As chaves espelham o catálogo do ADR-0011; `administrator` bypassa tudo, então o
--- Proprietário só precisa dela.
+-- Seeds: 5 default roles per existing org. Idempotent via ON CONFLICT (org,name).
+-- The keys mirror the ADR-0011 catalog; `administrator` bypasses everything, so the
+-- Owner only needs that one.
 -- ---------------------------------------------------------------------------
 INSERT INTO user_role (id, org_id, name, color, position, permissions, highlighted)
 SELECT gen_random_uuid(), o.id, 'Proprietário', '#7c3aed', 1000,
@@ -98,8 +98,8 @@ SELECT gen_random_uuid(), o.id, 'Base', NULL, 0,
 ON CONFLICT (org_id, name) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
--- Compat: cada linha de admin_role_binding vira um citizen_role_binding pro
--- papel equivalente (owner→Proprietário, admin→Administrador, auditor→Auditoria).
+-- Compat: each admin_role_binding row becomes a citizen_role_binding for the
+-- equivalent role (owner→Proprietário, admin→Administrador, auditor→Auditoria).
 -- ---------------------------------------------------------------------------
 INSERT INTO citizen_role_binding (id, org_id, citizen_id, role_id, created_by, created_at)
 SELECT gen_random_uuid(), b.org_id, b.citizen_id, r.id, NULL, b.created_at
