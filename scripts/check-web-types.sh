@@ -12,7 +12,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../web"
 
-MAX_ERRORS=105   # measured 2026-08-05 (105 errors / 42 files)
+MAX_ERRORS=103   # measured 2026-08-05 (was 105; DirectoryMemberDto fix removed 2)
 
 errors="$(npx svelte-check --threshold error --output human 2>/dev/null \
   | grep -cE '^Error' || true)"

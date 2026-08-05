@@ -23,7 +23,7 @@
     type CreateDirectoryFields,
     type AdminPartyEdit,
   } from '../../lib/api';
-  import { partyColor } from '../../lib/parties';
+  import { partyColor, chapterUrl } from '../../lib/parties';
 
   let { sigla }: { sigla: string } = $props();
 
@@ -352,6 +352,9 @@
               <span class="chev" class:open={expanded[d.id]}>▸</span>
               <span class="dir-name">{dirLabel(d)}</span>
             </button>
+            <a class="dir-page-link" href={chapterUrl(sigla, d.id)} title="Página do diretório">
+              Página →
+            </a>
             {#if isAdmin}
               <button
                 type="button"
@@ -579,6 +582,16 @@
   .dir-list { list-style: none; padding: 0; margin: 0.75rem 0 0; display: grid; gap: 0.6rem; }
   .dir-item { padding: 0; }
   .dir-row { display: flex; align-items: center; }
+  .dir-page-link {
+    margin-left: auto;
+    font-size: var(--fs-sm);
+    white-space: nowrap;
+    text-decoration: none;
+    color: var(--accent-strong);
+  }
+  .dir-page-link:hover {
+    text-decoration: underline;
+  }
   .dir-toggle {
     flex: 1;
     display: flex;

@@ -82,6 +82,29 @@ pub struct PartyDetailDto {
     pub administrators: Vec<AdminBriefDto>,
 }
 
+/// Public detail of ONE chapter (subnational party directory) — the payload of
+/// the chapter page. English contract for new surfaces (ADR-0013): `level`
+/// maps the stored `esfera` (`federal|estadual|municipal` →
+/// `national|state|municipal`). Same privacy rule as the party detail:
+/// administrators expose ONLY handle/display_name — never citizen id or e-mail.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChapterDto {
+    pub id: Uuid,
+    /// The party sigla ("PT", "PCdoB", ...) — case as stored.
+    pub party_short_name: String,
+    pub party_name: String,
+    pub party_logo_url: Option<String>,
+    /// `national` | `state` | `municipal`.
+    pub level: String,
+    /// UF code (present for state and municipal chapters).
+    pub state: Option<String>,
+    pub municipality: Option<String>,
+    pub name: String,
+    pub parent_id: Option<Uuid>,
+    /// Administrators scoped to THIS chapter (accepted only; privacy-safe).
+    pub administrators: Vec<AdminBriefDto>,
+}
+
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
@@ -111,6 +134,8 @@ pub fn routes(state: AppState) -> Router<()> {
             "/parties/{sigla}/directories/{id}/members",
             get(list_directory_members),
         )
+        // One chapter (English contract, ADR-0013): the public chapter-page payload.
+        .route("/parties/{sigla}/chapters/{id}", get(get_chapter))
         .with_state(state)
 }
 
@@ -130,6 +155,113 @@ async fn list_parties(
             Json(ApiResponse::ok(Vec::new()))
         }
     }
+}
+
+/// `GET /api/v1/parties/{sigla}/chapters/{id}?org_id=` — one chapter with its
+/// scoped administrators. `null` data when the id does not exist under that
+/// party/org (never an error for a miss — same posture as `get_party`).
+async fn get_chapter(
+    State(state): State<AppState>,
+    Path((sigla, id)): Path<(String, Uuid)>,
+    Query(query): Query<OrgQuery>,
+) -> Json<ApiResponse<Option<ChapterDto>>> {
+    match load_chapter(&state.db, query.org_id, &sigla, id).await {
+        Ok(chapter) => Json(ApiResponse::ok(chapter)),
+        Err(err) => {
+            tracing::error!(error = ?err, sigla, %id, "parties: chapter detail failed");
+            Json(ApiResponse::ok(None))
+        }
+    }
+}
+
+/// Row of the chapter+party join in [`load_chapter`]:
+/// (party sigla, party name, logo, esfera, uf, municipio, chapter name, parent id).
+type ChapterRow = (
+    String,
+    String,
+    Option<String>,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+    Option<Uuid>,
+);
+
+/// Map the stored `esfera` to the English `level` of the public contract.
+fn esfera_to_level(esfera: &str) -> &'static str {
+    match esfera {
+        "federal" => "national",
+        "estadual" => "state",
+        _ => "municipal",
+    }
+}
+
+async fn load_chapter(
+    db: &sqlx::PgPool,
+    org_id: Uuid,
+    sigla: &str,
+    id: Uuid,
+) -> Result<Option<ChapterDto>, sqlx::Error> {
+    // 1) The chapter row joined to its party (guards sigla/org consistency:
+    //    a valid id under the WRONG sigla is a miss, not a leak).
+    let row: Option<ChapterRow> = sqlx::query_as(
+        r"
+        SELECT p.sigla, p.name, p.logo_url,
+               d.esfera, d.uf, d.municipio, d.name, d.parent_directory_id
+          FROM party_directory d
+          JOIN party p ON p.org_id = d.org_id AND p.sigla = d.party_sigla
+         WHERE d.org_id = $1 AND d.party_sigla = $2 AND d.id = $3
+        ",
+    )
+    .bind(org_id)
+    .bind(sigla)
+    .bind(id)
+    .fetch_optional(db)
+    .await?;
+    let Some((party_short_name, party_name, logo, esfera, uf, municipio, name, parent_id)) = row
+    else {
+        return Ok(None);
+    };
+
+    // 2) Administrators scoped to THIS chapter. Same privacy filter as the
+    //    party detail: accepted only; handle/display_name only.
+    let admin_rows: Vec<AdminRow> = sqlx::query_as(
+        r"
+        SELECT c.handle, c.display_name, pa.role, pa.directory_id
+          FROM party_administrator pa
+          JOIN citizen c ON c.id = pa.citizen_id
+         WHERE pa.org_id = $1 AND pa.party_sigla = $2 AND pa.directory_id = $3
+           AND pa.accepted_at IS NOT NULL
+         ORDER BY pa.created_at ASC
+        ",
+    )
+    .bind(org_id)
+    .bind(&party_short_name)
+    .bind(id)
+    .fetch_all(db)
+    .await?;
+    let administrators = admin_rows
+        .into_iter()
+        .map(|(handle, display, role, directory_id)| AdminBriefDto {
+            public_handle: handle,
+            display_name: display,
+            role,
+            directory_id,
+        })
+        .collect();
+
+    Ok(Some(ChapterDto {
+        id,
+        party_short_name,
+        party_name,
+        party_logo_url: logo,
+        level: esfera_to_level(&esfera).to_owned(),
+        state: uf.map(|u| u.trim().to_uppercase()),
+        municipality: municipio,
+        name,
+        parent_id,
+        administrators,
+    }))
 }
 
 async fn get_party(

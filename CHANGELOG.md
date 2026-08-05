@@ -7,6 +7,27 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 
 ## [Unreleased]
 
+## [0.68.0] — 2026-08-05
+
+### Added
+- **Chapter (directory) pages**: every party directory now has its own URL —
+  `/partidos/{sigla}/diretorio/?id={chapter}` — reached by clicking the
+  directory on the party page. New public English endpoint
+  `GET /api/v1/parties/{sigla}/chapters/{id}` (ADR-0013 contract: `level` =
+  `national|state|municipal`, `state`, `municipality`) with chapter-scoped
+  administrators (privacy-safe: handle/display_name only) and the derived
+  territorial mandates. Shipped with the full test pyramid: 4 backend
+  integration tests (payload, privacy wall, cross-party enumeration, SQL
+  injection), 4 frontend contract tests (URL builder, wire path, envelope,
+  clean miss) and a self-sufficient post-deploy Playwright spec.
+
+### Fixed
+- **/admin/aparencia loading failure**: the panel read the `Fetched.ok` field
+  on an `ApiResponse` envelope, so every load showed the failure banner
+  (v0.67.1 hotfix). Root-caused as a missing test layer: frontend contract
+  tests, the svelte-check type RATCHET (Astro builds don't typecheck islands)
+  and mandatory post-deploy browser verification now guard the whole class.
+
 ## [0.67.0] — 2026-08-05
 
 First tagged release (the GitOps epoch: from here on, production always points

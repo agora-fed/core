@@ -29,3 +29,10 @@ const PARTY_COLORS: Record<string, string> = {
 export function partyColor(sigla: string): string {
   return PARTY_COLORS[partySlug(sigla)] ?? '#5b6472';
 }
+
+/** Canonical URL of a chapter (directory) page. Query-param form is the SSG
+ * pattern for runtime entities (same as /perfil/?u=); upgrades to a pure
+ * territorial path when SSR lands (ADR-0009). */
+export function chapterUrl(sigla: string, chapterId: string): string {
+  return `/partidos/${partySlug(sigla)}/diretorio/?id=${encodeURIComponent(chapterId)}`;
+}

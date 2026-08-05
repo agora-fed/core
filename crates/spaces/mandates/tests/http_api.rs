@@ -932,3 +932,174 @@ async fn duplicate_territorial_directory_is_conflict() {
     .unwrap();
     assert_eq!(count, 1, "duplicata territorial persistida");
 }
+
+// ---------------------------------------------------------------------------
+// CHAPTERS — public chapter page payload (EN contract, ADR-0013)
+// ---------------------------------------------------------------------------
+
+/// Seed a municipal directory + one ACCEPTED chapter-scoped admin directly in
+/// SQL (the creation flow is covered elsewhere; here we pin the READ contract).
+async fn seed_chapter(db: &Db, org: OrgId, sigla: &str) -> (Uuid, CitizenId) {
+    let dir_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO party_directory (id, org_id, party_sigla, esfera, uf, municipio, name) \
+         VALUES ($1, $2, $3, 'municipal', 'sp', 'Ubatuba', 'Diretório Municipal — Ubatuba')",
+    )
+    .bind(dir_id)
+    .bind(org.as_uuid())
+    .bind(sigla)
+    .execute(db)
+    .await
+    .expect("seed directory");
+    let admin = seed_citizen(db, org).await;
+    sqlx::query("UPDATE citizen SET handle = 'dir-admin' WHERE id = $1")
+        .bind(admin.as_uuid())
+        .execute(db)
+        .await
+        .expect("set handle");
+    sqlx::query(
+        "INSERT INTO party_administrator \
+             (id, org_id, party_sigla, directory_id, citizen_id, role, accepted_at) \
+         VALUES ($1, $2, $3, $4, $5, 'admin', $6)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(org.as_uuid())
+    .bind(sigla)
+    .bind(dir_id)
+    .bind(admin.as_uuid())
+    .bind(now())
+    .execute(db)
+    .await
+    .expect("seed chapter admin");
+    (dir_id, admin)
+}
+
+#[tokio::test]
+async fn chapter_payload_is_english_and_privacy_safe() {
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    seed_party(&db, org, "PT").await;
+    let (dir_id, admin) = seed_chapter(&db, org, "PT").await;
+
+    let app = parties_app(db.clone());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(format!(
+                    "/parties/PT/chapters/{dir_id}?org_id={}",
+                    org.as_uuid()
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let (status, body) = read(resp).await;
+    assert_eq!(status, StatusCode::OK, "body={body}");
+
+    // English contract (ADR-0013): level/state/municipality, esfera mapped.
+    let data = &body["data"];
+    assert_eq!(data["party_short_name"], "PT");
+    assert_eq!(data["level"], "municipal");
+    assert_eq!(data["state"], "SP");
+    assert_eq!(data["municipality"], "Ubatuba");
+    assert_eq!(data["name"], "Diretório Municipal — Ubatuba");
+    assert_eq!(data["administrators"][0]["public_handle"], "dir-admin");
+    assert_eq!(data["administrators"][0]["role"], "admin");
+
+    // SECURITY / privacy wall: the raw payload must never carry the admin's
+    // citizen UUID nor any e-mail (AdminBriefDto contract).
+    let raw = body.to_string();
+    assert!(
+        !raw.contains(&admin.as_uuid().to_string()),
+        "citizen UUID leaked in chapter payload"
+    );
+    assert!(
+        !raw.contains('@') || raw.contains("\"@"),
+        "e-mail-like leak: {raw}"
+    );
+}
+
+#[tokio::test]
+async fn chapter_unknown_id_is_null_not_error() {
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    seed_party(&db, org, "PT").await;
+
+    let app = parties_app(db.clone());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(format!(
+                    "/parties/PT/chapters/{}?org_id={}",
+                    Uuid::now_v7(),
+                    org.as_uuid()
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let (status, body) = read(resp).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["data"].is_null(), "body={body}");
+}
+
+#[tokio::test]
+async fn chapter_under_wrong_party_is_null() {
+    // A REAL chapter id requested under another party's sigla must be a miss
+    // (no cross-party enumeration through ids).
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    seed_party(&db, org, "PT").await;
+    seed_party(&db, org, "PSOL").await;
+    let (dir_id, _) = seed_chapter(&db, org, "PT").await;
+
+    let app = parties_app(db.clone());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(format!(
+                    "/parties/PSOL/chapters/{dir_id}?org_id={}",
+                    org.as_uuid()
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let (status, body) = read(resp).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["data"].is_null(), "body={body}");
+}
+
+#[tokio::test]
+async fn chapter_sigla_injection_is_inert() {
+    // SECURITY: sigla arrives as a bound parameter; a classic injection
+    // payload must behave as a plain (missing) sigla, never touch the query.
+    let db = connect().await;
+    let org = seed_org(&db).await;
+    seed_party(&db, org, "PT").await;
+    let (dir_id, _) = seed_chapter(&db, org, "PT").await;
+
+    let app = parties_app(db.clone());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(format!(
+                    "/parties/PT%27%20OR%20%271%27%3D%271/chapters/{dir_id}?org_id={}",
+                    org.as_uuid()
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let (status, body) = read(resp).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["data"].is_null(), "injection must be a miss: {body}");
+}

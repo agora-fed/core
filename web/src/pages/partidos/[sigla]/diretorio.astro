@@ -1,0 +1,46 @@
+---
+// Public page of ONE party chapter (directory). SSG: one page per party sigla
+// (same enumeration as ../[sigla].astro); the concrete chapter arrives at
+// runtime via `?id=` — the site's runtime-entity pattern (like /perfil/?u=).
+// Upgrades to a pure territorial path (/partidos/pt/sp/ubatuba) once SSR
+// lands (ADR-0009).
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import ChapterView from '../../../components/islands/ChapterView.svelte';
+import { getAllMandates, DEFAULT_ORG_ID } from '../../../lib/api';
+import { partySlug } from '../../../lib/parties';
+
+export async function getStaticPaths() {
+  const [fed, est] = await Promise.all([
+    getAllMandates(DEFAULT_ORG_ID, 5000, 'federal'),
+    getAllMandates(DEFAULT_ORG_ID, 5000, 'estadual'),
+  ]);
+  const merged = [
+    ...(fed.ok && fed.data ? fed.data : []),
+    ...(est.ok && est.data ? est.data : []),
+  ];
+  const siglas = Array.from(
+    new Set(merged.map((m) => m.party).filter((p): p is string => !!p)),
+  );
+  return siglas.map((sigla) => ({
+    params: { sigla: partySlug(sigla) },
+    props: { sigla },
+  }));
+}
+
+const { sigla } = Astro.props as { sigla: string };
+const description = `Diretório do ${sigla} na DemocraciaBR — responsáveis e mandatos no território.`;
+---
+
+<BaseLayout title={`Diretório · ${sigla}`} {description} noindex>
+  <section class="section">
+    <div class="container chapter-shell">
+      <ChapterView client:load {sigla} />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .chapter-shell {
+    max-width: 52rem;
+  }
+</style>

@@ -382,7 +382,8 @@ export interface DirectoryMemberDto {
   office: string;
   uf: string | null;
   municipio: string | null;
-  avatar_object_key: string | null;
+  /** Already resolved to a public URL by the backend (MEDIA_BASE_URL). */
+  avatar_url: string | null;
 }
 
 /** Membros de um diretório: os mandatos do partido naquele território (0.37.0). */
@@ -3715,3 +3716,26 @@ export const adminGetBranding = () =>
   apiGetCredentialed<BrandingDto>('/api/v1/admin/branding');
 export const adminPutBranding = (body: BrandingDto) =>
   apiPut<BrandingDto>('/api/v1/admin/branding', body);
+
+// --- Party chapter (EN contract, ADR-0013) ---------------------------------
+import type { AdminBriefDto } from './types';
+
+/** One subnational party chapter (directory) — the chapter page payload. */
+export interface ChapterDto {
+  id: string;
+  party_short_name: string;
+  party_name: string;
+  party_logo_url: string | null;
+  /** national | state | municipal */
+  level: 'national' | 'state' | 'municipal';
+  state: string | null;
+  municipality: string | null;
+  name: string;
+  parent_id: string | null;
+  administrators: AdminBriefDto[];
+}
+/** Chapter detail (public; admins are privacy-safe handle/display_name only). */
+export const getChapter = (sigla: string, id: string, orgId = DEFAULT_ORG_ID) =>
+  apiGet<ChapterDto | null>(
+    `/api/v1/parties/${encodeURIComponent(sigla)}/chapters/${encodeURIComponent(id)}${orgQuery(orgId)}`,
+  );
