@@ -26,3 +26,9 @@ web/.playwright/
 
 test-results/
 scripts/civic/__pycache__/
+
+# Build/deploy artifacts locais
+deploy/docker/dsoc-gateway
+deploy/docker/web/
+target-docker/
+logo-preview/
