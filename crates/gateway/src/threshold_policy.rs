@@ -1,17 +1,17 @@
-//! # Threshold dinâmico proporcional ao eleitorado (item 4, 0.30.1).
+//! # Dynamic threshold proportional to the electorate (item 4, 0.30.1).
 //!
-//! O autor NÃO escolhe mais o gatilho da própria proposta: um middleware
+//! The author NO LONGER chooses their own proposal's trigger: a middleware
 //! no composition root intercepta `POST /api/v1/proposals`, resolve o
-//! território do mandato alvo (sphere/uf/município), busca o eleitorado
+//! the target mandate's territory (sphere/uf/municipality), looks up the official
 //! oficial TSE (`electorate`, migration 0522) e REESCREVE o campo
-//! `threshold` do body com `clamp(ceil(fração × eleitorado), piso, teto)`.
-//! Legitimidade estatística: o mesmo esforço relativo dispara consequência
-//! em Roraima e em São Paulo.
+//! the body's `threshold` field with `clamp(ceil(fraction × electorate), floor, ceiling)`.
+//! Statistical legitimacy: the same relative effort triggers a consequence
+//! in Roraima and in Sao Paulo.
 //!
 //! Config (env): `THRESHOLD_FRACTION` (default 0.0005 = 0,05% do
 //! eleitorado), `THRESHOLD_FLOOR` (default 25), `THRESHOLD_CEIL`
-//! (default 10_000). Sem linha de eleitorado pro território: piso + warn
-//! (fail-safe — nunca bloqueia a criação da proposta).
+//! (default 10_000). Without an electorate row for the territory: floor + a warn
+//! (fail-safe — it never blocks the proposal's creation).
 
 use axum::body::Body;
 use axum::extract::{Query, Request, State};
@@ -26,9 +26,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-/// Rota pública de preview: o formulário de propor mostra o gatilho
-/// calculado do território ANTES do envio — o autor entende a regra em
-/// vez de escolher um número.
+/// Public preview route: the propose form shows the trigger computed for the
+/// territory BEFORE submission — the author understands the rule instead
+/// of picking a number.
 pub fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/threshold-preview", get(preview))
@@ -85,15 +85,15 @@ fn env_i64(key: &str, default: i64) -> i64 {
         .unwrap_or(default)
 }
 
-/// A conta em si — pura e testável. Agora só delega ao primitivo compartilhado
-/// `dsoc_core::threshold::proportional_threshold`: fóruns e propostas usam a
-/// MESMA régua (D3 do plano de crítica). `voters = None` cai no piso.
+/// The arithmetic itself — pure and testable. It now merely delegates to the shared
+/// primitive `dsoc_core::threshold::proportional_threshold`: forums and proposals use the
+/// SAME yardstick (D3 of the critique plan). `voters = None` falls back to the floor.
 fn compute_threshold(voters: Option<i64>, fraction: f64, floor: i64, ceil: i64) -> i64 {
     dsoc_core::proportional_threshold(voters, fraction, floor, ceil)
 }
 
-/// Eleitorado do território do mandato: municipal → município; federal e
-/// estadual → UF; sem UF (ex.: presidente) → nacional ('BR').
+/// Electorate of the mandate's territory: municipal → municipality; federal and
+/// state → UF; without a UF (e.g. president) → national ('BR').
 async fn voters_for_mandate(db: &PgPool, mandate_id: Uuid) -> Option<i64> {
     let mandate: Option<(String, Option<String>, Option<String>)> =
         sqlx::query_as(r"SELECT sphere, uf, municipio FROM mandate WHERE id = $1")
@@ -184,16 +184,16 @@ mod tests {
     fn threshold_scales_with_electorate_and_clamps() {
         // 0,05% de 1M de eleitores = 500.
         assert_eq!(compute_threshold(Some(1_000_000), 0.0005, 25, 10_000), 500);
-        // Município pequeno cai no piso (0,05% de 8k = 4 → 25).
+        // A small municipality falls back to the floor (0.05% of 8k = 4 → 25).
         assert_eq!(compute_threshold(Some(8_000), 0.0005, 25, 10_000), 25);
         // Nacional bate no teto (0,05% de 155M = 77.500 → 10.000).
         assert_eq!(
             compute_threshold(Some(155_000_000), 0.0005, 25, 10_000),
             10_000
         );
-        // Sem dado do território: piso, nunca bloqueia.
+        // No territory data: floor, never blocks.
         assert_eq!(compute_threshold(None, 0.0005, 25, 10_000), 25);
-        // Arredonda pra cima: 0,05% de 50.001 = 25,0005 → 26.
+        // Rounds up: 0.05% of 50,001 = 25.0005 → 26.
         assert_eq!(compute_threshold(Some(50_001), 0.0005, 25, 10_000), 26);
     }
 }

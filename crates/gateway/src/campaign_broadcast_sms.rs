@@ -1,14 +1,14 @@
 //! `/admin/parties/{sigla}/directories/{id}/broadcast-sms` — broadcast SMS consentido de campanha
-//! (ÁGORA #69b, INTERCOMS/ADR-0016). Complementa o broadcast por e-mail (F3) com o canal SMS.
+//! (AGORA #69b, INTERCOMS/ADR-0016). Complements the e-mail broadcast (F3) with the SMS channel.
 //!
-//! Um diretório **municipal** dispara um SMS curto à sua base consentida que **verificou o
-//! telefone**, usando o **SMSGateway do próprio diretório** (config cifrada #69a). A plataforma
-//! resolve QUEM autorizou (consentimento 4-níveis 0654 × domicílio 0652) e envia **via INTERCOMS**
+//! A **municipal** directory fires a short SMS at its consented base that has **verified their
+//! phone**, using the **directory's own SMSGateway** (encrypted config #69a). The platform
+//! resolves WHO authorized it (4-level consent 0654 × residence 0652) and sends **via INTERCOMS**
 //! (`SmsGatewayProvider`) — nunca expondo a lista.
 //!
-//! **Rate-limit (regra do produto):** diretórios/candidatos podem enviar **1 SMS por semana**;
-//! **somente o OWNER da plataforma** (administrador) envia sem limite. O cooldown de 24h dos
-//! e-mails é independente — SMS custa dinheiro e é mais intrusivo, logo tem trava própria.
+//! **Rate limit (product rule):** directories/candidates may send **1 SMS per week**;
+//! **only the platform OWNER** (administrator) sends without a limit. The e-mails' 24h
+//! cooldown is independent — SMS costs money and is more intrusive, so it has its own lock.
 //!
 //! Gating reusa [`crate::campaign_broadcast::authorized`]. English API por ADR-0013. Runtime queries.
 
@@ -28,11 +28,11 @@ use crate::intercoms::{
     config_key, Channel, MessageSender, OutboundMessage, SmsConfig, SmsGatewayProvider,
 };
 
-/// Teto de destinatários por disparo (defesa; fase municipal é de baixo volume).
+/// Cap of recipients per send (defence; the municipal phase is low-volume).
 const MAX_RECIPIENTS: i64 = 5000;
-/// Rate-limit de SMS para diretórios/candidatos (o OWNER da plataforma é ilimitado).
+/// SMS rate limit for directories/candidates (the platform OWNER is unlimited).
 const SMS_WINDOW_DAYS: i64 = 7;
-/// SMS é curto por natureza (custo + segmentação). Teto conservador (~2 segmentos).
+/// SMS is short by nature (cost + segmentation). A conservative cap (~2 segments).
 const MAX_SMS_BODY: usize = 300;
 
 pub fn routes(state: AppState) -> Router<()> {
@@ -66,7 +66,7 @@ struct SmsResult {
     broadcast_id: Uuid,
 }
 
-/// Decifra a config de SMSGateway do diretório (JSON `{url,user,pass}`). `Ok(None)` = não configurado.
+/// Decrypt the directory's SMSGateway config (JSON `{url,user,pass}`). `Ok(None)` = not configured.
 async fn load_sms_config(state: &AppState, dir: Uuid) -> Result<Option<SmsConfig>, Response> {
     let Some(key) = config_key() else {
         return Ok(None);
@@ -106,7 +106,7 @@ async fn broadcast_sms(
     let org = caller.org.as_uuid();
     let sent_by = caller.citizen.as_uuid();
 
-    // Gate: admin de plataforma OU party_administrator (nacional/deste diretório).
+    // Gate: platform admin OR party_administrator (national/of this directory).
     match authorized(&state, &caller, &sigla, directory_id).await {
         Ok(true) => {}
         Ok(false) => {
@@ -119,7 +119,7 @@ async fn broadcast_sms(
         Err(r) => return r,
     }
 
-    // OWNER da plataforma (administrador) = ilimitado; demais = 1 SMS/semana por diretório.
+    // The platform OWNER (administrator) = unlimited; everyone else = 1 SMS/week per directory.
     let is_owner = match AdminService::from_state(&state)
         .permissions_for(caller.org, caller.citizen)
         .await
@@ -140,7 +140,7 @@ async fn broadcast_sms(
         );
     }
 
-    // Diretório precisa existir na org, ser deste partido e ser MUNICIPAL (uf + município).
+    // The directory must exist in the org, belong to this party and be MUNICIPAL (uf + municipality).
     let dir: Option<(Option<String>, Option<String>)> = match sqlx::query_as(
         r"SELECT uf, municipio FROM party_directory
            WHERE id = $1 AND org_id = $2 AND party_sigla = $3",
@@ -172,7 +172,7 @@ async fn broadcast_sms(
         );
     };
 
-    // Config de SMSGateway do diretório (obrigatória para SMS).
+    // The directory's SMSGateway config (mandatory for SMS).
     let sms_cfg = match load_sms_config(&state, directory_id).await {
         Ok(Some(c)) => c,
         Ok(None) => {
@@ -185,7 +185,7 @@ async fn broadcast_sms(
         Err(r) => return r,
     };
 
-    // Rate-limit: exceto OWNER, 1 SMS/semana por diretório.
+    // Rate limit: except for the OWNER, 1 SMS/week per directory.
     if !is_owner {
         let recent: bool = match sqlx::query_scalar(
             r"SELECT EXISTS(SELECT 1 FROM campaign_broadcast
@@ -212,8 +212,8 @@ async fn broadcast_sms(
         }
     }
 
-    // Alcance: cidadãos que RESIDEM no município do diretório, com TELEFONE VERIFICADO, e que
-    // consentiram num nível que cobre este diretório. Município case-insensitive (texto × IBGE).
+    // Reach: citizens who RESIDE in the directory's municipality, with a VERIFIED PHONE, and who
+    // consented at a level covering this directory. Municipality case-insensitive (text × IBGE).
     let phones: Vec<(String,)> = match sqlx::query_as(
         r"SELECT DISTINCT c.phone
             FROM citizen c
@@ -270,9 +270,9 @@ async fn broadcast_sms(
         }
     };
 
-    // Envio em background (best-effort) via SMSGateway do diretório — não trava a requisição.
+    // Background send (best-effort) via the directory's SMSGateway — it never holds the request.
     let sender = SmsGatewayProvider::new(sms_cfg);
-    // Rodapé curto de opt-out (SMS é caro/segmentado → mínimo).
+    // Short opt-out footer (SMS is expensive/segmented → keep it minimal).
     let full = format!("{msg_body}\nSair: democracia.social.br/configuracoes#campanha");
     let list: Vec<String> = phones.into_iter().map(|(p,)| p).collect();
     tokio::spawn(async move {

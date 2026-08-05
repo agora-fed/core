@@ -1,13 +1,13 @@
 //! # Grupos de campanha (0.39.0, migration 0527) — Fase 2.3.
 //!
-//! Canal proativo campanha→eleitor. Até aqui o político só REAGIA a demandas
-//! com SLA; aqui ele CRIA um espaço, o eleitor entra, e a campanha publica
-//! atualizações que os membros veem.
+//! A proactive campaign→voter channel. Until now the official only REACTED to demands
+//! under an SLA; here they CREATE a space, the voter joins, and the campaign publishes
+//! updates the members see.
 //!
-//! - `POST   /me/campaign-group`         — cria/atualiza o grupo do político (gate: is_politico).
+//! - `POST   /me/campaign-group`         — create/update the official's group (gate: is_politico).
 //! - `GET    /me/campaign-group`         — painel do dono: grupo + nº de membros + posts.
-//! - `POST   /me/campaign-group/posts`   — o dono publica uma atualização.
-//! - `GET    /campaign-groups/{id}`      — página PÚBLICA (nome, dono, nº membros, posts, sou_membro).
+//! - `POST   /me/campaign-group/posts`   — the owner publishes an update.
+//! - `GET    /campaign-groups/{id}`      — the PUBLIC page (name, owner, member count, posts, sou_membro).
 //! - `POST   /campaign-groups/{id}/join` — o eleitor entra (idempotente).
 //! - `DELETE /campaign-groups/{id}/join` — o eleitor sai.
 
@@ -76,7 +76,7 @@ fn storage_error() -> Response {
     )
 }
 
-/// O mandato do político logado (o vínculo mais recente). `None` = não é político.
+/// The logged-in official's mandate (the most recent binding). `None` = not an official.
 async fn caller_mandate(db: &PgPool, citizen: Uuid) -> Result<Option<Uuid>, sqlx::Error> {
     sqlx::query_scalar::<_, Uuid>(
         r"SELECT mandate_id FROM mandate_identity_binding
@@ -144,14 +144,14 @@ struct PollDto {
     status: String,
     created_at: DateTime<Utc>,
     tally: PollTally,
-    /// Resposta do caller autenticado (`None` = não respondeu / anônimo).
+    /// The authenticated caller's answer (`None` = did not answer / anonymous).
     my_answer: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 struct MyGroupDto {
     is_politico: bool,
-    /// `None` = político sem grupo criado ainda.
+    /// `None` = an official with no group created yet.
     group: Option<GroupCore>,
     member_count: i64,
     posts: Vec<PostDto>,
@@ -167,14 +167,14 @@ struct PublicGroupDto {
     owner_handle: Option<String>,
     mandate_id: Uuid,
     member_count: i64,
-    /// `true` só quando o caller autenticado já é membro.
+    /// `true` only when the authenticated caller is already a member.
     sou_membro: bool,
     posts: Vec<PostDto>,
     polls: Vec<PollDto>,
 }
 
 // ---------------------------------------------------------------------------
-// POST /me/campaign-group — cria/atualiza o grupo do político
+// POST /me/campaign-group — create/update the official's group
 // ---------------------------------------------------------------------------
 
 async fn upsert_group(
@@ -223,7 +223,7 @@ async fn upsert_group(
         }
     }
 
-    // Upsert por mandato (UNIQUE mandate_id): cria na primeira vez, edita depois.
+    // Upsert per mandate (UNIQUE mandate_id): creates the first time, edits afterwards.
     let id: Result<Uuid, sqlx::Error> = sqlx::query_scalar(
         r"INSERT INTO campaign_group (org_id, mandate_id, owner_citizen_id, name, description)
           VALUES ($1, $2, $3, $4, $5)
@@ -346,7 +346,7 @@ async fn add_post(
             "Post de 1 a 2000 caracteres.",
         );
     }
-    // Só o dono do grupo posta: acha o grupo pelo mandato do caller.
+    // Only the group's owner posts: find the group by the caller's mandate.
     let group_id: Option<Uuid> = match sqlx::query_scalar::<_, Uuid>(
         r"SELECT cg.id FROM campaign_group cg
            JOIN mandate_identity_binding mib ON mib.mandate_id = cg.mandate_id
@@ -391,7 +391,7 @@ async fn add_post(
 }
 
 // ---------------------------------------------------------------------------
-// GET /campaign-groups/{id} — página pública
+// GET /campaign-groups/{id} — public page
 // ---------------------------------------------------------------------------
 
 type PublicRow = (
@@ -435,7 +435,7 @@ async fn public_view(
             return storage_error();
         }
     };
-    // Sou membro? só quando há caller autenticado.
+    // Am I a member? only when there is an authenticated caller.
     let caller = caller_citizen(&headers);
     let sou_membro = if let Some(citizen) = caller {
         sqlx::query_scalar::<_, bool>(
@@ -482,7 +482,7 @@ async fn join(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized();
     };
-    // Idempotente: ON CONFLICT não faz nada. FK garante que o grupo existe.
+    // Idempotent: ON CONFLICT does nothing. The FK guarantees the group exists.
     let res = sqlx::query(
         r"INSERT INTO campaign_group_member (group_id, citizen_id)
           VALUES ($1, $2)
@@ -565,7 +565,7 @@ async fn load_count_and_posts(
 // Enquetes dirigidas (0.45.0, migration 0532) — Fase 3.4
 // ---------------------------------------------------------------------------
 
-/// O grupo do político logado (via mandato). `None` = não tem grupo.
+/// The logged-in official's group (via their mandate). `None` = no group.
 async fn owner_group(db: &PgPool, citizen: Uuid) -> Result<Option<Uuid>, sqlx::Error> {
     sqlx::query_scalar::<_, Uuid>(
         r"SELECT cg.id FROM campaign_group cg
@@ -578,7 +578,7 @@ async fn owner_group(db: &PgPool, citizen: Uuid) -> Result<Option<Uuid>, sqlx::E
     .await
 }
 
-/// POST /me/campaign-group/polls — o dono abre uma enquete rápida.
+/// POST /me/campaign-group/polls — the owner opens a quick poll.
 async fn create_poll(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -678,7 +678,7 @@ async fn close_poll(
     }
 }
 
-/// POST /campaign-groups/{id}/polls/{poll_id}/respond — o cidadão logado responde.
+/// POST /campaign-groups/{id}/polls/{poll_id}/respond — a logged-in citizen answers.
 async fn respond_poll(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -695,7 +695,7 @@ async fn respond_poll(
             "Resposta inválida.",
         );
     }
-    // A enquete existe, pertence ao grupo e está aberta?
+    // Does the poll exist, belong to the group and remain open?
     let status: Option<String> = match sqlx::query_scalar(
         "SELECT status FROM campaign_group_poll WHERE id = $1 AND group_id = $2",
     )
@@ -751,7 +751,7 @@ async fn respond_poll(
     }
 }
 
-/// Enquetes de um grupo com agregado por opção e (opcional) a resposta do caller.
+/// A group's polls with an aggregate per option and (optionally) the caller's answer.
 async fn load_polls(
     db: &PgPool,
     group_id: Uuid,

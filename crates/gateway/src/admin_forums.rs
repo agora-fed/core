@@ -1,11 +1,11 @@
-//! # Config dos fóruns (F3) — painel admin.
+//! # Forum configuration (F3) — admin panel.
 //!
-//! Onde o admin da plataforma cura o **e-mail institucional** de cada fórum, os
-//! **patamares** de envio e os **moderadores**. Runtime queries (padrão
-//! politico_contacts). O carteiro que consome os `forum_dispatch` pendentes vive
+//! Where the platform admin curates each forum's **institutional e-mail**, its
+//! dispatch **thresholds** and its **moderators**. Runtime queries (the
+//! politico_contacts pattern). The postman that consumes pending `forum_dispatch` rows lives
 //! em [`crate::forum_mailer`].
 //!
-//! - `GET    /admin/forums?q=&limit=&offset=`      — lista com e-mail + pendências.
+//! - `GET    /admin/forums?q=&limit=&offset=`      — a list with e-mail + pending items.
 //! - `PATCH  /admin/forums/{id}`                   — contact_email / thresholds.
 //! - `GET    /admin/forums/{id}/moderators`        — lista moderadores (handle).
 //! - `POST   /admin/forums/{id}/moderators`        — adiciona por handle.
@@ -31,8 +31,8 @@ pub fn routes(state: AppState) -> Router<()> {
             get(mods_list).post(mods_add),
         )
         .route("/admin/forums/{id}/moderators/{cid}", delete(mods_remove))
-        // Moderação de conteúdo (R3.1 #27): admin global (content.moderate) OU
-        // moderador do fórum removem tópico/argumento. Soft-delete + audit.
+        // Content moderation (R3.1 #27): a global admin (content.moderate) OR
+        // a forum moderator removes a topic/argument. Soft-delete + audit.
         .route("/f/topics/{id}/remove", post(topic_remove))
         .route("/f/comments/{id}/remove", post(comment_remove))
         .with_state(state)
@@ -142,13 +142,13 @@ async fn list(
 
 #[derive(Debug, Deserialize)]
 struct UpdateForumRequest {
-    /// `Some("a@b")` define; `Some("")` limpa; `None` mantém.
+    /// `Some("a@b")` sets it; `Some("")` clears it; `None` keeps it.
     contact_email: Option<String>,
-    /// Patamares novos (crescentes, positivos, máx. 10). `None` mantém.
+    /// New thresholds (ascending, positive, max 10). `None` keeps them.
     thresholds: Option<Vec<i32>>,
-    /// Logo — `Some("")` limpa; `None` mantém.
+    /// Logo — `Some("")` clears it; `None` keeps it.
     avatar_url: Option<String>,
-    /// Capa — `Some("")` limpa; `None` mantém.
+    /// Banner — `Some("")` clears it; `None` keeps it.
     banner_url: Option<String>,
 }
 
@@ -343,19 +343,19 @@ async fn mods_remove(
 }
 
 // ---------------------------------------------------------------------------
-// Moderação de conteúdo (R3.1 #27)
+// Content moderation (R3.1 #27)
 // ---------------------------------------------------------------------------
 
-/// Corpo opcional com o motivo da remoção (vai pro audit e pra deletion_reason).
+/// Optional body carrying the removal reason (it goes to the audit and to deletion_reason).
 #[derive(Debug, Default, Deserialize)]
 struct RemoveBody {
     #[serde(default)]
     reason: Option<String>,
 }
 
-/// Pode moderar este fórum? Permissão global `content.moderate`/`forums.moderate`
-/// (via `require_permission`), OU moderador designado deste fórum (0541). É o ponto
-/// onde o papel Moderador configurável e o moderador-por-fórum convergem.
+/// May they moderate this forum? The global `content.moderate`/`forums.moderate` permission
+/// (via `require_permission`), OR a designated moderator of this forum (0541). It is the point
+/// where the configurable Moderator role and the per-forum moderator converge.
 async fn can_moderate_forum(state: &AppState, caller: CallerId, forum_id: Uuid) -> bool {
     let svc = dsoc_admin::AdminService::from_state(state);
     if let Ok(perms) = svc.permissions_for(caller.org, caller.citizen).await {
@@ -395,7 +395,7 @@ async fn topic_remove(
     let Some(forum_id) = forum_id else {
         return fail(StatusCode::NOT_FOUND, "not_found", "Tópico não encontrado.");
     };
-    // Se a org desligou o módulo de fóruns, a rota "não existe" (R0.5).
+    // If the org switched the forums module off, the route "does not exist" (R0.5).
     if let Err(r) = crate::module_gate::require_module(&state, caller.org.as_uuid(), "forums").await
     {
         return r;
@@ -442,7 +442,7 @@ async fn comment_remove(
     Path(id): Path<Uuid>,
     body: Option<Json<RemoveBody>>,
 ) -> Response {
-    // Descobre o fórum via o tópico do argumento.
+    // Find the forum through the argument's topic.
     let forum_id: Option<Uuid> = sqlx::query_scalar(
         "SELECT t.forum_id FROM forum_topic_comment c \
            JOIN forum_topic t ON t.id = c.topic_id \
@@ -500,7 +500,7 @@ async fn comment_remove(
         .into_response()
 }
 
-/// Registra a ação de moderação no `admin_audit` (mesma tabela dos admin_*).
+/// Record the moderation action in `admin_audit` (the same table as the admin_* ones).
 async fn audit_moderation(
     db: &PgPool,
     caller: CallerId,

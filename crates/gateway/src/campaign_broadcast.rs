@@ -1,14 +1,14 @@
 //! `/admin/parties/{sigla}/directories/{id}/broadcast` — broadcast consentido de campanha
-//! (ÁGORA F3, #60, migration 0655). O carro-chefe.
+//! (AGORA F3, #60, migration 0655). The flagship.
 //!
-//! Um diretório **municipal** manda uma mensagem à sua base consentida. A plataforma resolve
-//! QUEM autorizou (cruzando o consentimento 4-níveis `citizen_campaign_consent` 0654 com o
-//! **domicílio** do cidadão `citizen.uf/municipio_ibge` 0652) e envia **via INTERCOMS**
-//! (`SmtpProvider`) — só a essas pessoas, nunca expondo a lista. Opt-out no rodapé. Cooldown de
-//! 24h por diretório (anti-spam). Registrado em `campaign_broadcast` (auditoria + rate-limit).
+//! A **municipal** directory sends a message to its consented base. The platform resolves
+//! WHO authorized it (crossing the 4-level consent `citizen_campaign_consent` 0654 with the
+//! citizen's **residence** `citizen.uf/municipio_ibge` 0652) and sends **via INTERCOMS**
+//! (`SmtpProvider`) — only to those people, never exposing the list. Opt-out in the footer. A
+//! 24h cooldown per directory (anti-spam). Recorded in `campaign_broadcast` (audit + rate limit).
 //!
 //! Gating: admin de plataforma (`party.manage`/`administrator`) OU `party_administrator` do
-//! partido (nacional ou deste diretório). English API por ADR-0013. Runtime queries.
+//! party (national or of this directory). English API per ADR-0013. Runtime queries.
 
 use axum::extract::{Json, Path, State};
 use axum::http::StatusCode;
@@ -24,9 +24,9 @@ use uuid::Uuid;
 
 use crate::intercoms::{MessageSender, OutboundMessage, SmtpProvider};
 
-/// Teto de destinatários por broadcast (defesa; a fase municipal é de baixo volume).
+/// Cap of recipients per broadcast (defence; the municipal phase is low-volume).
 const MAX_RECIPIENTS: i64 = 5000;
-/// Cooldown por diretório.
+/// Cooldown per directory.
 const COOLDOWN_HOURS: i64 = 24;
 const MAX_SUBJECT: usize = 160;
 const MAX_BODY: usize = 4000;
@@ -56,7 +56,7 @@ struct BroadcastBody {
     subject: String,
     body: String,
     /// Micro-consulta opcional: 0–3 perguntas (concordo/neutro/discordo). Se houver, o broadcast
-    /// cria uma consulta e manda o link. Respostas/agregação reusam o subsistema de consultas.
+    /// creates a consultation and sends the link. Answers/aggregation reuse the consultations subsystem.
     #[serde(default)]
     questions: Vec<String>,
 }
@@ -73,7 +73,7 @@ const MAX_QUESTIONS: usize = 3;
 const MAX_PROMPT: usize = 500;
 const CONSULTATION_DAYS: i32 = 14;
 
-/// Autorizado se admin de plataforma OU party_administrator (nacional ou deste diretório).
+/// Authorized when a platform admin OR a party_administrator (national or of this directory).
 pub(crate) async fn authorized(
     state: &AppState,
     caller: &CallerId,
@@ -164,7 +164,7 @@ async fn broadcast(
         );
     }
 
-    // O diretório precisa existir na org, ser deste partido e ser MUNICIPAL (uf + municipio).
+    // The directory must exist in the org, belong to this party and be MUNICIPAL (uf + municipio).
     let dir: Option<(String, Option<String>, Option<String>)> = match sqlx::query_as(
         r"SELECT esfera, uf, municipio FROM party_directory
            WHERE id = $1 AND org_id = $2 AND party_sigla = $3",
@@ -197,7 +197,7 @@ async fn broadcast(
     };
     let _ = esfera;
 
-    // Cooldown por diretório.
+    // Cooldown per directory.
     let recent: bool = match sqlx::query_scalar(
         r"SELECT EXISTS(SELECT 1 FROM campaign_broadcast
                          WHERE directory_id = $1 AND created_at > now() - ($2 || ' hours')::interval)",
@@ -221,9 +221,9 @@ async fn broadcast(
         );
     }
 
-    // Resolução de alcance: cidadãos que RESIDEM no município do diretório E consentiram num
-    // nível que cobre este diretório. Comparação de município case-insensitive (o texto do
-    // diretório pode divergir do IBGE em caixa).
+    // Reach resolution: citizens who RESIDE in the directory's municipality AND consented at a
+    // level covering this directory. Municipality comparison is case-insensitive (the directory's
+    // text may differ from IBGE in casing).
     let emails: Vec<(String,)> = match sqlx::query_as(
         r"SELECT DISTINCT ac.email
             FROM citizen c
@@ -257,8 +257,8 @@ async fn broadcast(
     };
     let recipients = emails.len() as i64;
 
-    // Micro-consulta: se houver perguntas, cria a consulta (reusa consultations_*, ADR-0014)
-    // e liga ao broadcast. Respostas/agregação vêm da página /consulta existente.
+    // Micro-consultation: when questions exist, create the consultation (reusing consultations_*, ADR-0014)
+    // and link it to the broadcast. Answers/aggregation come from the existing /consulta page.
     let consultation_id: Option<Uuid> = if questions.is_empty() {
         None
     } else {
@@ -331,7 +331,7 @@ async fn broadcast(
         }
     };
 
-    // Envio em background (best-effort) via INTERCOMS — não trava a requisição.
+    // Background send (best-effort) via INTERCOMS — it never holds the request.
     if let Some(sender) = SmtpProvider::from_env() {
         let footer = format!(
             "\n\n—\nVocê recebe isto porque autorizou comunicações de campanha do {sigla}. \

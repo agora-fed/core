@@ -1,23 +1,23 @@
-//! # Base de contatos / audiência (0.35.0).
+//! # Contact base / audience (0.35.0).
 //!
-//! "Queria ter uma base boa primeiro." Este módulo é a base única de
+//! "I wanted a good base first." This module is the single base of
 //! pessoas em potencial:
 //!
-//! Público:
-//! - `POST /audience/subscribe`  — captação do site ("receba novidades"):
+//! Public:
+//! - `POST /audience/subscribe`  — capture from the site ("get updates"):
 //!   e-mail + nome/UF opcionais, consent LGPD, honeypot + rate-limit por IP
-//!   (mesma postura do formulário de contato).
-//! - `GET  /audience/unsubscribe?token=…` — descadastro de 1 clique, sem
-//!   login; devolve uma página HTML mínima. Nunca apaga a linha (o opt-out
+//!   (the same posture as the contact form).
+//! - `GET  /audience/unsubscribe?token=…` — one-click opt-out, no
+//!   login; returns a minimal HTML page. It never deletes the row (the opt-out
 //!   registrado protege contra re-import acidental).
 //!
 //! Admin:
 //! - `GET    /admin/audience/stats`      — totais + recorte por segmento.
-//! - `GET    /admin/audience`            — listagem filtrável.
-//! - `POST   /admin/audience/import`     — importa lista existente com
+//! - `GET    /admin/audience`            — filterable listing.
+//! - `POST   /admin/audience/import`     — import an existing list with a
 //!   base legal declarada; nunca rebaixa consent nem ressuscita opt-out.
 //! - `GET    /admin/audience/export.csv` — a base em CSV.
-//! - `DELETE /admin/audience/{id}`       — remoção definitiva (LGPD).
+//! - `DELETE /admin/audience/{id}`       — permanent removal (LGPD).
 
 use axum::extract::{Json, Path, Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
@@ -51,7 +51,7 @@ pub fn routes(state: AppState) -> Router<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Público — captação e descadastro
+// Public — capture and opt-out
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
@@ -61,7 +61,7 @@ struct SubscribeBody {
     name: Option<String>,
     #[serde(default)]
     uf: Option<String>,
-    /// Honeypot — humano não vê o campo; preenchido = bot, sucesso fake.
+    /// Honeypot — a human never sees the field; filled = bot, fake success.
     #[serde(default)]
     website: String,
 }
@@ -103,15 +103,15 @@ fn rate_allow(ip: Option<&str>) -> bool {
     true
 }
 
-/// `POST /audience/subscribe` — o form do site. Re-inscrição de quem se
-/// descadastrou é intencional: a pessoa PEDIU de novo (consent renovado).
+/// `POST /audience/subscribe` — the site's form. Re-subscribing after an
+/// opt-out is intentional: the person ASKED again (renewed consent).
 async fn subscribe(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(body): Json<SubscribeBody>,
 ) -> Response {
     if !body.website.trim().is_empty() {
-        // Bot no honeypot: sucesso fake, sem efeito.
+        // A bot in the honeypot: fake success, no effect.
         return (StatusCode::OK, Json(ApiResponse::<()>::ok(()))).into_response();
     }
     let email = body.email.trim().to_lowercase();
@@ -168,8 +168,8 @@ struct UnsubQuery {
     token: String,
 }
 
-/// `GET /audience/unsubscribe?token=…` — página mínima, sem login. Token
-/// desconhecido recebe a MESMA página (não vaza se o e-mail existe).
+/// `GET /audience/unsubscribe?token=…` — a minimal page, no login. An unknown
+/// token receives the SAME page (it never leaks whether the e-mail exists).
 async fn unsubscribe(State(state): State<AppState>, Query(q): Query<UnsubQuery>) -> Response {
     let token = q.token.trim();
     if !token.is_empty() && token.len() <= 64 {
@@ -417,8 +417,8 @@ struct ImportContact {
 struct ImportBody {
     /// Slug curto identificando a lista (vira `source = 'import:<slug>'`).
     source_slug: String,
-    /// LGPD: 'consent' só se a lista foi coletada COM consentimento pra
-    /// este fim; senão 'legitimate_interest' + notes explicando a origem.
+    /// LGPD: 'consent' only when the list was collected WITH consent for
+    /// this purpose; otherwise 'legitimate_interest' + notes explaining its origin.
     legal_basis: String,
     #[serde(default)]
     segment: Option<String>,
@@ -436,7 +436,7 @@ struct ImportResultDto {
 
 /// `POST /admin/audience/import`. Import NUNCA rebaixa consent existente
 /// nem limpa opt-out — quem se descadastrou continua descadastrado mesmo
-/// que apareça na lista importada.
+/// even when it appears in the imported list.
 async fn import(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -603,7 +603,7 @@ async fn export_csv(State(state): State<AppState>, headers: HeaderMap) -> Respon
         .into_response()
 }
 
-/// `DELETE /admin/audience/{id}` — remoção definitiva (pedido LGPD).
+/// `DELETE /admin/audience/{id}` — permanent removal (an LGPD request).
 async fn remove(
     State(state): State<AppState>,
     headers: HeaderMap,
