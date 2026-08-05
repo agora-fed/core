@@ -1,29 +1,29 @@
-//! # Mandato coletivo — compromisso consultivo declarado (D8.1, migration 0666).
+//! # Collective mandate — a declared consultative commitment (D8.1, migration 0666).
 //!
-//! **Tese: accountability ≠ poder.** Um mandato coletivo (Bancada Ativista/SP, Gabinetona) se
-//! **compromete publicamente** a ouvir a base antes de votar sobre um tema, e o resultado + se
-//! ele SEGUIU ficam públicos e imutáveis. O placar deixa de ser "acusação" e vira "instrução".
+//! **Thesis: accountability ≠ power.** A collective mandate publicly **commits** to
+//! listening to its base before voting on a topic, and the result + whether it FOLLOWED
+//! through stay public and immutable. The scorecard stops being "accusation" and becomes "instruction".
 //!
-//! Mandato é **indelegável por lei** → o software entrega **transparência do compromisso
-//! VOLUNTÁRIO**, NUNCA coerção. A copy nunca diz "vinculante"; diz "compromisso consultivo
-//! declarado". O `kind` é travado em `'consultivo'` por CHECK no schema.
+//! A mandate is **non-delegable by law** → the software delivers **transparency of the
+//! VOLUNTARY commitment**, NEVER coercion. The copy never says "binding"; it says "declared
+//! consultative commitment". The `kind` is locked to `'consultivo'` by a schema CHECK.
 //!
 //! ## Gate (operador)
-//! Só o operador do mandato: quem tem vínculo em `mandate_identity_binding` (mesmo critério do
-//! painel-mandato, do CRM e da `campanha.rs`). O `mandate_id` do compromisso é SEMPRE resolvido
-//! do vínculo do caller — é estruturalmente impossível um operador mexer no compromisso de outro
+//! Only the mandate's operator: whoever holds a binding in `mandate_identity_binding` (the same
+//! criterion as the mandate panel, the CRM and `campanha.rs`). The commitment's `mandate_id` is
+//! ALWAYS resolved from the caller's binding — it is structurally impossible for an operator to
 //! gabinete (as escritas chaveiam por `mandate_id = <mandato do caller>`).
 //!
-//! - `POST /me/mandate/commitments`            — declara um compromisso (tema + descrição).
-//! - `POST /me/mandate/commitments/{id}/consult` — abre uma consulta ligada à base (reusa o crate
+//! - `POST /me/mandate/commitments`            — declare a commitment (topic + description).
+//! - `POST /me/mandate/commitments/{id}/consult` — open a consultation with the base (reusing the
 //!   consultations; grava `consultation_id`).
 //! - `POST /me/mandate/commitments/{id}/outcome` — registra `seguiu`/`nao_seguiu` + nota.
-//! - `GET  /politicos/{mandate_id}/commitments`  — PÚBLICO: compromissos públicos do mandato +
+//! - `GET  /politicos/{mandate_id}/commitments`  — PUBLIC: the mandate's public commitments +
 //!   outcome + (se houver consulta) o agregado concordo/neutro/discordo.
 //!
 //! ## Nota LGPD
-//! A superfície pública só expõe **dado público**: tema, descrição, resultado declarado e o
-//! **agregado** da consulta (contagens por opção) — nunca a resposta por-cidadão.
+//! The public surface exposes **public data** only: topic, description, declared result and the
+//! consultation's **aggregate** (counts per option) — never a per-citizen answer.
 
 use axum::extract::{Json, Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -40,16 +40,16 @@ use sqlx::PgPool;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-/// Org default fixa das superfícies públicas/federação (mesma da `campanha.rs`).
+/// The fixed default org of the public/federation surfaces (the same as `campanha.rs`).
 const DEFAULT_ORG_UUID: Uuid = uuid::uuid!("11111111-1111-1111-1111-111111111111");
 
 const MAX_THEME: usize = 120;
 const MAX_DESCRIPTION: usize = 2000;
 const MAX_QUESTION: usize = 500;
 const MAX_OUTCOME_NOTE: usize = 2000;
-/// Teto de compromissos listados por mandato (a escala é pequena; sem paginação fina por ora).
+/// Cap of commitments listed per mandate (the scale is small; no fine pagination for now).
 const LIST_LIMIT: i64 = 500;
-/// Janela padrão de uma consulta aberta a partir de um compromisso.
+/// Default window of a consultation opened from a commitment.
 const CONSULT_WINDOW_DAYS: i64 = 14;
 
 pub fn routes(state: AppState) -> Router<()> {
@@ -110,8 +110,8 @@ fn not_operator() -> Response {
     )
 }
 
-/// Gate + resolução do mandato: o vínculo é a autorização E a chave de escopo. Devolve
-/// `Ok(mandate_id)` do caller, ou `Err(resposta pronta)` (401 sem sessão, 403 sem vínculo).
+/// Gate + mandate resolution: the binding is the authorization AND the scope key. Returns
+/// the caller's `Ok(mandate_id)`, or `Err(a ready response)` (401 without a session, 403 without a binding).
 async fn require_operator_mandate(db: &PgPool, headers: &HeaderMap) -> Result<Uuid, Response> {
     let Some(citizen) = caller_citizen(headers) else {
         return Err(unauthorized());
@@ -198,12 +198,12 @@ async fn create_commitment(
 }
 
 // ---------------------------------------------------------------------------
-// POST /me/mandate/commitments/{id}/consult — abre a consulta à base
+// POST /me/mandate/commitments/{id}/consult — open the consultation with the base
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
 struct ConsultBody {
-    /// Pergunta única da consulta. Opcional — cai num texto derivado do tema.
+    /// The consultation's single question. Optional — falls back to text derived from the topic.
     #[serde(default)]
     question: Option<String>,
 }
@@ -219,7 +219,7 @@ async fn open_consultation(
         Err(resp) => return resp,
     };
 
-    // Carrega o compromisso E confirma que é DESTE mandato (escopo por vínculo).
+    // Load the commitment AND confirm it belongs to THIS mandate (scope by binding).
     let row: Option<(String, Option<Uuid>)> = match sqlx::query_as(
         "SELECT theme, consultation_id FROM mandate_commitment \
          WHERE id = $1 AND mandate_id = $2",
@@ -250,7 +250,7 @@ async fn open_consultation(
         );
     }
 
-    // Pergunta: a informada, ou uma derivada do tema. Trim + teto de tamanho.
+    // Question: the given one, or one derived from the topic. Trim + length cap.
     let question = body
         .question
         .as_deref()
@@ -266,7 +266,7 @@ async fn open_consultation(
         );
     }
 
-    // Reusa o crate consultations: cria consulta + 1 pergunta numa transação (ADR-0014).
+    // Reuses the consultations crate: creates the consultation + 1 question in a transaction (ADR-0014).
     let org = OrgId::from_uuid(caller_org(&headers));
     let now = Utc::now();
     let closes_at = now + Duration::days(CONSULT_WINDOW_DAYS);
@@ -280,7 +280,7 @@ async fn open_consultation(
         }
     };
 
-    // Liga a consulta ao compromisso (guardado pelo mandato — idempotência: só liga se ainda nula).
+    // Links the consultation to the commitment (guarded by mandate — idempotent: links only while still null).
     let res = sqlx::query(
         "UPDATE mandate_commitment SET consultation_id = $1 \
          WHERE id = $2 AND mandate_id = $3 AND consultation_id IS NULL",
@@ -311,7 +311,7 @@ async fn open_consultation(
 }
 
 // ---------------------------------------------------------------------------
-// POST /me/mandate/commitments/{id}/outcome — registra seguiu/não-seguiu
+// POST /me/mandate/commitments/{id}/outcome — record followed/did-not-follow
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
@@ -332,7 +332,7 @@ async fn record_outcome(
         Err(resp) => return resp,
     };
 
-    // O operador só declara um resultado real; 'pendente' é o estado inicial, não um outcome.
+    // The operator only declares a real result; 'pendente' is the initial state, not an outcome.
     if body.outcome != "seguiu" && body.outcome != "nao_seguiu" {
         return fail(
             StatusCode::BAD_REQUEST,
@@ -381,10 +381,10 @@ async fn record_outcome(
 }
 
 // ---------------------------------------------------------------------------
-// GET /politicos/{mandate_id}/commitments — superfície pública
+// GET /politicos/{mandate_id}/commitments — public surface
 // ---------------------------------------------------------------------------
 
-/// Agregado público da consulta ligada ao compromisso (contagens por opção, nunca por-cidadão).
+/// Public aggregate of the consultation linked to the commitment (counts per option, never per-citizen).
 #[derive(Debug, Clone, Serialize)]
 struct ConsultationAggregate {
     consultation_id: Uuid,
@@ -401,17 +401,17 @@ struct PublicCommitment {
     id: Uuid,
     theme: String,
     description: String,
-    /// Sempre "consultivo" — a copy do front usa isso pra deixar claro que é voluntário.
+    /// Always "consultivo" — the front-end copy uses this to make clear it is voluntary.
     kind: String,
     /// `seguiu` | `nao_seguiu` | `pendente`.
     outcome: String,
     outcome_note: Option<String>,
     created_at: DateTime<Utc>,
-    /// Presente quando o mandato abriu uma consulta à base sobre este compromisso.
+    /// Present when the mandate opened a consultation with the base about this commitment.
     consultation: Option<ConsultationAggregate>,
 }
 
-/// Linha crua de um compromisso público.
+/// Raw row of a public commitment.
 #[derive(sqlx::FromRow)]
 struct CommitmentRow {
     id: Uuid,
@@ -447,7 +447,7 @@ async fn public_commitments(
         }
     };
 
-    // Consultas ligadas: agrega o placar de todas de uma vez (evita N+1).
+    // Linked consultations: aggregates every scoreboard at once (avoids N+1).
     let consultation_ids: Vec<Uuid> = rows.iter().filter_map(|r| r.consultation_id).collect();
     let aggregates = match load_aggregates(&state.db, &consultation_ids).await {
         Ok(a) => a,
@@ -486,7 +486,7 @@ async fn public_commitments(
         .into_response()
 }
 
-/// Monta o agregado (título/status + contagens concordo/neutro/discordo) de cada consulta ligada.
+/// Assemble the aggregate (title/status + agree/neutral/disagree counts) of each linked consultation.
 async fn load_aggregates(
     db: &PgPool,
     consultation_ids: &[Uuid],
@@ -494,7 +494,7 @@ async fn load_aggregates(
     if consultation_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    // Título + status da consulta.
+    // The consultation's title + status.
     let metas: Vec<(Uuid, String, String)> = sqlx::query_as(
         "SELECT id, title, status FROM consultations_consultation WHERE id = ANY($1)",
     )
@@ -520,7 +520,7 @@ async fn load_aggregates(
         })
         .collect();
 
-    // Contagens por opção, chaveadas pela consulta dona da pergunta.
+    // Counts per option, keyed by the consultation owning the question.
     let tallies: Vec<(Uuid, String, i64)> = sqlx::query_as(
         "SELECT q.consultation_id, r.answer, count(*) \
            FROM consultations_consultation_question q \
@@ -552,7 +552,7 @@ mod tests {
 
     #[test]
     fn outcome_vocabulary_is_closed() {
-        // Guardas do contrato: só estes três valores existem no schema/DTO.
+        // Contract guards: only these three values exist in the schema/DTO.
         for ok in ["seguiu", "nao_seguiu", "pendente"] {
             assert!(matches!(ok, "seguiu" | "nao_seguiu" | "pendente"));
         }

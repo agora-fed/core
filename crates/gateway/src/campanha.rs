@@ -1,20 +1,20 @@
-//! # Doações e financiamento de campanha (0.31.0, migration 0523).
+//! # Campaign donations and funding (0.31.0, migration 0523).
 //!
-//! Serviço da página `/servicos`: o(a) político(a) declara o financiamento
-//! da campanha (entradas/saídas, histórico imutável — corrige revogando) e
-//! configura a página de arrecadação (meta, meios oficiais, publicação).
+//! The `/servicos` page service: the official declares their campaign
+//! funding (inflows/outflows, an immutable history — corrections happen by revoking) and
+//! configures the fundraising page (goal, official channels, publication).
 //!
-//! **Gate**: só cidadão "do tipo político" — quem tem vínculo de mandato em
-//! `mandate_identity_binding` (mesmo critério do painel-mandato). Todos os
-//! endpoints exigem sessão; os de escrita exigem o gate.
+//! **Gate**: only a "politician-type" citizen — whoever holds a mandate binding in
+//! `mandate_identity_binding` (the same criterion as the mandate panel). Every
+//! endpoint requires a session; the writing ones require the gate.
 //!
-//! - `GET    /me/campanha` — visão completa: flag do gate, config e lançamentos.
-//! - `POST   /me/campanha/lancamentos` — novo lançamento (entrada/saída).
-//! - `DELETE /me/campanha/lancamentos/{id}` — revoga o próprio lançamento.
-//! - `PUT    /me/campanha/config` — upsert da configuração de arrecadação.
-//! - `GET    /campanha/{handle}` — página PÚBLICA da declaração (só quando
-//!   `is_published` e o vínculo de mandato segue vivo; 404 uniforme nos demais
-//!   casos pra não vazar existência de config despublicada).
+//! - `GET    /me/campanha` — the full view: gate flag, config and entries.
+//! - `POST   /me/campanha/lancamentos` — a new entry (inflow/outflow).
+//! - `DELETE /me/campanha/lancamentos/{id}` — revoke one's own entry.
+//! - `PUT    /me/campanha/config` — upsert the fundraising configuration.
+//! - `GET    /campanha/{handle}` — the PUBLIC declaration page (only when
+//!   `is_published` and the mandate binding is still alive; a uniform 404 otherwise
+//!   so an unpublished config's existence never leaks).
 
 use axum::extract::{Json, Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-/// Mesma org default fixa da superfície de federação/perfis públicos.
+/// The same fixed default org as the federation/public-profile surface.
 const DEFAULT_ORG_UUID: Uuid = uuid::uuid!("11111111-1111-1111-1111-111111111111");
 
 const MAX_DESCRICAO: usize = 200;
@@ -38,8 +38,8 @@ const MAX_RECEIPT: usize = 60;
 const MAX_DONOR: usize = 120;
 const MAX_BANK: usize = 200;
 const MAX_URL: usize = 300;
-/// Teto sanidade por lançamento: R$ 100 milhões em centavos. O TSE nunca
-/// viu campanha municipal ou federal perto disso num lançamento só.
+/// Sanity cap per entry: R$ 100 million in cents. The electoral authority has never
+/// seen a municipal or federal campaign come close to that in a single entry.
 const MAX_VALOR_CENTAVOS: i64 = 10_000_000_000;
 const LIST_LIMIT: i64 = 500;
 
@@ -91,7 +91,7 @@ fn not_politico() -> Response {
     )
 }
 
-/// Gate "político": o mesmo vínculo que abre o painel-mandato.
+/// The "politician" gate: the same binding that unlocks the mandate panel.
 async fn is_politico(db: &PgPool, citizen: Uuid) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar(
         r"SELECT EXISTS (SELECT 1 FROM mandate_identity_binding WHERE citizen_id = $1)",
@@ -101,9 +101,9 @@ async fn is_politico(db: &PgPool, citizen: Uuid) -> Result<bool, sqlx::Error> {
     .await
 }
 
-/// Vínculo VERIFICADO (directory/strong)? Candidato auto-declarado (binding
-/// nível 'email', 0526) fica `false` — o front pinta o selo "candidatura
-/// autodeclarada — não verificada" nas superfícies públicas.
+/// A VERIFIED binding (directory/strong)? A self-declared candidate (an 'email'-level
+/// binding, 0526) stays `false` — the front end paints the "self-declared, unverified
+/// candidacy" badge on public surfaces.
 async fn is_verificado(db: &PgPool, citizen: Uuid) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar(
         r"SELECT EXISTS (SELECT 1 FROM mandate_identity_binding
@@ -115,7 +115,7 @@ async fn is_verificado(db: &PgPool, citizen: Uuid) -> Result<bool, sqlx::Error> 
 }
 
 // ---------------------------------------------------------------------------
-// GET /me/campanha — visão completa
+// GET /me/campanha — the full view
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -141,7 +141,7 @@ struct ConfigDto {
 #[derive(Debug, Serialize)]
 struct CampanhaDto {
     is_politico: bool,
-    /// Vínculo directory/strong. false = candidatura autodeclarada (selo no front).
+    /// A directory/strong binding. false = a self-declared candidacy (badge on the front end).
     verificado: bool,
     config: Option<ConfigDto>,
     lancamentos: Vec<EntryDto>,
@@ -159,9 +159,9 @@ async fn overview(State(state): State<AppState>, headers: HeaderMap) -> Response
         }
     };
     if !politico {
-        // O front (e o AuthMenu) usa a flag pra esconder o serviço — 200 com
-        // is_politico=false em vez de 403 pra não poluir o console de quem
-        // só abriu o menu.
+        // The front end (and the AuthMenu) uses the flag to hide the service — 200 with
+        // is_politico=false rather than 403, so the console of someone who merely
+        // opened the menu stays clean.
         return (
             StatusCode::OK,
             Json(ApiResponse::ok(CampanhaDto {
@@ -227,7 +227,7 @@ async fn overview(State(state): State<AppState>, headers: HeaderMap) -> Response
 }
 
 // ---------------------------------------------------------------------------
-// GET /campanha/{handle} — página pública da declaração
+// GET /campanha/{handle} — the declaration's public page
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Serialize)]
@@ -235,7 +235,7 @@ struct CampanhaPublicaDto {
     handle: String,
     display_name: Option<String>,
     avatar_url: Option<String>,
-    /// false = candidatura autodeclarada, ainda sem verificação (selo público).
+    /// false = a self-declared candidacy, not yet verified (public badge).
     verificado: bool,
     meta_centavos: Option<i64>,
     bank_account: Option<String>,
@@ -247,8 +247,8 @@ struct CampanhaPublicaDto {
 }
 
 fn public_not_found() -> Response {
-    // Mensagem única para handle inexistente, config despublicada ou vínculo
-    // perdido — quem está de fora não descobre qual dos três.
+    // A single message for an unknown handle, an unpublished config or a lost
+    // binding — an outsider never learns which of the three it was.
     fail(
         StatusCode::NOT_FOUND,
         "not_found",
@@ -281,7 +281,7 @@ async fn public_view(State(state): State<AppState>, Path(handle): Path<String>) 
     let Some(config) = config else {
         return public_not_found();
     };
-    // Vínculo perdido despublica na prática — a página some junto com o gate.
+    // A lost binding unpublishes in practice — the page disappears along with the gate.
     match is_politico(&state.db, citizen).await {
         Ok(true) => {}
         Ok(false) => return public_not_found(),
@@ -464,7 +464,7 @@ async fn add_entry(
 }
 
 // ---------------------------------------------------------------------------
-// DELETE /me/campanha/lancamentos/{id} — revoga (histórico permanece)
+// DELETE /me/campanha/lancamentos/{id} — revoke (the history remains)
 // ---------------------------------------------------------------------------
 
 async fn revoke_entry(

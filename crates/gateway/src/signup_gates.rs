@@ -6,20 +6,20 @@
 //! - `GET  /admin/ip_rules`
 //! - `POST /admin/ip_rules {cidr, scope, state, reason?}`
 //! - `DELETE /admin/ip_rules/{id}`
-//! - `GET  /admin/pending_signups` (contas com pending_review=true)
+//! - `GET  /admin/pending_signups` (accounts with pending_review=true)
 //! - `POST /admin/pending_signups/{id}/approve`
 //! - `POST /admin/pending_signups/{id}/reject` (marca suspended_at)
 //!
 //! **Enforcement (0.28.2)** — [`gates_middleware`], aplicado no router
-//! `/api/v1` do gateway (as tabelas são deste módulo; dsoc-auth não as
-//! conhece — sem cross-crate coupling):
-//! - `POST …/auth/register[/politician]`: recusa e-mail com domínio em
+//! `/api/v1` router (the tables belong to this module; dsoc-auth does not
+//! know them — no cross-crate coupling):
+//! - `POST …/auth/register[/politician]`: refuses an e-mail whose domain is in
 //!   `email_domain_block` e IP negado por `ip_rule` (escopo signup/all);
 //! - `POST …/auth/login`: recusa IP negado por `ip_rule` (escopo login/all).
 //!
-//! `citizen.pending_review` é imposto DENTRO do dsoc-auth (tabela dele):
-//! `GATEWAY_SIGNUP_REQUIRES_REVIEW=true` faz o confirm criar a conta
-//! pendente e o login recusar até a aprovação em /admin/revisoes.
+//! `citizen.pending_review` is enforced INSIDE dsoc-auth (its own table):
+//! `GATEWAY_SIGNUP_REQUIRES_REVIEW=true` makes confirm create the account
+//! pending, and login refuses it until approval in /admin/revisoes.
 
 use std::net::IpAddr;
 
@@ -262,7 +262,7 @@ async fn add_ip_rule(
     if !matches!(body.state.as_str(), "allow" | "deny") {
         return bad("state deve ser allow ou deny");
     }
-    // Validação leve do CIDR: parse pra std::net.
+    // Light CIDR validation: parse into std::net.
     let cidr = body.cidr.trim();
     if !cidr_is_valid(cidr) {
         return bad("cidr inválido (use IP ou IP/prefixo)");
@@ -421,15 +421,15 @@ async fn reject_pending(
 // Enforcement — middleware nas rotas de register/login (0.28.2)
 // ---------------------------------------------------------------------------
 
-/// Teto de body bufferizado pelo middleware nas rotas gated. Os payloads
-/// reais de register/login têm ~200 bytes; 32 KiB dá folga sem abrir DoS.
+/// Cap of the body buffered by the middleware on gated routes. Real
+/// register/login payloads are ~200 bytes; 32 KiB leaves room without opening a DoS.
 const GATE_BODY_LIMIT: usize = 32 * 1024;
 
 /// Middleware aplicado ao router `/api/v1`: intercepta register/login e
 /// aplica as regras administradas em /admin/email-domains e /admin/ip-rules.
 /// Falha ABERTA em erro de DB (log + segue) — indisponibilidade de storage
-/// não pode derrubar cadastro/login inteiros; a regra volta a valer no
-/// próximo request saudável.
+/// cannot bring down signup/login entirely; the rule applies again on the
+/// next healthy request.
 pub async fn gates_middleware(State(state): State<AppState>, req: Request, next: Next) -> Response {
     let path = req.uri().path();
     let is_register =
@@ -448,8 +448,8 @@ pub async fn gates_middleware(State(state): State<AppState>, req: Request, next:
     }
 
     if is_register {
-        // O domínio do e-mail vive no body — bufferiza (com teto), inspeciona
-        // e devolve os mesmos bytes pro extractor Json do handler.
+        // The e-mail domain lives in the body — buffer it (with a cap), inspect it
+        // and hand the same bytes back to the handler's Json extractor.
         let (parts, body) = req.into_parts();
         let bytes = match axum::body::to_bytes(body, GATE_BODY_LIMIT).await {
             Ok(b) => b,
@@ -479,8 +479,8 @@ pub async fn gates_middleware(State(state): State<AppState>, req: Request, next:
     next.run(req).await
 }
 
-/// Mesma leitura de X-Forwarded-For do resto do gateway (atrás do Caddy).
-/// Sem header ⇒ sem checagem de IP — postura idêntica aos rate-limits.
+/// The same X-Forwarded-For read as the rest of the gateway (behind Caddy).
+/// No header ⇒ no IP check — an identical posture to the rate limits.
 fn client_ip(headers: &HeaderMap) -> Option<IpAddr> {
     headers
         .get("x-forwarded-for")
@@ -489,8 +489,8 @@ fn client_ip(headers: &HeaderMap) -> Option<IpAddr> {
         .and_then(|s| s.trim().parse().ok())
 }
 
-/// Resposta única pra qualquer gate — deliberadamente não diz QUAL regra
-/// barrou (não ensinar o bloqueado a contornar).
+/// A single response for any gate — deliberately not saying WHICH rule
+/// blocked (never teach the blocked party how to work around it).
 fn gate_denied() -> Response {
     (
         StatusCode::FORBIDDEN,
@@ -503,7 +503,7 @@ fn gate_denied() -> Response {
         .into_response()
 }
 
-/// O domínio do e-mail está em `email_domain_block`? Fail-open em erro.
+/// Is the e-mail's domain in `email_domain_block`? Fail-open on error.
 async fn email_domain_blocked(db: &PgPool, email: &str) -> bool {
     let Some(domain) = email
         .rsplit_once('@')
@@ -530,7 +530,7 @@ async fn email_domain_blocked(db: &PgPool, email: &str) -> bool {
     }
 }
 
-/// O IP é negado pelas `ip_rule` do escopo? Fail-open em erro de DB.
+/// Is the IP denied by the scope's `ip_rule`s? Fail-open on a DB error.
 async fn ip_denied(db: &PgPool, ip: IpAddr, scope: &str) -> bool {
     let rules: Vec<(String, String)> =
         match sqlx::query_as(r"SELECT cidr, state FROM ip_rule WHERE scope = $1 OR scope = 'all'")
@@ -547,8 +547,8 @@ async fn ip_denied(db: &PgPool, ip: IpAddr, scope: &str) -> bool {
     ip_denied_by_rules(ip, &rules)
 }
 
-/// Semântica da 0514: deny que casa nega; existindo QUALQUER allow no
-/// escopo, o pool vira allowlist (IP fora de todos os allows é negado);
+/// 0514 semantics: a matching deny denies; if ANY allow exists in the
+/// scope, the pool becomes an allowlist (an IP outside every allow is denied);
 /// allowlist vazia = todos passam.
 fn ip_denied_by_rules(ip: IpAddr, rules: &[(String, String)]) -> bool {
     let mut has_allow = false;
@@ -567,9 +567,9 @@ fn ip_denied_by_rules(ip: IpAddr, rules: &[(String, String)]) -> bool {
     has_allow && !allowed
 }
 
-/// `ip` pertence a `cidr` ("a.b.c.d", "a.b.c.d/nn", "xx::/nn")? Famílias
-/// diferentes nunca casam; prefixo ausente = host único; prefixo inválido
-/// não casa (regra malformada nunca deve negar por acidente).
+/// Does `ip` belong to `cidr` ("a.b.c.d", "a.b.c.d/nn", "xx::/nn")? Different
+/// families never match; a missing prefix = a single host; an invalid prefix
+/// never matches (a malformed rule must never deny by accident).
 fn cidr_match(ip: IpAddr, cidr: &str) -> bool {
     let (base, prefix) = match cidr.split_once('/') {
         Some((b, p)) => (b, p.parse::<u32>().ok()),
@@ -622,7 +622,7 @@ mod tests {
         assert!(cidr_match(ip("203.0.113.5"), "203.0.113.5"));
         assert!(cidr_match(ip("2804:710:d0:9::a000"), "2804:710:d0::/48"));
         assert!(!cidr_match(ip("2804:711::1"), "2804:710:d0::/48"));
-        // Família cruzada e regra malformada nunca casam.
+        // A crossed family and a malformed rule never match.
         assert!(!cidr_match(ip("192.168.1.7"), "2804:710::/32"));
         assert!(!cidr_match(ip("192.168.1.7"), "not-a-cidr"));
         assert!(!cidr_match(ip("192.168.1.7"), "192.168.1.0/99"));
@@ -645,7 +645,7 @@ mod tests {
         assert!(!ip_denied_by_rules(ip("192.168.5.5"), &rules));
         assert!(ip_denied_by_rules(ip("172.16.0.1"), &rules));
         assert!(ip_denied_by_rules(ip("10.0.0.1"), &rules));
-        // Sem regra nenhuma: todos passam.
+        // With no rule at all: everyone passes.
         assert!(!ip_denied_by_rules(ip("8.8.8.8"), &[]));
     }
 }

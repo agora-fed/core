@@ -1,7 +1,7 @@
-//! Admin: gerenciamento completo de usuários (0.25.0-fediverso).
+//! Admin: complete user management (0.25.0-fediverse).
 //!
-//! Endpoints ricos pra o painel `/admin/usuarios`:
-//! - `GET /admin/users` — lista com joins (auth_credential, admin_role_binding,
+//! Rich endpoints for the `/admin/usuarios` panel:
+//! - `GET /admin/users` — a list with joins (auth_credential, admin_role_binding,
 //!   party_administrator, mandate_identity_binding, candidacy). Filtros:
 //!   `q` (handle/email/display_name), `party` (party_sigla), `platform_role`
 //!   (owner|admin|auditor|none), `party_role` (admin|moderador|none),
@@ -28,7 +28,7 @@ use uuid::Uuid;
 
 pub fn routes(state: AppState) -> Router<()> {
     Router::new()
-        // GET com filtros ricos — path distinto de `/admin/users` (que é o
+        // GET with rich filters — a path distinct from `/admin/users` (which is the
         // list "legacy" mais simples, mantido em `admin_ext.rs`).
         .route("/admin/users-rich", get(list))
         .route("/admin/users/{id}", patch(update))
@@ -105,9 +105,9 @@ pub struct AdminUserRow {
     pub verification_level: String,
     pub is_public: bool,
     pub titulo_status: Option<String>,
-    // Status da verificação de CPF (auth_credential.cpf_status): 'validated' | outro | NULL.
+    // Identity-document verification status (auth_credential.cpf_status): 'validated' | other | NULL.
     pub cpf_status: Option<String>,
-    // Dados pessoais (obrigatórios no cadastro, 0664). CPF vem MASCARADO do servidor.
+    // Personal data (mandatory at signup, 0664). The document arrives MASKED from the server.
     pub legal_name: Option<String>,
     pub gender: Option<String>,
     pub birth_date: Option<chrono::NaiveDate>,
@@ -116,15 +116,15 @@ pub struct AdminUserRow {
     pub cpf_masked: Option<String>,
     pub party_sigla: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
-    // Papel na plataforma (owner|admin|auditor) — NULL se não tem.
+    // Platform role (owner|admin|auditor) — NULL when there is none.
     pub platform_role: Option<String>,
     // Papel de partido — (party_sigla, role). Se admin de mais de um, pega o primeiro.
     pub party_admin_sigla: Option<String>,
     pub party_admin_role: Option<String>,
-    // Perfil cívico — flags derivadas.
+    // Civic profile — derived flags.
     pub has_mandate: bool,
     pub has_candidacy: bool,
-    // Estado de moderação (0.26.11).
+    // Moderation state (0.26.11).
     pub suspended_at: Option<chrono::DateTime<chrono::Utc>>,
     pub silenced_at: Option<chrono::DateTime<chrono::Utc>>,
 }
@@ -145,8 +145,8 @@ struct ListParams {
     /// `admin`|`moderador`|`none`|`any` (default `any`).
     #[serde(default)]
     party_role: Option<String>,
-    /// `cidadao` (sem mandato/candidatura) | `politico` (tem mandate binding)
-    /// | `candidato` (tem candidacy) | `any` (default).
+    /// `cidadao` (no mandate/candidacy) | `politico` (has a mandate binding)
+    /// | `candidato` (has a candidacy) | `any` (default).
     #[serde(default)]
     civic_type: Option<String>,
     #[serde(default = "default_limit")]
@@ -177,7 +177,7 @@ async fn list(
     let party_role = params.party_role.clone();
     let civic_type = params.civic_type.clone();
 
-    // Query rica com joins. Todas as filtragens são NULL-safe via COALESCE.
+    // A rich query with joins. Every filter is NULL-safe via COALESCE.
     let rows: Vec<AdminUserRow> = match sqlx::query_as(
         r"
         WITH
@@ -381,16 +381,16 @@ struct PlatformRoleBody {
     /// `owner`|`admin`|`auditor`|`none` (remove).
     role: String,
     /// Org sob a qual o papel vale. Se ausente, usamos o primeiro org da
-    /// tabela (single-org install é o caso mais comum hoje).
+    /// table (a single-org install is the most common case today).
     #[serde(default)]
     org_id: Option<Uuid>,
 }
 
 // ---------------------------------------------------------------------------
-// Aviso por e-mail ao designar um papel (0.50.0) — templates aprovados em revisão.
+// E-mail notice when a role is assigned (0.50.0) — templates approved in review.
 // ---------------------------------------------------------------------------
 
-/// Qual papel foi atribuído — carrega o dado necessário pro template.
+/// Which role was assigned — carries the data the template needs.
 enum RoleNotice {
     /// Admin de partido (sigla).
     PartyAdmin(String),
@@ -400,12 +400,12 @@ enum RoleNotice {
     Platform(String),
 }
 
-/// Dispara, em background (fire-and-forget), o e-mail de designação. O texto vem
-/// do catálogo editável (`email_template`, keys `role_party_admin` /
-/// `role_party_moderador` / `role_platform`) renderizado com `{{vars}}`, enviado
-/// multipart (texto + HTML da marca). Best-effort: o papel já foi gravado; se o
-/// SMTP estiver ausente, o template faltar ou o envio falhar, só loga — nunca
-/// falha a operação de admin.
+/// Fires the assignment e-mail in the background (fire-and-forget). The text comes
+/// from the editable catalog (`email_template`, keys `role_party_admin` /
+/// `role_party_moderador` / `role_platform`) rendered with `{{vars}}`, sent as
+/// multipart (text + branded HTML). Best-effort: the role is already stored; if
+/// SMTP is absent, the template is missing or the send fails, it only logs — it never
+/// fails the admin operation.
 fn notify_role_bg(db: &PgPool, citizen_id: Uuid, notice: RoleNotice) {
     let db = db.clone();
     tokio::spawn(async move {
@@ -517,7 +517,7 @@ async fn set_platform_role(
         }
     } else if matches!(body.role.as_str(), "owner" | "admin" | "auditor") {
         // Substitui qualquer role antigo por este novo. Duas queries em
-        // uma tx — sqlx prepared statement não aceita `DELETE ...; INSERT`.
+        // one tx — an sqlx prepared statement does not accept `DELETE ...; INSERT`.
         let mut tx = match state.db.begin().await {
             Ok(t) => t,
             Err(err) => return storage_resp(err),
@@ -571,7 +571,7 @@ async fn set_platform_role(
 struct PartyRoleBody {
     /// `admin`|`moderador`|`none` (remove).
     role: String,
-    /// Obrigatório quando role ≠ 'none'.
+    /// Mandatory when role ≠ 'none'.
     #[serde(default)]
     party_sigla: Option<String>,
     #[serde(default)]
@@ -631,10 +631,10 @@ async fn set_party_role(
                     .into_response();
             }
         };
-        // Substitui qualquer papel antigo do cidadão nessa org pra evitar
-        // duplicidade (poderíamos permitir vários partidos por cidadão, mas
-        // a UI trata como 1:1). Duas queries em uma tx — sqlx prepared
-        // statement não aceita `DELETE ...; INSERT`.
+        // Replaces any previous role of the citizen in that org to avoid
+        // duplication (we could allow several parties per citizen, but
+        // the UI treats it as 1:1). Two queries in one tx — an sqlx prepared
+        // statement does not accept `DELETE ...; INSERT`.
         let mut tx = match state.db.begin().await {
             Ok(t) => t,
             Err(err) => return storage_resp(err),

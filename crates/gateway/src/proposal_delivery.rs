@@ -1,23 +1,23 @@
-//! Recibo de entrega da proposta — subscriber do `ProposalCreated` que
+//! Proposal delivery receipt — the `ProposalCreated` subscriber that
 //! dispara dois e-mails (autor + gabinete) e registra o timestamp de envio
 //! em `proposal.notified_{author,mandate}_at`.
 //!
-//! Reutiliza o mesmo transport SMTP das outras notificações (password_reset,
-//! signup_verify, mandate_invite). Sem SMTP configurado, loga o link em INFO
-//! e ainda escreve o timestamp (dev-mode).
+//! Reuses the same SMTP transport as the other notifications (password_reset,
+//! signup_verify, mandate_invite). Without SMTP configured it logs the link at INFO
+//! and still writes the timestamp (dev-mode).
 //!
 //! # Contrato
 //! - Ao receber `Event::ProposalCreated { proposal, mandate, .. }`:
 //!   1. Resolve `author_citizen_id` + `title` + `body` da proposta.
 //!   2. Resolve `email` do autor via `auth_credential`.
 //!   3. Resolve `public_email` + `display_name` do mandato.
-//!   4. Envia dois e-mails em paralelo (spawn — não bloqueia o dispatch loop).
+//!   4. Sends two e-mails in parallel (spawn — never blocks the dispatch loop).
 //!   5. Grava os timestamps (idempotente: `IS NULL` guard evita re-write).
 //!
 //! # Nota LGPD
-//! O e-mail pro autor tem título + trecho da própria proposta (dele mesmo).
-//! O e-mail pro gabinete usa `mandate.public_email` (dado público oficial do
-//! Câmara/Senado/TSE) — não é canal privado.
+//! The author's e-mail carries the title + an excerpt of their own proposal.
+//! The office's e-mail uses `mandate.public_email` (official public data from the
+//! legislature/electoral authority) — not a private channel.
 
 use async_trait::async_trait;
 use dsoc_core::events::{Event, EventEnvelope};
@@ -50,7 +50,7 @@ impl EventHandler for ProposalDeliverySub {
 
 impl ProposalDeliverySub {
     async fn dispatch(&self, proposal_id: Uuid, _mandate_id: Uuid) {
-        // Uma query só puxa proposta + autor — os destinatários vêm da proposal_target (0537).
+        // A single query pulls proposal + author — recipients come from proposal_target (0537).
         let row: Option<ProposalDeliveryRow> = match sqlx::query_as(
             r"SELECT p.title,
                      p.body,
@@ -76,8 +76,8 @@ impl ProposalDeliverySub {
         let Some(row) = row else {
             return;
         };
-        // Multi-destinatário (0537): todos os gabinetes da proposta, principal incluído
-        // (o backfill da migration garante ao menos 1 linha pra propostas antigas).
+        // Multi-recipient (0537): every office of the proposal, primary included
+        // (the migration's backfill guarantees at least 1 row for old proposals).
         let targets: Vec<TargetDeliveryRow> = match sqlx::query_as(
             r"SELECT pt.mandate_id,
                      pt.notified_at,
@@ -108,7 +108,7 @@ impl ProposalDeliverySub {
         );
         let smtp = smtp_from_env();
 
-        // Nome(s) pro e-mail do autor: "Fulana" ou "Fulana, Beltrano e Cicrana".
+        // Name(s) for the author's e-mail: "Fulana" or "Fulana, Beltrano and Cicrana".
         let mandate_name = match targets.len() {
             0 => "(mandato)".to_owned(),
             1 => targets[0].display_name.clone(),
@@ -124,7 +124,7 @@ impl ProposalDeliverySub {
                 ""
             };
 
-        // AUTHOR — só se ainda não notificado E se tem e-mail.
+        // AUTHOR — only when not yet notified AND an e-mail exists.
         if row.notified_author_at.is_none() {
             if let Some(email) = row.author_email.as_deref() {
                 let mut ctx: HashMap<&str, String> = HashMap::new();
@@ -138,7 +138,7 @@ impl ProposalDeliverySub {
                 )
                 .await
                 .unwrap_or_else(|| {
-                    // Fallback hardcoded — só se a linha na DB sumiu.
+                    // Hardcoded fallback — only if the DB row vanished.
                     (
                         format!("Sua proposta foi registrada — {}", row.title),
                         format!(
@@ -159,9 +159,9 @@ impl ProposalDeliverySub {
             }
         }
 
-        // GABINETES (0537) — um e-mail por destinatário ainda não notificado que tenha
-        // e-mail público. Cada envio carimba o recibo do PRÓPRIO gabinete; o principal
-        // também carimba o legado `proposal.notified_mandate_at` (UI/clientes antigos).
+        // OFFICES (0537) — one e-mail per not-yet-notified recipient that has a
+        // public e-mail. Each send stamps that office's OWN receipt; the primary
+        // also stamps the legacy `proposal.notified_mandate_at` (old UI/clients).
         for target in &targets {
             if target.notified_at.is_some() {
                 continue;
@@ -200,11 +200,11 @@ impl ProposalDeliverySub {
         }
     }
 
-    /// Retry sweep: reencontra propostas cujo e-mail (autor OU gabinete) não saiu
-    /// — porque o SMTP falhou na 1ª tentativa e o cursor do evento já avançou
-    /// (o envio é fire-and-forget e só carimba em sucesso) — e re-dispara a
-    /// entrega. Idempotente: `dispatch` só reenvia o lado com `notified_*_at IS NULL`.
-    /// Janela: propostas com > 90s (deixa a 1ª tentativa acontecer) e < 7 dias.
+    /// Retry sweep: finds proposals whose e-mail (author OR office) never went out
+    /// — because SMTP failed on the 1st attempt and the event cursor already moved on
+    /// (the send is fire-and-forget and only stamps on success) — and re-fires the
+    /// delivery. Idempotent: `dispatch` only resends the side with `notified_*_at IS NULL`.
+    /// Window: proposals older than 90s (letting the 1st attempt happen) and under 7 days.
     pub async fn sweep_undelivered(&self) {
         let rows: Vec<(Uuid,)> = match sqlx::query_as(
             r"SELECT p.id
@@ -230,7 +230,7 @@ impl ProposalDeliverySub {
             tracing::info!(count = rows.len(), "proposal_delivery: retry sweep");
         }
         for (proposal_id,) in rows {
-            // `dispatch` re-resolve o mandato pela JOIN; o 2º arg é ignorado.
+            // `dispatch` re-resolves the mandate through the JOIN; the 2nd arg is ignored.
             self.dispatch(proposal_id, Uuid::nil()).await;
         }
     }
@@ -274,9 +274,9 @@ impl ProposalDeliverySub {
         let _ = stamp_now(&self.db, proposal_id, column).await;
     }
 
-    /// Versão por-gabinete do [`Self::send_and_stamp`] (0537): em sucesso carimba
-    /// `proposal_target.notified_at` do destinatário; `stamp_legacy` também carimba o
-    /// `proposal.notified_mandate_at` (o destinatário principal, pra UI/clientes antigos).
+    /// Per-office version of [`Self::send_and_stamp`] (0537): on success it stamps
+    /// the recipient's `proposal_target.notified_at`; `stamp_legacy` also stamps
+    /// `proposal.notified_mandate_at` (the primary recipient, for old UI/clients).
     #[allow(clippy::too_many_arguments)]
     async fn send_and_stamp_target(
         &self,
@@ -315,7 +315,7 @@ impl ProposalDeliverySub {
 }
 
 /// Carimba o recibo por-gabinete (e, opcionalmente, o legado do principal). Idempotente:
-/// ambos os UPDATEs têm guarda `IS NULL`.
+/// both UPDATEs carry an `IS NULL` guard.
 async fn stamp_target_now(db: &PgPool, proposal_id: Uuid, mandate_id: Uuid, stamp_legacy: bool) {
     if let Err(err) = sqlx::query(
         "UPDATE proposal_target SET notified_at = now()
@@ -334,7 +334,7 @@ async fn stamp_target_now(db: &PgPool, proposal_id: Uuid, mandate_id: Uuid, stam
 }
 
 async fn stamp_now(db: &PgPool, proposal_id: Uuid, column: &'static str) -> Result<()> {
-    // column: literal validado no callsite; não vem do usuário.
+    // column: a literal validated at the call site; it never comes from the user.
     let sql = format!(
         "UPDATE proposal SET {} = now() WHERE id = $1 AND {} IS NULL",
         column, column
@@ -349,7 +349,7 @@ async fn stamp_now(db: &PgPool, proposal_id: Uuid, column: &'static str) -> Resu
 struct ProposalDeliveryRow {
     title: String,
     body: String,
-    /// Destinatário PRINCIPAL — usado só pra decidir o carimbo legado.
+    /// PRIMARY recipient — used only to decide the legacy stamp.
     mandate_id: Uuid,
     #[allow(dead_code)]
     author_citizen_id: Option<Uuid>,
@@ -358,7 +358,7 @@ struct ProposalDeliveryRow {
     author_email: Option<String>,
 }
 
-/// Um destinatário pendente/entregue da proposta (JOIN proposal_target × mandate).
+/// A pending/delivered recipient of the proposal (JOIN proposal_target × mandate).
 #[derive(sqlx::FromRow, Debug)]
 struct TargetDeliveryRow {
     mandate_id: Uuid,
@@ -368,8 +368,8 @@ struct TargetDeliveryRow {
 }
 
 // ---------------------------------------------------------------------------
-// SMTP — reaproveita config das outras crates (password_reset etc.), duplicado
-// aqui pra evitar cross-crate coupling. Se um dia sair um `dsoc_mailer`
+// SMTP — reuses the other crates' config (password_reset etc.), duplicated
+// here to avoid cross-crate coupling. If a centralized `dsoc_mailer` ever
 // centralizado, este bloco vai junto.
 // ---------------------------------------------------------------------------
 
@@ -382,9 +382,9 @@ pub(crate) struct SmtpConfig {
     pub(crate) from: String,
 }
 
-/// `Debug` MANUAL (não derive): `user`/`pass` são credenciais do relay soberano —
-/// derivar cru vazaria a senha SMTP em qualquer `tracing::debug!`/panic. Só a
-/// presença é observável.
+/// MANUAL `Debug` (not derived): `user`/`pass` are the sovereign relay's credentials —
+/// deriving it raw would leak the SMTP password in any `tracing::debug!`/panic. Only
+/// their presence is observable.
 impl std::fmt::Debug for SmtpConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SmtpConfig")
@@ -423,7 +423,7 @@ pub(crate) async fn send_email(
 ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Delega ao INTERCOMS (ADR-0016, #68): unifica o envio de e-mail do gateway no
     // `SmtpProvider`. Assinatura mantida — os ~4 callers (civic_notify, forum_mailer,
-    // email_templates, federation) passam a mandar via INTERCOMS sem mudança.
+    // email_templates, federation) now send through INTERCOMS with no change.
     use crate::intercoms::{MessageSender, OutboundMessage, SmtpProvider};
     SmtpProvider::new(cfg.clone())
         .send(&OutboundMessage::email(to, subject, body))

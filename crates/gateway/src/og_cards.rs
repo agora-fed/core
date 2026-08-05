@@ -1,13 +1,13 @@
-//! # OG cards dinâmicas (item 7 do plano, fatia 2 — 0.33.0).
+//! # Dynamic OG cards (item 7 of the plan, slice 2 — 0.33.0).
 //!
-//! `GET /og/placar/{mandate_id}.png` — card 1200×630 com o placar público do
-//! mandato (respondidas × silêncios × taxa), pronto pra `og:image`/Twitter
+//! `GET /og/placar/{mandate_id}.png` — a 1200×630 card with the mandate's public
+//! scorecard (answered × silences × rate), ready for `og:image`/Twitter
 //! card. A fatia 1 (0.30.2) entregou o widget iframe; esta fecha o item: o
-//! placar circula como IMAGEM quando alguém cola o link do político no
-//! WhatsApp, X, Telegram ou Mastodon — consequência só existe se circula.
+//! scorecard circulates as an IMAGE when someone pastes an official's link into
+//! WhatsApp, X, Telegram or Mastodon — consequence only exists if it circulates.
 //!
-//! Rasterização 100% in-process (`image` + `ab_glyph`, DejaVu Sans embarcada
-//! no binário — licença Bitstream Vera, redistribuição livre): zero stack
+//! Rasterization is 100% in-process (`image` + `ab_glyph`, DejaVu Sans embedded
+//! in the binary — Bitstream Vera license, freely redistributable): zero external
 //! externa de screenshot/navegador. Cache 5 min, mesmo TTL do embed.
 
 use axum::extract::{Path, State};
@@ -30,7 +30,7 @@ static FONT_BOLD: &[u8] = include_bytes!("../assets/fonts/DejaVuSans-Bold.ttf");
 const W: u32 = 1200;
 const H: u32 = 630;
 
-// Paleta — mesma família do brand (verde #15803d) + neutros slate.
+// Palette — the same family as the brand (green #15803d) + slate neutrals.
 const BG: Rgba<u8> = Rgba([255, 255, 255, 255]);
 const ACCENT: Rgba<u8> = Rgba([21, 128, 61, 255]); // #15803d
 const INK: Rgba<u8> = Rgba([15, 23, 42, 255]); // #0f172a
@@ -42,16 +42,16 @@ const TRACK: Rgba<u8> = Rgba([226, 232, 240, 255]); // #e2e8f0
 
 pub fn routes(state: AppState) -> Router<()> {
     Router::new()
-        // Axum casa segmento inteiro — o `.png` é removido no handler.
+        // Axum matches a whole segment — the `.png` is stripped in the handler.
         .route("/og/placar/{file}", get(placar_card))
-        // C5 (Bloco C): certificado de responsividade compartilhável — a versão
-        // POSITIVA do card, com o selo/tier em destaque.
+        // C5 (Block C): a shareable responsiveness certificate — the POSITIVE
+        // version of the card, with the badge/tier in the spotlight.
         .route("/og/certificado/{file}", get(certificado_card))
         .with_state(state)
 }
 
 async fn placar_card(State(state): State<AppState>, Path(file): Path<String>) -> Response {
-    // Aceita `{uuid}.png` (canônico pros crawlers) e `{uuid}` pelado.
+    // Accepts `{uuid}.png` (canonical for crawlers) and a bare `{uuid}`.
     let Ok(mandate_id) = file.trim_end_matches(".png").parse::<Uuid>() else {
         return (StatusCode::NOT_FOUND, "não encontrado").into_response();
     };
@@ -97,8 +97,8 @@ async fn placar_card(State(state): State<AppState>, Path(file): Path<String>) ->
     }
 }
 
-/// Compõe o card. `None` só se o encode PNG falhar (nunca em condições
-/// normais — a fonte é estática e validada nos testes).
+/// Compose the card. `None` only when the PNG encode fails (never under normal
+/// conditions — the font is static and validated in the tests).
 fn render_placar(
     name: &str,
     office: &str,
@@ -112,12 +112,12 @@ fn render_placar(
 
     let mut img = RgbaImage::from_pixel(W, H, BG);
 
-    // Barra de accent à esquerda — identidade visual mínima.
+    // Accent bar on the left — minimal visual identity.
     fill_rect(&mut img, 0, 0, 16, H, ACCENT);
 
     let x0 = 80i32;
 
-    // Cabeçalho institucional.
+    // Institutional header.
     draw_text(
         &mut img,
         &bold,
@@ -128,7 +128,7 @@ fn render_placar(
         "DEMOCRACIA.SOCIAL.BR — PLACAR PÚBLICO DE RESPOSTA",
     );
 
-    // Nome (auto-encolhe até caber; depois trunca com …).
+    // Name (auto-shrinks until it fits; then truncates with …).
     let max_w = 1040.0f32;
     let mut name_px = 68.0f32;
     while name_px > 40.0 && text_width(&bold, name_px, name) > max_w {
@@ -150,7 +150,7 @@ fn render_placar(
     let sub = truncate_to_width(&regular, 32.0, &sub, max_w);
     draw_text(&mut img, &regular, 32.0, x0, 245, SUBTLE, &sub);
 
-    // Três blocos de estatística.
+    // Three statistic blocks.
     let total = answered + ignored;
     #[allow(clippy::cast_precision_loss)]
     let rate = if total > 0 {
@@ -169,7 +169,7 @@ fn render_placar(
         draw_text(&mut img, &regular, 26.0, x, 465, MUTED, label);
     }
 
-    // Barra de proporção respondidas × silêncios.
+    // Proportion bar of answered × silences.
     let bar_y = 510u32;
     let bar_w = W - 160;
     fill_rect(&mut img, 80, bar_y, bar_w, 22, TRACK);
@@ -186,7 +186,7 @@ fn render_placar(
         }
     }
 
-    // Rodapé-fonte.
+    // Source footer.
     draw_text(
         &mut img,
         &regular,
@@ -204,10 +204,10 @@ fn render_placar(
 }
 
 // ---------------------------------------------------------------------------
-// C5 — Certificado de responsividade (a versão POSITIVA do card).
+// C5 — Responsiveness certificate (the POSITIVE version of the card).
 // ---------------------------------------------------------------------------
 
-/// Cor do selo por tier — reforça o mérito visualmente.
+/// Badge colour per tier — reinforces the merit visually.
 fn tier_color(t: ResponsivenessTier) -> Rgba<u8> {
     match t {
         ResponsivenessTier::Gold => Rgba([180, 83, 9, 255]), // âmbar #b45309
@@ -218,14 +218,14 @@ fn tier_color(t: ResponsivenessTier) -> Rgba<u8> {
     }
 }
 
-/// `GET /og/certificado/{mandate_id}.png` — certificado compartilhável do selo de responsividade.
-/// Reusa toda a infra do card (fontes embarcadas, rasterização in-process). A prova continua
-/// verificável na página pública do político; o card é a vitrine que CIRCULA.
+/// `GET /og/certificado/{mandate_id}.png` — a shareable certificate of the responsiveness badge.
+/// Reuses the card's whole infrastructure (embedded fonts, in-process rasterization). The proof stays
+/// verifiable on the official's public page; the card is the showcase that CIRCULATES.
 async fn certificado_card(State(state): State<AppState>, Path(file): Path<String>) -> Response {
     let Ok(mandate_id) = file.trim_end_matches(".png").parse::<Uuid>() else {
         return (StatusCode::NOT_FOUND, "não encontrado").into_response();
     };
-    // Contadores + latência mediana (percentile_cont no ledger) numa consulta só.
+    // Counters + median latency (percentile_cont over the ledger) in a single query.
     let row: Option<(
         String,
         String,
@@ -287,7 +287,7 @@ async fn certificado_card(State(state): State<AppState>, Path(file): Path<String
     }
 }
 
-/// Compõe o certificado 1200×630 com o selo/tier em destaque. `None` só se o encode PNG falhar.
+/// Compose the 1200×630 certificate with the badge/tier in the spotlight. `None` only when the PNG encode fails.
 #[allow(clippy::too_many_arguments)]
 fn render_certificate(
     name: &str,
@@ -344,7 +344,7 @@ fn render_certificate(
     let sub = truncate_to_width(&regular, 30.0, &sub, max_w);
     draw_text(&mut img, &regular, 30.0, x0, 236, SUBTLE, &sub);
 
-    // Selo em destaque: medalha + rótulo grande.
+    // Badge in the spotlight: medal + large label.
     draw_text(
         &mut img,
         &bold,
@@ -357,7 +357,7 @@ fn render_certificate(
     let blurb = truncate_to_width(&regular, 30.0, selo.blurb(), max_w);
     draw_text(&mut img, &regular, 30.0, x0, 440, SUBTLE, &blurb);
 
-    // Números de apoio: taxa · responde em ~Nd.
+    // Supporting numbers: rate · answers in ~Nd.
     let rate_txt = rate.map_or_else(|| "—".to_owned(), |r| format!("{r}%"));
     let respond_txt = tier::responds_in_days(median_hours)
         .map_or_else(|| "—".to_owned(), |d| format!("~{d} dias"));
@@ -404,8 +404,8 @@ fn fill_rect(img: &mut RgbaImage, x: u32, y: u32, w: u32, h: u32, color: Rgba<u8
     }
 }
 
-/// Desenha `text` com baseline em `(x, baseline_y)`; retorna a largura usada.
-/// Alpha-blend da cobertura do glyph sobre o pixel existente.
+/// Draw `text` with its baseline at `(x, baseline_y)`; returns the width used.
+/// Alpha-blends the glyph's coverage over the existing pixel.
 #[allow(clippy::cast_precision_loss)]
 fn draw_text(
     img: &mut RgbaImage,
@@ -480,7 +480,7 @@ fn text_width(font: &FontRef<'_>, px: f32, text: &str) -> f32 {
     w
 }
 
-/// Trunca com reticências até caber em `max_w` px.
+/// Truncate with an ellipsis until it fits within `max_w` px.
 fn truncate_to_width(font: &FontRef<'_>, px: f32, text: &str, max_w: f32) -> String {
     if text_width(font, px, text) <= max_w {
         return text.to_owned();
@@ -513,7 +513,7 @@ mod tests {
         .expect("card renders");
         // Assinatura PNG.
         assert_eq!(&png[..8], &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]);
-        // Sanidade: card não-trivial (fundo + texto + barras).
+        // Sanity: a non-trivial card (background + text + bars).
         assert!(
             png.len() > 5_000,
             "png suspeito de vazio: {} bytes",
@@ -523,7 +523,7 @@ mod tests {
 
     #[test]
     fn certificate_renders_png_for_each_tier() {
-        // Ouro (alta taxa, rápido) e Sem-dados (0/0) devem ambos rasterizar.
+        // Gold (high rate, fast) and No-data (0/0) must both rasterize.
         let gold = render_certificate(
             "Maria Exemplo da Silva",
             "Deputada Federal",

@@ -1,14 +1,14 @@
-//! Templates de e-mail editáveis (0.25.0-fediverso).
+//! Editable e-mail templates (0.25.0-fediverse).
 //!
-//! Todos os e-mails da plataforma passam por aqui: o corpo é lido de
-//! `email_template` no DB, `{{var}}` é substituído server-side com o contexto,
-//! e o resultado vai pro SMTP. Admin edita subject/body pela UI em
-//! `/admin/email-templates`; volta ao padrão via `PATCH /admin/email-templates/:key
+//! Every platform e-mail goes through here: the body is read from
+//! `email_template` in the DB, `{{var}}` is substituted server-side with the context,
+//! and the result goes to SMTP. The admin edits subject/body in the UI at
+//! `/admin/email-templates`; reset to default via `PATCH /admin/email-templates/:key
 //! {reset: true}` (subject/body ← default_subject/default_body).
 //!
-//! Sintaxe do template: apenas `{{var_name}}`. Sem loops, sem if, sem escape
-//! HTML (todos os e-mails são text/plain). Um placeholder desconhecido fica
-//! literal `{{foo}}` na saída — sinaliza pro admin que a variável está errada.
+//! Template syntax: `{{var_name}}` only. No loops, no ifs, no HTML
+//! escaping (every e-mail is text/plain). An unknown placeholder stays
+//! literal as `{{foo}}` in the output — it signals to the admin that the variable is wrong.
 
 use axum::extract::{Json, Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -23,9 +23,9 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
-// Rendering — extraído pra `dsoc_db::email_templates` (0.32.0) porque o
-// crate de auth também renderiza (signup_verify/password_reset/mandate_invite)
-// e não pode depender do gateway. Re-export mantém os callers daqui estáveis.
+// Rendering — extracted to `dsoc_db::email_templates` (0.32.0) because the
+// auth crate also renders (signup_verify/password_reset/mandate_invite)
+// and cannot depend on the gateway. The re-export keeps callers here stable.
 // ---------------------------------------------------------------------------
 
 pub use dsoc_db::email_templates::{render, substitute};
@@ -42,25 +42,25 @@ pub fn routes(state: AppState) -> Router<()> {
             "/admin/email-templates/{key}/preview",
             axum::routing::post(preview),
         )
-        // 0.32.1: envia o template renderizado de verdade (multipart com o
-        // wrapper HTML da marca) pra uma caixa de teste — o admin valida o
-        // visual real sem esperar o evento acontecer.
+        // 0.32.1: sends the genuinely rendered template (multipart with the
+        // brand's HTML wrapper) to a test mailbox — the admin validates the
+        // real look without waiting for the event to happen.
         .route(
             "/admin/email-templates/{key}/send-test",
             axum::routing::post(send_test),
         )
-        // GET /me/admin-status — usado pelo AuthMenu no front pra saber se
-        // mostra o link "Administração" no dropdown do perfil. Anônimo → 200
-        // com `{is_admin: false}` (não vaza sinal). Não é aqui só porque o
-        // path começa com /me em vez de /admin — casa com require_admin abaixo.
+        // GET /me/admin-status — used by the front end's AuthMenu to decide whether
+        // to show the "Administration" link in the profile dropdown. Anonymous → 200
+        // with `{is_admin: false}` (no signal leak). It is only here because the
+        // path starts with /me instead of /admin — it matches require_admin below.
         .route("/me/admin-status", get(me_admin_status))
         .with_state(state)
 }
 
-/// `GET /me/admin-status` — leve, o AuthMenu chama uma vez no login e cacheia
-/// no `dsoc_is_admin` do localStorage. Retorna `{is_admin: bool}`. Não é 401
-/// pra anônimo — devolve `false`, evita blip de erro no console pra usuário
-/// não-admin.
+/// `GET /me/admin-status` — lightweight; the AuthMenu calls it once at login and caches
+/// it in localStorage's `dsoc_is_admin`. Returns `{is_admin: bool}`. Not a 401
+/// for anonymous callers — it returns `false`, avoiding an error blip in the console
+/// for non-admin users.
 async fn me_admin_status(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let Some(citizen_id): Option<Uuid> = headers
         .get("x-dsoc-citizen-id")
@@ -117,8 +117,8 @@ async fn require_admin(headers: &HeaderMap, db: &PgPool) -> std::result::Result<
             )
                 .into_response()
         })?;
-    // admin_role_binding tem role IN ('owner','admin','auditor') — owner/admin podem
-    // editar; auditor é read-only (ainda não implementado aqui).
+    // admin_role_binding has role IN ('owner','admin','auditor') — owner/admin may
+    // edit; auditor is read-only (not implemented here yet).
     let is_admin: Option<bool> = sqlx::query_scalar(
         r"SELECT EXISTS (
              SELECT 1 FROM admin_role_binding
@@ -168,7 +168,7 @@ async fn list(State(state): State<AppState>, headers: HeaderMap) -> Response {
 
 #[derive(Debug, Deserialize)]
 struct UpdateBody {
-    /// `Some("")` limpa (usa default). `None` deixa como está.
+    /// `Some("")` clears it (uses the default). `None` leaves it as is.
     subject: Option<String>,
     body: Option<String>,
     /// `Some(true)` reseta subject+body pros defaults.
@@ -241,8 +241,8 @@ struct SendTestBody {
     context: HashMap<String, String>,
 }
 
-/// `POST /admin/email-templates/{key}/send-test` — renderiza o que está
-/// SALVO e envia pro endereço informado pelo caminho real de produção
+/// `POST /admin/email-templates/{key}/send-test` — renders what is
+/// SAVED and sends it to the given address through the real production path
 /// (mesmo SMTP, mesmo wrapper HTML). Subject ganha prefixo `[TESTE]`.
 async fn send_test(
     State(state): State<AppState>,
@@ -306,12 +306,12 @@ async fn send_test(
 
 #[derive(Debug, Deserialize)]
 struct PreviewBody {
-    /// Contexto arbitrário `{var_name: valor}`. UI passa os valores que o
-    /// admin quer testar; ausente vira `{{var_name}}` literal na saída.
+    /// Arbitrary context `{var_name: value}`. The UI passes the values the
+    /// admin wants to test; an absent one stays literal as `{{var_name}}` in the output.
     #[serde(default)]
     context: HashMap<String, String>,
-    /// Se `Some(...)`, renderiza esse subject/body draft (antes de salvar).
-    /// Se `None`, renderiza o que está salvo hoje.
+    /// When `Some(...)`, renders that draft subject/body (before saving).
+    /// When `None`, renders what is saved today.
     #[serde(default)]
     subject: Option<String>,
     #[serde(default)]
@@ -333,10 +333,10 @@ async fn preview(
     if let Err(resp) = require_admin(&headers, &state.db).await {
         return resp;
     }
-    // Se a UI passou subject/body draft, renderiza isso. Senão, lê do DB.
+    // If the UI passed a draft subject/body, render that. Otherwise read from the DB.
     let (subject_tpl, body_tpl) =
         if body.subject.is_some() || body.body.is_some() {
-            // Precisamos dos defaults pra saber o que renderizar quando o campo é None.
+            // We need the defaults to know what to render when a field is None.
             match sqlx::query_as::<_, TemplateRow>(
             "SELECT key, label, subject, body, default_subject, default_body, variables, updated_at
                FROM email_template WHERE key = $1",
@@ -394,5 +394,5 @@ async fn preview(
         .into_response()
 }
 
-// Testes do `substitute` moveram junto com a implementação pra
+// Tests of `substitute` moved along with the implementation to
 // `dsoc_db::email_templates`.

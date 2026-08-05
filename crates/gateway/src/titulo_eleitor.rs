@@ -1,13 +1,13 @@
-//! # Título de eleitor — verificação de cidadania política (0.25.0).
+//! # Electoral registry — political-citizenship verification (0.25.0).
 //!
-//! Valida o número do título (12 dígitos + 2 dígitos verificadores TSE) via
-//! algoritmo oficial: DV1 = mod 11 do peso 2..=9 sobre os 8 primeiros dígitos
-//! (com regra especial pra SP e MG), DV2 = mod 11 sobre UF + DV1 com pesos
+//! Validates the registry number (12 digits + 2 TSE check digits) via the
+//! official algorithm: DV1 = mod 11 of weights 2..=9 over the first 8 digits
+//! (with a special rule for SP and MG), DV2 = mod 11 over UF + DV1 with weights
 //! 7..=9.
 //!
 //! `POST /api/v1/me/titulo-eleitor` valida algoritmicamente e grava
-//! `titulo_status = 'validated'`. A promoção a `'verified'` (cross-check com
-//! TSE dados abertos futuros) fica pra fatia posterior.
+//! `titulo_status = 'validated'`. Promotion to `'verified'` (a cross-check with
+//! future TSE open data) is left to a later slice.
 
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
@@ -71,12 +71,12 @@ fn server_error() -> Response {
 }
 
 // ---------------------------------------------------------------------------
-// Validador do título — algoritmo TSE oficial (l10n_br, ADR-0015)
+// Registry validator — the official TSE algorithm (l10n_br, ADR-0015)
 // ---------------------------------------------------------------------------
-// A validação algorítmica do Título de Eleitor é código Brasil-específico e vive em
-// `dsoc_l10n_br::voter` (`BrVoterRegistration`), por trás do trait agnóstico
-// `dsoc_core::VoterRegistration`. O handler `submit` abaixo delega a validação; a UX/rota fica
-// idêntica.
+// Algorithmic validation of the electoral registry is Brazil-specific code and lives in
+// `dsoc_l10n_br::voter` (`BrVoterRegistration`), behind the country-agnostic trait
+// `dsoc_core::VoterRegistration`. The `submit` handler below delegates the validation; the
+// UX/route stays identical.
 
 // ---------------------------------------------------------------------------
 // GET /me/titulo-eleitor
@@ -84,13 +84,13 @@ fn server_error() -> Response {
 
 #[derive(Debug, Serialize)]
 struct StatusDto {
-    /// Somente os últimos 4 dígitos (segurança + LGPD). NULL quando não cadastrado.
+    /// The last 4 digits only (security + LGPD). NULL when not registered.
     titulo_last4: Option<String>,
-    /// Um de: `unverified` | `validated` | `verified` | (NULL quando não cadastrado).
+    /// One of: `unverified` | `validated` | `verified` | (NULL when not registered).
     titulo_status: Option<String>,
-    /// Zona eleitoral declarada (até 4 dígitos). Auxiliar — não valida o título.
+    /// Declared electoral zone (up to 4 digits). Auxiliary — it does not validate the registry.
     titulo_zona: Option<String>,
-    /// Seção eleitoral declarada (até 4 dígitos). Auxiliar — não valida o título.
+    /// Declared electoral section (up to 4 digits). Auxiliary — it does not validate the registry.
     titulo_secao: Option<String>,
 }
 
@@ -154,20 +154,20 @@ async fn get_status(State(state): State<AppState>, headers: HeaderMap) -> Respon
 
 #[derive(Debug, Deserialize)]
 struct SubmitReq {
-    /// 12 dígitos do título. Opcional quando o cidadão já tem título vinculado
-    /// e está só atualizando zona/seção.
+    /// The registry's 12 digits. Optional when the citizen already has a registry linked
+    /// and is only updating zone/section.
     #[serde(default)]
     titulo: Option<String>,
-    /// Zona eleitoral (opcional, até 4 dígitos) — consta no próprio título.
+    /// Electoral zone (optional, up to 4 digits) — printed on the registry itself.
     #[serde(default)]
     zona: Option<String>,
-    /// Seção eleitoral (opcional, até 4 dígitos) — consta no próprio título.
+    /// Electoral section (optional, up to 4 digits) — printed on the registry itself.
     #[serde(default)]
     secao: Option<String>,
 }
 
-/// Normaliza zona/seção: aceita vazio (→ None) ou 1–4 dígitos (pontos/espaços
-/// removidos). `Err` quando sobra algo que não é dígito ou passa de 4.
+/// Normalize zone/section: accepts empty (→ None) or 1–4 digits (dots/spaces
+/// stripped). `Err` when anything non-digit remains or it exceeds 4.
 fn normalize_zona_secao(raw: Option<&str>) -> Result<Option<String>, ()> {
     let Some(raw) = raw else { return Ok(None) };
     let digits: String = raw.chars().filter(char::is_ascii_digit).collect();
@@ -197,7 +197,7 @@ async fn submit(
     let Ok(secao) = normalize_zona_secao(body.secao.as_deref()) else {
         return bad("Seção inválida — use até 4 dígitos (ex.: 45).");
     };
-    // Sem número novo → só zona/seção; exige título já vinculado.
+    // No new number → zone/section only; requires an already-linked registry.
     let titulo_input = body
         .titulo
         .as_deref()
@@ -233,8 +233,8 @@ async fn submit(
             }
         };
     };
-    // Validação algorítmica TSE atrás do trait dsoc_core::VoterRegistration (ADR-0015).
-    // As mensagens de erro são idênticas às de antes (preservadas em BrVoterRegistration).
+    // TSE algorithmic validation behind the dsoc_core::VoterRegistration trait (ADR-0015).
+    // The error messages are identical to before (preserved in BrVoterRegistration).
     use dsoc_core::VoterRegistration as _;
     let normalized = match dsoc_l10n_br::BrVoterRegistration.validate(raw_titulo) {
         Ok(n) => n,
@@ -244,7 +244,7 @@ async fn submit(
             return server_error();
         }
     };
-    // Atualiza; ON CONFLICT via UNIQUE parcial dá violação → 409.
+    // Updates; ON CONFLICT via the partial UNIQUE raises a violation → 409.
     let res = sqlx::query(
         r"UPDATE citizen
              SET titulo_eleitor = $2,
@@ -292,8 +292,8 @@ fn is_unique_violation(err: &sqlx::Error) -> bool {
 mod tests {
     use super::*;
 
-    // Os testes da validação algorítmica do título (normalize/check_digits) migraram junto com a
-    // lógica para `dsoc_l10n_br::voter` (ADR-0015). Aqui ficam só os testes do handler HTTP.
+    // The tests of the registry's algorithmic validation (normalize/check_digits) migrated with the
+    // logic to `dsoc_l10n_br::voter` (ADR-0015). Only the HTTP handler tests remain here.
 
     #[test]
     fn zona_secao_normalization() {
