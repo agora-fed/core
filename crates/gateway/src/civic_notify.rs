@@ -1,17 +1,17 @@
-//! Feed cidadão — subscriber que converte eventos cívicos em
+//! Citizen feed — the subscriber that turns civic events into
 //! `user_notification` (0.25.0-fediverso).
 //!
 //! O loop tese ("propor → cluster → threshold → SLA → resposta OU silêncio")
-//! já emitia os eventos certos (`ProposalThresholdCrossed`, `ConsequenceSla*`);
-//! só faltava fechar o feedback pro autor: **você não sabe que sua proposta
-//! cruzou o gatilho até chegar aqui.** Este subscriber é isso.
+//! already emitted the right events (`ProposalThresholdCrossed`, `ConsequenceSla*`);
+//! all that was missing was closing the feedback loop to the author: **you do not know
+//! your proposal crossed the trigger until this lands.** This subscriber is that.
 //!
-//! Estratégia: para cada evento cívico, resolvemos o `author_citizen_id` da
+//! Strategy: for each civic event we resolve the proposal's `author_citizen_id`
 //! proposta associada (via `SlaId → consequence_sla.proposal_id → proposal`)
-//! e inserimos uma linha em `user_notification` com kind cívico da migration
-//! 0411. A insert é idempotente via UNIQUE `(citizen_id, kind, source_actor_url, object_uri)`
-//! — usamos `object_uri` = URI local do proposal pra chaves distintas por
-//! kind (`sla_started` vs `sla_response` vs `sla_expired` não colidem).
+//! and insert a row into `user_notification` with a civic kind from migration
+//! 0411. The insert is idempotent via the UNIQUE `(citizen_id, kind, source_actor_url, object_uri)`
+//! — we use `object_uri` = the proposal's local URI so the keys stay distinct per
+//! kind (`sla_started` vs `sla_response` vs `sla_expired` never collide).
 
 use async_trait::async_trait;
 use dsoc_auth::profile::ProfileService;
@@ -27,12 +27,12 @@ use crate::notifications::{self, NewNotification};
 pub struct CivicNotifySub {
     pub db: PgPool,
     pub public_origin: String,
-    /// Fase E completa (0.26.24): auto-federação no threshold precisa publicar
-    /// uma Note em nome do autor — `create_public_note` mora aqui.
+    /// Complete phase E (0.26.24): auto-federation at the threshold must publish
+    /// a Note on the author's behalf — `create_public_note` lives here.
     pub profiles: ProfileService,
 }
 
-// Manual porque `ProfileService` não deriva Debug (segura um pool + clock).
+// Manual because `ProfileService` does not derive Debug (it holds a pool + clock).
 impl std::fmt::Debug for CivicNotifySub {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CivicNotifySub")
@@ -52,9 +52,9 @@ impl EventHandler for CivicNotifySub {
                     "sua proposta cruzou o gatilho da consequência — o SLA vai começar",
                 )
                 .await;
-                // Fase E completa: amplificação automática no fediverso, em
+                // Complete phase E: automatic amplification on the fediverse, in
                 // nome do autor. Best-effort — falha aqui nunca derruba a
-                // notificação in-app acima nem o dispatch loop.
+                // neither the in-app notification above nor the dispatch loop.
                 self.auto_federate_threshold(proposal.as_uuid()).await;
             }
             Event::ConsequenceSlaStarted { sla, .. } => {
@@ -65,8 +65,8 @@ impl EventHandler for CivicNotifySub {
                 )
                 .await;
                 // 0.32.0: D0 do "AR digital" — o 1º aviso formal ao gabinete
-                // sai AQUI (com link responder-sem-conta) e grava o recibo
-                // nº 1 da cadeia. Sem ele a escada D+1/D+2 do worker nunca
+                // goes out HERE (with the answer-without-an-account link) and records
+                // receipt #1 of the chain. Without it the worker's D+1/D+2 ladder never
                 // disparava: a query exige `count(receipts) BETWEEN 1 AND 2`.
                 self.email_gabinete_d0(sla.as_uuid()).await;
             }
@@ -77,10 +77,10 @@ impl EventHandler for CivicNotifySub {
                     "o mandato respondeu sua proposta — accountability registrada",
                 )
                 .await;
-                // Bloco C (C3): a RESPOSTA federa positivamente — simétrico ao
+                // Block C (C3): the ANSWER federates positively — symmetric to
                 // `auto_federate_silence`. A regra de ouro do plano: toda
-                // consequência negativa amplificada deve ter sua versão
-                // positiva. O silêncio já virava Note; a resposta também vira.
+                // amplified negative consequence must have its positive
+                // counterpart. Silence already became a Note; so does the answer.
                 self.auto_federate_response(sla.as_uuid()).await;
             }
             Event::ConsequenceSlaExpired { sla, .. } => {
@@ -90,8 +90,8 @@ impl EventHandler for CivicNotifySub {
                     "o SLA venceu sem resposta — silêncio público registrado",
                 )
                 .await;
-                // 0.29.1: o silêncio federa com a PROVA — a Note carrega a
-                // cadeia de recibos dos avisos (AR digital, item 2 fatia 2).
+                // 0.29.1: silence federates WITH THE PROOF — the Note carries the
+                // chain of warning receipts (digital registered mail, item 2 slice 2).
                 self.auto_federate_silence(sla.as_uuid()).await;
             }
             _ => {}
@@ -120,11 +120,11 @@ impl CivicNotifySub {
             .await;
     }
 
-    /// D0 do "AR digital do silêncio" (0.32.0): quando o SLA começa, o
-    /// gabinete recebe o 1º aviso formal por e-mail — com o link assinado de
-    /// responder-sem-conta — e o recibo nº 1 entra na cadeia hash-encadeada.
-    /// Idempotente: se a proposta já tem recibo (redelivery do dispatch
-    /// at-least-once), não reenvia. Best-effort — falha vira warn.
+    /// D0 of the "digital registered mail of silence" (0.32.0): when the SLA starts, the
+    /// office receives the 1st formal warning by e-mail — with the signed
+    /// answer-without-an-account link — and receipt #1 enters the hash-chained chain.
+    /// Idempotent: when the proposal already has a receipt (an at-least-once dispatch
+    /// redelivery), it does not resend. Best-effort — a failure becomes a warn.
     async fn email_gabinete_d0(&self, sla_id: Uuid) {
         type D0Row = (
             Uuid,
@@ -156,11 +156,11 @@ impl CivicNotifySub {
             return;
         };
         let Some(email) = email else {
-            // Mandato sem e-mail público — a escada nem começa; o silêncio
-            // ainda expira normalmente pelo sweep.
+            // A mandate with no public e-mail — the ladder never starts; the silence
+            // still expires normally through the sweep.
             return;
         };
-        // Idempotência: recibo 1 já existe → redelivery, não reenvia.
+        // Idempotency: receipt 1 already exists → a redelivery, do not resend.
         let already: i64 =
             sqlx::query_scalar("SELECT count(*) FROM notification_receipt WHERE proposal_id = $1")
                 .bind(proposal_id)
@@ -236,14 +236,14 @@ impl CivicNotifySub {
             }
         };
         let Some(author) = author else {
-            // Proposta legacy sem autor (sem cidadão pra notificar).
+            // Legacy proposal with no author (no citizen to notify).
             return;
         };
-        // Preview inclui título curto pra reconhecimento na lista.
+        // The preview includes a short title for recognition in the list.
         let title_short: String = title.chars().take(80).collect();
         let full_preview = format!("{preview} — \"{title_short}\"");
-        // object_uri é o URL público-ish do proposal (local). Serve tanto pro
-        // link no front quanto como parte da UNIQUE key da idempotência.
+        // object_uri is the proposal's public-ish local URL. It serves both the
+        // front-end link and as part of the idempotency UNIQUE key.
         let object_uri = format!(
             "{}/propostas/{}",
             self.public_origin.trim_end_matches('/'),
@@ -262,7 +262,7 @@ impl CivicNotifySub {
         if let Err(err) = notifications::insert(&self.db, n).await {
             tracing::warn!(citizen = %author, error = ?err, "civic_notify: insert falhou");
         }
-        // Push real (RFC 8291) — não bloqueia o dispatch loop, spawn interno.
+        // Real push (RFC 8291) — never blocks the dispatch loop, internal spawn.
         let title = match kind {
             "proposal_threshold" => "🚨 Sua proposta cruzou o gatilho",
             "sla_started" => "⏳ SLA do mandato começou",
@@ -276,16 +276,16 @@ impl CivicNotifySub {
             "url": object_uri,
         });
         crate::web_push::send_to_citizen(&self.db, author, &payload.to_string()).await;
-        // 0.32.0: além do in-app + push, os 3 marcos cívicos também saem por
-        // e-mail pro autor (threshold cruzado, resposta, silêncio). O
-        // `sla_started` fica só in-app — chega segundos depois do threshold
+        // 0.32.0: beyond in-app + push, the 3 civic milestones also go out by
+        // e-mail to the author (threshold crossed, answer, silence). The
+        // `sla_started` one stays in-app only — it arrives seconds after the threshold
         // e viraria e-mail duplicado. Opt-out por `email_prefs` (chave =
         // kind; ausente = ligado).
         self.email_author(author, proposal_id, kind).await;
     }
 
-    /// E-mail cívico ao autor da proposta (0.32.0). Best-effort + spawn —
-    /// nunca segura o dispatch loop. Kind sem template mapeado é no-op.
+    /// Civic e-mail to the proposal's author (0.32.0). Best-effort + spawn —
+    /// never holds the dispatch loop. A kind with no mapped template is a no-op.
     async fn email_author(&self, author: Uuid, proposal_id: Uuid, kind: &str) {
         let template_key = match kind {
             "proposal_threshold" => "proposal_threshold_author",
@@ -318,7 +318,7 @@ impl CivicNotifySub {
             return;
         };
         let Some(email) = email else { return };
-        // Opt-out: email_prefs é `{"follow":true,...}`; chave ausente = on.
+        // Opt-out: email_prefs is `{"follow":true,...}`; an absent key = on.
         let enabled = prefs
             .as_ref()
             .and_then(|p| p.get(kind))
@@ -357,18 +357,18 @@ impl CivicNotifySub {
         });
     }
 
-    /// Fase E completa (0.26.24): publica uma Note pública em nome do autor
-    /// quando a proposta dele cruza o gatilho. Gates, na ordem:
+    /// Complete phase E (0.26.24): publishes a public Note on the author's behalf
+    /// when their proposal crosses the trigger. Gates, in order:
     ///
-    /// 1. proposta tem autor;
-    /// 2. autor é federável (`is_public = true` + `handle`) e não desligou
+    /// 1. the proposal has an author;
+    /// 2. the author is federable (`is_public = true` + `handle`) and has not turned
     ///    `auto_federate_threshold` em /configuracoes;
-    /// 3. ainda não existe Note deste autor citando esta proposta
-    ///    (idempotência — o dispatch é at-least-once e a UNIQUE de
-    ///    `user_notification` não segura NULLs em `source_actor_url`).
+    /// 3. no Note by this author citing this proposal exists yet
+    ///    (idempotency — dispatch is at-least-once and the `user_notification`
+    ///    UNIQUE does not hold NULLs in `source_actor_url`).
     ///
-    /// Tudo best-effort: qualquer falha vira `warn` e retorna, sem
-    /// propagar `Err` (senão o batch inteiro do subscriber trava).
+    /// All best-effort: any failure becomes a `warn` and returns, without
+    /// propagating `Err` (otherwise the subscriber's whole batch stalls).
     async fn auto_federate_threshold(&self, proposal_id: Uuid) {
         let row: Option<(Option<Uuid>, String)> =
             sqlx::query_as("SELECT author_citizen_id, title FROM proposal WHERE id = $1")
@@ -400,7 +400,7 @@ impl CivicNotifySub {
         let origin = self.public_origin.trim_end_matches('/');
         let proposal_url = format!("{origin}/propostas/{proposal_id}");
 
-        // Idempotência: já publicamos uma Note deste autor citando esta URL?
+        // Idempotency: have we already published a Note by this author citing this URL?
         let already: bool = sqlx::query_scalar(
             "SELECT EXISTS (
                 SELECT 1 FROM federation_outbox_entry
@@ -416,7 +416,7 @@ impl CivicNotifySub {
         }
 
         let citizen = CitizenId::from_uuid(author);
-        // Primeiro post do cidadão pode não ter keypair ainda — gera lazy.
+        // A citizen's first post may not have a keypair yet — generate it lazily.
         if let Err(err) = self.profiles.ensure_actor_public_key(citizen).await {
             tracing::warn!(citizen = %author, error = ?err, "auto_federate: keypair falhou");
             return;
@@ -459,11 +459,11 @@ impl CivicNotifySub {
 }
 
 impl CivicNotifySub {
-    /// Nota federada do SILÊNCIO com a prova embutida (0.29.1, AR digital
-    /// fatia 2). Mesmos gates da Note de threshold (autor federável +
-    /// preferência ligada); idempotência pela hashtag `#SilêncioRegistrado`
-    /// junto da URL — a Note de threshold cita a mesma URL, então a URL
-    /// sozinha não distingue. Best-effort: falha vira warn.
+    /// Federated Note of SILENCE with the proof embedded (0.29.1, digital
+    /// registered mail slice 2). Same gates as the threshold Note (federable author +
+    /// preference on); idempotency via the `#SilêncioRegistrado` hashtag
+    /// alongside the URL — the threshold Note cites the same URL, so the URL
+    /// alone does not distinguish them. Best-effort: a failure becomes a warn.
     async fn auto_federate_silence(&self, sla_id: Uuid) {
         let row: Option<(Uuid, Option<Uuid>, String)> = sqlx::query_as(
             "SELECT p.id, p.author_citizen_id, p.title
@@ -507,7 +507,7 @@ impl CivicNotifySub {
             return;
         }
 
-        // A prova: recibos hash-encadeados dos avisos ao gabinete.
+        // The proof: hash-chained receipts of the warnings sent to the office.
         let receipts: Vec<(i32, chrono::DateTime<chrono::Utc>, String, String)> = sqlx::query_as(
             "SELECT attempt, sent_at, outcome, hash
                FROM notification_receipt WHERE proposal_id = $1 ORDER BY attempt",
@@ -555,14 +555,14 @@ impl CivicNotifySub {
         }
     }
 
-    /// Nota federada POSITIVA da resposta (C3, Bloco C). Simétrica ao
-    /// `auto_federate_silence`: quando o mandato responde dentro do prazo, o
-    /// AUTOR da proposta (já federável) publica uma Note celebrando — dando
-    /// ALCANCE positivo ao político, não só ameaça. Mesmos gates da Note de
-    /// silêncio (autor federável + preferência ligada); idempotência pela
-    /// hashtag `#RespostaRegistrada` junto da URL (a Note de silêncio/threshold
-    /// cita a mesma URL, então a URL sozinha não distingue). Best-effort: falha
-    /// vira warn e nunca derruba o dispatch loop nem as notificações in-app.
+    /// POSITIVE federated Note of the answer (C3, Block C). Symmetric to
+    /// `auto_federate_silence`: when the mandate answers within the deadline, the
+    /// proposal's AUTHOR (already federable) publishes a celebrating Note — giving
+    /// the official positive REACH, not just a threat. Same gates as the silence
+    /// Note (federable author + preference on); idempotency via the
+    /// `#RespostaRegistrada` hashtag alongside the URL (the silence/threshold Note
+    /// cites the same URL, so the URL alone does not distinguish). Best-effort: a failure
+    /// becomes a warn and never breaks the dispatch loop nor the in-app notifications.
     async fn auto_federate_response(&self, sla_id: Uuid) {
         let row: Option<(Uuid, Option<Uuid>, String, Option<String>)> = sqlx::query_as(
             "SELECT p.id, p.author_citizen_id, p.title,
@@ -649,10 +649,10 @@ impl CivicNotifySub {
     }
 }
 
-/// Corpo da Note POSITIVA da resposta (C3). Celebra o mandato que respondeu — a versão positiva da
-/// nota de silêncio. Título capado pra caber com folga no limite de 3000 chars do
-/// `create_public_note`; a hashtag `#RespostaRegistrada` distingue da nota de silêncio na
-/// idempotência e alimenta a timeline positiva.
+/// Body of the POSITIVE answer Note (C3). Celebrates the mandate that answered — the positive
+/// counterpart of the silence note. The title is capped to fit comfortably within the 3000-char
+/// limit of `create_public_note`; the `#RespostaRegistrada` hashtag distinguishes it from the
+/// silence note in the idempotency check and feeds the positive timeline.
 fn build_response_note(title: &str, mandate_name: &str, proposal_url: &str) -> String {
     let title_short: String = title.chars().take(120).collect();
     format!(
@@ -662,8 +662,8 @@ fn build_response_note(title: &str, mandate_name: &str, proposal_url: &str) -> S
     )
 }
 
-/// Corpo da Note do silêncio — a denúncia viaja COM a prova: cada aviso
-/// datado e o hash final da cadeia (verificável no endpoint público).
+/// Body of the silence Note — the denunciation travels WITH the proof: each dated
+/// warning and the chain's final hash (verifiable at the public endpoint).
 fn build_silence_note(
     title: &str,
     proposal_url: &str,
@@ -699,9 +699,9 @@ fn build_silence_note(
     )
 }
 
-/// Corpo da Note de threshold. Título capado pra caber com folga no limite
+/// Body of the threshold Note. The title is capped to fit comfortably within the
 /// de 3000 chars do `create_public_note`; a hashtag alimenta a timeline
-/// `#DemocraciaBR` local e das instâncias remotas.
+/// local `#DemocraciaBR` and of the remote instances.
 fn build_threshold_note(title: &str, proposal_url: &str) -> String {
     let title_short: String = title.chars().take(140).collect();
     format!(
@@ -722,14 +722,14 @@ mod tests {
             "Dep. Fulana",
             "https://x.br/propostas/abc",
         );
-        // Marcador positivo distinto do silêncio (idempotência + timeline).
+        // A positive marker distinct from silence (idempotency + timeline).
         assert!(note.contains("#RespostaRegistrada"));
         assert!(!note.contains("#SilêncioRegistrado"));
-        // Credita o mandato pelo nome (alcance positivo ao político).
+        // Credits the mandate by name (positive reach for the official).
         assert!(note.contains("Dep. Fulana"));
         assert!(note.contains("Ciclovia na Av. Central"));
         assert!(note.contains("https://x.br/propostas/abc"));
-        // Título absurdo não estoura o limite de 3000 chars do create_public_note.
+        // An absurd title must not blow the 3000-char limit of create_public_note.
         let long = build_response_note(&"x".repeat(5_000), "M", "https://x.br/p/1");
         assert!(long.chars().count() <= 3_000);
     }
@@ -747,10 +747,10 @@ mod tests {
         assert!(note.contains("#SilêncioRegistrado"));
         assert!(note.contains("aviso 1: 10/07/2026 (entregue)"));
         assert!(note.contains("aviso 2"));
-        // Hash final truncado presente — a prova viaja com a denúncia.
+        // The truncated final hash is present — the proof travels with the denunciation.
         assert!(note.contains(&"bbbb2222".repeat(2)));
         assert!(note.contains("https://x.br/propostas/abc"));
-        // Sem recibos (propostas antigas) a nota ainda sai, sem seção de cadeia.
+        // Without receipts (old proposals) the note still goes out, minus the chain section.
         let bare = build_silence_note("Ciclovia", "https://x.br/p/1", &[]);
         assert!(bare.contains("#SilêncioRegistrado"));
         assert!(!bare.contains("Cadeia de recibos"));

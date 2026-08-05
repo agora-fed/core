@@ -119,11 +119,11 @@ async fn openapi() -> Json<serde_json::Value> {
 /// (`x-dsoc-citizen-id` / `x-dsoc-org-id`, plus `x-citizen-id` for admin).
 /// Anonymous requests pass through with no headers added.
 async fn inject_identity(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
-    // SECURITY (2026-07-24): estes headers SÃO o sinal de caller autenticado lá embaixo
+    // SECURITY (2026-07-24): these headers ARE the authenticated-caller signal further down
     // (CallerId em crates/app/src/caller.rs e require_admin leem eles). Um cliente NUNCA pode
-    // fornecê-los — senão qualquer um personifica qualquer cidadão (inclusive admin). Apaga
-    // toda cópia vinda do cliente ANTES de resolver a sessão; só um cookie/bearer real volta a
-    // setá-los abaixo. Defesa em profundidade: o ingress Caddy também os remove
+    // supply them — otherwise anyone impersonates any citizen (admins included). Strip
+    // every client-supplied copy BEFORE resolving the session; only a real cookie/bearer sets
+    // them again below. Defence in depth: the Caddy ingress removes them too
     // (deploy/caddy/Caddyfile).
     {
         let headers = req.headers_mut();
@@ -189,16 +189,16 @@ pub fn api_router(state: AppState) -> Router {
         .merge(dsoc_admin::routes(state.clone()))
         .merge(crate::authz_ext::routes(state.clone()))
         .merge(crate::admin_roles::routes(state.clone()))
-        // Party directories + administrators (ÁGORA campaign layer, #58).
+        // Party directories + administrators (AGORA campaign layer, #58).
         .merge(crate::admin_parties::routes(state.clone()))
-        // Broadcast consentido de campanha por diretório municipal (ÁGORA F3, #60).
+        // Consented campaign broadcast per municipal directory (AGORA F3, #60).
         .merge(crate::campaign_broadcast::routes(state.clone()))
         .merge(crate::campaign_broadcast_sms::routes(state.clone()))
-        // Base própria de contatos por diretório, verificada contra a base central (ÁGORA F4, #61).
+        // Per-directory contact base, verified against the central one (AGORA F4, #61).
         .merge(crate::campaign_contacts::routes(state.clone()))
-        // SMSGateway por diretório, cifrado (INTERCOMS #69).
+        // Per-directory SMS gateway, encrypted (INTERCOMS #69).
         .merge(crate::intercoms_config::routes(state.clone()))
-        // Painel de campanha do partido/diretório (ÁGORA F7, #64).
+        // Campaign panel of the party/directory (AGORA F7, #64).
         .merge(crate::party_dashboard::routes(state.clone()))
         .merge(crate::module_gate::routes(state.clone()))
         .merge(admin_ext::routes(state.clone()))
@@ -214,24 +214,24 @@ pub fn api_router(state: AppState) -> Router {
         .merge(dsoc_initiatives::routes(state.clone()))
         .merge(dsoc_consultations::routes(state.clone()))
         .merge(dsoc_mandates::routes(state.clone()))
-        // Catálogo de partidos + diretórios subnacionais + administradores (Fase 2B,
-        // migration 0204). Rotas públicas: `/api/v1/parties`, `/api/v1/parties/{sigla}`.
+        // Party catalog + subnational directories + administrators (phase 2B,
+        // migration 0204). Public routes: `/api/v1/parties`, `/api/v1/parties/{sigla}`.
         .merge(dsoc_mandates::parties_routes(state.clone()))
         // Gateway-owned proxy of each parliamentarian's real public activity from the official
-        // open-data APIs (Câmara/Senado). Path: `/api/v1/mandates/{id}/atividade`.
+        // open-data APIs (legislature). Path: `/api/v1/mandates/{id}/atividade`.
         .merge(parlamentar_activity::routes(state.clone()))
         // Aggregated dashboards: gasto parlamentar + proposals summary.
         .merge(reports::routes(state.clone()))
         // Filtered politicos browser (0.23.0-municipais).
         .merge(politicos_ext::routes(state.clone()))
-        // Bloco C: vitrine positiva do político (selo/tier + comparativo com pares).
+        // Block C: the official's positive showcase (badge/tier + peer comparison).
         .merge(responsiveness::routes(state.clone()))
         // components
-        // B1 — fusão Propor ≡ Fórum: o cidadão NÃO cria mais "proposta"; a demanda
-        // direcionada virou um tópico de fórum com alvo (dsoc_forums). Só as LEITURAS
-        // de proposta seguem no ar (permalinks/recibos/revisões antigos); a criação
-        // (POST /proposals) sai do caminho do cidadão. Federação/eventos do crate
-        // intactos; o worker proposal_delivery fica dormente (sem novos alvos).
+        // B1 — Propose ≡ Forum merge: citizens no longer create a "proposal"; a
+        // directed demand became a forum topic with a target (dsoc_forums). Only proposal
+        // READS stay live (old permalinks/receipts/revisions); creation
+        // (POST /proposals) leaves the citizen path. The crate's federation/events are
+        // intact; the proposal_delivery worker lies dormant (no new targets).
         .merge(dsoc_proposals::read_routes(state.clone()))
         .merge(dsoc_votes::routes(state.clone()))
         .merge(dsoc_comments::routes(state.clone()))
@@ -247,26 +247,26 @@ pub fn api_router(state: AppState) -> Router {
         .merge(federation::client_routes(state.clone()))
         // Per-citizen settings: authorized OAuth apps + change password.
         .merge(me_settings::routes(state.clone()))
-        // Consentimento de campanha do cidadão (ÁGORA F2, #59).
+        // Citizen campaign consent (AGORA F2, #59).
         .merge(campaign_consent::routes(state.clone()))
-        // Telefone + verificação por OTP SMS (ÁGORA F5, #62).
+        // Phone + OTP SMS verification (AGORA F5, #62).
         .merge(phone::routes(state.clone()))
-        // Interesses do cidadão (áreas ministeriais) — perfil.
+        // Citizen interests (ministerial areas) — profile.
         .merge(interests::routes(state.clone()))
         .merge(profile_complete::routes(state.clone()))
-        // 2FA por TOTP — app autenticador (ÁGORA F6, #63).
+        // TOTP 2FA — authenticator app (AGORA F6, #63).
         .merge(totp::routes(state.clone()))
-        // Cidadania política — validação do título de eleitor.
+        // Political citizenship — electoral registry validation.
         .merge(titulo_eleitor::routes(state.clone()))
-        // Referência IBGE de municípios (selector UF→município do cadastro).
+        // IBGE municipality reference (the signup UF→municipality selector).
         .merge(municipios::routes(state.clone()))
-        // Web Push (0.25.0-fediverso): subscribe + GET da chave VAPID pública.
+        // Web Push (0.25.0-fediverse): subscribe + GET of the public VAPID key.
         .merge(web_push::routes(state.clone()))
-        // Templates de e-mail editáveis (admin CRUD).
+        // Editable e-mail templates (admin CRUD).
         .merge(email_templates::routes(state.clone()))
         .merge(invite_campaign::routes(state.clone()))
         .merge(audience::routes(state.clone()))
-        // GUI completa de usuários (admin CRUD).
+        // Full user GUI (admin CRUD).
         .merge(admin_users::routes(state.clone()))
         .merge(admin_reports::routes(state.clone()))
         .merge(invitations::routes(state.clone()))
@@ -276,24 +276,24 @@ pub fn api_router(state: AppState) -> Router {
         .merge(signup_gates::routes(state.clone()))
         // Atestado de cidadania por operador verificado (0.28.3).
         .merge(attestations::routes(state.clone()))
-        // Prova de notificação — timeline pública dos avisos ao gabinete (0.29).
+        // Proof of notification — public timeline of the office warnings (0.29).
         .merge(notification_receipts::routes(state.clone()))
-        // Reply-to-respond — gabinete responde via link assinado, sem conta (0.30).
+        // Reply-to-respond — the office answers via a signed link, no account (0.30).
         .merge(respond_link::routes(state.clone()))
-        // Preview público do gatilho dinâmico (0.30.3) — o form mostra a regra.
+        // Public preview of the dynamic trigger (0.30.3) — the form shows the rule.
         .merge(threshold_policy::routes(state.clone()))
-        // Doações/financiamento de campanha — gated por vínculo de mandato (0.31).
+        // Campaign donations/funding — gated by the mandate binding (0.31).
         .merge(campanha::routes(state.clone()))
-        // CRM de gabinete (C6): quem procurou o mandato e o que pediu — gated
-        // pelo mesmo vínculo de mandato. Só dado público (autoria de proposta).
+        // Office CRM (C6): who approached the mandate and what they asked — gated
+        // by the same mandate binding. Public data only (proposal authorship).
         .merge(me_mandate_crm::routes(state.clone()))
-        // Mandato coletivo (D8.1): compromisso consultivo VOLUNTÁRIO — o mandato
-        // declara que ouviria a base e publica se seguiu. Escrita gated pelo
-        // vínculo; leitura pública só expõe agregado (nunca voto por-cidadão).
+        // Collective mandate (D8.1): a VOLUNTARY consultative commitment — the mandate
+        // declares it would listen to its base and publishes whether it did. Writes gated by
+        // the binding; public reads expose aggregates only (never a per-citizen vote).
         .merge(me_mandate_commitment::routes(state.clone()))
-        // Orçamento participativo (D8.3): ciclo de OP dono=mandato (verba de
-        // emenda + território + fases). Escrita gated pelo vínculo; leitura
-        // pública só expõe autoria de item (nunca quem votou).
+        // Participatory budgeting (D8.3): a mandate-owned PB cycle (amendment funds
+        // + territory + phases). Writes gated by the binding; public reads expose
+        // item authorship only (never who voted).
         .merge(me_mandate_op::routes(state.clone()))
         // Grupos de campanha — canal proativo campanha→eleitor (0.39, Fase 2.3).
         .merge(campaign_groups::routes(state.clone()))
@@ -304,17 +304,17 @@ pub fn api_router(state: AppState) -> Router {
         .merge(admin_interests::routes(state.clone()))
         .merge(admin_consultations::routes(state.clone()))
         .merge(admin_forums::routes(state.clone()))
-        // SOCRATES: espelha Ideias Legislativas do e-Cidadania como tópicos do
-        // fórum `senado` (admin-curado, migration 0670).
+        // SOCRATES: mirrors e-Cidadania Legislative Ideas as topics of the
+        // `senado` forum (admin-curated, migration 0670).
         .merge(socrates_mirror::routes(state.clone()))
-        // Formulário de contato público — nenhum e-mail exposto no site.
+        // Public contact form — no e-mail address exposed on the site.
         .merge(contact::routes(state.clone()))
         .merge(webhooks::routes(state.clone()))
-        // gov.br OIDC status (só o "enabled?"). Start/callback ficam na raiz.
+        // gov.br OIDC status (just the "enabled?"). Start/callback live at the root.
         .merge(govbr_oidc::api_routes(state.clone()))
         // LGPD art. 18 — exportar/excluir dados pessoais.
         .merge(lgpd::routes(state.clone()))
-        // Estatísticas públicas — usadas na landing pra reforçar a tese.
+        // Public statistics — used on the landing page to reinforce the thesis.
         .merge(public_stats::routes(state.clone()))
         // Social-graph endpoints (bookmarks, mutes, blocks, filters, lists —
         // migration 0500). Mastodon-parity fase 2A.
@@ -327,9 +327,9 @@ pub fn api_router(state: AppState) -> Router {
         // custom scripts). Same prefix; the Mastodon paths don't collide
         // with ours. Auth is bearer OR cookie (see `inject_identity`).
         .merge(mastodon_api::masto_routes(state.clone()))
-        // Rate-limit de escrita (0.42.0): camada MAIS INTERNA — roda depois do
-        // inject_identity, então já enxerga o x-dsoc-citizen-id pra chavear por
-        // cidadão (anônimo cai no IP). Só conta métodos mutantes.
+        // Write rate limit (0.42.0): the INNERMOST layer — it runs after
+        // inject_identity, so it already sees x-dsoc-citizen-id and can key by
+        // citizen (anonymous falls back to IP). Counts mutating methods only.
         .layer(middleware::from_fn(rate_limit::rate_limit_middleware))
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -342,8 +342,8 @@ pub fn api_router(state: AppState) -> Router {
             state.clone(),
             signup_gates::gates_middleware,
         ))
-        // Threshold dinâmico (0.30.1): o gatilho da proposta é fração do
-        // eleitorado TSE do território, com piso/teto — o autor não escolhe.
+        // Dynamic threshold (0.30.1): a proposal's trigger is a fraction of the
+        // territory's electoral roll, with a floor/ceiling — the author does not choose it.
         .layer(middleware::from_fn_with_state(
             state.clone(),
             threshold_policy::threshold_middleware,
@@ -367,21 +367,21 @@ pub fn api_router(state: AppState) -> Router {
         .route("/openapi.json", get(openapi))
         .nest("/api/v1", api)
         .merge(federation_public)
-        // Placar embedável pra imprensa (0.30.2) — raiz, URL limpa pra iframe.
+        // Embeddable scoreboard for the press (0.30.2) — at the root, a clean iframe URL.
         .merge(embed::routes(state.clone()))
         // OG card PNG do placar (0.33.0) — raiz, apontada pelos og:image.
         .merge(og_cards::routes(state.clone()))
         .merge(oauth)
-        // gov.br OIDC — start/callback na raiz porque o gov.br exige que
+        // gov.br OIDC — start/callback at the root because gov.br requires
         // `redirect_uri` seja exatamente `<origin>/auth/govbr/callback`.
         .merge(govbr_oidc::root_routes(state.clone()))
-        // Fóruns (/f/*): SPA-fallback — o front roteia client-side; qualquer caminho
-        // serve o mesmo f/index.html (fóruns/tópicos criados em runtime nunca 404am).
+        // Forums (/f/*): SPA fallback — the front end routes client-side; any path
+        // serves the same f/index.html (forums/topics created at runtime never 404).
         .merge(forums_spa_routes(state.clone()))
         .fallback_service(static_site)
 }
 
-/// Rotas do shell SPA dos fóruns — com estado pra injetar OG tags de tópico.
+/// Routes of the forums' SPA shell — with state, to inject a topic's OG tags.
 fn forums_spa_routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/f", get(forums_spa))
@@ -390,9 +390,9 @@ fn forums_spa_routes(state: AppState) -> Router<()> {
         .with_state(state)
 }
 
-/// Serve o shell SPA dos fóruns (WEB_ROOT/f/index.html) pra qualquer /f/*.
-/// Pra /f/topico/<id>[/slug], injeta og:title/og:description/og:url do tópico
-/// no <head> — é o que Telegram/WhatsApp/Mastodon leem ao compartilhar.
+/// Serve the forums' SPA shell (WEB_ROOT/f/index.html) for any /f/*.
+/// For /f/topico/<id>[/slug], injects the topic's og:title/og:description/og:url
+/// into the <head> — which is what Telegram/WhatsApp/Mastodon read when sharing.
 async fn forums_spa(
     State(state): State<AppState>,
     path: Option<axum::extract::Path<String>>,
@@ -444,8 +444,8 @@ async fn forums_spa(
                         o = origin.trim_end_matches('/'),
                         p = esc(&p),
                     );
-                    // Remove as OG genéricas do shell — plataformas usam a PRIMEIRA
-                    // og:title que encontram; a nossa precisa ser a única.
+                    // Remove the shell's generic OG tags — platforms use the FIRST
+                    // og:title they find; ours must be the only one.
                     for prop in ["og:title", "og:description", "og:url", "og:type"] {
                         let needle = format!("<meta property=\"{prop}\"");
                         while let Some(a) = html.find(&needle) {

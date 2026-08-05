@@ -61,8 +61,8 @@ const REMOTE_DELIVERY_TIMEOUT_SECS: u64 = 10;
 pub fn public_routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/.well-known/webfinger", get(webfinger_handler))
-        // Ator de instância (0539): rota ESTÁTICA tem precedência sobre a captura
-        // `{handle}` no axum — o handle "instance" fica reservado pra plataforma.
+        // Instance actor (0539): the STATIC route takes precedence over the `{handle}`
+        // capture in axum — the "instance" handle is reserved for the platform.
         .route("/actors/instance", get(instance_actor_handler))
         .route("/actors/{handle}", get(actor_handler))
         .route("/actors/{handle}/objects/{id}", get(object_handler))
@@ -135,9 +135,9 @@ async fn webfinger_handler(
     if !resource_host.eq_ignore_ascii_case(&host) {
         return StatusCode::NOT_FOUND.into_response();
     }
-    // Ator de instância (0539): instâncias em modo seguro validam nosso fetch assinado
-    // resolvendo `acct:instance@<host>` — sem esta resposta o keyId não verifica e o
-    // remoto devolve 401 (visto ao vivo com wetdry.world).
+    // Instance actor (0539): instances in secure mode validate our signed fetch by
+    // resolving `acct:instance@<host>` — without this response the keyId does not verify and the
+    // remote returns 401 (observed live with wetdry.world).
     if user.eq_ignore_ascii_case("instance") {
         let jrd = json!({
             "subject": query.resource,
@@ -154,7 +154,7 @@ async fn webfinger_handler(
     let svc = ProfileService::from_state(&state);
     let org = OrgId::from_uuid(DEFAULT_ORG_UUID);
     if svc.find_public_by_handle(org, user).await.is_err() {
-        // F4: handle de FÓRUM (Group) — @sp, @santos.sp, @ministerio-educacao…
+        // F4: FORUM (Group) handle — @sp, @santos.sp, @ministerio-educacao…
         if crate::forum_federation::lookup_by_handle(&state.db, user)
             .await
             .is_some()
@@ -192,7 +192,7 @@ async fn object_handler(
     let Some(host) = host_from(&headers) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
-    // Reconstrói o activity_id que está armazenado (o object_id que estamos servindo é
+    // Rebuild the stored activity_id (the object_id we are serving is
     // derivado dele: /activities/note-<uuid> ↔ /objects/<uuid>).
     let activity_id = format!("https://{host}/actors/{handle}/activities/note-{id}");
     let object_url = format!("https://{host}/actors/{handle}/objects/{id}");
@@ -205,7 +205,7 @@ async fn object_handler(
     let payload = match row {
         Ok(Some((p,))) => p,
         Ok(None) => {
-            // F4: pode ser o objeto de um TÓPICO de fórum (/actors/<forum>/objects/<topic>).
+            // F4: it may be a forum TOPIC's object (/actors/<forum>/objects/<topic>).
             if let Ok(topic_id) = uuid::Uuid::parse_str(&id) {
                 if let Some(note) =
                     crate::forum_federation::topic_object_json(&state.db, &host, &handle, topic_id)
@@ -245,13 +245,13 @@ async fn object_handler(
             Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         };
     }
-    // Browser: HTML com OG tags + redirect pra /publicacao/?uri=<object_url>.
+    // Browser: HTML with OG tags + a redirect to /publicacao/?uri=<object_url>.
     let content_html = note.get("content").and_then(Value::as_str).unwrap_or("");
     let plain = strip_html(content_html);
     let title = truncate_chars(&plain, 80);
     let desc = truncate_chars(&plain, 200);
     let published = note.get("published").and_then(Value::as_str).unwrap_or("");
-    // Avatar do autor pra og:image (opcional; a card ainda aparece sem).
+    // Author avatar for og:image (optional; the card still renders without it).
     let svc = ProfileService::from_state(&state);
     let org = OrgId::from_uuid(DEFAULT_ORG_UUID);
     let avatar = svc
@@ -347,7 +347,7 @@ async fn actor_handler(
     let org = OrgId::from_uuid(DEFAULT_ORG_UUID);
     let profile = match svc.find_public_by_handle(org, &handle).await {
         Ok(p) => p,
-        // F4: handle pode ser um FÓRUM (Group) — @sp, @santos.sp, @ccj.senado…
+        // F4: the handle may be a FORUM (Group) — @sp, @santos.sp, @ccj.senado…
         Err(_) => {
             if let Some(forum) = crate::forum_federation::lookup_by_handle(&state.db, &handle).await
             {
@@ -462,10 +462,10 @@ async fn inbox_post(
         .next()
         .unwrap_or(&sig.key_id)
         .to_owned();
-    // Server-wide block (migration 0508): se o host do signer está em
-    // server_domain_block com severity='suspend', rejeitamos a atividade
-    // ANTES de qualquer fetch. Silence-only não bloqueia entrega — só
-    // esconde no feed público.
+    // Server-wide block (migration 0508): when the signer's host is in
+    // server_domain_block with severity='suspend', we reject the activity
+    // BEFORE any fetch. Silence-only does not block delivery — it only
+    // hides content in the public feed.
     if let Some(host) = host_from_url(&signer_actor_url) {
         let blocked: bool = sqlx::query_scalar(
             r"SELECT EXISTS (
@@ -642,9 +642,9 @@ async fn inbox_post(
                 },
             )
             .await;
-            // 0.32.0: novo seguidor também sai por e-mail (template
-            // `follow_new`), respeitando `email_prefs.follow` — a chave já
-            // existia no schema (0511) mas nada a lia até aqui. Best-effort
+            // 0.32.0: a new follower also goes out by e-mail (template
+            // `follow_new`), honouring `email_prefs.follow` — the key already
+            // existed in the schema (0511) but nothing read it until now. Best-effort
             // em spawn: o inbox nunca espera SMTP.
             send_follow_email(
                 &state.db,
@@ -966,9 +966,9 @@ struct RemoteActorDto {
 /// only logged-in citizens can probe.
 ///
 /// Mastodon-parity input forms:
-/// - `@user@host` ou `user@host` → WebFinger + Actor fetch;
-/// - `https://host/@user` (ou qualquer URL de perfil/actor) → Actor fetch direto com
-///   content negotiation, sem WebFinger — igual ao "colar a URL na busca" do Mastodon.
+/// - `@user@host` or `user@host` → WebFinger + Actor fetch;
+/// - `https://host/@user` (or any profile/actor URL) → direct Actor fetch with
+///   content negotiation, no WebFinger — like pasting a URL into Mastodon's search.
 async fn lookup_remote(
     State(_state): State<AppState>,
     _caller: CallerId,
@@ -1026,7 +1026,7 @@ async fn lookup_remote_by_url(url: &str) -> Response {
             return upstream_error("não consegui carregar esse endereço");
         }
     };
-    // Um perfil ActivityPub tem inbox; URL de post/coleção não vira perfil.
+    // An ActivityPub profile has an inbox; a post/collection URL is not a profile.
     if actor.get("inbox").and_then(Value::as_str).is_none() {
         return upstream_error("esse endereço não é um perfil ActivityPub");
     }
@@ -1044,7 +1044,7 @@ async fn lookup_remote_by_url(url: &str) -> Response {
         .and_then(|u| u.host_str().map(str::to_owned))
         .unwrap_or_default();
     let acct = if user.is_empty() || host.is_empty() {
-        // Sem preferredUsername não dá pra montar user@host — mostra a URL mesmo.
+        // Without preferredUsername we cannot build user@host — show the URL itself.
         actor_url.trim_start_matches("https://").to_owned()
     } else {
         format!("{user}@{host}")
@@ -1101,9 +1101,9 @@ async fn fetch_actor_outbox(actor_url: &str) -> Result<Vec<RemoteNoteDto>, Strin
     let collection = fetch_remote_actor(outbox_url)
         .await
         .map_err(|e| format!("outbox collection: {e:?}"))?;
-    // Mastodon pagina (`first` → página 1); o nosso próprio outbox — e outras
-    // implementações pequenas — devolve `orderedItems` inline no wrapper. Aceita os
-    // dois formatos, senão NENHUM perfil local carrega notas (issue #21).
+    // Mastodon paginates (`first` → page 1); our own outbox — and other small
+    // implementations — return `orderedItems` inline in the wrapper. Accept both
+    // formats, otherwise NO local profile loads notes (issue #21).
     let first_page_url = collection.get("first").and_then(|f| {
         f.as_str()
             .or_else(|| f.get("id").and_then(Value::as_str))
@@ -1223,12 +1223,12 @@ struct FollowStatusQuery {
 #[derive(Debug, Serialize)]
 struct FollowStatusDto {
     following: bool,
-    /// Pending: enviamos Follow mas o Accept remoto ainda não chegou.
+    /// Pending: we sent a Follow but the remote Accept has not arrived yet.
     pending: bool,
 }
 
-/// `GET /api/v1/me/follow/status?actor_url=…` — a UI usa isso ao pintar um
-/// perfil remoto pra saber se o botão deve dizer "Seguir" ou "Seguindo".
+/// `GET /api/v1/me/follow/status?actor_url=…` — the UI uses this when painting a
+/// remote profile, to know whether the button should read "Follow" or "Following".
 async fn follow_status(
     State(state): State<AppState>,
     caller: CallerId,
@@ -1412,9 +1412,9 @@ struct PostNoteRequest {
 /// `POST /api/v1/me/notes` — publish a public Note. Wraps the content in a `Create(Note)`,
 /// persists into the outbox, fans out one delivery row per ACK'd inbound follower; the worker
 /// drains the queue asynchronously. Returns `{activity_id, fanout_count, status: "queued"}`.
-/// Anti-spam: cidadão pode publicar no máximo 1 nota a cada 15 min. Rate
-/// limit reforçado no back — mesma regra é anunciada no cadastro pra
-/// setar expectativa desde a inscrição.
+/// Anti-spam: a citizen may publish at most 1 note every 15 min. A rate
+/// limit enforced in the backend — the same rule is announced at signup so
+/// expectations are set from registration.
 const POST_RATE_LIMIT_SECS: i64 = 15 * 60;
 
 async fn post_my_note(
@@ -1457,7 +1457,7 @@ async fn post_my_note(
         Ok(None) => {}
         Err(err) => {
             tracing::error!(error = ?err, "post_my_note rate limit check failed");
-            // Falha DB é seguridade — bloqueia por segurança.
+            // A DB failure is a safety matter — block, to be safe.
             return server_error();
         }
     };
@@ -2225,9 +2225,9 @@ async fn search_hashtags(
     }
 }
 
-/// `GET /api/v1/search/mentions?q=` — autocomplete de menção. Público; quando o
-/// caller está logado, quem ele SEGUE (inclusive remotos) vem primeiro — sem
-/// isso o dropdown só achava cidadão local e "quem eu sigo" nunca aparecia.
+/// `GET /api/v1/search/mentions?q=` — mention autocomplete. Public; when the
+/// caller is logged in, the accounts they FOLLOW (remote ones included) come first —
+/// without that the dropdown only found local citizens and "who I follow" never appeared.
 async fn search_mentions(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -2256,8 +2256,8 @@ async fn search_mentions(
             .unwrap_or_default(),
         None => Vec::new(),
     };
-    // Follows primeiro (enriquecidos com os dados locais quando o ator é da
-    // casa), depois os locais restantes. Dedup por actor_url.
+    // Follows first (enriched with local data when the actor is one of ours),
+    // then the remaining local ones. Deduplicated by actor_url.
     let mut items: Vec<discovery::MentionHit> = Vec::new();
     for f in follows {
         match locals.iter().find(|l| l.actor_url == f.actor_url) {
@@ -2278,8 +2278,8 @@ async fn search_mentions(
         .into_response()
 }
 
-/// Caller opcional a partir dos headers que o middleware de sessão injeta —
-/// endpoints públicos que só ENRIQUECEM a resposta pra quem está logado.
+/// Optional caller from the headers the session middleware injects —
+/// public endpoints that only ENRICH the response for logged-in callers.
 fn caller_citizen_opt(headers: &HeaderMap) -> Option<uuid::Uuid> {
     headers
         .get("x-dsoc-citizen-id")
@@ -3136,7 +3136,7 @@ fn remote_handle_of(actor: &Value, actor_url: &str) -> String {
 
 /// 0.32.0: e-mail de "novo seguidor" (template `follow_new`), gated por
 /// `email_prefs.follow` (chave ausente = ligado). Best-effort: qualquer
-/// falha vira log; o envio em si roda em spawn pra não segurar o inbox.
+/// failure becomes a log; the send itself runs in a spawn so it never holds the inbox.
 async fn send_follow_email(
     db: &sqlx::PgPool,
     citizen_id: uuid::Uuid,
@@ -3364,9 +3364,9 @@ pub(crate) async fn resolve_remote_mentions(
     content: &str,
     public_origin: &str,
 ) -> Vec<dsoc_federation::ResolvedMention> {
-    // Cada resolução custa até 2 fetches × REMOTE_FETCH_TIMEOUT_SECS dentro do handler de
-    // publicação — o teto impede que um post com dezenas de menções a hosts mortos segure a
-    // request. Menções além do teto ficam com a URL por convenção, sem entrega direta.
+    // Each resolution costs up to 2 fetches × REMOTE_FETCH_TIMEOUT_SECS inside the publish
+    // handler — the cap stops a post with dozens of mentions to dead hosts from holding the
+    // request. Mentions beyond the cap keep the conventional URL, with no direct delivery.
     const MAX_RESOLVED_MENTIONS: usize = 10;
     let our_host = reqwest::Url::parse(public_origin)
         .ok()
@@ -3438,10 +3438,10 @@ pub(crate) async fn fetch_remote_actor(url: &str) -> Result<Value, FederationErr
     let mut req = client
         .get(url)
         .header(reqwest::header::ACCEPT, ACTIVITY_JSON);
-    // Fetch ASSINADO com a chave do ator de instância (0539): instâncias em modo
-    // seguro (AUTHORIZED_FETCH, ex. wetdry.world) devolvem 401 pra GET sem assinatura.
-    // Chave ainda não primada (boot) ou falha ao assinar → segue sem assinatura,
-    // que é o suficiente pra maioria das instâncias (comportamento pré-0539).
+    // SIGNED fetch with the instance actor's key (0539): instances in secure mode
+    // (AUTHORIZED_FETCH, e.g. wetdry.world) return 401 for an unsigned GET.
+    // A key not yet primed (boot) or a signing failure → proceed unsigned,
+    // which suffices for most instances (pre-0539 behaviour).
     if let Some(key) = INSTANCE_KEY.get() {
         match sign_get_headers(url, key) {
             Ok((host, date, signature)) => {
@@ -3470,8 +3470,8 @@ pub(crate) async fn fetch_remote_actor(url: &str) -> Result<Value, FederationErr
         .map_err(|e| FederationError::Http(format!("json: {e}")))
 }
 
-/// Monta os headers de um GET assinado — `(request-target) host date` cobertos, mesma
-/// receita que o Mastodon emite/aceita em AUTHORIZED_FETCH. Retorna (host, date, signature).
+/// Build the headers of a signed GET — `(request-target) host date` covered, the same
+/// recipe Mastodon emits/accepts under AUTHORIZED_FETCH. Returns (host, date, signature).
 fn sign_get_headers(url: &str, key: &InstanceKey) -> Result<(String, String, String), String> {
     let parsed = reqwest::Url::parse(url).map_err(|e| format!("bad url: {e}"))?;
     let host = match (parsed.host_str(), parsed.port()) {
@@ -3500,15 +3500,15 @@ fn sign_get_headers(url: &str, key: &InstanceKey) -> Result<(String, String, Str
 }
 
 // ---------------------------------------------------------------------------
-// Ator de instância (0539) — identidade da PLATAFORMA no fediverso, usada pra
-// assinar fetches (AUTHORIZED_FETCH). Mesmo papel do actor `Application` do
-// Mastodon. A chave vive em `federation_instance_key` (linha única) e é primada
-// no boot pelo worker; até lá os fetches saem sem assinatura.
+// Instance actor (0539) — the PLATFORM's identity on the fediverse, used to
+// sign fetches (AUTHORIZED_FETCH). The same role as Mastodon's `Application`
+// actor. The key lives in `federation_instance_key` (a single row) and is primed
+// at boot by the worker; until then fetches go out unsigned.
 // ---------------------------------------------------------------------------
 
-/// Chave + identidade do ator de instância, primada uma vez no boot.
+/// Key + identity of the instance actor, primed once at boot.
 pub(crate) struct InstanceKey {
-    /// `https://<host>/actors/instance#main-key` — o keyId que os remotos dereferenciam.
+    /// `https://<host>/actors/instance#main-key` — the keyId remotes dereference.
     key_id: String,
     /// `https://<host>/actors/instance` — id do actor.
     actor_id: String,
@@ -3518,9 +3518,9 @@ pub(crate) struct InstanceKey {
 
 static INSTANCE_KEY: std::sync::OnceLock<InstanceKey> = std::sync::OnceLock::new();
 
-/// Carrega (ou gera e persiste) a chave do ator de instância e prima o cache do
-/// processo. Chamado no boot do worker; falha aqui NÃO derruba o gateway — só
-/// deixa os fetches sem assinatura (e loga por quê).
+/// Load (or generate and persist) the instance actor's key and prime the process
+/// cache. Called at worker boot; a failure here does NOT bring the gateway down — it
+/// only leaves fetches unsigned (and logs why).
 pub(crate) async fn prime_instance_key(db: &sqlx::PgPool, public_origin: &str) {
     let origin = public_origin.trim_end_matches('/');
     let row: Option<(String, String)> = match sqlx::query_as(
@@ -3549,7 +3549,7 @@ pub(crate) async fn prime_instance_key(db: &sqlx::PgPool, public_origin: &str) {
                         return;
                     }
                 };
-            // Corrida entre réplicas: só uma INSERE; todas relêem a linha vencedora.
+            // A race between replicas: only one INSERTs; all re-read the winning row.
             if let Err(err) = sqlx::query(
                 "INSERT INTO federation_instance_key (id, public_key_pem, private_key_pem)
                  VALUES (1, $1, $2) ON CONFLICT (id) DO NOTHING",
@@ -3586,8 +3586,8 @@ pub(crate) async fn prime_instance_key(db: &sqlx::PgPool, public_origin: &str) {
     tracing::info!("instance key primada — fetches ActivityPub saem assinados");
 }
 
-/// `GET /actors/instance` — o actor `Application` da plataforma, com a publicKey que
-/// os remotos dereferenciam pra verificar nossos fetches assinados.
+/// `GET /actors/instance` — the platform's `Application` actor, with the publicKey
+/// remotes dereference to verify our signed fetches.
 async fn instance_actor_handler(headers: HeaderMap) -> Response {
     let Some(key) = INSTANCE_KEY.get() else {
         return StatusCode::NOT_FOUND.into_response();
@@ -3725,8 +3725,8 @@ fn host_from(headers: &HeaderMap) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Extract handle `@user@host` a partir de um actor URL — pra a UI ter algo
-/// legível sem outro round-trip. Cobre `https://host/users/user`,
+/// Extract the handle `@user@host` from an actor URL — so the UI has something
+/// readable without another round-trip. Covers `https://host/users/user`,
 /// `https://host/@user` e `https://host/actors/user`.
 fn hint_handle_from_actor_url(u: &str) -> Option<String> {
     let host = host_from_url(u)?;
@@ -3735,7 +3735,7 @@ fn hint_handle_from_actor_url(u: &str) -> Option<String> {
         .or_else(|| u.strip_prefix("http://"))?;
     let path_start = rest.find('/')?;
     let path = &rest[path_start..];
-    // Extrair último segmento do path
+    // Extract the last path segment
     let seg = path.trim_end_matches('/').rsplit('/').next().unwrap_or("");
     let seg = seg.strip_prefix('@').unwrap_or(seg);
     if seg.is_empty() {
@@ -3749,13 +3749,13 @@ fn hint_handle_from_actor_url(u: &str) -> Option<String> {
 struct SocialLinkDto {
     /// URL AP do actor remoto (opaca).
     actor_url: String,
-    /// Handle inferido do URL — `@user@host` — pra UI. Pode não bater 100 %
-    /// com o preferredUsername quando o site usa slug ≠ username, mas serve
-    /// como âncora clicável.
+    /// Handle inferred from the URL — `@user@host` — for the UI. It may not match
+    /// preferredUsername exactly when the site uses a slug ≠ username, but it serves
+    /// as a clickable anchor.
     handle_hint: Option<String>,
-    /// Timestamp do accepted_at (ou created_at pra pending).
+    /// Timestamp of accepted_at (or created_at for a pending follow).
     since: DateTime<Utc>,
-    /// True se o Follow foi aceito pelo lado remoto.
+    /// True when the Follow was accepted by the remote side.
     accepted: bool,
 }
 
@@ -3770,7 +3770,7 @@ async fn my_followers_list(State(state): State<AppState>, caller: CallerId) -> R
 #[derive(Debug, Deserialize)]
 struct BulkFollowBody {
     /// Lista de actor URLs (`https://host/users/x` ou `https://host/actors/y`) ou
-    /// handles `@user@host`. Handles são resolvidos via WebFinger.
+    /// `@user@host` handles. Handles are resolved via WebFinger.
     entries: Vec<String>,
 }
 
@@ -3783,9 +3783,9 @@ struct BulkFollowResult {
     errors: Vec<String>,
 }
 
-/// Recebe uma lista mista de handles/URLs e dispara Follow pra cada um.
-/// Best-effort: cada falha vira uma string em `errors`. Cap em 200 por chamada
-/// pra evitar abuso.
+/// Take a mixed list of handles/URLs and fire a Follow for each one.
+/// Best-effort: each failure becomes a string in `errors`. Capped at 200 per call
+/// to prevent abuse.
 async fn bulk_follow(
     State(state): State<AppState>,
     caller: CallerId,
@@ -3812,7 +3812,7 @@ async fn bulk_follow(
         errors: Vec::new(),
     };
     for entry in entries {
-        // Resolve pra URL: se começa com http, é URL; se começa com @, é handle → webfinger.
+        // Resolve to a URL: starting with http means a URL; starting with @ means a handle → webfinger.
         let actor_url = if entry.starts_with("https://") || entry.starts_with("http://") {
             entry.clone()
         } else {
@@ -3858,7 +3858,7 @@ async fn bulk_follow(
                 }
             }
         };
-        // Verifica se já segue.
+        // Check whether we already follow them.
         let already: bool = sqlx::query_scalar::<_, bool>(
             r"SELECT EXISTS (SELECT 1 FROM federation_follow
                              WHERE citizen_id = $1 AND direction = 'outbound' AND remote_actor_url = $2)",
@@ -3873,8 +3873,8 @@ async fn bulk_follow(
             continue;
         }
         // Dispara o mesmo caminho do follow_remote via chamada interna helper.
-        // Simplificado: só valida se resolve e insere pending row; delivery
-        // real usa o worker. Pra minimizar duplicação, reusa a rota:
+        // Simplified: only validates that it resolves and inserts a pending row; real
+        // delivery is the worker's job. To minimize duplication, it reuses the route:
         match do_follow_remote(&state, caller, &actor_url).await {
             Ok(()) => result.followed += 1,
             Err(msg) => {
@@ -3980,8 +3980,8 @@ async fn social_list(state: &AppState, citizen: uuid::Uuid, direction: &str) -> 
     }
 }
 
-/// Extract the host from `https://host[:port]/…` sem depender do crate `url`.
-/// Retorna None se não for uma URL http(s) reconhecível.
+/// Extract the host from `https://host[:port]/…` without depending on the `url` crate.
+/// Returns None when it is not a recognizable http(s) URL.
 fn host_from_url(u: &str) -> Option<String> {
     let rest = u
         .strip_prefix("https://")
@@ -4000,7 +4000,7 @@ fn host_from_url(u: &str) -> Option<String> {
     }
 }
 
-/// Escape as 5 chars perigosos pra qualquer atributo/texto HTML.
+/// Escape the 5 dangerous characters for any HTML attribute/text.
 fn escape_html(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -4016,7 +4016,7 @@ fn escape_html(s: &str) -> String {
     out
 }
 
-/// Percent-encode pra query string (subconjunto reservado do RFC 3986).
+/// Percent-encode for a query string (the reserved subset of RFC 3986).
 fn urlencode(s: &str) -> String {
     let mut out = String::with_capacity(s.len() * 3);
     for b in s.bytes() {
@@ -4030,8 +4030,8 @@ fn urlencode(s: &str) -> String {
     out
 }
 
-/// Colapsa qualquer sequência de espaços/quebras + remove tags — bom o suficiente pra
-/// snippet de OG description sem trazer sanitizer de HTML no runtime.
+/// Collapse any run of spaces/newlines + strip tags — good enough for an OG
+/// description snippet without pulling an HTML sanitizer into the runtime.
 fn strip_html(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut in_tag = false;
@@ -4060,7 +4060,7 @@ fn strip_html(s: &str) -> String {
     out.trim().to_owned()
 }
 
-/// Trunca a `max` chars mantendo unicode grapheme rough; adiciona reticência quando corta.
+/// Truncate to `max` chars, roughly respecting unicode graphemes; adds an ellipsis when it cuts.
 fn truncate_chars(s: &str, max: usize) -> String {
     let mut end = s.len();
     for (count, (i, _)) in s.char_indices().enumerate() {

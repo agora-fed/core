@@ -43,29 +43,29 @@ const DEFAULT_DELIVERY_MS: u64 = 2_000;
 /// Max deliveries claimed per delivery tick. Bounds the burst when a Note fans out to many
 /// followers; the queue drains over subsequent ticks.
 const DELIVERY_BATCH: u32 = 50;
-/// Default cadence do re-embed do backlog (fatia 2a, 0.28.4). Override com
-/// `WORKER_REEMBED_MS`. Backlog vazio = um SELECT indexado por tick.
+/// Default cadence of the backlog re-embed (slice 2a, 0.28.4). Override with
+/// `WORKER_REEMBED_MS`. An empty backlog = one indexed SELECT per tick.
 const DEFAULT_REEMBED_MS: u64 = 60_000;
-/// Cadence do escalonamento de avisos ao gabinete (0.29 — AR digital).
-/// Reenvia D+1 e D+2 enquanto o SLA está pendente; 1 tick/hora basta
-/// (a granularidade da escada é diária). Override: `WORKER_ESCALATION_MS`.
+/// Cadence of the office warning ladder (0.29 — digital registered mail).
+/// Resends on D+1 and D+2 while the SLA is pending; 1 tick/hour suffices
+/// (the ladder's granularity is daily). Override: `WORKER_ESCALATION_MS`.
 const DEFAULT_ESCALATION_MS: u64 = 60 * 60 * 1000;
-/// Propostas re-embedadas por tick. O modelo roda em CPU (~centenas de ms
-/// por texto) — lote pequeno pra não competir com o ingest ao vivo.
+/// Proposals re-embedded per tick. The model runs on CPU (~hundreds of ms
+/// per text) — a small batch so it never competes with live ingest.
 const REEMBED_BATCH: i64 = 8;
 /// Drop a delivery row after this many failed attempts (the worker stops claiming it; the row
 /// stays in DB for ops introspection). Matches the longest reasonable Mastodon retry window.
 const DELIVERY_MAX_ATTEMPTS: i32 = 10;
-/// Cadência do cleanup de pending_signups vencidos. Uma vez por hora é suficiente —
-/// pending TTL é 24h e o volume esperado é baixíssimo. Override com
+/// Cadence of the expired pending_signup cleanup. Once per hour suffices —
+/// the pending TTL is 24h and the expected volume is tiny. Override with
 /// `WORKER_SIGNUP_CLEANUP_MS`.
 const DEFAULT_SIGNUP_CLEANUP_MS: u64 = 3_600_000;
-/// Idade (em dias) que uma pending expirada precisa ter pra ser apagada. Guardamos
-/// uns dias após o vencimento pra auditoria/ops. Override com `AUTH_SIGNUP_CLEANUP_DAYS`.
+/// Age (in days) an expired pending must reach before deletion. We keep them
+/// a few days past expiry for audit/ops. Override with `AUTH_SIGNUP_CLEANUP_DAYS`.
 const DEFAULT_SIGNUP_CLEANUP_DAYS: i64 = 7;
-/// Cadência default do sweep do SOCRATES (6 h). A coleção do e-Cidadania muda
-/// devagar (é um ranking de apoios) — bater mais que isso só gasta a paciência
-/// do portal do Senado. Override com `SOCRATES_SWEEP_MS`.
+/// Default cadence of the SOCRATES sweep (6h). The e-Cidadania collection moves
+/// slowly (it is a support ranking) — polling faster only wears out the Senate
+/// portal's patience. Override with `SOCRATES_SWEEP_MS`.
 const DEFAULT_SOCRATES_SWEEP_MS: u64 = 6 * 60 * 60 * 1000;
 
 /// Read a millisecond interval from the environment, falling back to `default`.
@@ -102,9 +102,9 @@ impl EventHandler for ConsensusSub {
 }
 
 /// `moderation`: on `proposals.created`, evaluate the proposal against rules
-/// and emit `moderation.cleared`/`moderation.flagged`. Sem este subscriber, a
-/// proposta ficava presa em `draft` pra sempre — não havia trigger natural
-/// pra publicar. Fecha o gap "não estão 100%" das propostas.
+/// and emit `moderation.cleared`/`moderation.flagged`. Without this subscriber the
+/// proposal stayed stuck in `draft` forever — there was no natural trigger
+/// to publish it. Closes the proposals' "not quite 100%" gap.
 struct ModerationEvaluateSub {
     moderation: dsoc_moderation::ModerationService,
     proposals: dsoc_proposals::ProposalService,
@@ -259,9 +259,9 @@ fn subscriptions(state: &AppState) -> Vec<Subscription> {
                 proposals: dsoc_proposals::ProposalService::from_state(state),
             }),
         ),
-        // NOVO: avalia propostas recém-criadas contra as regras de moderação
-        // e emite ModerationCleared/Flagged. Sem isso, o proposal ficava
-        // eterno em `draft` (o publish só dispara em `ModerationCleared`).
+        // NEW: evaluates freshly created proposals against the moderation rules
+        // and emits ModerationCleared/Flagged. Without it, a proposal stayed
+        // forever in `draft` (publish only fires on `ModerationCleared`).
         sub(
             "moderation-evaluate-worker",
             EventTopic::Proposals,
@@ -328,9 +328,9 @@ fn subscriptions(state: &AppState) -> Vec<Subscription> {
                 db: state.db.clone(),
             }),
         ),
-        // Feed cidadão (0.25.0-fediverso): notifica o AUTOR da proposta em cada
-        // marco cívico (threshold, sla started/response/expired). NotifySlaSub
-        // acima cobre o operador do mandato; este cobre o cidadão que propôs.
+        // Citizen feed (0.25.0-fediverse): notifies the proposal's AUTHOR at each
+        // civic milestone (threshold, sla started/response/expired). NotifySlaSub
+        // above covers the mandate's operator; this one covers the proposing citizen.
         sub(
             "civic-notify-proposals-worker",
             EventTopic::Proposals,
@@ -387,8 +387,8 @@ pub fn spawn(state: AppState) {
     let dispatch_ms = env_ms("WORKER_DISPATCH_MS", DEFAULT_DISPATCH_MS);
     let sweep_ms = env_ms("WORKER_SWEEP_MS", DEFAULT_SWEEP_MS);
 
-    // Ator de instância (0539): prima a chave que assina os fetches ActivityPub
-    // (AUTHORIZED_FETCH). Best-effort — sem ela, fetches saem sem assinatura.
+    // Instance actor (0539): primes the key that signs ActivityPub fetches
+    // (AUTHORIZED_FETCH). Best-effort — without it, fetches go out unsigned.
     {
         let db = state.db.clone();
         let origin = std::env::var("PUBLIC_ORIGIN")
@@ -398,7 +398,7 @@ pub fn spawn(state: AppState) {
         });
     }
 
-    // Carteiro dos fóruns (F3): envia os dispatches de patamar pendentes (1/min).
+    // Forum postman (F3): sends the pending threshold dispatches (1/min).
     {
         let db = state.db.clone();
         let origin = std::env::var("PUBLIC_ORIGIN")
@@ -434,8 +434,8 @@ pub fn spawn(state: AppState) {
     let delivery_ms = env_ms("WORKER_DELIVERY_MS", DEFAULT_DELIVERY_MS);
     tokio::spawn(federation_delivery_loop(state.clone(), delivery_ms));
 
-    // Cleanup de auth_pending_signup vencidos (P3.3). Deletar bem depois do
-    // vencimento — a auditoria pode querer ver quem tentou o quê.
+    // Cleanup of expired auth_pending_signup rows (P3.3). Deleting well after
+    // expiry — an audit may want to see who attempted what.
     let signup_cleanup_ms = env_ms("WORKER_SIGNUP_CLEANUP_MS", DEFAULT_SIGNUP_CLEANUP_MS);
     let signup_cleanup_days = std::env::var("AUTH_SIGNUP_CLEANUP_DAYS")
         .ok()
@@ -448,8 +448,8 @@ pub fn spawn(state: AppState) {
         signup_cleanup_days,
     ));
 
-    // 0.26.19: apaga notas próprias com idade > auto_delete_notes_older_than_days.
-    // 1 tick por hora — barato, indexed. Não bloqueia outros loops.
+    // 0.26.19: deletes one's own notes older than auto_delete_notes_older_than_days.
+    // 1 tick per hour — cheap, indexed. Never blocks the other loops.
     tokio::spawn(auto_delete_notes_loop(state.clone()));
 
     // Retry de entrega de proposta: reenvia os e-mails (autor/gabinete) que NÃO
