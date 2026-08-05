@@ -143,11 +143,11 @@ pub async fn mentions_matching(
         .collect())
 }
 
-/// Quem o cidadão SEGUE, filtrado por substring da URL do ator — as sugestões
-/// mais prováveis de uma menção, incluindo contas remotas que a busca local
-/// nunca acharia (é o que faz `@pedroz…` sugerir `pedrozambarda@organica.social`).
-/// `display_name`/`avatar` ficam None pra remotos; o handler enriquece quando o
-/// mesmo ator também é cidadão local.
+/// Who the citizen FOLLOWS, filtered by a substring of the actor's URL — the
+/// likeliest suggestions for a mention, including remote accounts the local search
+/// would never find (it is what makes `@pedroz…` suggest `pedrozambarda@organica.social`).
+/// `display_name`/`avatar` stay None for remote ones; the handler enriches them when the
+/// same actor is also a local citizen.
 pub async fn followed_mentions_matching(
     db: &PgPool,
     citizen_id: Uuid,
@@ -190,8 +190,8 @@ pub async fn followed_mentions_matching(
         .collect())
 }
 
-/// `https://host/users/nome` (ou `/actors/nome`) → `nome@host`. Convenção da
-/// fediverse pra derivar o handle exibível sem um fetch do ator.
+/// `https://host/users/name` (or `/actors/name`) → `name@host`. The fediverse
+/// convention for deriving a displayable handle without fetching the actor.
 fn handle_from_actor_url(u: &str) -> Option<String> {
     let rest = u.strip_prefix("https://")?;
     let (host, path) = rest.split_once('/')?;
@@ -292,8 +292,8 @@ pub async fn trending_hashtags(
     limit: i64,
 ) -> Result<Vec<HashtagHit>, sqlx::Error> {
     let since = Utc::now() - Duration::hours(window_hours);
-    // 0.26.19: exclui hashtags 'banned' e injeta 'promoted' com count sintético
-    // pra elas aparecerem mesmo sem volume.
+    // 0.26.19: excludes 'banned' hashtags and injects 'promoted' ones with a synthetic count
+    // so they appear even without volume.
     sqlx::query_as::<_, (String, String, i64)>(
         r"
         WITH real AS (

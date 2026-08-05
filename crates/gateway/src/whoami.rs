@@ -1,13 +1,13 @@
-//! `GET /api/v1/me/whoami` (0.52.0, mobile) — identidade CONSOLIDADA do usuário logado
-//! num payload só, pra o app nativo decidir a navegação por papel sem precisar das 3
+//! `GET /api/v1/me/whoami` (0.52.0, mobile) — the logged-in user's CONSOLIDATED identity
+//! in a single payload, so the native app can decide role-based navigation without the 3
 //! chamadas separadas (`/me` + `/me/admin-status` + `/me/mandate`).
 //!
-//! Compõe: perfil (reusa `ProfileService.get`) + mandato/binding (reusa
+//! Composes: profile (reusing `ProfileService.get`) + mandate/binding (reusing
 //! `MandateRegistry.find_my_mandate`) + papel de plataforma (`admin_role_binding`) +
 //! papel de partido (`party_administrator`). Deriva `civic_type` (cidadao|candidato|politico).
 //!
-//! Auth: a identidade vem do header `x-dsoc-citizen-id` que o middleware `inject_identity`
-//! injeta a partir da sessão/bearer (o cliente NUNCA envia esse header — é descartado na borda).
+//! Auth: the identity comes from the `x-dsoc-citizen-id` header that the `inject_identity`
+//! middleware injects from the session/bearer (the client NEVER sends that header — it is stripped at the edge).
 
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
@@ -45,13 +45,13 @@ struct WhoamiDto {
     titulo_status: Option<String>,
     /// `owner` | `admin` | `auditor` | `null`.
     platform_role: Option<String>,
-    /// Conveniência: `platform_role ∈ {owner, admin}`.
+    /// Convenience: `platform_role ∈ {owner, admin}`.
     is_admin: bool,
-    /// `admin` | `moderador` | `null` (partido/diretório).
+    /// `admin` | `moderador` | `null` (party/directory).
     party_role: Option<String>,
     /// Derivado: `cidadao` | `candidato` | `politico`.
     civic_type: String,
-    /// Presente se o cidadão opera um mandato (político ou candidato autodeclarado).
+    /// Present when the citizen operates a mandate (an official or a self-declared candidate).
     mandate: Option<WhoamiMandate>,
 }
 
@@ -77,13 +77,13 @@ async fn whoami(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let Some(citizen_id) = header_uuid(&headers, "x-dsoc-citizen-id") else {
         return unauthorized();
     };
-    // O middleware injeta org junto com o citizen; sem ela, cai no org default single-tenant.
+    // The middleware injects org alongside citizen; without it, we fall back to the single-tenant default org.
     let org_id = header_uuid(&headers, "x-dsoc-org-id")
         .unwrap_or_else(|| uuid::uuid!("11111111-1111-1111-1111-111111111111"));
     let citizen = CitizenId::from_uuid(citizen_id);
     let org = OrgId::from_uuid(org_id);
 
-    // Perfil (nível de verificação + título) — reusa o serviço já testado.
+    // Profile (verification level + electoral registry) — reuses the already-tested service.
     let profile = match dsoc_auth::profile::ProfileService::from_state(&state)
         .get(citizen, org)
         .await
@@ -98,7 +98,7 @@ async fn whoami(State(state): State<AppState>, headers: HeaderMap) -> Response {
         }
     };
 
-    // Mandato + nível do binding (político/candidato).
+    // Mandate + binding level (official/candidate).
     let mandate = match dsoc_mandates::service::MandateRegistry::from_state(&state)
         .find_my_mandate(org, citizen)
         .await
@@ -126,7 +126,7 @@ async fn whoami(State(state): State<AppState>, headers: HeaderMap) -> Response {
     .unwrap_or(None);
     let is_admin = matches!(platform_role.as_deref(), Some("owner") | Some("admin"));
 
-    // Papel de partido (admin > moderador), só bindings aceitos.
+    // Party role (admin > moderador), accepted bindings only.
     let party_role: Option<String> = sqlx::query_scalar(
         r"SELECT role FROM party_administrator
            WHERE citizen_id = $1 AND accepted_at IS NOT NULL

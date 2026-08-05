@@ -1,7 +1,7 @@
-//! `/admin/parties/{sigla}/dashboard` — painel de campanha do partido/diretório (ÁGORA F7, #64).
+//! `/admin/parties/{sigla}/dashboard` — the party/directory campaign panel (AGORA F7, #64).
 //!
-//! Agrega, só-leitura, o que as fases anteriores geraram: tamanho da base própria (F4), taxa de
-//! consentimento por nível (F2), histórico de broadcasts + micro-consultas (F3). Gating: admin de
+//! Aggregates, read-only, what the previous phases produced: size of the own contact base (F4), the
+//! consent rate per level (F2), the history of broadcasts + micro-consultations (F3). Gating: platform
 //! plataforma OU qualquer `party_administrator` do partido. English API, runtime queries.
 
 use axum::extract::{Path, State};
@@ -108,7 +108,7 @@ async fn dashboard(
         Err(r) => return r,
     }
 
-    // Contagens de diretórios/administradores.
+    // Counts of directories/administrators.
     let (directories_count, administrators_count): (i64, i64) = match sqlx::query_as(
         r"SELECT (SELECT count(*) FROM party_directory     WHERE org_id = $1 AND party_sigla = $2),
                  (SELECT count(*) FROM party_administrator WHERE org_id = $1 AND party_sigla = $2)",
@@ -125,7 +125,7 @@ async fn dashboard(
         }
     };
 
-    // Consentimento ativo por nível (F2).
+    // Active consent per level (F2).
     let (all_parties, this_party, directory_this_party, municipality_any): (i64, i64, i64, i64) =
         match sqlx::query_as(
             r"SELECT
@@ -148,7 +148,7 @@ async fn dashboard(
             }
         };
 
-    // Base própria (F4) — total + casados na base central, nos diretórios do partido.
+    // Own contact base (F4) — total + matches in the central base, across the party's directories.
     let (own_total, own_matched): (i64, i64) = match sqlx::query_as(
         r"SELECT count(*), count(cc.matched_citizen_id)
             FROM campaign_contact cc
@@ -167,7 +167,7 @@ async fn dashboard(
         }
     };
 
-    // Histórico de broadcasts (F3) — últimos 20 + total.
+    // Broadcast history (F3) — the last 20 + the total.
     let broadcasts_count: i64 = sqlx::query_scalar(
         r"SELECT count(*) FROM campaign_broadcast WHERE org_id = $1 AND party_sigla = $2",
     )

@@ -159,7 +159,7 @@ pub(crate) fn group_actor_json(
     })
 }
 
-/// `/media/x.png` → `https://<host>/media/x.png`; URLs absolutas passam intactas.
+/// `/media/x.png` → `https://<host>/media/x.png`; absolute URLs pass through untouched.
 fn absolutize_url(host: &str, url: &str) -> String {
     if url.starts_with("http://") || url.starts_with("https://") {
         url.to_owned()
@@ -318,8 +318,8 @@ pub(crate) async fn topic_object_json(
     }))
 }
 
-/// Sweep do Announce (1/min no worker): enfileira tópicos novos × seguidores e
-/// envia os pendentes assinando com a chave do fórum. Idempotente por (tópico, inbox).
+/// Announce sweep (1/min in the worker): enqueues new topics × followers and
+/// sends the pending ones signed with the forum's key. Idempotent per (topic, inbox).
 pub(crate) async fn announce_sweep(db: &PgPool, public_origin: &str) {
     let origin = public_origin.trim_end_matches('/');
     let host = origin.trim_start_matches("https://");
@@ -419,7 +419,7 @@ mod tests {
         assert_eq!(handle_to_path("ccj.senado").as_deref(), Some("senado/ccj"));
         assert_eq!(path_to_handle("sp/santos/saude"), "saude.santos.sp");
         assert_eq!(path_to_handle("senado/ccj"), "ccj.senado");
-        // inválidos
+        // invalid
         assert!(handle_to_path("").is_none());
         assert!(handle_to_path("a..b").is_none());
         assert!(handle_to_path("Maiuscula.sp").is_none());

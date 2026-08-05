@@ -1,9 +1,9 @@
-//! `/admin/parties/{sigla}/directories/{id}/sms-gateway` — config do SMSGateway do diretório
-//! (INTERCOMS #69, migration 0660). Cada diretório cadastra seu **próprio** SMSGateway
+//! `/admin/parties/{sigla}/directories/{id}/sms-gateway` — the directory's SMSGateway config
+//! (INTERCOMS #69, migration 0660). Each directory registers its **own** SMSGateway
 //! (host + credenciais), **cifrado em repouso** (pgcrypto, chave em `INTERCOMS_CONFIG_KEY`).
 //!
 //! Gating reusa [`crate::campaign_broadcast::authorized`]. English API, runtime queries. O envio
-//! que consome esta config é a fatia #69b (broadcast SMS).
+//! that consumes this config is slice #69b (SMS broadcast).
 //!
 //! - `GET    …/sms-gateway` — {configured, url} (credenciais nunca retornam).
 //! - `PUT    …/sms-gateway` — grava/atualiza {url, user?, pass?}.
@@ -78,7 +78,7 @@ async fn get_config(
         )
             .into_response();
     };
-    // Decifra e devolve SÓ a url (credenciais nunca voltam).
+    // Decrypt and return ONLY the url (credentials never come back).
     let row: Result<Option<(String,)>, sqlx::Error> = sqlx::query_as(
         r"SELECT pgp_sym_decrypt(config, $2) FROM intercoms_provider_config
            WHERE directory_id = $1 AND channel = 'sms'",
@@ -157,7 +157,7 @@ async fn set_config(
     })
     .to_string();
 
-    // Upsert por (diretório, canal): delete + insert numa tx.
+    // Upsert per (directory, channel): delete + insert in one tx.
     let mut tx = match state.db.begin().await {
         Ok(t) => t,
         Err(_) => return storage_error(),
@@ -183,7 +183,7 @@ async fn set_config(
     .execute(&mut *tx)
     .await
     {
-        // FK do diretório inválido → 404.
+        // An invalid directory FK → 404.
         if let sqlx::Error::Database(e) = &err {
             if e.is_foreign_key_violation() {
                 return fail(

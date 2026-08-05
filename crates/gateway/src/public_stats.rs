@@ -1,15 +1,15 @@
-//! Estatísticas públicas ao vivo — usadas na landing pra dar peso à tese.
+//! Live public statistics — used on the landing page to give the thesis weight.
 //!
-//! `GET /stats/public` — SEM autenticação, cacheável. Retorna:
-//! - `citizens_active`: cidadãs(os) verificadas(os) por e-mail (não anônimas).
-//! - `proposals_published`: propostas que passaram por moderação e federaram.
+//! `GET /stats/public` — NO authentication, cacheable. Returns:
+//! - `citizens_active`: citizens verified by e-mail (not anonymous).
+//! - `proposals_published`: proposals that cleared moderation and federated.
 //! - `mandates_indexed`: mandatos federais + estaduais catalogados.
 //! - `responses_public`: SLAs respondidas dentro do prazo (accountability
 //!   demonstrada).
-//! - `silences_public`: SLAs vencidas sem resposta (silêncio público).
-//! - `response_rate`: % (respostas / (respostas + silêncios)) ou null se sem SLAs.
+//! - `silences_public`: SLAs expired with no answer (public silence).
+//! - `response_rate`: % (answers / (answers + silences)) or null when there are no SLAs.
 //!
-//! Sem PII. Sem inferência de identidade. Só contadores.
+//! No PII. No identity inference. Counters only.
 
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -39,8 +39,8 @@ struct PublicStats {
 
 async fn public_stats(State(state): State<AppState>) -> Response {
     let db = &state.db;
-    // Uma query por métrica — barato, indexado, sem PII. Tolerante a falha:
-    // conta como 0 se der erro pra manter a landing renderizando.
+    // One query per metric — cheap, indexed, no PII. Failure-tolerant:
+    // it counts as 0 on error so the landing page keeps rendering.
     let citizens_active: i64 = sqlx::query_scalar(
         r"SELECT COUNT(*) FROM citizen
            WHERE verification_level IN ('email','directory','strong')

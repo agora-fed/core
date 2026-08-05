@@ -1,4 +1,4 @@
-//! `/admin/parties` — party directories and party administrators (ÁGORA campaign layer, #58).
+//! `/admin/parties` — party directories and party administrators (AGORA campaign layer, #58).
 //!
 //! Surfaces the party/directory/administrator model that already exists in the schema
 //! (migration 0204: `party`, `party_directory`, `party_administrator`) so the platform can
@@ -6,7 +6,7 @@
 //! Administrators** (scoped to a federal/estadual/municipal directory). These roles gate the
 //! campaign features (broadcast, SMS) built on top.
 //!
-//! English API by ADR-0013 (ÁGORA framework). Gated by `party.manage` (platform admin bypasses
+//! English API by ADR-0013 (AGORA framework). Gated by `party.manage` (platform admin bypasses
 //! via `administrator`). Runtime queries — no sqlx cache.
 //!
 //! - `GET    /admin/parties`                          — parties + directory/admin counts.
@@ -59,7 +59,7 @@ fn storage_error() -> Response {
     )
 }
 
-/// Registra em `admin_audit` (#71) — best-effort, não falha a requisição.
+/// Record in `admin_audit` (#71) — best-effort, it never fails the request.
 async fn audit(
     db: &sqlx::PgPool,
     admin_id: Uuid,
@@ -221,9 +221,9 @@ struct CreateDirectoryBody {
     name: String,
     #[serde(default)]
     parent_directory_id: Option<Uuid>,
-    /// Responsável pelo diretório — obrigatório este campo OU `responsavel_handle`.
-    /// Vira `party_administrator` role `admin` no escopo do diretório, na mesma
-    /// transação da criação (diretório nunca nasce órfão).
+    /// The citizen responsible for the directory — either this field OR `responsavel_handle`.
+    /// Becomes a `party_administrator` with role `admin` scoped to the directory, in the same
+    /// transaction as the creation (a directory is never born orphaned).
     #[serde(default)]
     responsavel_citizen_id: Option<Uuid>,
     #[serde(default)]
@@ -262,8 +262,8 @@ async fn create_directory(
             "Nome do diretório é obrigatório.",
         );
     }
-    // Federative shape (espelha o CHECK da 0204): federal ⇒ sem uf/municipio; estadual ⇒ uf,
-    // sem municipio; municipal ⇒ uf + municipio.
+    // Federative shape (mirrors 0204's CHECK): federal ⇒ no uf/municipio; state ⇒ uf,
+    // no municipio; municipal ⇒ uf + municipio.
     let shape_ok = match esfera.as_str() {
         "federal" => uf.is_none() && municipio.is_none(),
         "estadual" => uf.is_some() && municipio.is_none(),
@@ -283,7 +283,7 @@ async fn create_directory(
             "federal: sem UF/município; estadual: só UF; municipal: UF + município.",
         );
     }
-    // Responsável obrigatório (id direto ou @handle resolvido aqui) — mesmo
+    // Responsible citizen mandatory (a direct id or an @handle resolved here) — the same
     // contrato da rota 0.37.0 em dsoc-mandates::parties.
     let responsavel = if let Some(id) = body.responsavel_citizen_id {
         id
@@ -322,7 +322,7 @@ async fn create_directory(
             "Informe o responsável pelo diretório (responsavel_citizen_id ou responsavel_handle).",
         );
     };
-    // Transação única: diretório + responsável, ou nada.
+    // Single transaction: directory + responsible citizen, or nothing.
     let created: Result<Uuid, sqlx::Error> = async {
         let mut tx = state.db.begin().await?;
         let id: Uuid = sqlx::query_scalar(
@@ -369,7 +369,7 @@ async fn create_directory(
             .await;
             (StatusCode::CREATED, Json(ApiResponse::ok(id))).into_response()
         }
-        // Índice territorial (0673): duplo clique/retry não duplica diretório.
+        // Territorial index (0673): a double click/retry never duplicates the directory.
         Err(sqlx::Error::Database(e)) if e.is_unique_violation() => fail(
             StatusCode::CONFLICT,
             "directory_exists",

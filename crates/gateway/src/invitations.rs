@@ -1,11 +1,11 @@
 //! Convites de conta (migration 0509).
 //!
 //! Endpoints:
-//! - `POST   /api/v1/invitations` — cria (autenticado). Body: `{ target_email?, notes?, max_uses?, expires_in_hours? }`.
+//! - `POST   /api/v1/invitations` — create (authenticated). Body: `{ target_email?, notes?, max_uses?, expires_in_hours? }`.
 //! - `GET    /api/v1/invitations` — lista os meus.
-//! - `DELETE /api/v1/invitations/{id}` — revoga (só o dono).
-//! - `GET    /api/v1/invitations/{token}/preview` — público: valida token e retorna info mínima
-//!   pra a landing `/convite?token=…` decidir se vale mostrar CTA.
+//! - `DELETE /api/v1/invitations/{id}` — revoke (owner only).
+//! - `GET    /api/v1/invitations/{token}/preview` — public: validates the token and returns minimal info
+//!   so the `/convite?token=…` landing can decide whether a CTA is worth showing.
 
 use axum::extract::{Json, Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -28,7 +28,7 @@ pub fn routes(state: AppState) -> Router<()> {
         )
         .route("/invitations/{id}", delete(delete_invitation))
         .route("/invitations/{token}/preview", get(preview_invitation))
-        // 0.26.20: pós-signup associa o cidadão logado ao convite que ele usou.
+        // 0.26.20: after signup, associates the logged-in citizen with the invitation they used.
         .route("/me/associate-invitation", post(associate_invitation))
         .with_state(state)
 }
@@ -46,7 +46,7 @@ async fn associate_invitation(
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized();
     };
-    // Idempotente — se já tem convite associado, não sobrescreve.
+    // Idempotent — when an invitation is already associated, it is not overwritten.
     let already: Option<Option<Uuid>> = sqlx::query_scalar::<_, Option<Uuid>>(
         r"SELECT invited_via_invitation_id FROM citizen WHERE id = $1",
     )
@@ -63,7 +63,7 @@ async fn associate_invitation(
         )
             .into_response();
     }
-    // Pega o e-mail do cidadão pra validar target_email do convite.
+    // Fetch the citizen's e-mail to validate the invitation's target_email.
     let email: Option<String> =
         sqlx::query_scalar(r"SELECT email FROM auth_credential WHERE citizen_id = $1")
             .bind(citizen)
@@ -141,7 +141,7 @@ fn generate_token() -> String {
     // 24 chars base64url ≈ 144 bits. Rand seguro.
     let mut buf = [0u8; 18];
     OsRng.fill_bytes(&mut buf);
-    // base64url sem padding, direto do byte buf.
+    // base64url without padding, straight from the byte buffer.
     const ALPHA: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let mut out = String::with_capacity(24);
     // 18 bytes = 24 chars base64. Iteramos 3 em 3.
@@ -197,7 +197,7 @@ struct InvitationDto {
 #[derive(Debug, Serialize)]
 struct PreviewDto {
     valid: bool,
-    /// Quando falta: expired | exhausted | not_found
+    /// When missing: expired | exhausted | not_found
     reason: Option<String>,
     invited_by_handle: Option<String>,
     invited_by_display_name: Option<String>,
@@ -430,14 +430,14 @@ async fn preview_invitation(State(state): State<AppState>, Path(token): Path<Str
     (StatusCode::OK, Json(ApiResponse::ok(dto))).into_response()
 }
 
-/// Consumido pelo signup ao criar conta com `?invitation=TOKEN` — validate +
-/// decremento atômico e retorna o id do convite pra `citizen.invited_via_invitation_id`.
+/// Consumed by signup when creating an account with `?invitation=TOKEN` — validate +
+/// atomic decrement, returning the invitation's id for `citizen.invited_via_invitation_id`.
 pub async fn consume_token(
     db: &sqlx::PgPool,
     token: &str,
     for_email: &str,
 ) -> Result<Option<Uuid>, sqlx::Error> {
-    // Um único UPDATE ... RETURNING garante a atomicidade.
+    // A single UPDATE ... RETURNING guarantees atomicity.
     let row = sqlx::query_as::<_, (Uuid, Option<String>)>(
         r"UPDATE invitation
              SET uses_left      = uses_left - 1,

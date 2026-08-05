@@ -1,8 +1,8 @@
-//! Fediverso completo: emojis personalizados + moderação de hashtag +
+//! Full fediverse: custom emojis + hashtag moderation +
 //! auto-delete (migration 0512).
 //!
 //! Emojis:
-//! - `GET  /api/v1/server/emojis` — público, só enabled.
+//! - `GET  /api/v1/server/emojis` — public, enabled only.
 //! - `POST /api/v1/admin/emojis` — multipart {file, shortcode}. PNG/GIF, 128x128 max.
 //! - `GET  /api/v1/admin/emojis` — lista completa (inclui disabled).
 //! - `PATCH /api/v1/admin/emojis/{id}` — { enabled }.
@@ -17,8 +17,8 @@
 //! - `GET  /api/v1/me/preferences/auto_delete` → { days | null }.
 //! - `PUT  /api/v1/me/preferences/auto_delete` → { days }.
 //!
-//! (o worker de exclusão é chamado em worker.rs; nesta fatia só
-//! persistimos a preferência.)
+//! (the deletion worker is called in worker.rs; in this slice we only
+//! persist the preference.)
 
 use axum::extract::{Json, Multipart, Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -222,7 +222,7 @@ async fn admin_upload_emoji(
     if raw.len() > MAX_EMOJI_BYTES {
         return bad("arquivo muito grande (máx 512 KB)");
     }
-    // Decode + resize pra EMOJI_SIZE quadrado (mantendo aspecto). Encode PNG.
+    // Decode + resize to a square EMOJI_SIZE (keeping the aspect ratio). Encode PNG.
     let bytes = match tokio::task::spawn_blocking(move || process_emoji(&raw)).await {
         Ok(Ok(b)) => b,
         Ok(Err(msg)) => return bad(msg),

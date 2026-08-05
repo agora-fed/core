@@ -2905,7 +2905,7 @@ async fn handle_inbox_create(
                         .trim_start_matches('#')
                         .trim();
                     if !name.is_empty() {
-                        // Reuse local extractor normalization so #Saúde and #saude collide.
+                        // Reuse local extractor normalization so accented and unaccented tags collide.
                         let normalized = dsoc_federation::extract_hashtags(&format!("#{name}"))
                             .into_iter()
                             .next()

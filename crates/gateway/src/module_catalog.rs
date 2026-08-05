@@ -2,12 +2,12 @@
 //! modules and their declarative [`ModuleManifest`]s. This is the source of truth for the R4
 //! permission matrix, the per-org module gate (R0.5), and nav composition (R0.7).
 //!
-//! NÃO é auto-registro por linker (`inventory`/`linkme`): num workspace fechado a lista é
-//! conhecida aqui, explicitamente. O que é dinâmico é *quais estão ativos por org* — isso é dado
-//! no Postgres (`admin_feature_flag`), não código.
+//! It is NOT linker auto-registration (`inventory`/`linkme`): in a closed workspace the list is
+//! known here, explicitly. What IS dynamic is *which ones are active per org* — that lives
+//! in Postgres (`admin_feature_flag`), not in code.
 //!
-//! Route mounting still lives in `api_router()`; migrar cada `.merge(...)` pra consumir este
-//! catálogo é o strangler-fig incremental (contínuo), não parte do R0.
+//! Route mounting still lives in `api_router()`; migrating each `.merge(...)` to consume this
+//! catalog is the incremental strangler-fig (ongoing), not part of R0.
 
 use dsoc_admin::permissions::{keys, ADMINISTRATOR};
 use dsoc_app::manifest::{
@@ -201,7 +201,7 @@ pub static CATALOG: &[ModuleManifest] = &[
         permissions: &[],
         nav: &[],
     },
-    // --- Módulos plugáveis (gateable=true) -------------------------------------------------
+    // --- Pluggable modules (gateable=true) -------------------------------------------------
     ModuleManifest {
         id: "federation",
         title: "Federação (ActivityPub)",

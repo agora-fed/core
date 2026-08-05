@@ -6,10 +6,10 @@
 //! - `PATCH /admin/webhooks/{id} {enabled?}`
 //! - `DELETE /admin/webhooks/{id}`
 //!
-//! Dispatch: chame `dispatch_event(db, event, payload)` de qualquer módulo
-//! quando algo relevante acontecer. Fire-and-forget: falha em delivery vira
-//! log + last_status, mas não bloqueia o caller. Retry fica pra próxima
-//! iteração (worker loop).
+//! Dispatch: call `dispatch_event(db, event, payload)` from any module
+//! when something relevant happens. Fire-and-forget: a delivery failure becomes a
+//! log + last_status, but never blocks the caller. Retry is left to the next
+//! iteration (a worker loop).
 
 use axum::extract::{Json, Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -124,7 +124,7 @@ struct WebhookWithSecretDto {
     url: String,
     events: Vec<String>,
     enabled: bool,
-    /// Só aparece uma vez, na criação.
+    /// Shown only once, at creation.
     secret: String,
     created_at: DateTime<Utc>,
 }
@@ -256,12 +256,12 @@ async fn delete_webhook(
 }
 
 // ---------------------------------------------------------------------------
-// Dispatch: chame de qualquer módulo quando algo relevante acontecer.
+// Dispatch: call from any module when something relevant happens.
 // ---------------------------------------------------------------------------
 
-/// Dispara `event` pra todos os webhooks habilitados que assinam esse tipo.
-/// Fire-and-forget: cada delivery roda em uma task própria, escreve o
-/// resultado em `last_status`, e não bloqueia o caller.
+/// Fire `event` at every enabled webhook subscribing to that type.
+/// Fire-and-forget: each delivery runs in its own task, writes the
+/// result to `last_status`, and never blocks the caller.
 pub fn dispatch_event(db: PgPool, event: &'static str, payload: serde_json::Value) {
     tokio::spawn(async move {
         let hooks: Vec<(Uuid, String, String)> = sqlx::query_as::<_, (Uuid, String, String)>(

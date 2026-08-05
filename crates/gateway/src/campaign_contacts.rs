@@ -1,14 +1,14 @@
-//! `/admin/parties/{sigla}/directories/{id}/contacts` — base própria de contatos do diretório
-//! (ÁGORA F4, #61, migration 0657).
+//! `/admin/parties/{sigla}/directories/{id}/contacts` — the directory's own contact base
+//! (AGORA F4, #61, migration 0657).
 //!
-//! O diretório **sobe** sua própria lista (controlador = ele; base legal declarada). Fica isolada
-//! por diretório — **apagável em bloco** (LGPD). Na importação, verificamos contra a base central:
-//! e-mail que casa com um cidadão liga `matched_citizen_id` e enriquece o domicílio. Dedupe por
-//! (diretório, e-mail). Gating reusa [`crate::campaign_broadcast::authorized`]. English API,
+//! The directory **uploads** its own list (it is the controller; the legal basis is declared). It stays isolated
+//! per directory — **deletable in bulk** (LGPD). On import we verify against the central base:
+//! an e-mail matching a citizen links `matched_citizen_id` and enriches the residence. Deduped by
+//! (directory, e-mail). Gating reuses [`crate::campaign_broadcast::authorized`]. English API,
 //! runtime queries.
 //!
-//! - `POST   /admin/parties/{sigla}/directories/{id}/contacts/import` — importa uma lista.
-//! - `GET    /admin/parties/{sigla}/directories/{id}/contacts`        — estatísticas da base.
+//! - `POST   /admin/parties/{sigla}/directories/{id}/contacts/import` — import a list.
+//! - `GET    /admin/parties/{sigla}/directories/{id}/contacts`        — statistics of the base.
 //! - `DELETE /admin/parties/{sigla}/directories/{id}/contacts`        — apaga a base (LGPD).
 
 use axum::extract::{Json, Path, State};
@@ -121,7 +121,7 @@ async fn import(
             "Máximo de 2000 contatos por importação.",
         );
     }
-    // O diretório precisa existir na org e ser deste partido.
+    // The directory must exist in the org and belong to this party.
     let exists: bool = match sqlx::query_scalar(
         r"SELECT EXISTS(SELECT 1 FROM party_directory WHERE id = $1 AND org_id = $2 AND party_sigla = $3)",
     )
@@ -157,7 +157,7 @@ async fn import(
         }
         let name = c.name.as_deref().map(str::trim).filter(|s| !s.is_empty());
         let phone = c.phone.as_deref().map(str::trim).filter(|s| !s.is_empty());
-        // Insere já verificando contra a base central (match por e-mail → citizen + domicílio).
+        // Insert while verifying against the central base (match by e-mail → citizen + residence).
         let row: Result<Option<(bool,)>, sqlx::Error> = sqlx::query_as(
             r"WITH m AS (
                   SELECT c.id, c.uf, c.municipio_ibge

@@ -828,8 +828,8 @@ async fn post_status(
         Some(id) if !id.is_empty() => resolve_status_id(&state.db, id).await.ok().flatten(),
         _ => None,
     };
-    // Mesma resolução de menções remotas do post_my_note — apps Mastodon (Tusky etc.)
-    // publicam por aqui e a menção precisa chegar na inbox do mencionado.
+    // The same remote-mention resolution as post_my_note — Mastodon apps (Tusky etc.)
+    // publish through here and the mention must reach the mentioned party's inbox.
     let resolved_mentions =
         super::federation::resolve_remote_mentions(&body.status, &public_origin).await;
     match svc

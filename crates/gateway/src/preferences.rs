@@ -1,10 +1,10 @@
-//! Preferências pessoais + regras do servidor (migration 0511).
+//! Personal preferences + server rules (migration 0511).
 //!
 //! - `GET  /api/v1/me/preferences` — bloco { email_prefs, default_visibility, default_sensitive }.
 //! - `PATCH /api/v1/me/preferences` — mesclagem parcial.
-//! - `GET  /api/v1/server/rules` — público, ordenado.
+//! - `GET  /api/v1/server/rules` — public, ordered.
 //! - `GET  /api/v1/admin/rules` — admin.
-//! - `POST /api/v1/admin/rules {text, ordinal?}` — cria.
+//! - `POST /api/v1/admin/rules {text, ordinal?}` — create.
 //! - `PATCH /api/v1/admin/rules/{id}` — edita.
 //! - `DELETE /api/v1/admin/rules/{id}` — apaga.
 
@@ -33,7 +33,7 @@ pub fn routes(state: AppState) -> Router<()> {
             "/admin/rules/{id}",
             patch(admin_update_rule).delete(admin_delete_rule),
         )
-        // 0.26.20: Termos editáveis + CW presets.
+        // 0.26.20: editable Terms + CW presets.
         .route("/server/terms", get(public_terms))
         .route(
             "/admin/server/terms",
@@ -359,7 +359,7 @@ async fn patch_prefs(
             .await;
     }
     if let Some(ep) = body.email_prefs {
-        // Merge shallow: só substitui as chaves fornecidas.
+        // Shallow merge: only replaces the supplied keys.
         let _ = sqlx::query(
             r"UPDATE citizen
                  SET email_prefs = email_prefs || $2

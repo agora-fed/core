@@ -1,18 +1,18 @@
-//! # Super-admin: edição e remoção de conteúdo (0.40.0) — SOCRATES.
+//! # Super-admin: content editing and removal (0.40.0) — SOCRATES.
 //!
-//! O owner/admin (SOCRATES) faltava poder para curar o catálogo: editar
-//! político/partido e excluir proposta/político. "Excluir" OCULTA por padrão
-//! (reversível, migration 0528); um `?force=true` faz o hard-delete em cascata.
+//! The owner/admin (SOCRATES) lacked the power to curate the catalog: editing an
+//! official/party and deleting a proposal/official. "Delete" HIDES by default
+//! (reversible, migration 0528); a `?force=true` performs the cascading hard delete.
 //!
-//! Gate: `admin_role_binding` role owner/admin (mesmo critério do `admin_ext`).
+//! Gate: an `admin_role_binding` with role owner/admin (the same criterion as `admin_ext`).
 //!
 //! - `PATCH  /admin/mandates/{id}`        — edita campos do mandato.
 //! - `POST   /admin/mandates/{id}/hide`   — oculta / `?on=false` reexibe.
 //! - `DELETE /admin/mandates/{id}?force=true` — hard-delete em cascata.
 //! - `POST   /admin/proposals/{id}/hide`  — oculta / reexibe.
 //! - `DELETE /admin/proposals/{id}?force=true` — hard-delete.
-//! - `PATCH  /admin/parties/{sigla}`      — edita nome/número/logo.
-//! - `DELETE /admin/parties/{sigla}?force=true` — apaga (cascata diretórios/admins).
+//! - `PATCH  /admin/parties/{sigla}`      — edit name/number/logo.
+//! - `DELETE /admin/parties/{sigla}?force=true` — delete (cascading over directories/admins).
 
 use axum::extract::{Json, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -70,7 +70,7 @@ fn storage_error() -> Response {
     )
 }
 
-/// Org do caller (header setado pelo inject_identity). Cai no DEFAULT quando ausente.
+/// The caller's org (a header set by inject_identity). Falls back to the DEFAULT when absent.
 fn caller_org(headers: &HeaderMap) -> Uuid {
     headers
         .get("x-dsoc-org-id")
@@ -79,7 +79,7 @@ fn caller_org(headers: &HeaderMap) -> Uuid {
         .unwrap_or(DEFAULT_ORG_UUID)
 }
 
-/// Gate owner/admin (SOCRATES). Retorna Err(resposta pronta) quando não passa.
+/// Owner/admin gate (SOCRATES). Returns Err(a ready response) when it does not pass.
 async fn require_admin(db: &PgPool, headers: &HeaderMap) -> Result<Uuid, Response> {
     let Some(citizen) = caller_citizen(headers) else {
         return Err(fail(
@@ -145,7 +145,7 @@ async fn edit_mandate(
     if let Err(r) = require_admin(&state.db, &headers).await {
         return r;
     }
-    // COALESCE: só sobrescreve o que veio no corpo (campos omitidos ficam iguais).
+    // COALESCE: only overwrite what arrived in the body (omitted fields stay as they are).
     // Strings vazias viram NULL nos campos territoriais (limpa uf/municipio).
     let norm = |s: Option<String>| s.map(|v| v.trim().to_owned());
     let uf = norm(b.uf).map(|v| v.to_uppercase());
@@ -247,7 +247,7 @@ async fn delete_mandate(
         }
     };
     let steps: &[&str] = &[
-        // proposals do mandato (revisões primeiro; amendment cascateia sozinho).
+        // the mandate's proposals (revisions first; amendments cascade on their own).
         "DELETE FROM proposal_revision WHERE proposal_id IN (SELECT id FROM proposal WHERE mandate_id = $1)",
         "DELETE FROM proposal WHERE mandate_id = $1",
         "DELETE FROM consequence_response WHERE mandate_id = $1",
@@ -259,7 +259,7 @@ async fn delete_mandate(
         "DELETE FROM mandate_office WHERE mandate_id = $1",
         "DELETE FROM mandate_identity_binding WHERE mandate_id = $1",
         "DELETE FROM campaign_group WHERE mandate_id = $1",
-        // candidacy é nullable — preserva a candidatura, só desliga o vínculo.
+        // candidacy is nullable — preserve the candidacy, only drop the binding.
         "UPDATE candidacy SET mandate_id = NULL WHERE mandate_id = $1",
         "DELETE FROM mandate WHERE id = $1",
     ];

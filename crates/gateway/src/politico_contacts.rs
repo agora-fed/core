@@ -1,8 +1,8 @@
-//! # Contatos dos políticos (0.51.0) — painel admin de auditoria de e-mail.
+//! # Officials' contacts (0.51.0) — the admin e-mail audit panel.
 //!
-//! Onde o admin vê o e-mail de CADA mandato (com selo real vs placeholder), pra
-//! saber quem é alcançável por proposta/convite. Paginado + filtrado (nunca puxa
-//! os ~70k de uma vez). Runtime queries.
+//! Where the admin sees EACH mandate's e-mail (with a real vs placeholder badge), to
+//! know who is reachable by proposal/invitation. Paginated + filtered (it never pulls
+//! the ~70k at once). Runtime queries.
 //!
 //! - `GET /admin/politico-contacts/overview`  — matriz cargo × (real / placeholder).
 //! - `GET /admin/politico-contacts`           — lista paginada, filtros cargo/uf/status/q.
@@ -70,7 +70,7 @@ async fn require_admin(db: &PgPool, headers: &HeaderMap) -> Result<(), Response>
     }
 }
 
-/// Fragmento SQL FIXO (seguro, não vem do usuário) para o filtro de cargo.
+/// A FIXED SQL fragment (safe, never user-supplied) for the office filter.
 fn cargo_clause(cargo: &str) -> Option<&'static str> {
     match cargo {
         "vereador" => Some("office ILIKE 'Vereador%'"),
@@ -163,8 +163,8 @@ struct ListResult {
     items: Vec<ContactRow>,
 }
 
-/// Aplica o WHERE (mesmos filtros) num builder. Chamado 2x (count + página) —
-/// cada builder recebe seus próprios binds.
+/// Apply the WHERE (same filters) on a builder. Called twice (count + page) —
+/// each builder receives its own binds.
 fn push_where(
     qb: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
     cargo: Option<&'static str>,
@@ -241,7 +241,7 @@ async fn list(
         }
     };
 
-    // página
+    // page
     let mut lb = sqlx::QueryBuilder::<sqlx::Postgres>::new(
         "SELECT id, display_name, office, party, uf, municipio, public_email, (public_email NOT ILIKE ",
     );

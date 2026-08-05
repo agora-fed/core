@@ -1,13 +1,13 @@
-//! `/me/phone` — telefone do cidadão + verificação por OTP SMS (ÁGORA F5, #62, migration 0658).
+//! `/me/phone` — the citizen's phone + OTP SMS verification (AGORA F5, #62, migration 0658).
 //!
-//! **Opt-in.** O cidadão informa o telefone; mandamos um código de 6 dígitos por SMS (via
-//! INTERCOMS/`SmsGatewayProvider`, ADR-0016) e ele confirma. Guardamos só o SHA-256 do código
-//! (TTL 10 min). Habilita 2FA por SMS (não-recomendada — alternativa a perda de e-mail) e o
+//! **Opt-in.** The citizen supplies the phone; we send a 6-digit code by SMS (via
+//! INTERCOMS/`SmsGatewayProvider`, ADR-0016) and they confirm. We store only the code's SHA-256
+//! (TTL 10 min). It enables SMS 2FA (not recommended — an alternative for e-mail loss) and the
 //! alcance por SMS. English API, runtime queries.
 //!
-//! - `GET  /me/phone`        — meu telefone + se está verificado.
+//! - `GET  /me/phone`        — my phone + whether it is verified.
 //! - `POST /me/phone`        — define o telefone e dispara o OTP.
-//! - `POST /me/phone/verify` — confirma o código.
+//! - `POST /me/phone/verify` — confirm the code.
 
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
@@ -43,7 +43,7 @@ fn storage_error() -> Response {
     )
 }
 
-/// Normaliza para algo E.164-ish (+ e dígitos). Loose: não valida operadora.
+/// Normalize to something E.164-ish (+ and digits). Loose: it does not validate the carrier.
 fn normalize_phone(raw: &str) -> Option<String> {
     let mut out = String::with_capacity(raw.len());
     for (i, c) in raw.trim().chars().enumerate() {
@@ -157,7 +157,7 @@ async fn set_phone(
         return storage_error();
     }
 
-    // Envio via INTERCOMS. Sem SMSGateway configurado, apenas loga (dev / não-provisionado).
+    // Send via INTERCOMS. Without an SMSGateway configured it only logs (dev / not provisioned).
     if let Some(sender) = SmsGatewayProvider::from_env() {
         let msg = OutboundMessage {
             channel: crate::intercoms::Channel::Sms,
@@ -210,7 +210,7 @@ async fn verify(
             "Código de 6 dígitos.",
         );
     }
-    // OTP mais recente, vivo e não usado.
+    // The most recent OTP, alive and unused.
     let row: Result<Option<(uuid::Uuid, String, Vec<u8>)>, sqlx::Error> = sqlx::query_as(
         r"SELECT id, phone, code_hash FROM phone_otp
            WHERE citizen_id = $1 AND used_at IS NULL AND expires_at > now()

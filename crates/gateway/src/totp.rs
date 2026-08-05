@@ -1,14 +1,14 @@
-//! `/me/2fa/totp` — 2FA por TOTP (RFC 6238) do cidadão (ÁGORA F6, #63, migration 0659).
+//! `/me/2fa/totp` — the citizen's TOTP 2FA (RFC 6238) (AGORA F6, #63, migration 0659).
 //!
-//! TOTP é o 2FA **recomendado** (app autenticador), opt-in. Implementação própria (HOTP RFC 4226 +
-//! HMAC-SHA1, compatível com Google Authenticator) — sem dependência pesada. Segredo base32 em
-//! `citizen.totp_secret`; códigos de recuperação (só hash) em `totp_recovery_code`. F6.1 =
-//! enrollment/gestão; forçar no login é a fatia seguinte (F6.2). English API, runtime queries.
+//! TOTP is the **recommended** 2FA (authenticator app), opt-in. Own implementation (HOTP RFC 4226 +
+//! HMAC-SHA1, compatible with Google Authenticator) — no heavy dependency. The base32 secret lives in
+//! `citizen.totp_secret`; recovery codes (hashes only) in `totp_recovery_code`. F6.1 =
+//! enrollment/management; enforcing it at login is the next slice (F6.2). English API, runtime queries.
 //!
 //! - `GET  /me/2fa/totp`         — status {enabled}.
 //! - `POST /me/2fa/totp/setup`   — gera o segredo (pendente) e devolve {secret, uri}.
-//! - `POST /me/2fa/totp/enable`  — confirma um código → habilita + devolve os recovery codes (1x).
-//! - `POST /me/2fa/totp/disable` — confirma um código → desabilita e limpa tudo.
+//! - `POST /me/2fa/totp/enable`  — confirm a code → enable + return the recovery codes (once).
+//! - `POST /me/2fa/totp/disable` — confirm a code → disable and wipe everything.
 
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
@@ -47,7 +47,7 @@ fn storage_error() -> Response {
     )
 }
 
-// --- base32 (RFC 4648, sem padding) ---
+// --- base32 (RFC 4648, no padding) ---
 fn base32_encode(data: &[u8]) -> String {
     let mut out = String::new();
     let mut buffer = 0u32;
@@ -87,7 +87,7 @@ fn base32_decode(s: &str) -> Option<Vec<u8>> {
 // --- HOTP (RFC 4226) / TOTP (RFC 6238) ---
 fn hotp(secret: &[u8], counter: u64) -> u32 {
     // HMAC-SHA1 aceita chave de qualquer tamanho: `new_from_slice` nunca falha aqui.
-    // Ainda assim, tratamos em vez de `expect` (clippy::expect_used no gate do CI).
+    // Even so, we handle it instead of `expect` (clippy::expect_used in the CI gate).
     let Ok(mut mac) = Hmac::<Sha1>::new_from_slice(secret) else {
         return 0;
     };
@@ -108,7 +108,7 @@ fn now_secs() -> u64 {
         .unwrap_or(0)
 }
 
-/// Verifica um código de 6 dígitos contra a janela atual ±1 (tolerância de relógio).
+/// Verify a 6-digit code against the current window ±1 (clock tolerance).
 fn verify_totp(secret_b32: &str, code: u32) -> bool {
     let Some(secret) = base32_decode(secret_b32) else {
         return false;
@@ -155,7 +155,7 @@ struct SetupResult {
 
 async fn setup(State(state): State<AppState>, caller: CallerId) -> Response {
     let citizen = caller.citizen.as_uuid();
-    // Já habilitado? Não sobrescreve sem desabilitar antes.
+    // Already enabled? Do not overwrite without disabling first.
     let row: Result<(Option<chrono::DateTime<chrono::Utc>>, Option<String>), sqlx::Error> =
         sqlx::query_as("SELECT totp_enabled_at, handle FROM citizen WHERE id = $1")
             .bind(citizen)
@@ -251,7 +251,7 @@ async fn enable(
             "Código incorreto. Confira o app.",
         );
     }
-    // Habilita + gera recovery codes (mostrados uma vez).
+    // Enable + generate recovery codes (shown once).
     let mut tx = match state.db.begin().await {
         Ok(t) => t,
         Err(err) => {

@@ -1,17 +1,17 @@
 //! # Atestado de cidadania por operador verificado (0.28.3, migration 0519).
 //!
-//! Web-of-trust: enquanto não há verificação institucional (TSE/gov.br),
-//! quem JÁ tem identidade forte na plataforma — operador de mandato
+//! Web of trust: while there is no institutional verification (TSE/gov.br),
+//! whoever ALREADY holds a strong identity on the platform — a mandate operator
 //! (`mandate_identity_binding`) ou admin de partido aceito
-//! (`party_administrator`) — pode atestar publicamente que conhece um
-//! cidadão. O atestado é auditável (quem, quando, com que poder) e
-//! revogável pelo próprio atestador; o selo aparece no perfil público.
+//! (`party_administrator`) — may publicly attest that they know a
+//! citizen. The attestation is auditable (who, when, with what power) and
+//! revocable by the attester themselves; the badge shows on the public profile.
 //!
-//! - `GET    /citizens/{id}/attestations` — público; com sessão, inclui
-//!   `viewer_can_attest`/`viewer_attested` pra UI.
+//! - `GET    /citizens/{id}/attestations` — public; with a session it includes
+//!   `viewer_can_attest`/`viewer_attested` for the UI.
 //! - `POST   /citizens/{id}/attestations {note?}` — atesta (ou revive um
 //!   atestado revogado do mesmo par).
-//! - `DELETE /citizens/{id}/attestations` — revoga o próprio atestado.
+//! - `DELETE /citizens/{id}/attestations` — revoke one's own attestation.
 
 use axum::extract::{Json, Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -47,8 +47,8 @@ fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
     (status, Json(ApiResponse::<()>::fail(code, msg))).into_response()
 }
 
-/// Com que poder o cidadão pode atestar? Operador de mandato ganha de
-/// admin de partido quando tem os dois (mandato é o vínculo mais forte).
+/// With what power may the citizen attest? A mandate operator outranks
+/// a party admin when they hold both (a mandate is the stronger binding).
 async fn attester_kind(db: &PgPool, citizen: Uuid) -> Result<Option<&'static str>, sqlx::Error> {
     let is_operator: bool = sqlx::query_scalar(
         r"SELECT EXISTS (SELECT 1 FROM mandate_identity_binding WHERE citizen_id = $1)",
@@ -70,7 +70,7 @@ async fn attester_kind(db: &PgPool, citizen: Uuid) -> Result<Option<&'static str
 }
 
 // ---------------------------------------------------------------------------
-// GET — lista pública + flags do viewer
+// GET — public list + viewer flags
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -259,7 +259,7 @@ async fn attest(
 }
 
 // ---------------------------------------------------------------------------
-// DELETE — revogar o próprio atestado
+// DELETE — revoke one's own attestation
 // ---------------------------------------------------------------------------
 
 async fn revoke(

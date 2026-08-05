@@ -319,11 +319,11 @@ pub async fn cast_vote(
     media_base_url_for_dto: &str,
 ) -> Result<PollDto, PollError> {
     let _ = media_base_url_for_dto; // reserved for later media-related read paths
-                                    // Defense-in-depth: apenas cidadãos DESTA instância podem votar. O único
-                                    // caller hoje (`POST /me/notes/vote`) constrói o voter_url do CallerId
-                                    // autenticado, mas guardamos o invariante aqui pra qualquer futuro
-                                    // hook de inbox federado que tente enfiar voto remoto (ex.: Create(Note)
-                                    // com `name`+inReplyTo, convenção Mastodon). Regra: o texto do site é
+                                    // Defense-in-depth: only citizens OF THIS instance may vote. The only
+                                    // caller today (`POST /me/notes/vote`) builds voter_url from the authenticated
+                                    // CallerId, but we keep the invariant here for any future federated
+                                    // inbox hook that tries to push a remote vote in (e.g. Create(Note)
+                                    // with `name`+inReplyTo, the Mastodon convention). Rule: the site's text is
                                     // "enquete propaga no fediverso mas voto é restrito a democracia.social.br".
     let po = std::env::var("PUBLIC_ORIGIN")
         .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
@@ -417,9 +417,9 @@ pub enum PollError {
     TooManyForSingle,
     UnknownOption,
     AlreadyVoted,
-    /// Voto vindo de instância federada — a política é: enquete propaga
-    /// pelo fediverso, mas a apuração vale apenas para cidadãos com conta
-    /// nesta instância.
+    /// A vote arriving from a federated instance — the policy is: a poll propagates
+    /// across the fediverse, but the tally counts only citizens holding an account
+    /// on this instance.
     RemoteVoterForbidden,
     Db(sqlx::Error),
 }

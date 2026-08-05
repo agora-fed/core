@@ -3,8 +3,8 @@
 //! `require_permission(state, caller, key)` resolves the caller's effective [`Permissions`] in
 //! their org (bound roles + implicit Base role) and checks a single `modulo.acao` key. It runs
 //! INSIDE the handler, using the same `CallerId` (and therefore the same org) the handler acts
-//! on — the ADR emenda: gate no extractor, não em middleware de router (o org de mutação vem do
-//! CallerId, não do body).
+//! on — the ADR amendment: gate in the extractor, not in a router middleware (a mutation's org comes from the
+//! CallerId, not from the body).
 //!
 //! This is the definitive replacement for the scattered `require_admin` helpers and the interim
 //! gates shipped in the security queue (0.59.2/0.59.3). Migration of existing call sites is

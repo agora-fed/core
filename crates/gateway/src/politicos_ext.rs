@@ -32,7 +32,7 @@ pub fn routes(state: AppState) -> Router<()> {
         .route("/politicos/browse", get(browse))
         .route("/politicos/municipios", get(municipios))
         // Resumo territorial (0.38.0 — Fase 2.2): eleitorado + mandatos por
-        // partido de um município, pra página /municipio.
+        // a municipality's party, for the /municipio page.
         .route("/politicos/territorio", get(territorio))
         .with_state(state)
 }
@@ -127,8 +127,8 @@ async fn browse(State(state): State<AppState>, Query(p): Query<BrowseParams>) ->
         Some(s) if matches!(s, "federal" | "estadual" | "municipal") => s.to_owned(),
         _ => return bad_request("Escolha uma esfera (federal, estadual ou municipal)."),
     };
-    // Rule 2 — for municipal, both UF and município are mandatory (there
-    // are ~5.5k municípios; without a municipio the response can be 500+
+    // Rule 2 — for municipal, both UF and municipality are mandatory (there
+    // are ~5.5k municipalities; without one the response can be 500+
     // rows in some capitals but still bounded).
     let uf_clean =
         p.uf.as_deref()
@@ -353,7 +353,7 @@ async fn municipios(State(state): State<AppState>, Query(p): Query<MunicipiosPar
 }
 
 // ---------------------------------------------------------------------------
-// GET /politicos/territorio — resumo de um município (Fase 2.2)
+// GET /politicos/territorio — a municipality's summary (phase 2.2)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
@@ -372,11 +372,11 @@ struct PartyCountRow {
 struct TerritorioResponse {
     uf: String,
     municipio: String,
-    /// Eleitorado oficial (TSE) do município; `None` se não seedado.
+    /// The municipality's official electorate (TSE); `None` when not seeded.
     voters: Option<i64>,
-    /// Total de mandatos municipais no município.
+    /// Total municipal mandates in the municipality.
     total: i64,
-    /// Mandatos por partido, do maior pro menor.
+    /// Mandates per party, largest first.
     by_party: Vec<PartyCountRow>,
 }
 
@@ -395,7 +395,7 @@ async fn territorio(State(state): State<AppState>, Query(p): Query<TerritorioPar
         None => return bad_request("Informe `municipio`."),
     };
 
-    // Eleitorado (nullable — nem todo município foi seedado).
+    // Electorate (nullable — not every municipality was seeded).
     let voters: Option<i64> = match sqlx::query_scalar::<_, i64>(
         r"SELECT voters FROM electorate WHERE uf = $1 AND municipio = $2",
     )
@@ -411,7 +411,7 @@ async fn territorio(State(state): State<AppState>, Query(p): Query<TerritorioPar
         }
     };
 
-    // Mandatos por partido no município.
+    // Mandates per party in the municipality.
     let by_party: Vec<(Option<String>, i64)> = match sqlx::query_as(
         r"SELECT party, count(*) AS n
             FROM mandate

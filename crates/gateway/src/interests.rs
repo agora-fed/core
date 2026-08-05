@@ -1,13 +1,13 @@
-//! Interesses do cidadão (áreas temáticas ministeriais) — migration 0661.
+//! Citizen interests (ministerial thematic areas) — migration 0661.
 //!
-//! O cidadão marca no perfil quais áreas quer acompanhar (Saúde, Educação, Segurança, Receita
+//! The citizen marks on their profile which areas they want to follow (Health, Education, Security, Revenue
 //! Federal, Cultura, Esporte…), baseadas na estrutura ministerial. Alimenta o direcionamento
-//! futuro de atualizações/consultas por tema. English identifiers no código; áreas em pt (dados).
+//! future updates/consultations by theme. English identifiers in the code; areas in pt (data).
 //! Runtime queries.
 //!
-//! - `GET /interest-areas`  — lista PÚBLICA das áreas disponíveis.
+//! - `GET /interest-areas`  — PUBLIC list of the available areas.
 //! - `GET /me/interests`    — meus slugs selecionados.
-//! - `PUT /me/interests`    — substitui minha seleção.
+//! - `PUT /me/interests`    — replaces my selection.
 
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
@@ -94,7 +94,7 @@ async fn set_interests(
     Json(body): Json<SetBody>,
 ) -> Response {
     let citizen = caller.citizen.as_uuid();
-    // Substitui a seleção: apaga tudo e insere só as áreas VÁLIDAS (FK garante existência).
+    // Replaces the selection: deletes everything and inserts only the VALID areas (the FK guarantees existence).
     let mut tx = match state.db.begin().await {
         Ok(t) => t,
         Err(err) => {
@@ -120,7 +120,7 @@ async fn set_interests(
         if !seen.insert(slug) {
             continue;
         }
-        // A subquery EXISTS + a FK ignoram slug inválido de forma segura.
+        // The EXISTS subquery + the FK safely ignore an invalid slug.
         if let Err(err) = sqlx::query(
             r"INSERT INTO citizen_interest (citizen_id, area_slug)
               SELECT $1, $2 WHERE EXISTS (SELECT 1 FROM interest_area WHERE slug = $2)

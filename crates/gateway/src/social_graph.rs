@@ -35,17 +35,17 @@ pub fn routes(state: AppState) -> Router<()> {
         .route("/bookmarks", get(list_bookmarks))
         .route("/statuses/{id}/bookmark", post(bookmark_status))
         .route("/statuses/{id}/unbookmark", post(unbookmark_status))
-        // Bookmark de URIs cruas (notas remotas do outbox proxy, sem UUID local).
+        // Bookmarking raw URIs (remote notes from the outbox proxy, with no local UUID).
         .route("/me/bookmarks", post(bookmark_uri).delete(unbookmark_uri))
         .route("/me/bookmarks/status", get(bookmark_status_of))
-        // Mute/Block por actor_url (cobre locais + remotos sem citizen_id).
+        // Mute/Block by actor_url (covers local + remote without a citizen_id).
         .route("/me/mutes/url", post(mute_url).delete(unmute_url))
         .route("/me/mutes/url/status", get(mute_url_status))
         .route("/me/blocks/url", post(block_url).delete(unblock_url))
         .route("/me/blocks/url/status", get(block_url_status))
-        // Denúncia de nota.
+        // Reporting a note.
         .route("/me/reports", post(create_note_report))
-        // Bloqueio de domínio inteiro.
+        // Blocking a whole domain.
         .route(
             "/me/domain_blocks",
             post(add_domain_block).delete(remove_domain_block),
@@ -230,7 +230,7 @@ async fn bookmark_status(
     };
     // Aceita tanto o UUID de mastodon_status_id quanto o object_uri cru
     // (AP URL, e.g. https://mastodon.social/users/x/statuses/123) — o
-    // segundo caso cobre notas do outbox remoto que ainda não têm
+    // the second case covers remote outbox notes that do not yet have
     // mapeamento local, tipicamente vindas do proxy do perfil.
     let object_uri = if id.starts_with("https://") || id.starts_with("http://") {
         id.clone()
@@ -1547,7 +1547,7 @@ struct DomainBody {
 
 fn normalize_domain(raw: &str) -> Option<String> {
     let d = raw.trim().to_ascii_lowercase();
-    // Aceita "host" ou "https://host"; extraímos só o host.
+    // Accepts "host" or "https://host"; we extract only the host.
     let host = if let Some(rest) = d
         .strip_prefix("https://")
         .or_else(|| d.strip_prefix("http://"))

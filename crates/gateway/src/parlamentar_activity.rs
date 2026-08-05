@@ -1,7 +1,7 @@
 //! # Parliamentarian activity gateway — proxy + cache of official open-data APIs.
 //!
 //! Powers the rich "político" page by fanning out to the Brazilian houses' public open-data APIs
-//! (Câmara dos Deputados and Senado Federal), normalizing their wildly different shapes into one
+//! (the lower house and the Senate), normalizing their wildly different shapes into one
 //! house-agnostic DTO, and serving it under the platform's standard [`ApiResponse`] envelope.
 //!
 //! Route (merged INTO `/api/v1` by the gateway, alongside the mandates crate's own routes):
@@ -75,13 +75,13 @@ pub struct ActivityDto {
     pub external_id: Option<String>,
     /// Upcoming + recent public events / sessions.
     pub agenda: Vec<AgendaItem>,
-    /// Legislative production (proposições / matérias authored).
+    /// Legislative production (bills / matters authored).
     pub production: Vec<ProductionItem>,
-    /// Floor speeches (Câmara: discursos; Senado: pronunciamentos).
+    /// Floor speeches (lower house: discursos; Senate: pronunciamentos).
     pub speeches: Vec<SpeechItem>,
-    /// Nominal votes cast (Senado only for now; Câmara omits this section).
+    /// Nominal votes cast (Senate only for now; the lower house omits this section).
     pub votes: Vec<VoteItem>,
-    /// Expense summary (Câmara cota parlamentar). `None` for the Senado / when unavailable.
+    /// Expense summary (the lower house's parliamentary quota). `None` for the Senate / when unavailable.
     pub expenses: Option<ExpenseSummary>,
     /// Extra profile bits not on the base `MandateDto` (social links, office contact).
     pub profile_extra: Option<ProfileExtra>,
@@ -286,9 +286,9 @@ async fn get_json(cli: &reqwest::Client, url: &str, accept_json: bool) -> Option
     }
 }
 
-// --- Câmara dos Deputados -----------------------------------------------------------------------
+// --- Lower house -----------------------------------------------------------------------------
 
-/// Fan out to the five Câmara endpoints in parallel, then normalize. Any single failure degrades to
+/// Fan out to the five lower-house endpoints in parallel, then normalize. Any single failure degrades to
 /// an empty section (all helpers already return empty on `None`).
 async fn fetch_camara(id: &str) -> ActivityDto {
     let cli = match client() {
@@ -615,7 +615,7 @@ fn senado_profile_extra(v: Option<&Value>) -> Option<ProfileExtra> {
         .and_then(|i| i.get("UrlPaginaParlamentar"))
         .and_then(Value::as_str)
         .map(str::to_owned);
-    // Office contact: endereço + first phone.
+    // Office contact: address + first phone.
     let endereco = parlamentar
         .get("DadosBasicosParlamentar")
         .and_then(|d| d.get("EnderecoParlamentar"))
@@ -656,7 +656,7 @@ fn str_field(v: &Value, key: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Read a field that may be a JSON number OR a JSON string (Câmara returns numeric ids/numbers;
+/// Read a field that may be a JSON number OR a JSON string (the upstream returns numeric ids/numbers;
 /// stringify uniformly so the DTO is stable regardless of the wire representation).
 fn num_or_str(v: &Value, key: &str) -> Option<String> {
     match v.get(key) {

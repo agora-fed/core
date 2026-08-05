@@ -16,7 +16,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-MAX_PT=1100   # measured 2026-08-05 (rust 305 + sql 795) — only goes DOWN
+MAX_PT=795   # measured 2026-08-05: RUST IS AT ZERO; only migration SQL comments remain — only goes DOWN
 
 # Portuguese markers: diacritics English never uses, plus frequent stopwords
 # that survive accent-free writing ("nao", "pra", "que", ...).

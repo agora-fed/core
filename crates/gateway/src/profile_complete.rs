@@ -1,11 +1,11 @@
-//! Completar cadastro obrigatório (ÁGORA, 0664) — para usuários que se cadastraram ANTES de os
-//! campos pessoais serem capturados (nome/sexo/nascimento eram descartados; nick era automático).
+//! Mandatory profile completion (AGORA, 0664) — for users who signed up BEFORE the
+//! personal fields were captured (name/sex/birth were discarded; the nick was automatic).
 //!
-//! - `GET  /me/profile-status`   — {complete, missing:[...]} — o front usa pra decidir o gate.
+//! - `GET  /me/profile-status`   — {complete, missing:[...]} — the front end uses it to decide the gate.
 //! - `POST /me/complete-profile` — grava nome→display_name/legal_name, sexo→gender, nascimento→
-//!   birth_date, e opcionalmente troca o nick (handle) se ainda for o automático `cidadao-*`.
+//!   birth_date, and optionally swaps the nick (handle) when it is still the automatic `cidadao-*`.
 //!
-//! Runtime queries (padrão do gateway). CallerId dá a identidade autenticada.
+//! Runtime queries (the gateway's pattern). CallerId provides the authenticated identity.
 
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
@@ -34,7 +34,7 @@ fn storage_error() -> Response {
     )
 }
 
-/// Mapeia sexo do formulário (F/M) para o vocabulário de `citizen.gender`.
+/// Map the form's sex (F/M) onto the `citizen.gender` vocabulary.
 fn sexo_to_gender(sexo: &str) -> Option<&'static str> {
     match sexo.trim().to_uppercase().as_str() {
         "F" => Some("mulher"),
@@ -43,7 +43,7 @@ fn sexo_to_gender(sexo: &str) -> Option<&'static str> {
     }
 }
 
-/// Nick válido: 3–30 chars, `[a-z0-9_]`, começa por letra (bate com o cadastro).
+/// A valid nick: 3–30 chars, `[a-z0-9_]`, starts with a letter (matches signup).
 fn valid_handle(h: &str) -> bool {
     let n = h.chars().count();
     (3..=30).contains(&n)
@@ -56,7 +56,7 @@ fn valid_handle(h: &str) -> bool {
 struct StatusDto {
     complete: bool,
     missing: Vec<&'static str>,
-    /// True se o handle ainda é o automático (`cidadao-*`) — o front oferece trocar.
+    /// True when the handle is still the automatic one (`cidadao-*`) — the front end offers a swap.
     auto_handle: bool,
 }
 
@@ -112,7 +112,7 @@ struct CompleteBody {
     sexo: String,
     /// `YYYY-MM-DD`.
     nascimento: String,
-    /// Novo nick (opcional; só aplica se o atual for automático e este estiver livre).
+    /// New nick (optional; only applied when the current one is automatic and this one is free).
     #[serde(default)]
     handle: Option<String>,
 }
@@ -144,7 +144,7 @@ async fn complete(
         );
     };
 
-    // Troca de nick (opcional): só se o usuário informou um e ele é válido + livre + o atual é auto.
+    // Nick swap (optional): only when the user supplied one and it is valid + free + the current is auto.
     let new_handle: Option<String> = match body
         .handle
         .as_deref()
@@ -181,8 +181,8 @@ async fn complete(
         None => None,
     };
 
-    // Atualiza os dados pessoais; o nick só é trocado quando o atual é automático (não sobrescreve
-    // um nick já escolhido). CASE mantém o handle atual se não houver troca.
+    // Update the personal data; the nick is only swapped when the current one is automatic (never overwrite
+    // a nick already chosen). The CASE keeps the current handle when there is no swap.
     let res = sqlx::query(
         r"UPDATE citizen SET
             display_name = $2,

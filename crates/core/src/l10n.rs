@@ -156,7 +156,7 @@ pub trait TerritorialProvider: Send + Sync {
 // ---------------------------------------------------------------------------
 
 /// Pluggable port for the country's **electoral registry** (optional concept; weak anchor).
-/// BR = Título de Eleitor (12 digits + 2 check digits, TSE algorithm). Validation is
+/// BR = the electoral registry (12 digits + 2 check digits, TSE algorithm). Validation is
 /// pure/offline; promotion to `verified` (cross-check against the official source) is the
 /// localization's responsibility.
 pub trait VoterRegistration: Send + Sync {

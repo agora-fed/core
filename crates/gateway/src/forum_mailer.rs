@@ -1,10 +1,10 @@
-//! # Carteiro dos fóruns (F3) — envia os `forum_dispatch` pendentes.
+//! # Forum postman (F3) — sends the pending `forum_dispatch` rows.
 //!
-//! Quando um tópico cruza um patamar de interações, `dsoc-forums` grava um
-//! `forum_dispatch` com `sent_at NULL`. Este sweep (loop do worker) pega os
-//! pendentes, monta o e-mail institucional — link do debate + amostra dos
-//! comentários — envia pelo mesmo SMTP das outras notificações e carimba
-//! `sent_at` (guarda `IS NULL`: reenvio nunca duplica). Sem SMTP configurado
+//! When a topic crosses an interaction threshold, `dsoc-forums` writes a
+//! `forum_dispatch` with `sent_at NULL`. This sweep (a worker loop) takes the
+//! pending ones, assembles the institutional e-mail — the debate's link + a sample of the
+//! comments — sends it through the same SMTP as the other notifications and stamps
+//! `sent_at` (guarded by `IS NULL`: a resend never duplicates). Without SMTP configured
 //! (dev), loga e carimba — mesmo contrato do proposal_delivery.
 
 use sqlx::PgPool;
@@ -25,9 +25,9 @@ struct PendingDispatch {
     full_path: String,
 }
 
-/// Um passe do carteiro: processa até 10 pendências (o loop do worker repete).
+/// One pass of the postman: processes up to 10 pending rows (the worker loop repeats).
 pub(crate) async fn sweep(db: &PgPool, public_origin: &str) {
-    // F4: mesmo tick também varre os Announce federados dos fóruns.
+    // F4: the same tick also sweeps the forums' federated Announces.
     crate::forum_federation::announce_sweep(db, public_origin).await;
     let rows: Vec<PendingDispatch> = match sqlx::query_as(
         r"SELECT d.id, d.topic_id, d.threshold, d.contact_email,
@@ -56,8 +56,8 @@ pub(crate) async fn sweep(db: &PgPool, public_origin: &str) {
     let origin = public_origin.trim_end_matches('/');
 
     for d in rows {
-        // Amostra do debate: até 5 comentários locais aprovados (mais antigos primeiro —
-        // v1; quando comentários tiverem voto próprio, trocar por mais votados).
+        // Debate sample: up to 5 approved local comments (oldest first —
+        // v1; once comments have their own votes, switch to most-voted).
         let comments: Vec<(String,)> = sqlx::query_as(
             r"SELECT body FROM forum_topic_comment
                WHERE topic_id = $1 AND moderation = 'approved' AND NOT federated

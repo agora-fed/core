@@ -1,22 +1,22 @@
 //! Rendering of the editable e-mail templates (`email_template`,
 //! migrations 0151 + 0524).
 //!
-//! Mora no Tier-0 porque tanto o gateway (proposal_delivery, civic_notify,
-//! worker) quanto `dsoc-auth` (signup_verify, password_reset, mandate_invite)
+//! It lives in Tier 0 because both the gateway (proposal_delivery, civic_notify,
+//! worker) and `dsoc-auth` (signup_verify, password_reset, mandate_invite)
 //! send e-mail — and the auth crate cannot depend on the gateway. The admin
 //! CRUD (`/admin/email-templates`) stays in the gateway; this is read-only.
 //!
-//! Sintaxe do template: apenas `{{var}}`. Sem loops, sem if, sem escape HTML
+//! Template syntax: `{{var}}` only. No loops, no ifs, no HTML escaping
 //! (every e-mail is text/plain). An unknown placeholder stays literal as
 //! `{{foo}}` in the output — it signals to the admin that the variable is wrong.
 
 use sqlx::PgPool;
 use std::collections::HashMap;
 
-/// Busca o template `key` no DB e renderiza subject/body com o contexto.
+/// Look up the `key` template in the DB and render subject/body with the context.
 /// Returns `(final_subject, final_body)`, or `None` when the key does not exist or
-/// o lookup falhou (o caller cai no fallback hardcoded — e-mail nunca deixa
-/// de sair porque o DB piscou).
+/// the lookup failed (the caller falls back to the hardcoded default — an e-mail never
+/// fails to go out because the DB blinked).
 pub async fn render(
     db: &PgPool,
     key: &str,
@@ -194,8 +194,8 @@ pub fn body_to_plain(text: &str) -> String {
 
 /// Wrap the body (already-rendered plain text) in the brand e-mail layout:
 /// header with the logo, white card, institutional footer. HTML from
-/// e-mail conservador — tabelas + estilos inline, sem CSS externo — pra
-/// renderizar igual em Gmail/Outlook/Apple Mail.
+/// conservative e-mail — tables + inline styles, no external CSS — so it
+/// renders the same in Gmail/Outlook/Apple Mail.
 pub fn html_wrap(body_text: &str) -> String {
     let body_html = body_to_html(body_text);
     format!(

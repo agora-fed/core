@@ -1,6 +1,6 @@
-//! `/me/campaign-consent` — citizen campaign-communication consent (ÁGORA F2, #59, migration 0654).
+//! `/me/campaign-consent` — citizen campaign-communication consent (AGORA F2, #59, migration 0654).
 //!
-//! LGPD art. 11 (dados sensíveis): consent is **specific, opt-in, default OFF**, and revocable.
+//! LGPD art. 11 (sensitive data): consent is **specific, opt-in, default OFF**, and revocable.
 //! Four capillarity levels the citizen may grant (multiple grants add up):
 //!   - `all_parties`  — any directory of any party
 //!   - `party`        — every directory of one party (`party_sigla`)

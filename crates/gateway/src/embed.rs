@@ -1,11 +1,11 @@
-//! # Placar embedável (item 7 do plano, 0.30.2).
+//! # Embeddable scoreboard (item 7 of the plan, 0.30.2).
 //!
-//! O placar só gera consequência se circula FORA da plataforma: portais de
-//! notícia e blogs embedam `GET /embed/placar/{mandate_id}` num iframe e o
-//! placar do mandato (respondidas × silêncios) aparece com a marca e o link
-//! da fonte. HTML autocontido (CSS inline, zero JS, ~2 KB), sem cabeçalhos
-//! anti-frame — embedar é o PONTO. O JSON pra imprensa já existe na rota
-//! pública `GET /api/v1/scorecards/{mandate_id}` (crate scorecard).
+//! The scoreboard only creates consequence if it circulates OUTSIDE the platform: news
+//! portals and blogs embed `GET /embed/placar/{mandate_id}` in an iframe and the
+//! mandate's scoreboard (answered × silences) appears with the brand and the source
+//! link. Self-contained HTML (inline CSS, zero JS, ~2 KB), with no anti-frame
+//! headers — embedding is the POINT. The JSON for the press already exists at the
+//! public route `GET /api/v1/scorecards/{mandate_id}` (the scorecard crate).
 
 use axum::extract::{Path, State};
 use axum::http::{header, StatusCode};
@@ -21,7 +21,7 @@ pub fn routes(state: AppState) -> Router<()> {
         .with_state(state)
 }
 
-/// Escape mínimo pra interpolar texto em HTML.
+/// Minimal escaping for interpolating text into HTML.
 fn esc(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -88,7 +88,7 @@ body{{margin:0;font:14px/1.45 system-ui,sans-serif;background:#fff;color:#1a1a1a
         StatusCode::OK,
         [
             (header::CONTENT_TYPE, "text/html; charset=utf-8"),
-            // Cache curto: o placar muda quando SLAs resolvem, não por request.
+            // Short cache: the scoreboard changes when SLAs resolve, not per request.
             (header::CACHE_CONTROL, "public, max-age=300"),
         ],
         html,

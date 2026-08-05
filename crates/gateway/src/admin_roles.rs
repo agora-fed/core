@@ -1,9 +1,9 @@
-//! `/admin/roles` — CRUD de papéis configuráveis + atribuição + catálogo de permissões (R4).
+//! `/admin/roles` — CRUD of configurable roles + assignment + the permission catalog (R4).
 //!
 //! Gated por `roles.manage` (via [`crate::authz_ext::require_permission`]) MAIS a hierarquia do
-//! Mastodon: você só cria/edita/apaga papel de `position` MENOR que a sua, e só concede papel
-//! abaixo de você. `administrator` bypassa a hierarquia. A matriz de checkboxes do front é
-//! montada a partir de `GET /admin/permission-catalog`, que vem dos manifestos (R0.1).
+//! Mastodon: you may only create/edit/delete a role of a LOWER `position` than yours, and only grant a role
+//! below you. `administrator` bypasses the hierarchy. The front end's checkbox matrix is
+//! built from `GET /admin/permission-catalog`, which comes from the manifests (R0.1).
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -42,7 +42,7 @@ fn storage_error() -> Response {
 }
 
 // ---------------------------------------------------------------------------
-// Catálogo de permissões (dos manifestos) — alimenta a matriz de checkboxes.
+// Permission catalog (from the manifests) — feeds the checkbox matrix.
 // ---------------------------------------------------------------------------
 
 #[derive(Serialize)]
@@ -73,7 +73,7 @@ async fn permission_catalog(State(state): State<AppState>, caller: CallerId) -> 
 // Hierarquia
 // ---------------------------------------------------------------------------
 
-/// A maior `position` que o caller detém (papéis bindados + Base 0). `administrator` → i32::MAX.
+/// The highest `position` the caller holds (bound roles + Base 0). `administrator` → i32::MAX.
 async fn caller_max_position(state: &AppState, caller: CallerId) -> Result<i32, Response> {
     let svc = dsoc_admin::AdminService::from_state(state);
     let perms = svc
@@ -97,7 +97,7 @@ async fn caller_max_position(state: &AppState, caller: CallerId) -> Result<i32, 
 }
 
 // ---------------------------------------------------------------------------
-// CRUD de papéis
+// Role CRUD
 // ---------------------------------------------------------------------------
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -142,9 +142,9 @@ struct RoleBody {
     highlighted: bool,
 }
 
-/// Valida chaves contra o catálogo (não deixa gravar chave inexistente) e normaliza.
-// Fn síncrona (as `async fn` deste módulo escapam do lint por retornarem Future);
-// o Err carrega uma Response pronta pro handler — boxar só pioraria os call sites.
+/// Validate keys against the catalog (never store a non-existent key) and normalize.
+// A synchronous fn (this module's `async fn`s escape the lint by returning a Future);
+// the Err carries a ready Response for the handler — boxing would only worsen the call sites.
 #[allow(clippy::result_large_err)]
 fn validate_permissions(input: &[String]) -> Result<Vec<String>, Response> {
     let catalog: std::collections::BTreeSet<String> = crate::module_catalog::permission_catalog()
@@ -350,7 +350,7 @@ async fn delete_role(
 }
 
 // ---------------------------------------------------------------------------
-// Atribuição
+// Assignment
 // ---------------------------------------------------------------------------
 
 #[derive(Serialize, sqlx::FromRow)]

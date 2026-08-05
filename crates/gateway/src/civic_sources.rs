@@ -1,7 +1,7 @@
-//! # Catálogo de fontes cívicas (#72, ADR-0017) — painel admin do mapa município→plataforma.
+//! # Civic source catalog (#72, ADR-0017) — the admin panel of the municipality→platform map.
 //!
-//! Onde o admin vê QUAL sistema cada câmara municipal roda (SAPL/Interlegis, camaraonline…), a
-//! URL-base e o status do probe. Alimenta a estratégia de extração por-plataforma. Lê a tabela
+//! Where the admin sees WHICH system each city council runs (SAPL/Interlegis, camaraonline…), the
+//! base URL and the probe status. Feeds the per-platform extraction strategy. Reads the table
 //! `civic_source` (migration 0662). Paginado + filtrado. Runtime queries.
 //!
 //! - `GET /admin/civic-sources/overview` — contagem por plataforma × status do probe.

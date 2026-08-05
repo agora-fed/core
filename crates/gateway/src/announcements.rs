@@ -1,15 +1,15 @@
-//! Anúncios da instância (migration 0510).
+//! Instance announcements (migration 0510).
 //!
 //! Endpoints:
-//! - `GET  /api/v1/announcements/active` — público. Ativos = published_at NOT NULL,
-//!   dentro de starts_at..ends_at (se preenchidos), não dismissed pelo caller.
-//! - `POST /api/v1/admin/announcements` — cria (admin).
+//! - `GET  /api/v1/announcements/active` — public. Active = published_at NOT NULL,
+//!   within starts_at..ends_at (when set), not dismissed by the caller.
+//! - `POST /api/v1/admin/announcements` — create (admin).
 //! - `GET  /api/v1/admin/announcements` — lista todos, inclusive rascunhos.
 //! - `PATCH /api/v1/admin/announcements/{id}` — edita body/severity/janela.
 //! - `POST /api/v1/admin/announcements/{id}/publish` — marca published_at=now.
 //! - `POST /api/v1/admin/announcements/{id}/unpublish` — zera published_at.
 //! - `DELETE /api/v1/admin/announcements/{id}` — apaga.
-//! - `POST /api/v1/announcements/{id}/dismiss` — cidadão fecha localmente.
+//! - `POST /api/v1/announcements/{id}/dismiss` — the citizen dismisses it locally.
 
 use axum::extract::{Json, Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -268,7 +268,7 @@ async fn admin_update(
     if let Err(r) = require_admin(&headers, &state.db).await {
         return r;
     }
-    // Update dinâmico simplista: um SQL por campo alterado.
+    // Simplistic dynamic update: one SQL statement per changed field.
     if let Some(t) = body.body.as_deref() {
         let _ = sqlx::query(r"UPDATE server_announcement SET body = $2 WHERE id = $1")
             .bind(id)

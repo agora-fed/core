@@ -1,8 +1,8 @@
-//! # Referência de municípios IBGE (migration 0651) — selector do cadastro.
+//! # IBGE municipality reference (migration 0651) — the signup selector.
 //!
-//! `GET /municipios?uf=XX` — lista PÚBLICA dos municípios de uma UF (código IBGE +
-//! nome), ordenada por nome, para o selector UF→município do cadastro
-//! (0652/0653: domicílio obrigatório). Runtime query — sem regen do cache sqlx.
+//! `GET /municipios?uf=XX` — a PUBLIC list of a UF's municipalities (IBGE code +
+//! name), ordered by name, for the signup's UF→municipality selector
+//! (0652/0653: residence is mandatory). A runtime query — no sqlx cache regeneration.
 
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
@@ -34,7 +34,7 @@ struct MunicipioDto {
     nome: String,
 }
 
-/// `GET /municipios?uf=XX` — municípios de uma UF (código IBGE + nome), por nome.
+/// `GET /municipios?uf=XX` — a UF's municipalities (IBGE code + name), by name.
 async fn list(State(state): State<AppState>, Query(q): Query<ListQuery>) -> Response {
     let uf = q.uf.unwrap_or_default().trim().to_uppercase();
     if uf.len() != 2 || !uf.chars().all(|c| c.is_ascii_alphabetic()) {
@@ -44,7 +44,7 @@ async fn list(State(state): State<AppState>, Query(q): Query<ListQuery>) -> Resp
             "Informe a UF como sigla de 2 letras (ex.: SP).",
         );
     }
-    // IBGE atrás da abstração agnóstica dsoc_core::TerritorialProvider (ADR-0015).
+    // IBGE behind the country-agnostic dsoc_core::TerritorialProvider abstraction (ADR-0015).
     use dsoc_core::TerritorialProvider as _;
     let provider = dsoc_l10n_br::BrTerritorialProvider::new(state.db.clone());
     match provider.municipalities(&uf).await {

@@ -1,15 +1,15 @@
-//! # Prova de notificação — "AR digital do silêncio" (0.29, migration 0521).
+//! # Proof of notification — the "digital registered mail of silence" (0.29, migration 0521).
 //!
 //! Todo e-mail ao gabinete vira um recibo hash-encadeado por proposta:
-//! `hash = sha256(prev|proposal|recipient|attempt|outcome|sent_at)`, com
+//! `hash = sha256(prev|proposal|recipient|attempt|outcome|sent_at)`, with
 //! genesis `sha256("genesis:<proposal_id>")`. Adulterar um recibo quebra a
-//! cadeia dali em diante — qualquer pessoa verifica com sha256 na mão.
+//! the chain from there on — anyone can verify it with sha256 by hand.
 //!
-//! - Gravação: [`record`] é chamado pelo `proposal_delivery` (D0) e pelo
-//!   loop de escalonamento do worker (D+1/D+2, enquanto o SLA está
-//!   `pending`, máx. 3 tentativas).
-//! - Leitura pública: `GET /proposals/{id}/delivery-receipts` — a timeline
-//!   auditável que muda o silêncio de acusação para fato.
+//! - Writing: [`record`] is called by `proposal_delivery` (D0) and by the
+//!   worker's escalation loop (D+1/D+2, while the SLA is
+//!   `pending`, max 3 attempts).
+//! - Public read: `GET /proposals/{id}/delivery-receipts` — the auditable
+//!   timeline that turns silence from an accusation into a fact.
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -36,7 +36,7 @@ fn sha256_hex(input: &str) -> String {
     format!("{:x}", h.finalize())
 }
 
-/// Hash de um recibo — função pura pra qualquer auditor reproduzir.
+/// Hash of a receipt — a pure function any auditor can reproduce.
 fn receipt_hash(
     prev: &str,
     proposal: Uuid,
@@ -51,9 +51,9 @@ fn receipt_hash(
     ))
 }
 
-/// Grava o próximo recibo da cadeia da proposta. Idempotência estrutural:
-/// o UNIQUE (proposal_id, attempt) faz um attempt repetido virar no-op.
-/// Nunca propaga erro — recibo é auditoria, não pode derrubar o envio.
+/// Write the next receipt in the proposal's chain. Structural idempotency:
+/// the UNIQUE (proposal_id, attempt) makes a repeated attempt a no-op.
+/// It never propagates an error — a receipt is audit, it must not break the send.
 pub(crate) async fn record(
     db: &PgPool,
     proposal_id: Uuid,
@@ -123,7 +123,7 @@ struct ReceiptDto {
     hash: String,
 }
 
-/// Timeline pública dos avisos de uma proposta — o coração do "AR digital".
+/// Public timeline of a proposal's warnings — the heart of the "digital registered mail".
 async fn list(State(state): State<AppState>, Path(proposal_id): Path<Uuid>) -> Response {
     let rows: Result<Vec<ReceiptDto>, _> = sqlx::query_as(
         r"SELECT attempt, recipient, subject, outcome, sent_at, prev_hash, hash
