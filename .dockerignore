@@ -1,0 +1,16 @@
+# Keep docker build contexts lean. deploy/docker/Dockerfile takes the repo
+# root as context and needs ONLY target/release/dsoc-gateway + web/dist;
+# Dockerfile.full builds from source and needs the sources but never the
+# multi-GB local build caches.
+.git
+target
+!target/release/dsoc-gateway
+target-docker
+logo-preview
+web/node_modules
+web/.astro
+web/playwright-report
+web/.playwright
+test-results
+deploy/docker/web
+deploy/docker/dsoc-gateway
