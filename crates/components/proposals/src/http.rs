@@ -27,9 +27,9 @@ use crate::service::ProposalService;
 pub struct CreateProposalRequest {
     /// The mandate this proposal is directed at (the PRINCIPAL target).
     pub mandate_id: Uuid,
-    /// Co-destinatários (0537 — multi-gabinete): mandatos adicionais que também recebem a
-    /// proposta. Devem existir e ser da MESMA esfera federativa do principal; duplicatas são
-    /// ignoradas; total (principal incluído) limitado a
+    /// Co-recipients (0537 — multi-office): additional mandates that also receive the
+    /// proposal. They must exist and belong to the SAME federative sphere as the primary;
+    /// duplicates are ignored; the total (primary included) is capped at
     /// [`crate::domain::MAX_PROPOSAL_TARGETS`]. Aditivo: clientes velhos omitem o campo.
     #[serde(default)]
     pub additional_mandate_ids: Vec<Uuid>,
@@ -158,13 +158,13 @@ pub fn routes(state: dsoc_app::AppState) -> Router<()> {
         .with_state(state)
 }
 
-/// Superfície **somente-leitura** das propostas (B1). A fusão Propor ≡ Fórum
-/// aposentou a criação de "proposta" pelo cidadão — a mecânica virou 100% fórum
-/// (tópico direcionado a mandato). Mantemos as LEITURAS no ar: permalinks de
-/// propostas antigas (`/propostas/{id}`), recibos de entrega e revisões seguem
-/// visíveis, e a federação/eventos do crate continuam intactos. O worker
-/// `proposal_delivery` fica dormente (sem novos alvos). O `routes()` completo
-/// (com POST) permanece exportado para testes do próprio crate.
+/// **Read-only** surface of proposals (B1). The Propose ≡ Forum merge retired
+/// citizen-authored "proposals" — the mechanic became 100% forum (a topic
+/// directed at a mandate). The READS stay live: permalinks of old proposals
+/// (`/propostas/{id}`), delivery receipts and revisions remain visible, and the
+/// crate's federation/events stay intact. The `proposal_delivery` worker lies
+/// dormant (no new targets). The full `routes()` (with POST) is still exported
+/// for this crate's own tests.
 pub fn read_routes(state: dsoc_app::AppState) -> Router<()> {
     Router::new()
         .route("/proposals", get(list))
@@ -194,7 +194,7 @@ async fn create(
         Ok(n) => n,
         Err(e) => return error_response::<ProposalDto>(&e),
     };
-    // Multi-destinatário (0537): principal primeiro, co-destinatários deduplicados e limitados.
+    // Multi-recipient (0537): primary first, co-recipients deduplicated and capped.
     let targets =
         match crate::domain::normalize_targets(req.mandate_id, &req.additional_mandate_ids) {
             Ok(t) => t,
@@ -207,7 +207,7 @@ async fn create(
         .await
     {
         Ok(row) => {
-            // Best-effort: o detalhe re-busca; uma falha aqui não pode derrubar o 201.
+            // Best-effort: the detail refetches; a failure here must not break the 201.
             let targets = svc
                 .targets(ProposalId::from_uuid(row.id))
                 .await
@@ -252,7 +252,7 @@ async fn list(
     let limit = params.limit.unwrap_or(20);
     match svc.list(org, after, limit).await {
         Ok((rows, total)) => {
-            // Listagem leve: targets só no detalhe/create (evita N+1 por página).
+            // Light listing: targets only in detail/create (avoids N+1 per page).
             let dtos: Vec<ProposalDto> = rows
                 .into_iter()
                 .map(|row| proposal_dto(row, Vec::new()))

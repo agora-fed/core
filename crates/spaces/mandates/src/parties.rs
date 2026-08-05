@@ -1,4 +1,4 @@
-//! Public read surface for the party catalog (migration 0204). Fase 2B do roadmap.
+//! Public read surface for the party catalog (migration 0204). Roadmap phase 2B.
 //!
 //! Routes (merged into the gateway's `/api/v1` group via [`routes`]):
 //! * `GET /api/v1/parties?org_id=<uuid>` — party directory ordered by mandate count DESC.
@@ -39,9 +39,9 @@ pub struct PartyDto {
     pub logo_url: Option<String>,
     pub website: Option<String>,
     pub founded_year: Option<i32>,
-    /// Mandates currently attributed to this sigla in the org (derived, não-ocultos).
+    /// Mandates currently attributed to this sigla in the org (derived, non-hidden).
     pub mandate_count: i64,
-    /// Contagem por esfera — evita a página baixar todos os mandatos pra derivar.
+    /// Count per sphere — spares the page from downloading every mandate to derive it.
     pub federal_count: i64,
     pub estadual_count: i64,
     pub municipal_count: i64,
@@ -121,15 +121,15 @@ pub fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/parties", get(list_parties))
         .route("/parties/{sigla}", get(get_party))
-        // Write surface (0.37.0 — Fase 2.1): criar/remover diretórios subnacionais.
-        // Gate: admin de plataforma OU admin nacional do partido (party_write_authorized).
+        // Write surface (0.37.0 — Phase 2.1): create/remove subnational directories.
+        // Gate: platform admin OR the party's national admin (party_write_authorized).
         .route("/parties/{sigla}/directories", post(create_directory))
         .route(
             "/parties/{sigla}/directories/{id}",
             axum::routing::delete(delete_directory),
         )
-        // Membros derivados do diretório: os mandatos do partido naquele território.
-        // Público (read-only) — mesma lógica territorial que a PartyDetail derivava no client.
+        // Members derived from the directory: the party's mandates in that territory.
+        // Public (read-only) — the same territorial logic PartyDetail used to derive client-side.
         .route(
             "/parties/{sigla}/directories/{id}/members",
             get(list_directory_members),
@@ -283,32 +283,32 @@ async fn get_party(
 // ---------------------------------------------------------------------------
 
 /// Corpo de `POST /parties/{sigla}/directories`. A esfera determina quais campos
-/// territoriais são obrigatórios (o CHECK do banco reforça, mas validamos cedo
-/// pra um 400 amigável em vez de um 500 de constraint).
+/// territorial fields are mandatory (the database CHECK enforces it, but we validate
+/// early for a friendly 400 instead of a constraint 500).
 #[derive(Debug, Deserialize)]
 pub struct CreateDirectoryBody {
     pub org_id: Uuid,
     /// 'federal' | 'estadual' | 'municipal'.
     pub esfera: String,
-    /// UF (2 letras) — obrigatória em estadual/municipal, proibida em federal.
+    /// UF (2 letters) — mandatory for state/municipal, forbidden for federal.
     pub uf: Option<String>,
-    /// Município — obrigatório só em municipal.
+    /// Municipality — mandatory only for municipal.
     pub municipio: Option<String>,
-    /// Nome do diretório (ex.: "Diretório Municipal do PT — Porto Alegre").
+    /// Directory name (e.g. "Diretório Municipal do PT — Porto Alegre").
     pub name: String,
-    /// Pai na árvore (municipal→estadual→federal). Opcional.
+    /// Parent in the tree (municipal→state→federal). Optional.
     pub parent_directory_id: Option<Uuid>,
-    /// Responsável pelo diretório — obrigatório informar este campo OU
-    /// `responsavel_handle`. Nasce como `party_administrator` role `admin`
-    /// no escopo do diretório, na mesma transação (nunca há diretório órfão).
+    /// The citizen responsible for the directory — either this field OR
+    /// `responsavel_handle` is mandatory. Born as a `party_administrator` with role
+    /// `admin` scoped to the directory, in the same transaction (never an orphan directory).
     pub responsavel_citizen_id: Option<Uuid>,
-    /// Responsável por `@handle` (resolvido no servidor, `@` opcional).
+    /// Responsible citizen by `@handle` (resolved server-side, `@` optional).
     pub responsavel_handle: Option<String>,
 }
 
-/// Membro derivado de um diretório: um mandato do partido naquele território.
-/// `avatar_url` já vem resolvido (mesmo padrão de `politicos_ext`/`MandateDto`),
-/// não a object key crua — o front só precisa exibir.
+/// A member derived from a directory: a party mandate in that territory.
+/// `avatar_url` already arrives resolved (same pattern as `politicos_ext`/`MandateDto`),
+/// not the raw object key — the front end only has to display it.
 #[derive(Debug, Clone, Serialize)]
 pub struct DirectoryMemberDto {
     pub mandate_id: Uuid,
@@ -323,9 +323,9 @@ fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
     (status, Json(ApiResponse::<()>::fail(code, msg))).into_response()
 }
 
-/// Resolve a object key do avatar para URL pública (MEDIA_BASE_URL). Mesmo
-/// comportamento de `gateway::politicos_ext::resolve_avatar`, replicado aqui
-/// porque aquele é privado ao crate do gateway.
+/// Resolve the avatar object key to a public URL (MEDIA_BASE_URL). Same
+/// behaviour as `gateway::politicos_ext::resolve_avatar`, replicated here
+/// because that one is private to the gateway crate.
 fn resolve_avatar(object_key: Option<&str>) -> Option<String> {
     let key = object_key?.trim();
     if key.is_empty() {
@@ -336,10 +336,10 @@ fn resolve_avatar(object_key: Option<&str>) -> Option<String> {
     Some(format!("{}/{}", base.trim_end_matches('/'), key))
 }
 
-/// Gate de escrita da superfície de partido: admin/owner de plataforma OU admin
-/// NACIONAL do partido (party_administrator com directory_id NULL, role='admin',
-/// aceito). Mesmo critério do `mandate_invite::invite_authorized`; `moderador`
-/// não qualifica — criar diretório reorganiza a estrutura do partido.
+/// Write gate of the party surface: platform admin/owner OR the party's NATIONAL
+/// admin (party_administrator with directory_id NULL, role='admin', accepted).
+/// Same criterion as `mandate_invite::invite_authorized`; `moderador` does not
+/// qualify — creating a directory reorganizes the party's structure.
 async fn party_write_authorized(
     db: &sqlx::PgPool,
     org: Uuid,
@@ -370,8 +370,8 @@ async fn create_directory(
     Path(sigla): Path<String>,
     Json(body): Json<CreateDirectoryBody>,
 ) -> Response {
-    // O caller autenticado precisa agir na sua própria org (o CallerId já é
-    // resolvido da sessão; o org_id do corpo tem que bater pra não cruzar tenant).
+    // The authenticated caller must act within their own org (CallerId is already
+    // resolved from the session; the body's org_id must match so tenants never cross).
     if caller.org.as_uuid() != body.org_id {
         return fail(
             StatusCode::FORBIDDEN,
@@ -379,7 +379,7 @@ async fn create_directory(
             "Organização inválida.",
         );
     }
-    // Normalização + validação federativa (espelha o CHECK party_directory_esfera_shape).
+    // Normalization + federative validation (mirrors the party_directory_esfera_shape CHECK).
     let esfera = body.esfera.trim().to_lowercase();
     if !matches!(esfera.as_str(), "federal" | "estadual" | "municipal") {
         return fail(
@@ -431,7 +431,7 @@ async fn create_directory(
         );
     }
 
-    // Autorização.
+    // Authorization.
     match party_write_authorized(&state.db, body.org_id, caller.citizen.as_uuid(), &sigla).await {
         Ok(true) => {}
         Ok(false) => {
@@ -451,8 +451,8 @@ async fn create_directory(
         }
     }
 
-    // Responsável obrigatório: todo diretório nasce com um cidadão respondendo
-    // por ele (party_administrator role 'admin' no escopo do diretório).
+    // Mandatory responsible citizen: every directory is born with someone answering
+    // for it (party_administrator role 'admin' scoped to the directory).
     let responsavel = if let Some(id) = body.responsavel_citizen_id {
         id
     } else if let Some(handle) = body
@@ -495,7 +495,7 @@ async fn create_directory(
         );
     };
 
-    // Transação única: diretório + vínculo do responsável, ou nada.
+    // Single transaction: directory + the responsible binding, or nothing.
     let created: Result<Uuid, sqlx::Error> = async {
         let mut tx = state.db.begin().await?;
         let id: Uuid = sqlx::query_scalar(
@@ -513,7 +513,7 @@ async fn create_directory(
         .bind(body.parent_directory_id)
         .fetch_one(&mut *tx)
         .await?;
-        // `accepted_at = now()`: designação direta por quem já tem poder de escrita
+        // `accepted_at = now()`: direct designation by someone who already holds write power
         // no partido, mesmo shape do assign do gateway (admin_parties).
         sqlx::query(
             r"INSERT INTO party_administrator
@@ -538,15 +538,15 @@ async fn create_directory(
             Json(ApiResponse::ok(serde_json::json!({ "id": id }))),
         )
             .into_response(),
-        // Índice territorial (0673): já existe diretório deste partido neste
-        // território — duplo clique/retry não cria outro.
+        // Territorial index (0673): a directory of this party already exists in this
+        // territory — a double click/retry must not create another.
         Err(sqlx::Error::Database(dberr)) if dberr.is_unique_violation() => fail(
             StatusCode::CONFLICT,
             "directory_exists",
             "Já existe um diretório deste partido neste território.",
         ),
-        // FK falha: sigla inexistente na org, parent inválido, ou o citizen do
-        // responsável (por id direto) não existe → 404 amigável.
+        // FK failure: sigla absent in the org, invalid parent, or the responsible
+        // citizen (by direct id) does not exist → friendly 404.
         Err(sqlx::Error::Database(dberr)) if dberr.is_foreign_key_violation() => {
             if dberr.constraint().is_some_and(|c| c.contains("citizen")) {
                 fail(
@@ -604,7 +604,7 @@ async fn delete_directory(
             );
         }
     }
-    // Não deixa remover um diretório que ainda é pai de outro (a árvore ficaria órfã).
+    // Do not allow removing a directory that still parents another (the tree would be orphaned).
     let has_children: Result<bool, sqlx::Error> = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM party_directory WHERE parent_directory_id = $1)",
     )
@@ -863,18 +863,18 @@ async fn load_party_detail(
     }))
 }
 
-/// Membros derivados de um diretório: os mandatos do mesmo partido cuja esfera e
-/// território batem com o diretório. Municipal casa por (party, sphere, uf,
+/// Members derived from a directory: the mandates of the same party whose sphere and
+/// territory match the directory. Municipal matches on (party, sphere, uf,
 /// municipio); estadual por (party, sphere, uf); federal por (party, sphere).
-/// É a mesma derivação que a `PartyDetail.svelte` fazia no client — agora no
-/// servidor, ancorada num diretório real.
+/// It is the same derivation `PartyDetail.svelte` did client-side — now on the
+/// server, anchored to a real directory.
 async fn load_directory_members(
     db: &sqlx::PgPool,
     org_id: Uuid,
     sigla: &str,
     directory_id: Uuid,
 ) -> Result<Vec<DirectoryMemberDto>, sqlx::Error> {
-    // 1) Resolve o território do diretório (e prova que pertence a esta org + partido).
+    // 1) Resolve the directory's territory (and prove it belongs to this org + party).
     let dir: Option<(String, Option<String>, Option<String>)> = sqlx::query_as(
         r"SELECT esfera, uf, municipio
             FROM party_directory
@@ -889,9 +889,9 @@ async fn load_directory_members(
         return Ok(Vec::new());
     };
 
-    // 2) Mandatos do partido no território. Os filtros de uf/municipio só se
-    // aplicam quando a esfera os define (federal ignora ambos; estadual ignora
-    // municipio) — implementado com o guard `$4::text IS NULL OR col = $4`.
+    // 2) The party's mandates in the territory. The uf/municipio filters only apply
+    // when the sphere defines them (federal ignores both; state ignores
+    // municipality) — implemented with the `$4::text IS NULL OR col = $4` guard.
     let rows: Vec<MemberRow> = sqlx::query_as(
         r"
             SELECT id, display_name, office, uf, municipio, avatar_object_key

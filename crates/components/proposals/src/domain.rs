@@ -9,8 +9,8 @@ use uuid::Uuid;
 pub const MAX_TITLE_LEN: usize = 200;
 /// Maximum length of a proposal body.
 pub const MAX_BODY_LEN: usize = 20_000;
-/// Máximo de destinatários por proposta (principal + co-destinatários). Evita que uma
-/// proposta vire mala-direta pros 513 gabinetes da Câmara de uma vez.
+/// Maximum recipients per proposal (primary + co-recipients). Stops a proposal from
+/// becoming a mass mailing to all 513 offices of the lower house at once.
 pub const MAX_PROPOSAL_TARGETS: usize = 10;
 
 /// The proposal lifecycle status. The authoritative facts are the dedicated timestamp/cluster
@@ -272,7 +272,7 @@ mod tests {
         assert!(!crossing_fires(true, 999, 1, true));
     }
 
-    // --- multi-destinatário (0537) ---
+    // --- multi-recipient (0537) ---
 
     #[test]
     fn normalize_targets_keeps_primary_first_and_dedupes() {

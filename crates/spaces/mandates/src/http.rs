@@ -206,9 +206,9 @@ fn to_mandate_dto(view: MandateView) -> MandateDto {
     let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
     let media_base = media_base.trim_end_matches('/');
     let avatar_url = view.avatar_object_key.map(|k| format!("{media_base}/{k}"));
-    // Integridade (A1): o placeholder `@parlamento.democracia.social.br` NÃO é canal real. Nunca o
-    // expomos como "contato do gabinete" (public_email→None) e sinalizamos is_reachable=false — a UI
-    // usa isso pra não convidar o cidadão a "cobrar" um inbox morto (o silêncio seria da plataforma).
+    // Integrity (A1): the `@parlamento.democracia.social.br` placeholder is NOT a real channel. We
+    // never expose it as the "office contact" (public_email→None) and we signal is_reachable=false — the
+    // UI uses that to avoid inviting citizens to press a dead inbox (the silence would be the platform's).
     const PLACEHOLDER_SUFFIX: &str = "@parlamento.democracia.social.br";
     let raw_email = Some(view.public_email).filter(|s| !s.is_empty());
     let is_reachable = raw_email
@@ -358,10 +358,10 @@ struct MandateListQuery {
     #[serde(default)]
     sphere: Option<String>,
     /// Optional UF filter (case-insensitive), e.g. `SP`. Pairs with `municipio` to scope a
-    /// municipal câmara (migration 0504) — drives the "Vereadores desta Câmara" forum card.
+    /// municipal council (migration 0504) — drives the council-members forum card.
     #[serde(default)]
     uf: Option<String>,
-    /// Optional município filter (case-insensitive), e.g. `Santana de Parnaíba`.
+    /// Optional municipality filter (case-insensitive), e.g. `Santana de Parnaíba`.
     #[serde(default)]
     municipio: Option<String>,
     #[serde(default)]
@@ -373,7 +373,7 @@ struct MandateListQuery {
 /// `GET /mandates?org_id=&sphere=&uf=&municipio=&limit=&offset=` — directory of mandates in an
 /// org, ordered by display name. Public; used by the front-end picker so people don't have to
 /// type a UUID by hand. `sphere` sub-filters the federative level (introduced in F1.2 alongside
-/// the /politicos UI chips); `uf`+`municipio` scope to one municipal câmara (case-insensitive).
+/// the /politicos UI chips); `uf`+`municipio` scope to one municipal council (case-insensitive).
 async fn list_mandates(
     State(state): State<AppState>,
     Query(query): Query<MandateListQuery>,

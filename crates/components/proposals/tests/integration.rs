@@ -705,7 +705,7 @@ async fn missing_proposal_is_not_found() {
     assert_eq!(err.code(), "not_found");
 }
 
-// --- multi-destinatário (0537) ---
+// --- multi-recipient (0537) ---
 
 /// Seed a mandate with an explicit federative sphere (`mandate.sphere`, migration 0203).
 async fn seed_mandate_sphere(db: &PgPool, org: OrgId, sphere: &str) -> MandateId {
@@ -737,7 +737,7 @@ async fn create_targets_persists_every_gabinete_same_sphere() {
         .await
         .expect("create multi-target proposal");
 
-    // O principal continua sendo o primeiro da lista (compat com o loop de consequência).
+    // The primary stays first in the list (compat with the consequence loop).
     assert_eq!(row.mandate_id, m1.as_uuid());
 
     let targets = svc
@@ -749,7 +749,7 @@ async fn create_targets_persists_every_gabinete_same_sphere() {
     assert!(targets.iter().all(|t| t.notified_at.is_none()));
     assert!(targets.iter().all(|t| t.sphere == "federal"));
 
-    // Um único evento ProposalCreated (a entrega multi-gabinete é do worker, não do outbox).
+    // A single ProposalCreated event (multi-office delivery is the worker's job, not the outbox's).
     assert_eq!(
         outbox_event_types(&db, org).await,
         vec!["proposals.created"]

@@ -302,10 +302,10 @@ async fn anonymous_caller_is_forbidden_by_handler() {
     assert_eq!(tally, 0);
 }
 
-/// Insere uma proposta minimal com `urgencia` explícito. `mandate` também precisa
+/// Insert a minimal proposal with an explicit `urgencia`. `mandate` is also required
 /// existir por causa do FK. Retorna o proposal id.
 async fn seed_proposal(db: &Db, org: OrgId, urgencia: &str) -> ProposalId {
-    // Seed mandate primeiro (FK obrigatório).
+    // Seed the mandate first (mandatory FK).
     let mandate_id = uuid::Uuid::now_v7();
     sqlx::query(
         "INSERT INTO mandate (id, org_id, office, display_name, public_email, sphere, is_candidate, created_at) \
@@ -376,7 +376,7 @@ async fn urgent_proposal_accepts_citizen_with_titulo_validated() {
 
 #[tokio::test]
 async fn comum_proposal_ignores_titulo_status() {
-    // Backward-compat: propostas 'comum' (default) não passam pelo gate.
+    // Backward-compat: 'comum' (default) proposals never hit the gate.
     let db = connect().await;
     let org = seed_org(&db).await;
     let citizen = seed_citizen(&db, org).await; // titulo = NULL

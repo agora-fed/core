@@ -144,7 +144,7 @@ pub(crate) async fn find_mandate<'e, E: PgExecutor<'e>>(
 /// `uf`/`municipio` narrow the list to a single territory (case-insensitive via `upper()` on both
 /// sides — the same comparison the `civic_source` catalog uses). Both are optional; absent means no
 /// filter (backwards-compatible with the pre-municipal callers). Drives the "Vereadores desta
-/// Câmara" card on a municipal forum.
+/// council-members card on a municipal forum.
 pub(crate) async fn list_mandates<'e, E: PgExecutor<'e>>(
     exec: E,
     org_id: Uuid,

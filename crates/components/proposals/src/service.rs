@@ -123,7 +123,7 @@ impl ProposalService {
 
         let mut tx = self.db.begin().await.map_err(map_sqlx)?;
 
-        // Esfera única (0537): todos os destinatários existem e pertencem à mesma esfera.
+        // Single sphere (0537): every recipient exists and belongs to the same sphere.
         let check = queries::check_target_spheres(&mut *tx, &target_uuids)
             .await
             .map_err(map_sqlx)?;
@@ -489,9 +489,9 @@ impl ProposalService {
             // Lost the race to another transaction; the crossing already fired exactly once.
             return Ok(false);
         }
-        // Multi-destinatário (0537): o sinal de consequência carrega TODOS os gabinetes,
-        // pro consequence abrir um SLA por gabinete. Fallback pro principal se a lista
-        // estiver vazia (proposta anterior ao backfill — não deve acontecer).
+        // Multi-recipient (0537): the consequence signal carries ALL offices, so
+        // consequence can open one SLA per office. Falls back to the primary when the
+        // list is empty (a proposal predating the backfill — should not happen).
         let mut mandates: Vec<MandateId> = queries::target_mandate_ids(&mut **tx, row.id)
             .await
             .map_err(map_sqlx)?

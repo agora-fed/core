@@ -1,45 +1,45 @@
-//! Camada de VALOR POSITIVO do placar (Bloco C do plano de produto): a partir dos mesmos contadores
-//! `answered`/`ignored` e da latência mediana que o ledger já projeta, derivamos a *vitrine* do
-//! mandato — um selo/tier de responsividade, o "responde em ~N dias", a sequência (streak) de
-//! respostas e o comparativo com pares (percentil).
+//! POSITIVE-VALUE layer of the scorecard (Block C of the product plan): from the same
+//! `answered`/`ignored` counters and the median latency the ledger already projects, we derive the
+//! mandate's *showcase* — a responsiveness badge/tier, the "answers in ~N days", the streak of
+//! consecutive answers and the peer comparison (percentile).
 //!
-//! Tudo aqui é PURO e determinístico (sem `sqlx`, sem relógio, sem I/O): a mesma entrada sempre
-//! produz o mesmo selo, então é 100% testável na camada unitária (TESTING.md) e reproduzível a
-//! partir do ledger. As consultas que alimentam estas funções vivem no gateway (runtime sqlx); esta
-//! camada só decide, nunca lê.
+//! Everything here is PURE and deterministic (no `sqlx`, no clock, no I/O): the same input always
+//! produces the same badge, so it is 100% testable at the unit layer (TESTING.md) and reproducible
+//! from the ledger. The queries feeding these functions live in the gateway (runtime sqlx); this
+//! layer only decides, never reads.
 //!
-//! Regra de ouro do plano: toda consequência NEGATIVA que a plataforma amplifica (o silêncio) tem
-//! sua versão POSITIVA. Estas funções são a matéria-prima dessa versão positiva.
+//! Golden rule of the plan: every NEGATIVE consequence the platform amplifies (the silence) has
+//! its POSITIVE counterpart. These functions are the raw material of that positive version.
 
 use crate::domain::Outcome;
 
-/// Taxa mínima (%) para o selo Ouro. Abaixo disso o mandato responde bem, mas não "quase sempre".
+/// Minimum rate (%) for the Gold badge. Below it the mandate answers well, but not "almost always".
 const GOLD_MIN_RATE: u32 = 80;
-/// Latência mediana máxima (horas) para o Ouro: responder muito, mas devagar, não é Ouro. 72h = 3d.
+/// Maximum median latency (hours) for Gold: answering a lot, but slowly, is not Gold. 72h = 3d.
 const GOLD_MAX_MEDIAN_HOURS: f64 = 72.0;
-/// Taxa mínima (%) para o selo Prata.
+/// Minimum rate (%) for the Silver badge.
 const SILVER_MIN_RATE: u32 = 60;
-/// Taxa mínima (%) para o selo Bronze.
+/// Minimum rate (%) for the Bronze badge.
 const BRONZE_MIN_RATE: u32 = 30;
 
-/// Selo público de responsividade do mandato — a "medalha" que dá ao político um motivo POSITIVO
-/// pra reivindicar e usar o placar. Ordem crescente de mérito.
+/// Public responsiveness badge of the mandate — the "medal" that gives the official a POSITIVE
+/// reason to claim and use the scorecard. Ascending order of merit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResponsivenessTier {
-    /// Nenhuma demanda registrada ainda — nada a julgar (não é uma nota ruim, é ausência de dado).
+    /// No demand recorded yet — nothing to judge (not a bad grade, an absence of data).
     Unrated,
-    /// Começando: responde a uma minoria das demandas. Enquadramento neutro, nunca acusatório.
+    /// Starting out: answers a minority of demands. Neutral framing, never accusatory.
     Building,
-    /// Bronze: responde a uma parcela relevante das demandas.
+    /// Bronze: answers a meaningful share of demands.
     Bronze,
-    /// Prata: responde à maioria das demandas.
+    /// Silver: answers most demands.
     Silver,
-    /// Ouro: responde à quase totalidade — e rápido.
+    /// Gold: answers nearly all of them — and fast.
     Gold,
 }
 
 impl ResponsivenessTier {
-    /// Token estável (inglês) pra serialização/CSS. Nunca muda sem migração de contrato.
+    /// Stable (English) token for serialization/CSS. Never changes without a contract migration.
     #[must_use]
     pub const fn key(self) -> &'static str {
         match self {
@@ -51,7 +51,7 @@ impl ResponsivenessTier {
         }
     }
 
-    /// Rótulo curto pt-BR pro selo.
+    /// Short pt-BR label for the badge.
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
@@ -63,7 +63,7 @@ impl ResponsivenessTier {
         }
     }
 
-    /// Frase de vitrine pt-BR que explica o selo em uma linha.
+    /// pt-BR showcase sentence explaining the badge in one line.
     #[must_use]
     pub const fn blurb(self) -> &'static str {
         match self {
@@ -75,7 +75,7 @@ impl ResponsivenessTier {
         }
     }
 
-    /// Emoji da medalha pra reforço visual (feed, card, badge).
+    /// Medal emoji for visual reinforcement (feed, card, badge).
     #[must_use]
     pub const fn medal(self) -> &'static str {
         match self {
@@ -88,8 +88,8 @@ impl ResponsivenessTier {
     }
 }
 
-/// Taxa de resposta como inteiro 0–100 (respondidas / total), ou `None` quando não há demandas.
-/// Espelha `responseRate` do front (web/src/lib/format.ts) pra manter os dois lados idênticos.
+/// Response rate as an integer 0–100 (answered / total), or `None` when there are no demands.
+/// Mirrors `responseRate` on the front end (web/src/lib/format.ts) to keep both sides identical.
 #[must_use]
 pub fn response_rate_pct(answered: i64, ignored: i64) -> Option<u32> {
     let total = answered + ignored;
@@ -105,8 +105,8 @@ pub fn response_rate_pct(answered: i64, ignored: i64) -> Option<u32> {
     Some(pct.min(100))
 }
 
-/// Deriva o selo a partir dos contadores e da latência mediana (horas). O Ouro exige as DUAS coisas:
-/// alta taxa E resposta rápida; responder muito, porém devagar, para na Prata.
+/// Derive the badge from the counters and the median latency (hours). Gold requires BOTH:
+/// a high rate AND a fast answer; answering a lot but slowly stops at Silver.
 #[must_use]
 pub fn responsiveness_tier(
     answered: i64,
@@ -128,16 +128,16 @@ pub fn responsiveness_tier(
     }
 }
 
-/// "Responde em ~N dias" a partir da latência mediana: horas → dias, arredondado a 1 casa. `None`
-/// quando o mandato ainda não respondeu nada.
+/// "Answers in ~N days" from the median latency: hours → days, rounded to 1 decimal. `None`
+/// when the mandate has answered nothing yet.
 #[must_use]
 pub fn responds_in_days(median_hours: Option<f64>) -> Option<f64> {
     median_hours.map(|h| (h / 24.0 * 10.0).round() / 10.0)
 }
 
-/// Sequência (streak) de respostas: quantas demandas MAIS RECENTES foram respondidas seguidas, sem
-/// nenhum silêncio no meio. `outcomes` deve vir do mais recente pro mais antigo. Um streak alto é
-/// uma medalha de consistência ("🔥 5 respostas seguidas").
+/// Streak of answers: how many of the MOST RECENT demands were answered back to back, with no
+/// silence in between. `outcomes` must arrive newest-first. A high streak is a consistency medal
+/// ("🔥 5 answers in a row").
 #[must_use]
 pub fn current_answer_streak(outcomes: &[Outcome]) -> u32 {
     let mut streak = 0u32;
@@ -151,9 +151,9 @@ pub fn current_answer_streak(outcomes: &[Outcome]) -> u32 {
     streak
 }
 
-/// Percentual de pares que este mandato SUPERA (taxa estritamente maior). É a base do "melhor que
-/// X% dos pares" / "Top Y%". `peer_rates` são as taxas (0–100) dos pares comparáveis, EXCLUINDO o
-/// próprio mandato. `None` quando não há pares com quem comparar.
+/// Percentage of peers this mandate BEATS (strictly higher rate). The basis of "better than
+/// X% of peers" / "Top Y%". `peer_rates` are the rates (0–100) of comparable peers, EXCLUDING
+/// this mandate itself. `None` when there are no peers to compare against.
 #[must_use]
 pub fn better_than_pct(your_rate: u32, peer_rates: &[u32]) -> Option<u32> {
     if peer_rates.is_empty() {
@@ -170,13 +170,13 @@ pub fn better_than_pct(your_rate: u32, peer_rates: &[u32]) -> Option<u32> {
 }
 
 /// "Top Y%": complemento de [`better_than_pct`] — quanto menor, mais no topo. `better_than = 90%`
-/// vira `Top 10%`. Mínimo 1% (nunca "Top 0%").
+/// becomes `Top 10%`. Minimum 1% (never "Top 0%").
 #[must_use]
 pub fn top_pct(better_than: u32) -> u32 {
     (100u32.saturating_sub(better_than)).max(1)
 }
 
-/// Média das taxas de um conjunto de pares (0–100), ou `None` quando o conjunto é vazio. Alimenta o
+/// Mean of a peer set's rates (0–100), or `None` when the set is empty. Feeds the
 /// "você respondeu 78% · média do RS 21%".
 #[must_use]
 pub fn average_rate(peer_rates: &[u32]) -> Option<u32> {
@@ -197,7 +197,7 @@ mod tests {
         assert_eq!(response_rate_pct(0, 0), None);
         assert_eq!(response_rate_pct(1, 1), Some(50));
         assert_eq!(response_rate_pct(7, 3), Some(70));
-        // 2/3 = 66.66… arredonda pra 67.
+        // 2/3 = 66.66… rounds to 67.
         assert_eq!(response_rate_pct(2, 1), Some(67));
         assert_eq!(response_rate_pct(10, 0), Some(100));
     }
@@ -209,17 +209,17 @@ mod tests {
 
     #[test]
     fn gold_requires_high_rate_and_speed() {
-        // 90% e rápido (24h) → Ouro.
+        // 90% and fast (24h) → Gold.
         assert_eq!(
             responsiveness_tier(9, 1, Some(24.0)),
             ResponsivenessTier::Gold
         );
-        // 90% mas lento (200h > 72h) → cai pra Prata, não Ouro.
+        // 90% but slow (200h > 72h) → drops to Silver, not Gold.
         assert_eq!(
             responsiveness_tier(9, 1, Some(200.0)),
             ResponsivenessTier::Silver
         );
-        // 90% sem latência conhecida (nenhuma medida) → considerado rápido → Ouro.
+        // 90% with no known latency (no measurement) → treated as fast → Gold.
         assert_eq!(responsiveness_tier(9, 1, None), ResponsivenessTier::Gold);
     }
 
@@ -266,12 +266,12 @@ mod tests {
     #[test]
     fn streak_counts_leading_answers_only() {
         use Outcome::{Answered, Ignored};
-        // mais recente primeiro: 3 respostas, depois um silêncio → streak 3.
+        // newest first: 3 answers, then a silence → streak 3.
         assert_eq!(
             current_answer_streak(&[Answered, Answered, Answered, Ignored, Answered]),
             3
         );
-        // começa com silêncio → streak 0.
+        // starts with a silence → streak 0.
         assert_eq!(current_answer_streak(&[Ignored, Answered]), 0);
         assert_eq!(current_answer_streak(&[]), 0);
         assert_eq!(current_answer_streak(&[Answered, Answered]), 2);
@@ -279,19 +279,19 @@ mod tests {
 
     #[test]
     fn peer_comparison_percentiles() {
-        // você 78%, pares [10,20,30,90] → supera 3 de 4 = 75%.
+        // you 78%, peers [10,20,30,90] → beats 3 of 4 = 75%.
         assert_eq!(better_than_pct(78, &[10, 20, 30, 90]), Some(75));
         assert_eq!(top_pct(75), 25);
-        // sem pares → None.
+        // no peers → None.
         assert_eq!(better_than_pct(78, &[]), None);
-        // média dos pares.
+        // mean of the peers.
         assert_eq!(average_rate(&[10, 20, 30]), Some(20));
         assert_eq!(average_rate(&[]), None);
     }
 
     #[test]
     fn top_pct_never_zero() {
-        // supera 100% dos pares → Top 1% (nunca Top 0%).
+        // beats 100% of peers → Top 1% (never Top 0%).
         assert_eq!(top_pct(100), 1);
         assert_eq!(top_pct(0), 100);
     }

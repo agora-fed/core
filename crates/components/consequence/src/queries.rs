@@ -49,7 +49,7 @@ pub struct ExpiredCandidate {
 }
 
 /// Idempotently insert an SLA clock. On a duplicate `(proposal_id, cluster_id, mandate_id)` — desde
-/// a 0538 o relógio é POR GABINETE — the insert is a no-op and this returns `None`; the caller
+/// since 0538 the clock is PER OFFICE — the insert is a no-op and this returns `None`; the caller
 /// re-selects the real stored row via [`get_sla_by_proposal_cluster`]. When `Some`, the row was
 /// freshly inserted (emit `started`).
 ///
@@ -99,7 +99,7 @@ pub async fn insert_sla_idempotent(
 
 /// Re-select the SLA stored for a `(proposal_id, cluster_id, mandate_id)` triple after an
 /// idempotent-insert conflict, so the caller returns the REAL stored id rather than a phantom one.
-/// Desde a 0538 o relógio é POR GABINETE — a mesma demanda abre um SLA pra cada destinatário.
+/// Since 0538 the clock is PER OFFICE — the same demand opens one SLA per recipient.
 ///
 /// # Errors
 /// Propagates the underlying `sqlx::Error` (including `RowNotFound`).

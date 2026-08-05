@@ -82,7 +82,7 @@ impl VoteService {
     ///
     /// # Errors
     /// - [`Error::Conflict`] when the citizen already supported this proposal.
-    /// - [`Error::Forbidden`] quando a proposta é `urgencia='urgente'` e o cidadão não tem
+    /// - [`Error::Forbidden`] when the proposal is `urgencia='urgente'` and the citizen lacks
     ///   `titulo_status ∈ ('validated','verified')` — 0.25.0-fediverso Fatia D.
     /// - [`Error::Storage`] on any other persistence failure.
     pub async fn cast(
@@ -94,8 +94,8 @@ impl VoteService {
         let now = self.clock.now();
         let vote_id = VoteId::new();
 
-        // Gate de voto urgente (P4.3). Feito ANTES da tx: rejeição barata e o
-        // status/urgência não muda no meio de uma requisição.
+        // Urgent-vote gate (P4.3). Done BEFORE the tx: a cheap rejection, and the
+        // status/urgency cannot change mid-request.
         if let Some(urgencia) = queries::read_proposal_urgencia(&self.db, proposal.as_uuid())
             .await
             .map_err(map_sqlx)?

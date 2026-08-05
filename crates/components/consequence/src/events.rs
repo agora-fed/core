@@ -53,10 +53,10 @@ pub fn threshold_crossed(envelope: &EventEnvelope) -> Option<ThresholdCrossed> {
     }
 }
 
-/// Extract ONE [`ThresholdCrossed`] per destinatário (0537 multi-gabinete): the event's
+/// Extract ONE [`ThresholdCrossed`] per recipient (0537 multi-office): the event's
 /// `mandates` list expands into per-gabinete crossings sharing the same proposal/cluster.
-/// Eventos antigos (lista vazia) caem pro `mandate` principal — exatamente o comportamento
-/// pré-0537. `None` para qualquer outro tipo de evento.
+/// Legacy events (empty list) fall back to the primary `mandate` — exactly the pre-0537
+/// behaviour. `None` for any other event type.
 #[must_use]
 pub fn threshold_crossed_all(envelope: &EventEnvelope) -> Option<Vec<ThresholdCrossed>> {
     match &envelope.event {
@@ -118,7 +118,7 @@ mod tests {
                 mandate
             })
         );
-        // Evento antigo (mandates vazio): a expansão cai pro principal.
+        // Legacy event (empty mandates): the expansion falls back to the primary.
         assert_eq!(
             threshold_crossed_all(&e),
             Some(vec![ThresholdCrossed {

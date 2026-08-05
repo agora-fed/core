@@ -133,8 +133,8 @@ fn message_for(err: &Error) -> &'static str {
     match err {
         Error::NotFound(_) => "Recurso não encontrado.",
         Error::Forbidden(reason) if reason.contains("urgente") => {
-            // Gate P4.3 — proposta urgente exige título validado. Mensagem
-            // específica pra que o front possa mostrar o CTA "vincular título".
+            // Gate P4.3 — an urgent proposal requires a validated electoral registry.
+            // A specific message so the front end can show the "link your registry" CTA.
             "Esta pauta é urgente. O voto exige título de eleitor validado — vincule em Configurações → Identidade."
         }
         Error::Forbidden(_) => "Acesso negado.",

@@ -23,7 +23,7 @@
 //! Hashtag `tag_normalized` = lowercase + NFD-decompose + drop combining
 //! marks (so `#SaúdePública` → `saudepublica`). Requires the `unicode-normalization`
 //! feature only if we grow one; today we do the ASCII-fold subset that
-//! covers Portuguese/Spanish (á/é/í/ó/ú/ã/õ/â/ê/ô/ç/…) inline — enough for
+//! covers Latin-script diacritics inline — enough for
 //! BR use, expandable later.
 //!
 //! Mention: no normalization; the handle is preserved as-authored (case-

@@ -134,16 +134,16 @@ pub(crate) async fn list_tallies<'e, E: PgExecutor<'e>>(
 }
 
 // ---------------------------------------------------------------------------
-// Cross-table reads pra o gate de voto urgente (0.25.0-fediverso — P4.3).
+// Cross-table reads for the urgent-vote gate (0.25.0-fediverse — P4.3).
 //
-// Exceção intencional ao padrão "cada crate lê só suas tabelas": o gate
+// Intentional exception to the "each crate reads only its own tables" rule: the gate
 // depende de `proposal.urgencia` (owner: dsoc-proposals) + `citizen.titulo_status`
-// (owner: dsoc-auth). Ambos são **facts** identity-tier — mesma justificativa
-// que já permite votes ler `citizen.verification_level` via `authz.require`.
-// O check-crate-boundaries.sh valida deps do Cargo, não SQL, então isto passa.
+// (owner: dsoc-auth). Both are identity-tier **facts** — the same justification
+// that already lets votes read `citizen.verification_level` via `authz.require`.
+// check-crate-boundaries.sh validates Cargo deps, not SQL, so this passes.
 // ---------------------------------------------------------------------------
 
-/// Lê `proposal.urgencia`. `None` quando o proposal id é inválido.
+/// Read `proposal.urgencia`. `None` when the proposal id is invalid.
 pub(crate) async fn read_proposal_urgencia<'e, E: PgExecutor<'e>>(
     exec: E,
     proposal_id: Uuid,
@@ -154,7 +154,7 @@ pub(crate) async fn read_proposal_urgencia<'e, E: PgExecutor<'e>>(
     Ok(row)
 }
 
-/// Lê `citizen.titulo_status`. `None` quando o cidadão nunca vinculou título.
+/// Read `citizen.titulo_status`. `None` when the citizen never linked a registry.
 pub(crate) async fn read_citizen_titulo_status<'e, E: PgExecutor<'e>>(
     exec: E,
     citizen_id: Uuid,

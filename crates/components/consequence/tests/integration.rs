@@ -406,7 +406,7 @@ async fn consume_threshold_crossed_starts_one_sla_per_gabinete() {
         "cada gabinete ganha seu próprio sla.started"
     );
 
-    // Redelivery do MESMO evento: nenhum relógio novo, nenhuma emissão nova.
+    // Redelivery of the SAME event: no new clock, no new emission.
     let again = svc.consume(&envelope).await.expect("redelivery succeeds");
     assert_eq!(again.len(), 3);
     assert!(again.iter().all(|s| !s.newly_started));

@@ -576,7 +576,7 @@ async fn platform_admin_creates_municipal_directory_and_lists_members() {
     grant_platform_admin(&db, org, admin).await;
     let responsavel = seed_citizen(&db, org).await;
 
-    // Cria o diretório municipal do PT em Porto Alegre/RS, já com responsável.
+    // Create the PT municipal directory in Porto Alegre/RS, already with a responsible citizen.
     let app = parties_app(db.clone());
     let resp = app
         .oneshot(
@@ -605,7 +605,7 @@ async fn platform_admin_creates_municipal_directory_and_lists_members() {
     assert_eq!(status, StatusCode::CREATED, "body={body}");
     let dir_id = body["data"]["id"].as_str().unwrap().to_owned();
 
-    // O responsável nasce junto: vínculo admin no escopo do diretório recém-criado.
+    // The responsible citizen is born with it: an admin binding scoped to the new directory.
     let (resp_citizen, resp_role): (Uuid, String) = sqlx::query_as(
         "SELECT citizen_id, role FROM party_administrator \
          WHERE org_id = $1 AND party_sigla = 'PT' AND directory_id = $2::uuid",
@@ -618,7 +618,7 @@ async fn platform_admin_creates_municipal_directory_and_lists_members() {
     assert_eq!(resp_citizen, responsavel.as_uuid());
     assert_eq!(resp_role, "admin");
 
-    // Dois vereadores do PT em Porto Alegre + um de outra cidade (não deve entrar).
+    // Two PT council members in Porto Alegre + one from another city (must not enter).
     for (name, city) in [
         ("Vereador A", "Porto Alegre"),
         ("Vereadora B", "Porto Alegre"),
@@ -639,7 +639,7 @@ async fn platform_admin_creates_municipal_directory_and_lists_members() {
         .unwrap();
     }
 
-    // Membros derivados: só os dois de Porto Alegre.
+    // Derived members: only the two from Porto Alegre.
     let app = parties_app(db.clone());
     let resp = app
         .oneshot(
@@ -863,7 +863,7 @@ async fn create_directory_with_unknown_responsavel_creates_nothing() {
     assert_eq!(status, StatusCode::NOT_FOUND, "body={body}");
     assert_eq!(body["error"]["code"], json!("responsavel_not_found"));
 
-    // Transação única: sem responsável válido, o diretório NÃO pode ter nascido.
+    // Single transaction: without a valid responsible citizen, the directory must NOT exist.
     let count: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM party_directory WHERE org_id = $1 AND name = 'Diretório fantasma'",
     )
@@ -874,9 +874,9 @@ async fn create_directory_with_unknown_responsavel_creates_nothing() {
     assert_eq!(count, 0, "diretório órfão criado apesar do 404");
 }
 
-/// Índice territorial 0673 (incidente PT-Ubatuba): o mesmo território do mesmo
-/// partido não pode ter dois diretórios — a segunda criação responde 409, mesmo
-/// com nome diferente (território é a identidade, não o rótulo).
+/// Territorial index 0673 (the PT-Ubatuba incident): the same territory of the same
+/// party cannot hold two directories — the second creation answers 409, even with a
+/// different name (the territory is the identity, not the label).
 #[tokio::test]
 async fn duplicate_territorial_directory_is_conflict() {
     let db = connect().await;

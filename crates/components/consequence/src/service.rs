@@ -75,7 +75,7 @@ impl ConsequenceService {
 
     /// Start an SLA clock against an official for a clustered proposal that crossed its threshold.
     ///
-    /// Idempotent per `(proposal, cluster, mandate)` — desde a 0538 o relógio é POR GABINETE — so a
+    /// Idempotent per `(proposal, cluster, mandate)` — since 0538 the clock is PER OFFICE — so a
     /// duplicate `proposals.threshold.crossed` (at-least-once delivery) cannot start a second clock
     /// against the same official. The first call inserts the row, emits
     /// `consequence.sla.started` carrying the due time through the outbox, and returns
@@ -149,14 +149,14 @@ impl ConsequenceService {
     }
 
     /// Consume a `proposals.threshold.crossed` envelope, starting ONE SLA PER GABINETE
-    /// (0537 multi-destinatário): o evento carrega todos os mandatos da proposta e cada um
-    /// ganha seu próprio relógio, escada de avisos e registro de silêncio. Eventos antigos
-    /// (sem a lista) caem pro mandato principal — comportamento pré-0537. Non-matching
+    /// (0537 multi-recipient): the event carries every mandate of the proposal and each one
+    /// gets its own clock, warning ladder and silence record. Legacy events (without the
+    /// list) fall back to the primary mandate — pre-0537 behaviour. Non-matching
     /// envelopes are ignored (idempotent no-op), returning an empty vec.
     ///
     /// # Errors
     /// Mirrors [`Self::start_sla`]; a falha em um gabinete interrompe e propaga (o redelivery
-    /// at-least-once completa os restantes — cada início é idempotente por si).
+    /// at-least-once completes the rest — each start is idempotent on its own).
     pub async fn consume(
         &self,
         envelope: &dsoc_core::events::EventEnvelope,

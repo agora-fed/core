@@ -40,10 +40,10 @@ pub struct ProposalRow {
     pub author_handle: Option<String>,
     /// Author avatar object key (JOIN from citizen). Composed into a URL at the http layer.
     pub author_avatar_object_key: Option<String>,
-    /// Nível de urgência (`comum` | `urgente`), migration 0302. Voto em `urgente` exige
+    /// Urgency level (`comum` | `urgente`), migration 0302. Voting `urgente` requires
     /// `titulo_status ∈ (validated,verified)` — gate na crate votes (0.25.0-fediverso).
     pub urgencia: String,
-    /// Timestamp do e-mail de confirmação pro autor (migration 0303).
+    /// Timestamp of the confirmation e-mail to the author (migration 0303).
     pub notified_author_at: Option<DateTime<Utc>>,
     /// Timestamp do e-mail entregue ao gabinete (migration 0303).
     pub notified_mandate_at: Option<DateTime<Utc>>,
@@ -51,26 +51,26 @@ pub struct ProposalRow {
     pub created_at: DateTime<Utc>,
 }
 
-/// Um destinatário da proposta (0537) com os dados de exibição do mandato (JOIN).
+/// One recipient of the proposal (0537) with the mandate's display data (JOIN).
 #[derive(Debug, Clone)]
 pub struct TargetRow {
-    /// Mandato destinatário.
+    /// The recipient mandate.
     pub mandate_id: Uuid,
-    /// Nome público do mandato.
+    /// Public name of the mandate.
     pub display_name: String,
     /// Cargo (ex.: `deputado_federal`).
     pub office: String,
     /// Esfera federativa (`federal` | `estadual` | `municipal`).
     pub sphere: String,
-    /// Recibo de entrega ao gabinete (e-mail saiu do relay), se já saiu.
+    /// Delivery receipt to the office (the e-mail left the relay), when it has.
     pub notified_at: Option<DateTime<Utc>>,
 }
 
-/// Verificação de esfera dos destinatários: quantos dos ids existem e quantas
-/// esferas distintas eles cobrem. O serviço exige `found == pedidos` e `spheres == 1`.
+/// Sphere check of the recipients: how many of the ids exist and how many distinct
+/// spheres they span. The service requires `found == requested` and `spheres == 1`.
 #[derive(Debug, Clone, Copy)]
 pub struct SphereCheck {
-    /// Quantos dos mandatos pedidos existem.
+    /// How many of the requested mandates exist.
     pub found: i64,
     /// Quantas esferas distintas o conjunto cobre.
     pub spheres: i64,
@@ -171,8 +171,8 @@ pub async fn check_target_spheres(
     })
 }
 
-/// Insere um destinatário da proposta (0537). Idempotente sob a PK composta não é
-/// necessário aqui: o serviço só insere no create, dentro da mesma transação.
+/// Insert one recipient of the proposal (0537). Idempotency under the composite PK is
+/// unnecessary here: the service only inserts on create, inside the same transaction.
 ///
 /// # Errors
 /// Propagates the underlying `sqlx::Error`.
@@ -194,8 +194,8 @@ pub async fn insert_target(
     Ok(())
 }
 
-/// Lista os destinatários de uma proposta com os dados de exibição do mandato,
-/// principal primeiro (ordem de inserção via created_at, desempate por mandate_id).
+/// List a proposal's recipients with the mandate's display data,
+/// primary first (insertion order via created_at, tie-broken by mandate_id).
 ///
 /// # Errors
 /// Propagates the underlying `sqlx::Error`.
@@ -226,8 +226,8 @@ pub async fn list_targets(
         .collect())
 }
 
-/// Só os ids dos mandatos destinatários (principal primeiro) — versão leve de
-/// [`list_targets`] pra uso sob o row lock do crossing (sem JOIN de exibição).
+/// Only the recipient mandate ids (primary first) — the light version of
+/// [`list_targets`] for use under the crossing row lock (no display JOIN).
 ///
 /// # Errors
 /// Propagates the underlying `sqlx::Error`.
