@@ -106,11 +106,17 @@ jobs:
         run: |
           cargo sqlx migrate run --source migrations
           cargo llvm-cov --workspace --all-features --fail-under-lines 49 --lcov --output-path lcov.info
+      # `main` is a protected branch, so Codecov refuses tokenless uploads
+      # (verified 2026-08-05: every prior run silently failed with
+      # "Token required because branch is protected" while the step still
+      # reported success). fail_ci_if_error is now TRUE on purpose — a broken
+      # upload must be loud, not invisible.
       - name: upload to Codecov
         uses: codecov/codecov-action@v5
         with:
           files: lcov.info
-          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
 
   web:
     runs-on: ubuntu-latest
