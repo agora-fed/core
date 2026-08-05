@@ -1,11 +1,11 @@
--- 0656_broadcast_consultation.sql — liga um broadcast a uma consulta (F3 fatia 2, #60).
+-- 0656_broadcast_consultation.sql — links a broadcast to a consultation (F3 slice 2, #60).
 --
--- Quando o diretório inclui perguntas no comunicado, o broadcast cria uma CONSULTA
--- (reusa `consultations_consultation` + `_question`, ADR-0014) e manda o link à base
--- consentida. As respostas/agregação vêm de graça pela página /consulta existente. Esta
--- coluna liga o broadcast à consulta criada (para o diretório achar os resultados).
+-- When the chapter includes questions in the message, the broadcast creates a CONSULTATION
+-- (reusing `consultations_consultation` + `_question`, ADR-0014) and sends the link to the
+-- consented base. Answers/aggregation come for free via the existing /consulta page. This
+-- column links the broadcast to the consultation created (so the chapter finds the results).
 --
--- Idempotente: rerun-safe.
+-- Idempotent: rerun-safe.
 
 BEGIN;
 

@@ -1,29 +1,29 @@
--- 0658_citizen_phone.sql — telefone do cidadão + verificação por OTP SMS (ÁGORA F5, #62).
+-- 0658_citizen_phone.sql — citizen phone number + SMS OTP verification (AGORA F5, #62).
 --
--- Telefone é **opt-in** e verificado por código OTP enviado por SMS (via INTERCOMS/SmsGateway,
--- ADR-0016). Habilita 2FA por SMS (não-recomendada, alternativa em caso de perda de e-mail) e o
--- alcance por SMS em municípios pequenos. `phone_otp` guarda só o SHA-256 do código (plaintext
--- nunca persistido, mesmo padrão do signup-verify/password-reset).
+-- The phone is **opt-in** and verified by an OTP code sent over SMS (via INTERCOMS/SmsGateway,
+-- ADR-0016). It enables SMS 2FA (not recommended, an alternative if e-mail is lost) and SMS
+-- reach in small municipalities. `phone_otp` stores only the SHA-256 of the code (plaintext is
+-- never persisted, same pattern as signup-verify/password-reset).
 --
--- Idempotente: rerun-safe.
+-- Idempotent: rerun-safe.
 
 BEGIN;
 
 ALTER TABLE citizen
-    ADD COLUMN IF NOT EXISTS phone text,            -- E.164 (ex.: +5511987654321)
+    ADD COLUMN IF NOT EXISTS phone text,            -- E.164 (e.g. +5511987654321)
     ADD COLUMN IF NOT EXISTS phone_verified_at timestamptz;
 
 CREATE TABLE IF NOT EXISTS phone_otp (
     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     citizen_id  uuid NOT NULL REFERENCES citizen(id),
     phone       text NOT NULL,
-    code_hash   bytea NOT NULL,                      -- SHA-256 do código de 6 dígitos
-    expires_at  timestamptz NOT NULL,               -- TTL curto (10 min)
+    code_hash   bytea NOT NULL,                      -- SHA-256 of the 6-digit code
+    expires_at  timestamptz NOT NULL,               -- short TTL (10 min)
     used_at     timestamptz,
     created_at  timestamptz NOT NULL DEFAULT now()
 );
 
--- "meu OTP mais recente" (verify) + base do rate-limit por cidadão.
+-- "my most recent OTP" (verify) + basis of the per-citizen rate limit.
 CREATE INDEX IF NOT EXISTS phone_otp_citizen_idx
     ON phone_otp (citizen_id, created_at DESC);
 

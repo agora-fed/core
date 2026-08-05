@@ -4,7 +4,7 @@
 -- reason about them differently: FEDERAL (Câmara, Senado, Presidência), ESTADUAL
 -- (Assembleia, governadoria), MUNICIPAL (Câmara municipal, prefeitura). The /politicos
 -- UI needs to sub-filter by sphere. Seed today only carries the 107 federal Congress
--- members, so most rows land as `federal`; the other two sphères are ready to be
+-- members, so most rows land as `federal`; the other two spheres are ready to be
 -- populated in future seeds (state assemblies, city councils) without a schema change.
 --
 -- Derivation rule (idempotent, best-effort): `house IN ('camara','senado')` implies

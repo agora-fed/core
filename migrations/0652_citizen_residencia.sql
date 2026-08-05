@@ -1,13 +1,13 @@
--- 0652_citizen_residencia.sql — domicílio declarado do cidadão (UF + município IBGE).
+-- 0652_citizen_residencia.sql — the citizen's declared domicile (state + IBGE municipality).
 --
--- Coletado OBRIGATORIAMENTE no cadastro (front + backend exigem). É o eixo
--- territorial do projeto — escopo de sorteio/federação municipal e estadual —,
--- independente do título de eleitor (opcional e esparso). Nullable no schema
--- (linhas antigas ficam sem; backfill via nudge de perfil); a obrigatoriedade
--- é imposta na borda do cadastro, não no banco.
+-- Collected MANDATORILY at signup (front and backend both require it). It is the project's
+-- territorial axis — the scope for sortition and for municipal/state federation —
+-- independent of the voter registration card (optional and sparse). Nullable in the schema
+-- (old rows have none; backfilled through the profile nudge); the requirement is
+-- enforced at the signup boundary, not in the database.
 --
--- `uf` é denormalizado de `municipio_ibge` para filtro rápido por estado.
--- Idempotente: rerun-safe.
+-- `uf` is denormalised from `municipio_ibge` for fast filtering by state.
+-- Idempotent: rerun-safe.
 
 BEGIN;
 

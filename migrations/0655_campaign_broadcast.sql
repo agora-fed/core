@@ -1,11 +1,11 @@
--- 0655_campaign_broadcast.sql — histórico de broadcast consentido de campanha (F3, #60).
+-- 0655_campaign_broadcast.sql — history of consented campaign broadcasts (F3, #60).
 --
--- Um diretório MUNICIPAL envia uma mensagem à sua base consentida (cruzando o consentimento
--- 0654 com o domicílio do cidadão 0652). Esta tabela registra cada envio: auditoria + base do
--- rate-limit (cooldown por diretório) + contagem de destinatários. A lista crua NUNCA é
--- exportada — o envio é mediado pela plataforma (INTERCOMS/SmtpProvider).
+-- A MUNICIPAL chapter sends a message to its consented base (crossing consent
+-- 0654 with the citizen's domicile 0652). This table records every send: audit trail + basis for
+-- the rate limit (per-chapter cooldown) + recipient count. The raw list is NEVER
+-- exported — sending is mediated by the platform (INTERCOMS/SmtpProvider).
 --
--- Idempotente: rerun-safe.
+-- Idempotent: rerun-safe.
 
 BEGIN;
 
@@ -18,11 +18,11 @@ CREATE TABLE IF NOT EXISTS campaign_broadcast (
     channel      text NOT NULL DEFAULT 'email' CHECK (channel IN ('email', 'sms')),
     subject      text NOT NULL,
     body         text NOT NULL,
-    recipients   integer NOT NULL DEFAULT 0,   -- quantos destinatários consentidos foram alcançados
+    recipients   integer NOT NULL DEFAULT 0,   -- how many consented recipients were reached
     created_at   timestamptz NOT NULL DEFAULT now()
 );
 
--- Cooldown por diretório (anti-spam): "houve broadcast deste diretório nas últimas 24h?"
+-- Per-chapter cooldown (anti-spam): "was there a broadcast from this chapter in the last 24h?"
 CREATE INDEX IF NOT EXISTS campaign_broadcast_directory_recent_idx
     ON campaign_broadcast (directory_id, created_at DESC);
 

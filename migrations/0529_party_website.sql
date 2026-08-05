@@ -1,7 +1,7 @@
--- Migration 0529 — site oficial do partido.
+-- Migration 0529 — the party's official website.
 --
--- A `party` já tem `logo_url` (vazio até agora); faltava o site oficial pra
--- exibir na página do partido. O super-admin (SOCRATES) edita ambos.
+-- `party` already has `logo_url` (empty so far); the official website was missing
+-- for display on the party page. The super-admin (SOCRATES) edits both.
 
 BEGIN;
 

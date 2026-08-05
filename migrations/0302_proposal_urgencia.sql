@@ -1,12 +1,12 @@
--- Migration 0302 — nível de urgência da proposta (Fatia D — 0.25.0-fediverso).
+-- Migration 0302 — proposal urgency level (Slice D — 0.25.0-fediverse).
 --
--- Marca a proposta como 'comum' (default) ou 'urgente'. O gate de voto no
--- caso urgente exige `citizen.titulo_status ∈ ('validated','verified')` —
--- separação entre participação civil (todo cidadão) e decisão vinculante
--- (cidadão comprovadamente apto a votar no Brasil real).
+-- Marks the proposal as 'comum' (default) or 'urgente'. In the urgent case the
+-- vote gate requires `citizen.titulo_status ∈ ('validated','verified')` —
+-- separating civic participation (every citizen) from binding decision
+-- (a citizen provably eligible to vote in the real Brazil).
 --
--- Aditivo + backward-compat: propostas existentes ficam 'comum'; nenhum
--- fluxo antigo quebra. A UX no front destaca o badge 🔥 URGENTE.
+-- Additive + backward-compatible: existing proposals become 'comum'; no old
+-- flow breaks. The front-end UX highlights the 🔥 URGENTE badge.
 
 BEGIN;
 
@@ -17,7 +17,7 @@ ALTER TABLE proposal
 COMMENT ON COLUMN proposal.urgencia IS
     '0.25.0-fediverso: nível de urgência. urgente ⇒ voto exige titulo_status validated/verified.';
 
--- Owner alignment (mesmo motivo de 0106/0107 — migrations rodam como postgres em prod).
--- Aqui só ALTER COLUMN, então o ownership da tabela original é preservado.
+-- Owner alignment (same reason as 0106/0107 — migrations run as postgres in prod).
+-- Only ALTER COLUMN here, so the original table ownership is preserved.
 
 COMMIT;

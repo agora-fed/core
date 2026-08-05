@@ -1,12 +1,12 @@
--- 0520_candidacy_tse_sq.sql — chave estável do TSE pra ingestão idempotente
--- (item 5 do plano estratégico: pipeline DivulgaCand pronto pra 15/08/2026).
+-- 0520_candidacy_tse_sq.sql — the TSE's stable key for idempotent ingestion
+-- (item 5 of the strategic plan: DivulgaCand pipeline ready for 2026-08-15).
 --
--- Durante a janela de registro o TSE REPUBLICA os CSVs de consulta_cand
--- diariamente (candidaturas entram, situações mudam: deferida/indeferida).
--- O pipeline precisa rodar todo dia sem duplicar: `SQ_CANDIDATO` é o
--- identificador único por candidatura que o próprio TSE emite — vira a
--- chave de upsert. Rows antigas (seeds de exemplo) ficam com NULL e fora
--- do índice parcial.
+-- During the registration window the TSE REPUBLISHES the consulta_cand CSVs
+-- daily (candidacies come in, statuses change: granted/denied).
+-- The pipeline must run every day without duplicating: `SQ_CANDIDATO` is the
+-- unique per-candidacy identifier the TSE itself issues — it becomes the
+-- upsert key. Old rows (example seeds) stay NULL and outside the partial
+-- index.
 
 ALTER TABLE candidacy
     ADD COLUMN IF NOT EXISTS tse_sq text;

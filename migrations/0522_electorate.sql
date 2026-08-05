@@ -1,10 +1,10 @@
--- 0522_electorate.sql — eleitorado oficial TSE por território (item 4 do
--- plano: threshold dinâmico). O gatilho de consequência deixa de ser um
--- número escolhido pelo autor e passa a ser fração do eleitorado do
--- território do mandato, com piso/teto — legitimidade estatística.
--- Seed: scripts/seed-eleitorado-tse.py (perfil_eleitorado do TSE).
--- Linhas: (uf, municipio) por município; (uf, NULL) total da UF;
--- ('BR', NULL) total nacional.
+-- 0522_electorate.sql — official TSE electorate per territory (item 4 of the
+-- plan: dynamic threshold). The consequence trigger stops being a number
+-- chosen by the author and becomes a fraction of the electorate of the
+-- mandate's territory, with a floor/ceiling — statistical legitimacy.
+-- Seed: scripts/seed-eleitorado-tse.py (TSE perfil_eleitorado).
+-- Rows: (uf, municipio) per municipality; (uf, NULL) state total;
+-- ('BR', NULL) national total.
 
 CREATE TABLE electorate (
     id          uuid PRIMARY KEY,

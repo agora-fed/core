@@ -1,9 +1,9 @@
--- 0543_forum_identity — identidade visual do fórum (perfil de fediverso).
+-- 0543_forum_identity — the forum's visual identity (fediverse profile).
 --
--- Logo (avatar) e capa (banner) por fórum: aparecem na página /f/<caminho> e
--- viajam no ator Group (`icon`/`image`) — o fórum se apresenta no Mastodon
--- como um perfil completo. URLs absolutas ou caminhos /media/… (absolutizados
--- na borda, mesma convenção dos perfis de cidadão). Curadoria via admin.
+-- Logo (avatar) and cover (banner) per forum: they appear on the /f/<path> page
+-- and travel in the Group actor (`icon`/`image`) — the forum presents itself on
+-- Mastodon as a full profile. Absolute URLs or /media/… paths (absolutised at
+-- the edge, same convention as citizen profiles). Curated from the admin panel.
 
 BEGIN;
 

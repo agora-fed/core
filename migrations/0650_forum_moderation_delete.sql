@@ -1,13 +1,13 @@
--- Migration 0650 — moderação de conteúdo de fórum (R3.1 / issue #27, ADR-0011).
+-- Migration 0650 — forum content moderation (R3.1 / issue #27, ADR-0011).
 --
--- Primeira faixa de MÓDULO (0650+, R0.8): forums. Permite admin/moderador remover
--- tópico e argumento com atribuição + motivo pra audit.
+-- First MODULE band (0650+, R0.8): forums. Lets an admin/moderator remove a
+-- topic or an argument, with attribution + reason for the audit trail.
 --
--- forum_topic já tem `hidden_at` (some das listagens); só falta a atribuição.
--- forum_topic_comment não tinha flag de ocultação — ganha `hidden_at` + atribuição,
--- e a listagem de comentários passa a filtrar `hidden_at IS NULL`.
+-- forum_topic already has `hidden_at` (drops out of listings); only attribution was missing.
+-- forum_topic_comment had no hiding flag — it gains `hidden_at` + attribution,
+-- and the comment listing starts filtering `hidden_at IS NULL`.
 --
--- Idempotente: rerun-safe.
+-- Idempotent: rerun-safe.
 
 BEGIN;
 

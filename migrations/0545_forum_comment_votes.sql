@@ -1,13 +1,13 @@
--- 0545_forum_comment_votes — votos nos argumentos (estilo StackOverflow).
+-- 0545_forum_comment_votes — votes on arguments (StackOverflow style).
 --
--- "As vezes o comentário é mais relevante que o próprio tópico": cada
--- argumento de um tópico de fórum aceita posição a favor/contra/ponderação
--- de cidadãos LOCAIS (FK citizen = regra estrutural, como no voto do tópico).
--- Uma posição por cidadão por argumento (mutável). Contadores materializados
--- no comentário; dentro de cada coluna a UI ordena por saldo (favor - contra).
--- Votos em argumentos são interações locais CONTÁVEIS (entram nos patamares).
+-- "Sometimes the comment matters more than the topic itself": every
+-- argument under a forum topic accepts a for/against/qualifying position
+-- from LOCAL citizens (FK citizen = structural rule, as in the topic vote).
+-- One position per citizen per argument (mutable). Counters materialised
+-- on the comment; within each column the UI sorts by balance (for - against).
+-- Votes on arguments are COUNTABLE local interactions (they feed the thresholds).
 --
--- Idempotente: rerun-safe.
+-- Idempotent: rerun-safe.
 
 BEGIN;
 
@@ -27,7 +27,7 @@ ALTER TABLE forum_topic_comment
 COMMENT ON TABLE forum_comment_vote IS
     '0545: posição de cidadão local num argumento — favor|contra|ponderacao, 1 por par.';
 
--- Prod aplica migrations como postgres; o gateway conecta como dsoc.
+-- Prod applies migrations as postgres; the gateway connects as dsoc.
 ALTER TABLE forum_comment_vote OWNER TO dsoc;
 
 COMMIT;

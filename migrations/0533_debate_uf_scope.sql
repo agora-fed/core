@@ -1,9 +1,9 @@
--- Migration 0533 — escopo territorial (UF) opcional em debates (0.48.0, Fase 3.1).
+-- Migration 0533 — optional territorial scope (state) on debates (0.48.0, Phase 3.1).
 --
--- Debate era org-global e chapado: o cidadão não achava o que é RELEVANTE pra ele
--- (risco de retenção apontado no plano — "sem 'meu estado' não engaja"). Uma UF
--- opcional deixa o debate ser nacional (NULL) OU do estado X, e a lista filtra por
--- "meu estado". Mínimo: só UF (não município), filtro client-side.
+-- Debates were org-global and flat: the citizen could not find what is RELEVANT to them
+-- (the retention risk flagged in the plan — "without 'my state' it does not engage"). An
+-- optional state lets a debate be national (NULL) OR belong to state X, and the list filters
+-- by "my state". Minimal: state only (no municipality), client-side filter.
 
 BEGIN;
 

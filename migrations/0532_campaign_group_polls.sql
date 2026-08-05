@@ -1,11 +1,11 @@
--- Migration 0532 — enquetes dirigidas do grupo de campanha (0.45.0, Fase 3.4).
+-- Migration 0532 — targeted polls of the campaign group (0.45.0, Phase 3.4).
 --
--- O grupo de campanha (0527) era só broadcast: o político PUBLICA e o eleitor LÊ.
--- Falta a mão-dupla — o político perguntar à sua base e ouvir a resposta. Aqui
--- ele abre uma "enquete rápida" (uma pergunta, concordo/neutro/discordo) dirigida
--- ao seu grupo; o cidadão logado responde e o resultado agrega ao vivo. Mesmo
--- motor de agregação das consultas (0531), mas com DONO (o mandato do grupo) —
--- é o canal proativo campanha→eleitor que o plano pede na 3.4.
+-- The campaign group (0527) was broadcast only: the politician PUBLISHES and the voter READS.
+-- The two-way leg was missing — the politician asking their base and hearing the answer. Here
+-- they open a "quick poll" (one question, agree/neutral/disagree) targeted at their
+-- group; the logged-in citizen answers and the result aggregates live. Same aggregation
+-- engine as the consultations (0531), but with an OWNER (the group's mandate) —
+-- it is the proactive campaign→voter channel the plan calls for in 3.4.
 
 BEGIN;
 
@@ -27,7 +27,7 @@ CREATE TABLE campaign_group_poll_response (
     answer      text NOT NULL CHECK (answer IN ('concordo', 'neutro', 'discordo')),
     created_at  timestamptz NOT NULL DEFAULT now(),
     updated_at  timestamptz NOT NULL DEFAULT now(),
-    -- Uma resposta por cidadão por enquete (o upsert atualiza).
+    -- One answer per citizen per poll (the upsert updates it).
     UNIQUE (poll_id, citizen_id)
 );
 CREATE INDEX campaign_group_poll_response_poll_idx
@@ -38,7 +38,7 @@ COMMENT ON TABLE campaign_group_poll IS
 COMMENT ON TABLE campaign_group_poll_response IS
     '0.45.0: resposta de um cidadão a uma enquete de campanha (concordo/neutro/discordo).';
 
--- O pod do gateway conecta como dsoc.
+-- The gateway pod connects as dsoc.
 ALTER TABLE campaign_group_poll OWNER TO dsoc;
 ALTER TABLE campaign_group_poll_response OWNER TO dsoc;
 

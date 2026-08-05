@@ -1,8 +1,8 @@
--- 0541_forum_moderators — moderadores por fórum (config F3).
+-- 0541_forum_moderators — per-forum moderators (F3 configuration).
 --
--- Cidadãos locais designados pelo admin da plataforma para moderar um fórum
--- específico (ocultar tópicos/comentários; futuras ações de curadoria).
--- FKs: forum (intra-crate 0540) + citizen (core) — permitidas.
+-- Local citizens designated by the platform admin to moderate a specific
+-- forum (hide topics/comments; future curation actions).
+-- FKs: forum (intra-crate 0540) + citizen (core) — both allowed.
 
 BEGIN;
 
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS forum_moderator (
 COMMENT ON TABLE forum_moderator IS
     'Moderadores designados por fórum (0541) — gestão via painel admin.';
 
--- Prod aplica migrations como postgres; o gateway conecta como dsoc.
+-- Prod applies migrations as postgres; the gateway connects as dsoc.
 ALTER TABLE forum_moderator OWNER TO dsoc;
 
 COMMIT;

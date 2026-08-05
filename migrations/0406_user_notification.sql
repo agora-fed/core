@@ -1,6 +1,6 @@
 -- 0406_user_notification — Mastodon parity fase 2 (0.18.0-beta).
--- User-facing notifications: "alguém curtiu / repostou / respondeu / te
--- mencionou / te seguiu". Distinct from `dsoc-notify` (the platform's
+-- User-facing notifications: "someone favourited / boosted / replied to /
+--  mentioned / followed you". Distinct from `dsoc-notify` (the platform's
 -- internal event-driven mail/SLA sink) — this table drives the in-app
 -- /notificacoes feed for each citizen.
 --
@@ -18,7 +18,7 @@
 -- * `UNIQUE (citizen_id, kind, source_actor_url, object_uri)` is the
 --   idempotency key: a re-delivered inbox event does not create dupes;
 --   multiple different actors CAN create multiple rows against the same
---   object (that's how Mastodon groups "3 pessoas curtiram" but stays
+--   object (that is how Mastodon groups "3 people favourited" but stays
 --   per-row for the counter).
 
 CREATE TABLE user_notification (

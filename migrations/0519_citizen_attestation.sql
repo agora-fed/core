@@ -1,16 +1,16 @@
--- 0519_citizen_attestation.sql — atestado de cidadania por operador
--- verificado (web-of-trust, 0.28.3). Enquanto não há verificação
--- institucional (TSE/gov.br indeferido em 2026-07-10), quem JÁ é
--- verificado — operador de mandato (mandate_identity_binding) ou admin
--- de partido aceito (party_administrator) — pode atestar publicamente
--- que conhece o cidadão. Auditável, revogável, selo no perfil público.
--- FK só para `citizen` (tabela de identidade core — regra do REGISTRY).
+-- 0519_citizen_attestation.sql — citizenship attestation by a verified
+-- operator (web-of-trust, 0.28.3). While institutional verification is
+-- unavailable (TSE/gov.br denied on 2026-07-10), whoever is ALREADY
+-- verified — a mandate operator (mandate_identity_binding) or an accepted
+-- party admin (party_administrator) — can publicly attest that they know
+-- the citizen. Auditable, revocable, badge on the public profile.
+-- FK only to `citizen` (core identity table — REGISTRY rule).
 
 CREATE TABLE citizen_attestation (
     id                  uuid PRIMARY KEY,
     citizen_id          uuid NOT NULL REFERENCES citizen(id),
     attester_citizen_id uuid NOT NULL REFERENCES citizen(id),
-    -- Poder que legitimou o atestado NO MOMENTO em que foi dado.
+    -- The authority that legitimised the attestation AT THE TIME it was given.
     attester_kind       text NOT NULL CHECK (attester_kind IN ('mandato', 'partido')),
     note                text,
     created_at          timestamptz NOT NULL DEFAULT now(),

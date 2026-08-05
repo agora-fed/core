@@ -1,10 +1,10 @@
--- Migration 0535 — templates de e-mail de designação de papel (0.50.0).
+-- Migration 0535 — role-assignment e-mail templates (0.50.0).
 --
--- Quando o admin designa admin/moderador de partido ou admin da plataforma, a
--- pessoa recebe um e-mail. Os textos vivem no CATÁLOGO editável (email_template),
--- não hardcoded — assim aparecem e são editáveis no gerenciador do admin
--- (/admin/email-templates) e o corpo texto-plano é embrulhado em HTML da marca
--- pelo `html_wrap`. Placeholders `{{var}}`. Idempotente (ON CONFLICT DO NOTHING).
+-- When the admin assigns a party admin/moderator or a platform admin, the
+-- person receives an e-mail. The texts live in the editable CATALOGUE (email_template),
+-- not hardcoded — so they show up and can be edited in the admin manager
+-- (/admin/email-templates) and the plain-text body is wrapped in branded HTML
+-- by `html_wrap`. Placeholders `{{var}}`. Idempotent (ON CONFLICT DO NOTHING).
 
 BEGIN;
 

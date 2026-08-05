@@ -1,11 +1,11 @@
--- Migration 0531 — respostas de consulta pública (0.44.0, Fase 3.3).
+-- Migration 0531 — public consultation answers (0.44.0, Phase 3.3).
 --
--- O crate consultations tinha consulta + perguntas, mas NENHUM mecanismo de
--- resposta — a "consulta pública" não era respondível. Esta tabela fecha isso:
--- cada cidadão dá UMA resposta por pergunta (concordo/neutro/discordo),
--- editável (upsert). A superfície pública/participativa vive em
--- `crates/gateway/src/consultas_ext.rs` (runtime queries). FKs miram a tabela de
--- perguntas (dono do dado) e `citizen` (identidade central) — cf. REGISTRY.md.
+-- The consultations crate had consultations and questions, but NO answering
+-- mechanism — the "public consultation" could not be answered. This table closes that:
+-- each citizen gives ONE answer per question (agree/neutral/disagree),
+-- editable (upsert). The public/participatory surface lives in
+-- `crates/gateway/src/consultas_ext.rs` (runtime queries). FKs point at the questions
+-- table (owner of the data) and `citizen` (central identity) — cf. REGISTRY.md.
 
 BEGIN;
 
@@ -17,21 +17,21 @@ CREATE TABLE consultation_response (
     answer       text NOT NULL CHECK (answer IN ('concordo', 'neutro', 'discordo')),
     created_at   timestamptz NOT NULL DEFAULT now(),
     updated_at   timestamptz NOT NULL DEFAULT now(),
-    -- Uma resposta por cidadão por pergunta (o upsert atualiza).
+    -- One answer per citizen per question (the upsert updates it).
     UNIQUE (question_id, citizen_id)
 );
 
--- Agregação por pergunta (contagem por opção) sem full scan.
+-- Per-question aggregation (count per option) without a full scan.
 CREATE INDEX consultation_response_question_idx
     ON consultation_response (question_id, answer);
--- "Minhas respostas" nesta consulta.
+-- "My answers" in this consultation.
 CREATE INDEX consultation_response_citizen_idx
     ON consultation_response (citizen_id);
 
 COMMENT ON TABLE consultation_response IS
     '0.44.0: resposta de um cidadão a uma pergunta de consulta (concordo/neutro/discordo).';
 
--- O pod do gateway conecta como dsoc.
+-- The gateway pod connects as dsoc.
 ALTER TABLE consultation_response OWNER TO dsoc;
 
 COMMIT;

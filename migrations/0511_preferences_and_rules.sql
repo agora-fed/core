@@ -1,12 +1,12 @@
 -- 0511_preferences_and_rules.sql
 --
--- Duas coisas de "preferências e regras":
+-- Two things under "preferences and rules":
 --
--- 1. Preferências pessoais em citizen: quais eventos disparam e-mail e qual
---    a visibilidade padrão do compose. Padrão: tudo ligado, visibilidade
+-- 1. Personal preferences on citizen: which events trigger e-mail and the
+--    default compose visibility. Default: everything on, visibility
 --    public.
--- 2. server_rule: lista ordenada de regras da instância que aparece no
---    cadastro e em /sobre. Editada pelo admin.
+-- 2. server_rule: the instance's ordered rule list, shown at signup
+--    and on /sobre. Edited by the admin.
 
 ALTER TABLE citizen
     ADD COLUMN IF NOT EXISTS email_prefs jsonb NOT NULL DEFAULT
@@ -21,12 +21,12 @@ COMMENT ON COLUMN citizen.default_visibility IS
     '0.26.18: visibilidade padrão do compose. Mudança não afeta notas já publicadas.';
 
 -- ─────────────────────────────────────────────────────────────
--- Regras da instância
+-- Instance rules
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE server_rule (
     id            uuid PRIMARY KEY,
-    -- Ordem de exibição (pequeno positivo). Duplicatas permitidas — resolvido
-    -- pelo (ordinal, created_at).
+    -- Display order (small positive integer). Duplicates allowed — resolved
+    -- by (ordinal, created_at).
     ordinal       integer NOT NULL DEFAULT 0,
     text          text NOT NULL,
     created_at    timestamptz NOT NULL DEFAULT now(),

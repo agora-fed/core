@@ -1,8 +1,8 @@
--- 0513_terms_and_cw_presets.sql — Termos editáveis + CW presets.
+-- 0513_terms_and_cw_presets.sql — editable Terms + CW presets.
 --
--- 1. server_terms: única linha (id fixo), texto Markdown-lite dos Termos.
---    Se estiver vazia, /termos cai no conteúdo hardcoded do Astro.
--- 2. cw_preset: lista de termos que auto-sugere marcar CW.
+-- 1. server_terms: a single row (fixed id), the Terms as Markdown-lite text.
+--    If empty, /termos falls back to the hardcoded Astro content.
+-- 2. cw_preset: list of terms that auto-suggest flagging a CW.
 
 CREATE TABLE server_terms (
     id            integer PRIMARY KEY DEFAULT 1 CHECK (id = 1),
@@ -17,10 +17,10 @@ ALTER TABLE server_terms OWNER TO dsoc;
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE cw_preset (
     id            uuid PRIMARY KEY,
-    -- Trigger: se o texto do post contém essa substring (case-insensitive)
-    -- o compose sugere marcar CW e opcionalmente prefixa spoiler_text.
+    -- Trigger: if the post text contains this substring (case-insensitive)
+    -- the composer suggests flagging CW and optionally prefixes spoiler_text.
     phrase        text NOT NULL,
-    -- Sugestão de rótulo pro spoiler_text. Se NULL, só marca sensível.
+    -- Suggested label for spoiler_text. If NULL, it only flags sensitive.
     spoiler_text  text,
     created_at    timestamptz NOT NULL DEFAULT now(),
     created_by    uuid REFERENCES citizen(id),

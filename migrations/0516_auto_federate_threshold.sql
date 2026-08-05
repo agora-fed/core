@@ -1,13 +1,13 @@
 -- 0516_auto_federate_threshold.sql
 --
--- Fase E completa (auto-federação server-side): quando a proposta de um
--- cidadão cruza o gatilho de consequência (`ProposalThresholdCrossed`), o
--- worker publica uma Note pública em nome do autor — amplificação automática
--- no fediverso, sem depender do clique no banner.
+-- Phase E complete (server-side auto-federation): when a citizen's proposal
+-- crosses the consequence trigger (`ProposalThresholdCrossed`), the worker
+-- publishes a public Note on the author's behalf — automatic amplification
+-- on the fediverse, without depending on a click in the banner.
 --
--- Só federa quem já é federável (citizen.is_public + handle) E não desligou
--- esta preferência. Default true: o perfil público já é o opt-in de
--- federação (ADR-0010); aqui é só o refinamento por evento.
+-- Only those already federable (citizen.is_public + handle) AND who have not
+-- switched this preference off. Default true: the public profile is already the
+-- federation opt-in (ADR-0010); this is just per-event refinement.
 
 ALTER TABLE citizen
     ADD COLUMN IF NOT EXISTS auto_federate_threshold boolean NOT NULL DEFAULT true;

@@ -1,10 +1,10 @@
 -- 0204_parties_directories_bindings — formalize the "partido" concept as a first-class entity
 -- with subnational directories and human administrators. Owned by `dsoc-mandates` (range
--- 0200-0209 per migrations/REGISTRY.md). Fase 2B (roadmap F2 — Organizações/Partidos).
+-- 0200-0209 per migrations/REGISTRY.md). Phase 2B (roadmap F2 — Organisations/Parties).
 --
 -- BEFORE this migration, "partido" was DERIVED from `mandate.party` (the sigla). That worked
 -- for public listing but couldn't model:
---   1. subnational directorates (diretório nacional / estadual / municipal),
+--   1. subnational directorates (national / state / municipal chapters),
 --   2. platform administrators authorized to act on behalf of the party or a directory,
 --   3. catalog fields absent from a mandate row (TSE number, founding year, logo).
 --
@@ -58,9 +58,9 @@ CREATE TABLE party_directory (
                         CHECK (esfera IN ('federal', 'estadual', 'municipal')),
     -- UF sigla (2 chars). Required for estadual and municipal, forbidden for federal.
     uf                  char(2),
-    -- Nome do município. Required only for municipal.
+    -- Municipality name. Required only for municipal.
     municipio           text,
-    -- Nome do diretório (ex. "Diretório Estadual do PT — Bahia"). Free-form.
+    -- Chapter name (e.g. "Diretório Estadual do PT — Bahia"). Free-form.
     name                text NOT NULL,
     -- Auto-reference to the parent directory in the tree (a municipal usually points at its
     -- estadual, an estadual at the federal). NULL = top of tree.
@@ -97,7 +97,7 @@ CREATE TABLE party_administrator (
     id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     org_id       uuid NOT NULL REFERENCES org(id),
     party_sigla  text NOT NULL,
-    -- NULL = administrator of the party as a whole (diretório nacional / topo).
+    -- NULL = administrator of the party as a whole (national chapter / top level).
     directory_id uuid REFERENCES party_directory(id),
     citizen_id   uuid NOT NULL REFERENCES citizen(id),
     role         text NOT NULL CHECK (role IN ('admin', 'moderador')),

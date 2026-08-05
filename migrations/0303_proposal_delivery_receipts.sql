@@ -1,12 +1,12 @@
--- Migration 0303 — recibo de entrega da proposta (autor + mandato).
+-- Migration 0303 — proposal delivery receipt (author + mandate).
 --
--- Preocupação real do cidadão: "eu enviei, mas ela recebeu?". Registramos
--- timestamps de quando o e-mail saiu do relay — não é prova de leitura, mas
--- é o mesmo padrão de "delivered" do WhatsApp/e-mail corporativo, e é
--- muito mais do que hoje (nada).
+-- A real citizen concern: "I sent it, but did they receive it?". We record
+-- timestamps of when the e-mail left the relay — not proof of reading, but
+-- the same "delivered" pattern as WhatsApp/corporate e-mail, and far more
+-- than we have today (nothing).
 --
--- Backfill: linhas antigas ficam NULL (não enviamos e-mail retroativo).
--- Idempotente pra re-run.
+-- Backfill: old rows stay NULL (we do not send retroactive e-mail).
+-- Idempotent on re-run.
 
 BEGIN;
 

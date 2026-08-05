@@ -1,10 +1,10 @@
--- Migration 0536 — completa o catálogo de partidos com os registrados que faltavam.
+-- Migration 0536 — complete the party catalogue with the registered parties that were missing.
 --
--- O catálogo tinha 22 partidos; ao designar admin de um partido pequeno (ex.: PSTU),
--- a FK `party_administrator(org_id, party_sigla) -> party(org_id, sigla)` estourava
--- porque a sigla não existia em `party`. Aqui inserimos os partidos com registro no
--- TSE que faltavam. Idempotente (ON CONFLICT DO NOTHING). `tse_number`/`logo_url`/
--- `website` ficam para um enriquecimento posterior.
+-- The catalogue held 22 parties; assigning an admin to a small party (e.g. PSTU)
+-- blew up the FK `party_administrator(org_id, party_sigla) -> party(org_id, sigla)`
+-- because the sigla did not exist in `party`. Here we insert the parties registered
+-- with the TSE that were missing. Idempotent (ON CONFLICT DO NOTHING). `tse_number`/`logo_url`/
+-- `website` are left for a later enrichment pass.
 
 BEGIN;
 

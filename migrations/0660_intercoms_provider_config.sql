@@ -1,11 +1,11 @@
--- 0660_intercoms_provider_config.sql — config de provider de comunicação por escopo (INTERCOMS #69).
+-- 0660_intercoms_provider_config.sql — per-scope communication provider config (INTERCOMS #69).
 --
--- Cada diretório cadastra seu PRÓPRIO SMSGateway (host/token) — ADR-0016. As credenciais ficam
--- **cifradas em repouso** com pgcrypto (`pgp_sym_encrypt`, chave em `INTERCOMS_CONFIG_KEY` no
--- Secret; nunca no banco). `directory_id NULL` = escopo plataforma (futuro). Uma config por
--- (diretório, canal). O envio que usa esta config é a fatia seguinte (#69b: broadcast SMS).
+-- Each chapter registers its OWN SMSGateway (host/token) — ADR-0016. Credentials are stored
+-- **encrypted at rest** with pgcrypto (`pgp_sym_encrypt`, key in `INTERCOMS_CONFIG_KEY` in the
+-- Secret; never in the database). `directory_id NULL` = platform scope (future). One config per
+-- (chapter, channel). The sending that uses this config is the next slice (#69b: SMS broadcast).
 --
--- Idempotente: rerun-safe.
+-- Idempotent: rerun-safe.
 
 BEGIN;
 
@@ -16,13 +16,13 @@ CREATE TABLE IF NOT EXISTS intercoms_provider_config (
     org_id       uuid NOT NULL REFERENCES org(id),
     directory_id uuid REFERENCES party_directory(id),
     channel      text NOT NULL CHECK (channel IN ('sms', 'email')),
-    provider     text NOT NULL,                 -- ex.: 'smsgateway'
+    provider     text NOT NULL,                 -- e.g. 'smsgateway'
     config       bytea NOT NULL,                -- pgp_sym_encrypt(json, key) — {url,user,pass}
     created_at   timestamptz NOT NULL DEFAULT now(),
     updated_at   timestamptz NOT NULL DEFAULT now()
 );
 
--- Uma config por (diretório, canal). `directory_id` NULL (plataforma) é seu próprio bucket.
+-- One config per (chapter, channel). `directory_id` NULL (platform) is its own bucket.
 CREATE UNIQUE INDEX IF NOT EXISTS intercoms_provider_config_scope_uq
     ON intercoms_provider_config (COALESCE(directory_id, '00000000-0000-0000-0000-000000000000'), channel);
 

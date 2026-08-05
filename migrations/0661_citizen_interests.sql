@@ -1,17 +1,17 @@
--- 0661_citizen_interests.sql — interesses do cidadão (áreas temáticas p/ receber atualizações).
+-- 0661_citizen_interests.sql — citizen interests (topic areas for receiving updates).
 --
--- Áreas baseadas na estrutura MINISTERIAL federal (o cidadão marca no perfil quais quer
--- acompanhar). `interest_area` é a referência (seed abaixo); `citizen_interest` é a seleção
--- (N:N). Alimenta, no futuro, o direcionamento de atualizações/consultas por tema.
+-- Areas based on the federal MINISTERIAL structure (the citizen ticks in their profile which
+-- ones to follow). `interest_area` is the reference table (seeded below); `citizen_interest` is
+-- the selection (N:N). In future it will drive topic-targeted updates and consultations.
 --
--- Idempotente: rerun-safe.
+-- Idempotent: rerun-safe.
 
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS interest_area (
-    slug     text PRIMARY KEY,          -- ex.: 'saude'
-    name     text NOT NULL,             -- ex.: 'Saúde'
-    ministry text,                      -- ministério de referência
+    slug     text PRIMARY KEY,          -- e.g. 'saude'
+    name     text NOT NULL,             -- e.g. 'Saúde'
+    ministry text,                      -- reference ministry
     position integer NOT NULL DEFAULT 0
 );
 
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS citizen_interest (
 
 CREATE INDEX IF NOT EXISTS citizen_interest_area_idx ON citizen_interest (area_slug);
 
--- Seed das áreas (estrutura ministerial 2023–2026). Idempotente.
+-- Seed of the areas (2023–2026 ministerial structure). Idempotent.
 INSERT INTO interest_area (slug, name, ministry, position) VALUES
     ('saude',              'Saúde',                       'Ministério da Saúde',                                    10),
     ('educacao',           'Educação',                    'Ministério da Educação',                                 20),

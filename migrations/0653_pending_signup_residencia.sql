@@ -1,11 +1,11 @@
--- 0653_pending_signup_residencia.sql — carrega o domicílio (UF + município IBGE)
--- na pending de cadastro, para o `confirm` materializá-lo no citizen (0652).
+-- 0653_pending_signup_residencia.sql — carries the domicile (state + IBGE municipality)
+-- on the pending signup, so `confirm` materialises it on the citizen (0652).
 --
--- O cidadão só vira `citizen` ao confirmar o e-mail; o domicílio informado no
--- request precisa sobreviver até lá. Espelha o padrão do `candidate_meta` (0526):
--- coletado no request, aplicado no confirm. Só relevante para role='cidadao'.
+-- A citizen only becomes a `citizen` once the e-mail is confirmed; the domicile given in
+-- the request must survive until then. Mirrors the `candidate_meta` pattern (0526):
+-- collected on request, applied on confirm. Relevant only for role='cidadao'.
 --
--- Idempotente: rerun-safe.
+-- Idempotent: rerun-safe.
 
 BEGIN;
 
