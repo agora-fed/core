@@ -56,7 +56,7 @@ async fn seed_session(db: &Db) -> (Uuid, Uuid, String) {
 }
 
 /// Same as [`seed_session`] but pinning the org — the federation surface
-/// resolve handles contra a org default fixa, então testes federados
+/// resolves handles against the fixed default org, so federated tests
 /// precisam seedar NELA (idempotente via ON CONFLICT).
 async fn seed_session_in_org(db: &Db, org: Uuid) -> (Uuid, Uuid, String) {
     let citizen = Uuid::now_v7();
@@ -170,8 +170,8 @@ async fn anonymous_cannot_whoami() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-/// `GET /me/whoami` (mobile): um cidadão comum logado retorna civic_type=cidadao,
-/// sem papel de admin/partido e sem mandato. Verifica a composição consolidada.
+/// `GET /me/whoami` (mobile): an ordinary logged-in citizen returns civic_type=cidadao,
+/// with no admin/party role and no mandate. Verifies the consolidated composition.
 #[tokio::test]
 async fn whoami_for_plain_citizen_is_cidadao() {
     let (app, st) = app().await;
@@ -245,18 +245,18 @@ async fn expired_session_is_rejected() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-/// SECURITY (2026-07-24 regressão): a identidade do caller vem dos headers
-/// `x-dsoc-citizen-id`/`x-dsoc-org-id`/`x-citizen-id`, que o `inject_identity`
-/// só pode setar a partir de uma sessão/bearer REAL. Um cliente que os injeta
-/// direto (sem cookie) NÃO pode ser aceito — senão personifica qualquer
-/// cidadão, inclusive admin. Antes do fix este request retornava 200 com os
-/// stats de admin; agora os headers são apagados e cai em 401.
+/// SECURITY (2026-07-24 regression): the caller's identity comes from the headers
+/// `x-dsoc-citizen-id`/`x-dsoc-org-id`/`x-citizen-id`, which `inject_identity`
+/// may only set from a REAL session/bearer. A client injecting them directly
+/// (with no cookie) must NOT be accepted — otherwise it impersonates any
+/// citizen, admins included. Before the fix this request returned 200 with the
+/// admin stats; now the headers are stripped and it falls to 401.
 #[tokio::test]
 async fn spoofed_identity_headers_are_stripped() {
     let (app, st) = app().await;
     let (org, citizen, _cookie) = seed_session(&st.db).await;
     grant_admin(&st.db, org, citizen).await;
-    // Sem cookie, mas forjando os headers de identidade do admin recém-criado.
+    // No cookie, but forging the identity headers of the freshly created admin.
     let req = Request::builder()
         .uri("/api/v1/admin/stats")
         .header("x-dsoc-citizen-id", citizen.to_string())
@@ -585,7 +585,7 @@ async fn contact_rejects_unknown_sector() {
 
 #[tokio::test]
 async fn contact_honeypot_pretends_success_and_sends_nothing() {
-    // Bot que preenche o campo escondido recebe 200 "ok" — sem SMTP, sem efeito.
+    // A bot filling the hidden field gets a 200 "ok" — no SMTP, no effect.
     let (app, _) = app().await;
     let resp = app
         .oneshot(json_req(
@@ -601,7 +601,7 @@ async fn contact_honeypot_pretends_success_and_sends_nothing() {
 
 #[tokio::test]
 async fn contact_rate_limits_per_ip() {
-    // 5/h por IP (default). O 6º do mesmo IP tem que ver 429 — antes de
+    // 5/h per IP (default). The 6th from the same IP must see 429 — before
     // qualquer tentativa de SMTP.
     let (app, _) = app().await;
     let body = r#"{"sector":"contato","name":"Nome","email":"a@b.co","subject":"assunto","message":"mensagem com tamanho ok"}"#;
@@ -652,7 +652,7 @@ async fn attest_rejects_self_attestation() {
 
 #[tokio::test]
 async fn attest_requires_verified_operator_power() {
-    // Sessão comum (sem mandato, sem partido) não pode atestar ninguém.
+    // An ordinary session (no mandate, no party) cannot attest anyone.
     let (app, st) = app().await;
     let (_, _, cookie) = seed_session(&st.db).await;
     let (_, target, _) = seed_session(&st.db).await;
@@ -671,14 +671,14 @@ async fn attest_requires_verified_operator_power() {
 #[tokio::test]
 async fn signup_gates_admin_surface_is_gated() {
     let (app, st) = app().await;
-    // Anônimo: 401.
+    // Anonymous: 401.
     let resp = app
         .clone()
         .oneshot(get("/api/v1/admin/email_domain_blocks"))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-    // Sessão comum: 403 — nunca a lista.
+    // Ordinary session: 403 — never the list.
     let (_, _, cookie) = seed_session(&st.db).await;
     let resp = app
         .oneshot(get_with_cookie(
@@ -695,7 +695,7 @@ async fn blocked_email_domain_gates_register() {
     let (app, st) = app().await;
     let (org, citizen, cookie) = seed_session(&st.db).await;
     grant_admin(&st.db, org, citizen).await;
-    // Admin bloqueia o domínio pela API real.
+    // The admin blocks the domain through the real API.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -707,7 +707,7 @@ async fn blocked_email_domain_gates_register() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
-    // Cadastro com e-mail do domínio bloqueado: 403 opaco do gate.
+    // Signup with an e-mail from the blocked domain: an opaque 403 from the gate.
     let register = format!(
         r#"{{"org_id":"{org}","email":"x@blocked-gate-test.example","password":"senha-forte-123","cpf":"00000000000"}}"#
     );
@@ -717,8 +717,8 @@ async fn blocked_email_domain_gates_register() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
-    // Removida a regra, o mesmo request volta a cair na validação normal
-    // (CPF inválido = 4xx de validação, nunca o 403 do gate).
+    // With the rule removed, the same request falls back to normal validation
+    // (an invalid document = a 4xx validation error, never the gate's 403).
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -756,15 +756,15 @@ async fn ip_deny_rule_gates_login_scope() {
     assert_eq!(resp.status(), StatusCode::OK);
     let login =
         format!(r#"{{"org_id":"{org}","email":"ninguem@example.org","password":"whatever"}}"#);
-    // IP dentro do deny: 403 do gate, antes de qualquer verificação de credencial.
+    // An IP inside the deny range: the gate's 403, before any credential check.
     let mut req = json_req("POST", "/api/v1/auth/login", None, &login);
     req.headers_mut()
         .insert("x-forwarded-for", "198.51.100.9".parse().unwrap());
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     // IP fora do deny: passa o gate e cai no 401 normal de credencial errada.
-    // IP único por run — a auditoria de tentativas persiste entre execuções
-    // e um IP fixo chegaria rate-limitado (429) na enésima rodada.
+    // A unique IP per run — the attempt audit persists across executions
+    // and a fixed IP would hit the rate limit (429) on the nth round.
     let b = Uuid::now_v7();
     let b = b.as_bytes();
     let outside_ip = format!("10.{}.{}.{}", b[13], b[14], b[15]);
@@ -773,7 +773,7 @@ async fn ip_deny_rule_gates_login_scope() {
         .insert("x-forwarded-for", outside_ip.parse().unwrap());
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-    // Cleanup: regra é global — remover pra não vazar pros outros testes.
+    // Cleanup: the rule is global — remove it so it never leaks into other tests.
     let rules = body_json(
         app.clone()
             .oneshot(get_with_cookie("/api/v1/admin/ip_rules", &cookie))
@@ -844,8 +844,8 @@ async fn webfinger_unknown_account_is_client_error() {
 
 #[tokio::test]
 async fn unknown_actor_is_client_error_for_activitypub() {
-    // Handle inexistente/inválido nunca devolve 200 nem 500 pra um peer AP —
-    // a superfície responde 4xx (400 pra shape inválido, 404 pra ausente).
+    // A missing/invalid handle never returns 200 nor 500 to an AP peer —
+    // the surface answers 4xx (400 for an invalid shape, 404 for an absent one).
     let (app, _) = app().await;
     let req = Request::builder()
         .uri("/actors/does-not-exist-xyz")
@@ -898,7 +898,7 @@ async fn attest_and_revoke_roundtrip() {
     .expect("seed binding");
     let (_, target, _) = seed_session(&st.db).await;
 
-    // Atesta com nota.
+    // Attest with a note.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -911,7 +911,7 @@ async fn attest_and_revoke_roundtrip() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // Lista pública mostra 1 + flags do viewer logado.
+    // The public list shows 1 + the logged-in viewer's flags.
     let resp = app
         .clone()
         .oneshot(get_with_cookie(
@@ -970,7 +970,7 @@ async fn bookmarks_list_empty_for_fresh_session() {
 // FUNCTIONAL — mastodon API + federation actor surface (issue #8, passo 2)
 // ---------------------------------------------------------------------------
 
-/// Torna o cidadão da sessão um perfil público federável (handle + is_public).
+/// Turn the session's citizen into a public, federable profile (handle + is_public).
 /// Handle respeita o CHECK `citizen_handle_format` (3–32 chars).
 async fn make_public(db: &Db, citizen: Uuid) -> String {
     let simple = citizen.simple().to_string();
@@ -1022,10 +1022,10 @@ async fn post_status_requires_auth() {
 
 #[tokio::test]
 async fn publish_status_and_serve_actor_documents() {
-    // Fluxo federado completo: perfil público publica uma nota via a API
-    // Mastodon-compat, e a superfície ActivityPub serve actor/outbox/followers.
+    // Full federated flow: a public profile publishes a note through the
+    // Mastodon-compatible API, and the ActivityPub surface serves actor/outbox/followers.
     let (app, st) = app().await;
-    // A resolução de handle da superfície federada usa a org default fixa.
+    // The federated surface's handle resolution uses the fixed default org.
     let default_org = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
     let (_, citizen, cookie) = seed_session_in_org(&st.db, default_org).await;
     let handle = make_public(&st.db, citizen).await;
@@ -1065,7 +1065,7 @@ async fn publish_status_and_serve_actor_documents() {
 #[tokio::test]
 async fn apps_registration_and_bad_oauth_token() {
     let (app, _) = app().await;
-    // Registro de app OAuth (público, form-encoded como os clientes Mastodon).
+    // OAuth app registration (public, form-encoded like the Mastodon clients).
     let form = |uri: &str, body: &str| {
         Request::builder()
             .method("POST")
@@ -1083,7 +1083,7 @@ async fn apps_registration_and_bad_oauth_token() {
         .await
         .unwrap();
     assert!(resp.status().is_success(), "got {}", resp.status());
-    // Token com client desconhecido nunca emite credencial.
+    // A token with an unknown client never issues a credential.
     let resp = app
         .oneshot(form(
             "/oauth/token",
@@ -1102,7 +1102,7 @@ async fn apps_registration_and_bad_oauth_token() {
 async fn mute_and_block_roundtrip() {
     let (app, st) = app().await;
     let (org, _, cookie) = seed_session(&st.db).await;
-    // Alvo na MESMA org, com perfil público (mute/block resolvem o actor URL).
+    // A target in the SAME org, with a public profile (mute/block resolve the actor URL).
     let other = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO citizen (id, org_id, oidc_subject, verification_level, created_at)
@@ -1269,16 +1269,16 @@ async fn lists_crud_roundtrip() {
 
 #[tokio::test]
 async fn register_with_valid_cpf_starts_verification() {
-    // Sem SMTP no ambiente de teste o serviço entra em DEV mode (loga a URL)
-    // mas o contrato HTTP é o mesmo: 202 + status verification_sent.
+    // Without SMTP in the test environment the service enters DEV mode (it logs the URL)
+    // but the HTTP contract is the same: 202 + status verification_sent.
     //
-    // O cadastro do cidadão exige, desde a 0.65.0 (migrations 0651/0652/0653),
-    // o DOMICÍLIO (UF + município IBGE que exista e pertença à UF) além de nome
-    // completo e nascimento — este teste ficou parado no payload antigo (só
-    // e-mail/senha/CPF) e passou a bater 400. O município vem semeado aqui:
-    // `municipio_ibge` é tabela de referência populada por script
-    // (`scripts/seed-municipios-ibge.sql`), não por migration, então um banco de
-    // teste limpo não tem nenhuma linha — o teste planta a sua.
+    // Since 0.65.0 (migrations 0651/0652/0653), citizen signup requires
+    // RESIDENCE (a UF + an IBGE municipality that exists and belongs to that UF) on top of
+    // the full name and birth date — this test was stuck on the old payload (e-mail/
+    // password/document only) and started returning 400. The municipality is seeded here:
+    // `municipio_ibge` is a reference table populated by a script
+    // (`scripts/seed-municipios-ibge.sql`), not by a migration, so a clean test
+    // database has no rows at all — the test plants its own.
     let (app, st) = app().await;
     let (org, citizen, _) = seed_session(&st.db).await;
     sqlx::query(
@@ -1307,12 +1307,12 @@ async fn login_rate_limits_by_ip() {
     let (org, _, _) = seed_session(&st.db).await;
     let body =
         format!(r#"{{"org_id":"{org}","email":"forca-bruta@example.org","password":"errada"}}"#);
-    // IP único POR RUN: a tabela de auditoria persiste entre execuções e um
-    // IP fixo chegaria já rate-limitado na segunda rodada da suíte.
+    // A unique IP PER RUN: the audit table persists across executions and a
+    // fixed IP would already be rate-limited on the suite's second round.
     let b = Uuid::now_v7();
     let b = b.as_bytes();
     let ip = format!("10.{}.{}.{}", b[13], b[14], b[15]);
-    // 10 tentativas (default) do mesmo IP; a 11ª tem que ver 429.
+    // 10 attempts (default) from the same IP; the 11th must see 429.
     for _ in 0..10 {
         let mut req = json_req("POST", "/api/v1/auth/login", None, &body);
         req.headers_mut()
@@ -1348,14 +1348,14 @@ async fn password_reset_request_is_enumeration_resistant() {
 async fn auth_me_reflects_session_and_logout_is_idempotent() {
     let (app, st) = app().await;
     let (_, _, cookie) = seed_session(&st.db).await;
-    // O perfil próprio via cookie (o /auth/me legado é da era OIDC/bearer).
+    // The own profile via cookie (the legacy /auth/me belongs to the OIDC/bearer era).
     let resp = app
         .clone()
         .oneshot(get_with_cookie("/api/v1/me", &cookie))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
-    // Logout sem cookie nenhum continua 200 — aba velha nunca vê erro.
+    // Logging out with no cookie at all still returns 200 — a stale tab never sees an error.
     let resp = app
         .oneshot(json_req("POST", "/api/v1/auth/logout", None, "{}"))
         .await
@@ -1364,16 +1364,16 @@ async fn auth_me_reflects_session_and_logout_is_idempotent() {
 }
 
 // ---------------------------------------------------------------------------
-// SECURITY + FUNCTIONAL — superfície admin (issue #8, passo 4)
+// SECURITY + FUNCTIONAL — the admin surface (issue #8, step 4)
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
 async fn admin_read_surface_is_gated_and_serves() {
-    // Toda leitura admin obedece a MESMA régua: anônimo 401, sessão comum
+    // Every admin read obeys the SAME rule: anonymous 401, ordinary session
     // 403, admin nunca 401/403 nem 5xx. Um loop cobre as nove listas.
     let (app, st) = app().await;
     // admin_ext valida o binding na org DEFAULT fixa — o admin de teste
-    // precisa viver nela (os demais módulos admin não filtram por org).
+    // must live in it (the other admin modules do not filter by org).
     let default_org = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
     let (org, citizen, admin_cookie) = seed_session_in_org(&st.db, default_org).await;
     grant_admin(&st.db, org, citizen).await;
@@ -1491,7 +1491,7 @@ async fn announcements_lifecycle() {
         .expect("announcement id")
         .to_owned();
 
-    // Publicado aparece na lista ativa de qualquer cidadão logado.
+    // Once published it appears in the active list for any logged-in citizen.
     let resp = app
         .clone()
         .oneshot(get_with_cookie(
@@ -1502,7 +1502,7 @@ async fn announcements_lifecycle() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // Cidadão descarta; admin despublica; segue 200 na lista ativa (vazia).
+    // The citizen dismisses; the admin unpublishes; the active list still returns 200 (empty).
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -1532,8 +1532,8 @@ async fn announcements_lifecycle() {
 
 #[tokio::test]
 async fn moderation_account_actions_roundtrip() {
-    // suspend → unsuspend → silence → unsilence numa conta alvo; cada ação
-    // é idempotente do ponto de vista do admin e nunca 5xx.
+    // suspend → unsuspend → silence → unsilence on a target account; each action
+    // is idempotent from the admin's point of view and never 5xx.
     let (app, st) = app().await;
     let (org, citizen, cookie) = seed_session(&st.db).await;
     grant_admin(&st.db, org, citizen).await;
@@ -1577,7 +1577,7 @@ async fn me_admin_status_reflects_role() {
 
 #[tokio::test]
 async fn invitation_preview_unknown_token_is_invalid_not_error() {
-    // Preview é público e enumeração-neutro: token desconhecido devolve
+    // The preview is public and enumeration-neutral: an unknown token returns
     // 200 {valid:false} — nunca 500, nunca dados de outro convite.
     let (app, _) = app().await;
     let resp = app
@@ -1591,7 +1591,7 @@ async fn invitation_preview_unknown_token_is_invalid_not_error() {
 
 #[tokio::test]
 async fn delivery_receipts_are_public_and_empty_for_unknown_proposal() {
-    // A timeline do "AR digital" é pública por design; proposta sem avisos
+    // The "digital registered mail" timeline is public by design; a proposal with no warnings
     // devolve lista vazia — nunca 500, nunca 401.
     let (app, _) = app().await;
     let resp = app
@@ -1608,8 +1608,8 @@ async fn delivery_receipts_are_public_and_empty_for_unknown_proposal() {
 
 #[tokio::test]
 async fn embed_placar_serves_selfcontained_widget() {
-    // O widget da imprensa é público, autocontido e nunca 500; mandato
-    // inexistente é 404 limpo.
+    // The press widget is public, self-contained and never 500s; a missing
+    // mandate is a clean 404.
     let (app, st) = app().await;
     let (org, _, _) = seed_session(&st.db).await;
     let mandate = Uuid::now_v7();
@@ -1642,7 +1642,7 @@ async fn embed_placar_serves_selfcontained_widget() {
 }
 
 // ---------------------------------------------------------------------------
-// Doações/financiamento de campanha (0.31, migration 0523)
+// Campaign donations/funding (0.31, migration 0523)
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -1657,7 +1657,7 @@ async fn campanha_write_gated_to_politico() {
     let (app, st) = app().await;
     let (_, _citizen, cookie) = seed_session(&st.db).await;
 
-    // Sem vínculo de mandato: a leitura responde 200 com a flag desligada…
+    // Without a mandate binding: the read returns 200 with the flag off…
     let resp = app
         .clone()
         .oneshot(get_with_cookie("/api/v1/me/campanha", &cookie))
@@ -1667,7 +1667,7 @@ async fn campanha_write_gated_to_politico() {
     let body = body_json(resp).await;
     assert_eq!(body["data"]["is_politico"], serde_json::json!(false));
 
-    // …e QUALQUER escrita é 403.
+    // …and ANY write is 403.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -1717,7 +1717,7 @@ async fn campanha_politico_roundtrip() {
     .await
     .expect("seed binding");
 
-    // Entrada com recibo (doação) grava e volta o id.
+    // An entry with a receipt (a donation) is stored and returns the id.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -1735,7 +1735,7 @@ async fn campanha_politico_roundtrip() {
         .expect("entry id")
         .to_owned();
 
-    // Saída com recibo é 400 (recibo/doador só valem em entrada).
+    // An outflow with a receipt is 400 (receipt/donor only apply to entries).
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -1762,7 +1762,7 @@ async fn campanha_politico_roundtrip() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // Overview reflete lançamento + config.
+    // The overview reflects the entry + config.
     let resp = app
         .clone()
         .oneshot(get_with_cookie("/api/v1/me/campanha", &cookie))
@@ -1780,7 +1780,7 @@ async fn campanha_politico_roundtrip() {
         serde_json::json!(true)
     );
 
-    // Revogação: some da lista; segunda revogação é 404.
+    // Revocation: it leaves the list; a second revocation is 404.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -1846,7 +1846,7 @@ async fn campanha_publica_only_when_published() {
     .await
     .expect("seed binding");
 
-    // Antes de publicar: 404 anônimo (sem vazar a config despublicada).
+    // Before publishing: 404 for anonymous callers (without leaking the unpublished config).
     let resp = app
         .clone()
         .oneshot(get(&format!("/api/v1/campanha/{handle}")))
@@ -1854,7 +1854,7 @@ async fn campanha_publica_only_when_published() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 
-    // Lança uma doação e publica.
+    // Records a donation and publishes.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -1879,7 +1879,7 @@ async fn campanha_publica_only_when_published() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // Publicada: página pública anônima serve totais + lançamentos.
+    // Published: the anonymous public page serves totals + entries.
     let resp = app
         .clone()
         .oneshot(get(&format!("/api/v1/campanha/{handle}")))
@@ -1920,7 +1920,7 @@ async fn campanha_publica_only_when_published() {
 // Grupos de campanha (0.39.0 — Fase 2.3)
 // ---------------------------------------------------------------------------
 
-/// Cria um mandato + binding (nível directory) pro citizen — vira "político".
+/// Create a mandate + binding (directory level) for the citizen — makes them a "politician".
 async fn seed_mandate_binding(db: &Db, org: Uuid, citizen: Uuid) -> Uuid {
     let mandate = Uuid::now_v7();
     sqlx::query(
@@ -1954,7 +1954,7 @@ async fn campaign_group_full_flow() {
     let (org, politico, owner_cookie) = seed_session(&st.db).await;
     seed_mandate_binding(&st.db, org, politico).await;
 
-    // 1) Político cria o grupo.
+    // 1) The politician creates the group.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -1969,7 +1969,7 @@ async fn campaign_group_full_flow() {
     let body = body_json(resp).await;
     let group_id = body["data"]["id"].as_str().unwrap().to_owned();
 
-    // 2) Dono publica uma atualização.
+    // 2) The owner publishes an update.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -1996,7 +1996,7 @@ async fn campaign_group_full_flow() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // Join é idempotente — segundo POST não duplica.
+    // Joining is idempotent — a second POST does not duplicate.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2009,7 +2009,7 @@ async fn campaign_group_full_flow() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // 4) Página pública: 1 membro, 1 post, e o eleitor vê sou_membro=true.
+    // 4) Public page: 1 member, 1 post, and the voter sees sou_membro=true.
     let resp = app
         .clone()
         .oneshot(get_with_cookie(
@@ -2052,7 +2052,7 @@ async fn campaign_group_full_flow() {
 #[tokio::test]
 async fn campaign_group_create_requires_politico() {
     let (app, st) = app().await;
-    // Conta comum, sem binding de mandato.
+    // An ordinary account, with no mandate binding.
     let (_, _, cookie) = seed_session(&st.db).await;
     let resp = app
         .oneshot(json_req(
@@ -2087,7 +2087,7 @@ async fn campaign_group_poll_flow() {
     let (org, politico, owner) = seed_session(&st.db).await;
     seed_mandate_binding(&st.db, org, politico).await;
 
-    // Político cria o grupo.
+    // The politician creates the group.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2103,7 +2103,7 @@ async fn campaign_group_poll_flow() {
         .unwrap()
         .to_owned();
 
-    // Abre uma enquete dirigida.
+    // Opens a directed poll.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2134,7 +2134,7 @@ async fn campaign_group_poll_flow() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // Página pública (cookie do eleitor): agregado conta 1 + minha resposta.
+    // Public page (the voter's cookie): the aggregate counts 1 + my answer.
     let resp = app
         .clone()
         .oneshot(get_with_cookie(
@@ -2149,7 +2149,7 @@ async fn campaign_group_poll_flow() {
     assert_eq!(poll["tally"]["total"].as_i64().unwrap(), 1);
     assert_eq!(poll["my_answer"].as_str().unwrap(), "concordo");
 
-    // Cidadão comum não abre enquete (sem grupo → 403).
+    // An ordinary citizen does not open a poll (no group → 403).
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2162,7 +2162,7 @@ async fn campaign_group_poll_flow() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 
-    // Dono encerra; nova resposta é recusada (409).
+    // The owner closes it; a new answer is refused (409).
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2187,7 +2187,7 @@ async fn campaign_group_poll_flow() {
 }
 
 // ---------------------------------------------------------------------------
-// Super-admin: editar/ocultar/apagar conteúdo (0.40.0 — SOCRATES)
+// Super-admin: edit/hide/delete content (0.40.0 — SOCRATES)
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -2238,7 +2238,7 @@ async fn admin_can_edit_and_hide_mandate_but_non_admin_cannot() {
             .unwrap();
     assert!(hidden.is_some(), "mandato deve ficar oculto");
 
-    // Reexibir com ?on=false.
+    // Unhide with ?on=false.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2258,7 +2258,7 @@ async fn admin_can_edit_and_hide_mandate_but_non_admin_cannot() {
             .unwrap();
     assert!(hidden.is_none(), "reexibido");
 
-    // Não-admin (conta comum) não edita → 403.
+    // A non-admin (ordinary account) cannot edit → 403.
     let (_, _, plain_cookie) = seed_session_in_org(&st.db, org).await;
     let resp = app
         .oneshot(json_req(
@@ -2279,7 +2279,7 @@ async fn admin_hard_delete_requires_force() {
     grant_admin(&st.db, org, admin).await;
     let mandate = seed_mandate_binding(&st.db, org, admin).await;
 
-    // Sem ?force=true → 400 (protege contra apagar sem querer).
+    // Without ?force=true → 400 (guards against deleting by accident).
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2292,7 +2292,7 @@ async fn admin_hard_delete_requires_force() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 
-    // Com ?force=true → apaga em cascata (mandato limpo, só o binding).
+    // With ?force=true → cascading delete (the mandate is cleared, only the binding).
     let resp = app
         .oneshot(json_req(
             "DELETE",
@@ -2327,7 +2327,7 @@ fn consulta_create_body() -> String {
 #[tokio::test]
 async fn consultas_anonymous_cannot_create_or_respond() {
     let (app, _) = app().await;
-    // Criar sem sessão → 401.
+    // Creating without a session → 401.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2339,7 +2339,7 @@ async fn consultas_anonymous_cannot_create_or_respond() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-    // Responder sem sessão → 401.
+    // Answering without a session → 401.
     let resp = app
         .oneshot(json_req(
             "POST",
@@ -2356,7 +2356,7 @@ async fn consultas_anonymous_cannot_create_or_respond() {
 async fn consultas_plain_citizen_cannot_create() {
     let (app, st) = app().await;
     let (_org, _citizen, cookie) = seed_session(&st.db).await;
-    // Cidadão comum (sem admin, sem mandato) → 403.
+    // An ordinary citizen (no admin, no mandate) → 403.
     let resp = app
         .oneshot(json_req(
             "POST",
@@ -2375,7 +2375,7 @@ async fn consultas_full_participation_flow() {
     let (org, citizen, cookie) = seed_session(&st.db).await;
     grant_admin(&st.db, org, citizen).await;
 
-    // 1. Admin cria a consulta.
+    // 1. The admin creates the consultation.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2390,7 +2390,7 @@ async fn consultas_full_participation_flow() {
     let created = body_json(resp).await;
     let cid = created["data"]["id"].as_str().unwrap().to_owned();
 
-    // 2. Leitura PÚBLICA (sem cookie): 2 perguntas, agregados zerados.
+    // 2. PUBLIC read (no cookie): 2 questions, aggregates at zero.
     let resp = app
         .clone()
         .oneshot(get(&format!("/api/v1/consultas/{cid}")))
@@ -2404,7 +2404,7 @@ async fn consultas_full_participation_flow() {
     assert!(questions[0]["my_answer"].is_null());
     let q0 = questions[0]["id"].as_str().unwrap().to_owned();
 
-    // 3. Cidadão logado responde à primeira pergunta.
+    // 3. A logged-in citizen answers the first question.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2432,7 +2432,7 @@ async fn consultas_full_participation_flow() {
     assert_eq!(q0v["tally"]["concordo"].as_i64().unwrap(), 1);
     assert_eq!(q0v["tally"]["total"].as_i64().unwrap(), 1);
 
-    // 5. Reenvio (upsert): muda para discordo, total continua 1.
+    // 5. Re-submission (upsert): switches to disagree, the total stays 1.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2459,7 +2459,7 @@ async fn consultas_full_participation_flow() {
     assert_eq!(q0v["tally"]["concordo"].as_i64().unwrap(), 0);
     assert_eq!(q0v["tally"]["total"].as_i64().unwrap(), 1);
 
-    // 6. Encerrada: novas respostas são recusadas (409).
+    // 6. Closed: new answers are refused (409).
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2484,11 +2484,11 @@ async fn consultas_full_participation_flow() {
 }
 
 // ---------------------------------------------------------------------------
-// CRM de gabinete (C6) — gate de autorização
+// Office CRM (C6) — authorization gate
 // ---------------------------------------------------------------------------
 
-/// Semeia uma proposta dirigida a um mandato, com autor público, e a linha de
-/// destinatário (`proposal_target`) que o CRM lê. Devolve o id da proposta.
+/// Seed a proposal directed at a mandate, with a public author, and the recipient
+/// row (`proposal_target`) the CRM reads. Returns the proposal id.
 async fn seed_directed_proposal(
     db: &Db,
     org: Uuid,
@@ -2522,18 +2522,18 @@ async fn seed_directed_proposal(
     proposal
 }
 
-/// SECURITY — o CRM é escopado ao mandato do operador logado: só ele vê o CRM
-/// DELE. Um operador do gabinete A jamais vê as demandas do gabinete B; um
-/// cidadão sem vínculo recebe 403; anônimo recebe 401.
+/// SECURITY — the CRM is scoped to the logged-in operator's mandate: they only see
+/// THEIR OWN CRM. An operator of office A never sees office B's demands; a
+/// citizen with no binding gets 403; anonymous gets 401.
 #[tokio::test]
 async fn mandate_crm_scoped_to_operator_only() {
     let (app, st) = app().await;
 
-    // Gabinete A: operador com vínculo.
+    // Office A: an operator with a binding.
     let (org, operator_a, cookie_a) = seed_session(&st.db).await;
     let mandate_a = seed_mandate_binding(&st.db, org, operator_a).await;
 
-    // Gabinete B: outro mandato no mesmo org, sem relação com o operador A.
+    // Office B: another mandate in the same org, unrelated to operator A.
     let mandate_b = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO mandate (id, org_id, office, display_name, public_email, created_at) \
@@ -2545,7 +2545,7 @@ async fn mandate_crm_scoped_to_operator_only() {
     .await
     .expect("seed mandate B");
 
-    // Autor cidadão público que dirige propostas aos dois gabinetes.
+    // A public citizen author who directs proposals at both offices.
     let (_, author, _) = seed_session(&st.db).await;
     sqlx::query(
         "UPDATE citizen SET handle = 'fulana', display_name = 'Fulana', is_public = true \
@@ -2559,7 +2559,7 @@ async fn mandate_crm_scoped_to_operator_only() {
         seed_directed_proposal(&st.db, org, mandate_a, author, "Falta médico no posto").await;
     let prop_b = seed_directed_proposal(&st.db, org, mandate_b, author, "Buraco na rua do B").await;
 
-    // Operador A vê o CRM DELE: exatamente a demanda de A, nunca a de B.
+    // Operator A sees THEIR CRM: exactly A's demand, never B's.
     let resp = app
         .clone()
         .oneshot(get_with_cookie("/api/v1/me/mandate/crm", &cookie_a))
@@ -2574,11 +2574,11 @@ async fn mandate_crm_scoped_to_operator_only() {
     assert_eq!(demands.len(), 1);
     assert_eq!(demands[0]["proposal_id"], prop_a.to_string());
     assert_ne!(demands[0]["proposal_id"], prop_b.to_string());
-    // O handle público do autor aparece (dado já público); nenhum e-mail/PII.
+    // The author's public handle appears (already-public data); no e-mail/PII.
     assert_eq!(json["data"]["contacts"][0]["handle"], "fulana");
     assert!(json["data"]["contacts"][0].get("email").is_none());
 
-    // Cidadão sem vínculo de mandato → 403 (não é operador de nenhum gabinete).
+    // A citizen with no mandate binding → 403 (not an operator of any office).
     let (_, _, plain_cookie) = seed_session(&st.db).await;
     let resp = app
         .clone()
@@ -2587,7 +2587,7 @@ async fn mandate_crm_scoped_to_operator_only() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 
-    // Anônimo (sem cookie) → 401.
+    // Anonymous (no cookie) → 401.
     let resp = app.oneshot(get("/api/v1/me/mandate/crm")).await.unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
@@ -2596,15 +2596,15 @@ async fn mandate_crm_scoped_to_operator_only() {
 // SECURITY + FUNCTIONAL — mandato coletivo: compromisso consultivo (D8.1, 0666)
 // ---------------------------------------------------------------------------
 
-/// O gate de escrita é o vínculo de mandato: anônimo → 401, cidadão comum → 403.
-/// A leitura pública dos compromissos é aberta (200) e não vaza dado privado.
+/// The write gate is the mandate binding: anonymous → 401, ordinary citizen → 403.
+/// The public read of commitments is open (200) and leaks no private data.
 #[tokio::test]
 async fn commitments_write_is_gated_read_is_public() {
     let (app, st) = app().await;
     let (org, operator, op_cookie) = seed_session(&st.db).await;
     let mandate = seed_mandate_binding(&st.db, org, operator).await;
 
-    // Anônimo não cria compromisso.
+    // An anonymous caller does not create a commitment.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2617,7 +2617,7 @@ async fn commitments_write_is_gated_read_is_public() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 
-    // Cidadão sem vínculo de mandato → 403, e nada é gravado.
+    // A citizen with no mandate binding → 403, and nothing is written.
     let (_, _, plain_cookie) = seed_session(&st.db).await;
     let resp = app
         .clone()
@@ -2637,7 +2637,7 @@ async fn commitments_write_is_gated_read_is_public() {
             .unwrap();
     assert_eq!(count, 0);
 
-    // A leitura pública é aberta (mandato ainda sem compromissos).
+    // The public read is open (the mandate still has no commitments).
     let resp = app
         .clone()
         .oneshot(get(&format!("/api/v1/politicos/{mandate}/commitments")))
@@ -2650,7 +2650,7 @@ async fn commitments_write_is_gated_read_is_public() {
         Some(0)
     );
 
-    // O operador cria um compromisso válido e tenta um outcome inválido → 400.
+    // The operator creates a valid commitment and tries an invalid outcome → 400.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2678,13 +2678,13 @@ async fn commitments_write_is_gated_read_is_public() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-/// Fluxo completo: operador declara → abre consulta ligada → registra que seguiu;
-/// a superfície pública reflete tema, kind consultivo, outcome e o agregado.
+/// Full flow: the operator declares → opens a linked consultation → records that they followed it;
+/// the public surface reflects the topic, the consultative kind, the outcome and the aggregate.
 #[tokio::test]
 async fn commitment_declare_consult_and_outcome_flow() {
     let (app, st) = app().await;
-    // A consulta é criada via ConsultationService, que escopa por org — o
-    // operador precisa viver na org default fixa das superfícies públicas.
+    // The consultation is created through ConsultationService, which scopes by org — the
+    // operator must live in the fixed default org of the public surfaces.
     let default_org = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
     let (org, operator, cookie) = seed_session_in_org(&st.db, default_org).await;
     let mandate = seed_mandate_binding(&st.db, org, operator).await;
@@ -2731,7 +2731,7 @@ async fn commitment_declare_consult_and_outcome_flow() {
             .unwrap();
     assert_eq!(cc, 1);
 
-    // Abrir de novo é conflito (compromisso já tem consulta).
+    // Opening it again is a conflict (the commitment already has a consultation).
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2744,7 +2744,7 @@ async fn commitment_declare_consult_and_outcome_flow() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 
-    // 3) Registra que seguiu, com nota.
+    // 3) Records that they followed it, with a note.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2757,7 +2757,7 @@ async fn commitment_declare_consult_and_outcome_flow() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // 4) A superfície pública reflete tudo (sem login).
+    // 4) The public surface reflects everything (no login).
     let resp = app
         .oneshot(get(&format!("/api/v1/politicos/{mandate}/commitments")))
         .await
@@ -2776,7 +2776,7 @@ async fn commitment_declare_consult_and_outcome_flow() {
 }
 
 // ---------------------------------------------------------------------------
-// Orçamento participativo — piloto de mandato (D8.3)
+// Participatory budgeting — mandate pilot (D8.3)
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -2797,7 +2797,7 @@ async fn op_anonymous_cannot_create_round() {
 #[tokio::test]
 async fn op_plain_citizen_cannot_create_round() {
     let (app, st) = app().await;
-    // Conta comum, sem binding de mandato → não é operador.
+    // An ordinary account, no mandate binding → not an operator.
     let (_, _, cookie) = seed_session(&st.db).await;
     let resp = app
         .oneshot(json_req(
@@ -2814,7 +2814,7 @@ async fn op_plain_citizen_cannot_create_round() {
 #[tokio::test]
 async fn op_full_cycle_operator_and_citizen() {
     let (app, st) = app().await;
-    // Operador (vínculo de mandato) abre a rodada.
+    // The operator (with a mandate binding) opens the round.
     let (org, operator, op_cookie) = seed_session(&st.db).await;
     let mandate = seed_mandate_binding(&st.db, org, operator).await;
 
@@ -2834,7 +2834,7 @@ async fn op_full_cycle_operator_and_citizen() {
         .unwrap()
         .to_owned();
 
-    // Cidadão logado (outra conta na mesma org) submete um item na fase propostas.
+    // A logged-in citizen (another account in the same org) submits an item in the proposals phase.
     let (_, _, voter_cookie) = seed_session_in_org(&st.db, org).await;
     let resp = app
         .clone()
@@ -2852,7 +2852,7 @@ async fn op_full_cycle_operator_and_citizen() {
         .unwrap()
         .to_owned();
 
-    // Votar antes da fase de votação → 409 (fase errada).
+    // Voting before the voting phase → 409 (wrong phase).
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2865,7 +2865,7 @@ async fn op_full_cycle_operator_and_citizen() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 
-    // Operador avança para 'votacao'.
+    // The operator advances to 'votacao'.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2878,7 +2878,7 @@ async fn op_full_cycle_operator_and_citizen() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // Anônimo não vota → 401.
+    // An anonymous caller does not vote → 401.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2891,7 +2891,7 @@ async fn op_full_cycle_operator_and_citizen() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 
-    // Cidadão vota — e vota DE NOVO (upsert): continua 1 voto por rodada.
+    // The citizen votes — and votes AGAIN (upsert): still 1 vote per round.
     for _ in 0..2 {
         let resp = app
             .clone()
@@ -2906,7 +2906,7 @@ async fn op_full_cycle_operator_and_citizen() {
         assert_eq!(resp.status(), StatusCode::OK);
     }
 
-    // Superfície pública: 1 voto total (upsert não duplicou), item ranqueado e cabe.
+    // Public surface: 1 vote in total (the upsert did not duplicate), the item is ranked and fits.
     let resp = app
         .clone()
         .oneshot(get(&format!("/api/v1/op/rounds/{round_id}")))
@@ -2923,7 +2923,7 @@ async fn op_full_cycle_operator_and_citizen() {
     assert_eq!(items[0]["fits_budget"], true);
     assert_eq!(json["data"]["allocated_cents"], 150);
 
-    // Operador fecha e presta contas (marca execução).
+    // The operator closes it and reports back (marks execution).
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -2936,7 +2936,7 @@ async fn op_full_cycle_operator_and_citizen() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // A rodada aparece na lista pública do mandato.
+    // The round appears in the mandate's public listing.
     let resp = app
         .clone()
         .oneshot(get(&format!("/api/v1/politicos/{mandate}/op")))
@@ -2953,7 +2953,7 @@ async fn op_full_cycle_operator_and_citizen() {
 #[tokio::test]
 async fn op_operator_cannot_touch_other_mandate_round() {
     let (app, st) = app().await;
-    // Gabinete A cria uma rodada.
+    // Office A creates a round.
     let (org, op_a, cookie_a) = seed_session(&st.db).await;
     seed_mandate_binding(&st.db, org, op_a).await;
     let resp = app
@@ -2971,7 +2971,7 @@ async fn op_operator_cannot_touch_other_mandate_round() {
         .unwrap()
         .to_owned();
 
-    // Operador de OUTRO gabinete não consegue avançar a fase da rodada do A → 404.
+    // An operator of ANOTHER office cannot advance the phase of A's round → 404.
     let (_, op_b, cookie_b) = seed_session_in_org(&st.db, org).await;
     seed_mandate_binding(&st.db, org, op_b).await;
     let resp = app
@@ -2989,10 +2989,10 @@ async fn op_operator_cannot_touch_other_mandate_round() {
 // ---------------------------------------------------------------------------
 // SOCRATES — espelho de Ideias Legislativas do e-Cidadania (migration 0670)
 // ---------------------------------------------------------------------------
-// SECURITY: os dois endpoints são gate owner/admin (anônimo → 401, cidadão
-// comum → 403). FUNCTIONAL: dedup por `ideia_id` → 409 `already_mirrored` com
-// o tópico existente no `data` — checado ANTES do fetch, então o teste NUNCA
-// dispara rede pro Senado.
+// SECURITY: both endpoints are owner/admin gated (anonymous → 401, ordinary
+// citizen → 403). FUNCTIONAL: dedup by `ideia_id` → 409 `already_mirrored` with
+// the existing topic in `data` — checked BEFORE the fetch, so the test NEVER
+// touches the network towards the Senate.
 
 #[tokio::test]
 async fn anonymous_cannot_mirror_socrates_idea() {
@@ -3065,9 +3065,9 @@ async fn admin_mirror_rejects_invalid_input() {
     assert_eq!(v["error"]["code"], "invalid_input");
 }
 
-/// Semeia um espelho existente (fórum + tópico + linha em socrates_mirror) e
-/// devolve `(ideia_id, topic_id)`. O autor do tópico é o próprio cidadão do
-/// teste — a FK só exige um `citizen` válido.
+/// Seed an existing mirror (forum + topic + a socrates_mirror row) and
+/// return `(ideia_id, topic_id)`. The topic's author is the test's own citizen —
+/// the FK only requires a valid `citizen`.
 async fn seed_socrates_mirror(db: &Db, org: Uuid, author: Uuid) -> (String, Uuid) {
     let now = Utc::now();
     let forum = Uuid::now_v7();
@@ -3095,7 +3095,7 @@ async fn seed_socrates_mirror(db: &Db, org: Uuid, author: Uuid) -> (String, Uuid
     .execute(db)
     .await
     .expect("seed topic");
-    // ideia_id numérica única por execução (dedup é UNIQUE global).
+    // A numeric ideia_id unique per execution (dedup is a global UNIQUE).
     let ideia_id = format!("9{:011}", topic.as_u128() % 100_000_000_000);
     sqlx::query(
         "INSERT INTO socrates_mirror (id, ideia_id, source_url, topic_id, created_at)
@@ -3114,7 +3114,7 @@ async fn seed_socrates_mirror(db: &Db, org: Uuid, author: Uuid) -> (String, Uuid
     (ideia_id, topic)
 }
 
-/// Dedup: uma ideia já espelhada responde 409 `already_mirrored` com o tópico
+/// Dedup: an already-mirrored idea answers 409 `already_mirrored` with the topic
 /// existente no `data` — e o check vem ANTES do fetch (nenhuma chamada de rede).
 #[tokio::test]
 async fn admin_mirror_dedups_with_409_and_existing_topic() {
@@ -3153,7 +3153,7 @@ async fn admin_mirror_dedups_with_409_and_existing_topic() {
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 }
 
-/// A listagem admin inclui o espelho semeado, com título do tópico e caminho.
+/// The admin listing includes the seeded mirror, with the topic's title and path.
 #[tokio::test]
 async fn admin_lists_socrates_mirrors() {
     let (app, st) = app().await;
@@ -3175,23 +3175,23 @@ async fn admin_lists_socrates_mirrors() {
     assert_eq!(entry["topic_id"], topic_id.to_string());
     assert_eq!(entry["path"], format!("/f/topico/{topic_id}"));
     assert_eq!(entry["topic_title"], "Ideia espelhada (teste)");
-    // 0671: espelho sem sweep sai como 'manual', ainda sem contador de apoios.
+    // 0671: a mirror with no sweep comes out as 'manual', still without a support counter.
     assert_eq!(entry["origin"], "manual");
     assert!(entry["apoiamentos"].is_null());
     assert!(entry["apoios_updated_at"].is_null());
-    // 0672: espelho pré-v3 vem com os campos da ideia vazios e `body_synced_at`
-    // nulo — é esse nulo que o painel usa pra oferecer o backfill.
+    // 0672: a pre-v3 mirror arrives with the idea's fields empty and `body_synced_at`
+    // null — that null is what the panel uses to offer the backfill.
     assert!(entry["apoiamentos_num"].is_null());
     assert!(entry["situacao"].is_null());
     assert!(entry["body_synced_at"].is_null());
 }
 
 // ---------------------------------------------------------------------------
-// SOCRATES v2 — sweep automático (migration 0671)
+// SOCRATES v2 — automatic sweep (migration 0671)
 // ---------------------------------------------------------------------------
-// SECURITY: os dois endpoints novos têm o MESMO gate owner/admin (anônimo →
-// 401, cidadão comum → 403). Nenhum teste chama o portal do Senado: o gate
-// barra antes do sweep, e a listagem de rodadas só lê o log local.
+// SECURITY: both new endpoints carry the SAME owner/admin gate (anonymous →
+// 401, ordinary citizen → 403). No test calls the Senate portal: the gate
+// blocks before the sweep, and the round listing only reads the local log.
 
 #[tokio::test]
 async fn anonymous_cannot_run_socrates_sweep() {
@@ -3241,11 +3241,11 @@ async fn non_admin_cannot_list_socrates_runs() {
 }
 
 // ---------------------------------------------------------------------------
-// SOCRATES v3 — backfill dos espelhos antigos (migration 0672)
+// SOCRATES v3 — backfill of old mirrors (migration 0672)
 // ---------------------------------------------------------------------------
-// SECURITY: o backfill reescreve o corpo de TODOS os tópicos espelhados, então
-// o gate owner/admin é o que impede um cidadão comum de disparar N chamadas ao
-// portal do Senado e N escritas no fórum. O gate barra ANTES de qualquer fetch
+// SECURITY: the backfill rewrites the body of ALL mirrored topics, so
+// the owner/admin gate is what stops an ordinary citizen from firing N calls to
+// the Senate portal and N writes to the forum. The gate blocks BEFORE any fetch
 // — nenhum teste aqui toca o Senado.
 
 #[tokio::test]
@@ -3283,8 +3283,8 @@ async fn non_admin_cannot_backfill_socrates_mirrors() {
     assert_eq!(v["error"]["code"], "forbidden");
 }
 
-/// Semeia uma rodada FECHADA no log e devolve o id — o admin lê o mesmo shape
-/// que o worker grava, sem que nenhuma rodada real precise rodar.
+/// Seed a CLOSED round in the log and return its id — the admin reads the same shape
+/// the worker writes, without any real round having to run.
 async fn seed_socrates_run(db: &Db) -> Uuid {
     let id = Uuid::now_v7();
     let now = Utc::now();
@@ -3302,7 +3302,7 @@ async fn seed_socrates_run(db: &Db) -> Uuid {
     id
 }
 
-/// A listagem de rodadas devolve o log com as contagens da rodada.
+/// The round listing returns the log with the round's counts.
 #[tokio::test]
 async fn admin_lists_socrates_sweep_runs() {
     let (app, st) = app().await;
@@ -3329,16 +3329,16 @@ async fn admin_lists_socrates_sweep_runs() {
 }
 
 // ---------------------------------------------------------------------------
-// ÁGORA — criação de diretório exige responsável (party_administrator nasce junto)
+// AGORA — creating a directory requires a responsible citizen (party_administrator is born with it)
 // ---------------------------------------------------------------------------
 
-/// Sem responsável no corpo → 400 e nenhum diretório criado; com responsável
-/// (por citizen_id) → 201 e o vínculo admin nasce na mesma transação.
+/// Without a responsible citizen in the body → 400 and no directory created; with one
+/// (by citizen_id) → 201 and the admin binding is born in the same transaction.
 #[tokio::test]
 async fn admin_create_directory_requires_and_binds_responsavel() {
     let (app, st) = app().await;
     let (org, citizen, cookie) = seed_session(&st.db).await;
-    // A rota é gated por permissão (R0.3): papel com `directory.manage` + binding.
+    // The route is permission-gated (R0.3): a role with `directory.manage` + a binding.
     let role_id = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO user_role (id, org_id, name, position, permissions)
@@ -3377,7 +3377,7 @@ async fn admin_create_directory_requires_and_binds_responsavel() {
     .await
     .expect("seed responsável");
 
-    // Sem responsável → 400 missing_responsavel, nada criado.
+    // Without a responsible citizen → 400 missing_responsavel, nothing created.
     let resp = app
         .clone()
         .oneshot(json_req(
@@ -3400,7 +3400,7 @@ async fn admin_create_directory_requires_and_binds_responsavel() {
     .unwrap();
     assert_eq!(count, 0);
 
-    // Com responsável → 201 + vínculo admin no escopo do diretório.
+    // With a responsible citizen → 201 + an admin binding scoped to the directory.
     let resp = app
         .oneshot(json_req(
             "POST",
