@@ -34,9 +34,38 @@ const DEFAULT_ORG_UUID: Uuid = uuid::uuid!("11111111-1111-1111-1111-111111111111
 
 /// Semantic color tokens an admin may override (the web shell maps each to the
 /// CSS custom property of the same name). Extending this list is a code change
-/// on purpose: it is the contract between the admin UI and the design system.
-pub const ALLOWED_COLOR_TOKENS: [&str; 4] =
-    ["accent", "accent-strong", "accent-soft", "accent-contrast"];
+/// on purpose: it is the contract between the admin UI and the design system
+/// (web/src/styles/tokens.css semantic layer).
+pub const ALLOWED_COLOR_TOKENS: [&str; 23] = [
+    // Brand
+    "accent",
+    "accent-strong",
+    "accent-soft",
+    "accent-contrast",
+    // Surfaces
+    "surface-0",
+    "surface-1",
+    "surface-2",
+    "surface-3",
+    "surface-inverse",
+    // Text
+    "text-1",
+    "text-2",
+    "text-3",
+    "text-inverse",
+    // Borders
+    "border-subtle",
+    "border-strong",
+    // State
+    "danger",
+    "danger-soft",
+    "warning",
+    "warning-soft",
+    "info",
+    "info-soft",
+    "success",
+    "success-soft",
+];
 
 const MAX_SITE_NAME: usize = 80;
 const MAX_TAGLINE: usize = 200;

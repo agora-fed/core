@@ -7,7 +7,33 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 
 ## [Unreleased]
 
+## [0.67.0] — 2026-08-05
+
+First tagged release (the GitOps epoch: from here on, production always points
+at a tag). Everything below — plus the whole pre-tag history — ships in
+`v0.67.0`.
+
 ### Added
+- **Runtime branding (Odoo-style)**: the installation's visual identity — site
+  name, tagline, logo, favicon and the design-system color tokens — is now
+  stored in the database (`org_branding`, migration `0674`) and edited in the
+  admin UI at `/admin/aparencia`, with live preview. Applied by the web shell
+  on every page load: **no rebuild, no deploy**. Public `GET /api/v1/branding`
+  (fail-open to the shipped theme); admin `GET/PUT /api/v1/admin/branding`
+  (owner/admin gate). Colors are validated against the semantic-token
+  allowlist (23 tokens: accent*, surface*, text*, border*, state colors) with
+  `#hex` values only — an admin restyles, never injects CSS. Image URLs must
+  be http(s) or site-relative.
+- **agora-fed org split & mandatory GitOps**: the framework now lives publicly
+  at [github.com/agora-fed/core](https://github.com/agora-fed/core) with the
+  Brazilian localization extracted to
+  [agora-fed/l10n-brazil](https://github.com/agora-fed/l10n-brazil). GitHub
+  Actions CI (fmt, clippy, boundary guards, tests + coverage ratchet against
+  real PostgreSQL, gitleaks, cargo-deny), release workflow (tag →
+  `ghcr.io/agora-fed/core` image + OCI Helm chart), generic `agora-core` Helm
+  chart, pull-based GitOps sync agent (`deploy/gitops/`), and the
+  `docker-compose.dev.yml` quickstart. Production changes land ONLY through
+  git (docs/GITOPS.md).
 - **0.95.0-diretorio-responsavel — território único por partido**: incidente
   2026-07-31 — dois "Diretório Municipal PT-Ubatuba" idênticos criados com 49s
   de intervalo (duplo submit sem retorno visível; o banco aceitava). Migration

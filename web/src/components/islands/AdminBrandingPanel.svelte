@@ -13,12 +13,58 @@
   import Button from '../ui/Button.svelte';
 
   /** Tokens the server allowlists — keep in sync with ALLOWED_COLOR_TOKENS. */
-  const TOKENS: { key: string; label: string; hint: string }[] = [
-    { key: 'accent', label: 'Cor primária', hint: 'botões, links, destaques' },
-    { key: 'accent-strong', label: 'Primária escura', hint: 'hover, ênfase' },
-    { key: 'accent-soft', label: 'Primária suave', hint: 'fundos, chips' },
-    { key: 'accent-contrast', label: 'Contraste', hint: 'texto sobre a primária' },
+  type TokenDef = { key: string; label: string; hint: string };
+  const TOKEN_GROUPS: { title: string; tokens: TokenDef[] }[] = [
+    {
+      title: 'Marca',
+      tokens: [
+        { key: 'accent', label: 'Cor primária', hint: 'botões, links, destaques' },
+        { key: 'accent-strong', label: 'Primária escura', hint: 'hover, ênfase' },
+        { key: 'accent-soft', label: 'Primária suave', hint: 'fundos, chips' },
+        { key: 'accent-contrast', label: 'Contraste', hint: 'texto sobre a primária' },
+      ],
+    },
+    {
+      title: 'Superfícies',
+      tokens: [
+        { key: 'surface-0', label: 'Fundo da página', hint: '' },
+        { key: 'surface-1', label: 'Cartões', hint: '' },
+        { key: 'surface-2', label: 'Superfície aninhada', hint: '' },
+        { key: 'surface-3', label: 'Hover / campos', hint: '' },
+        { key: 'surface-inverse', label: 'Superfície inversa', hint: 'rodapé, hero' },
+      ],
+    },
+    {
+      title: 'Texto',
+      tokens: [
+        { key: 'text-1', label: 'Texto primário', hint: '' },
+        { key: 'text-2', label: 'Texto secundário', hint: '' },
+        { key: 'text-3', label: 'Texto suave', hint: 'legendas' },
+        { key: 'text-inverse', label: 'Texto inverso', hint: 'sobre fundo escuro' },
+      ],
+    },
+    {
+      title: 'Bordas',
+      tokens: [
+        { key: 'border-subtle', label: 'Borda sutil', hint: '' },
+        { key: 'border-strong', label: 'Borda forte', hint: '' },
+      ],
+    },
+    {
+      title: 'Estados',
+      tokens: [
+        { key: 'danger', label: 'Erro', hint: '' },
+        { key: 'danger-soft', label: 'Erro (fundo)', hint: '' },
+        { key: 'warning', label: 'Alerta', hint: '' },
+        { key: 'warning-soft', label: 'Alerta (fundo)', hint: '' },
+        { key: 'info', label: 'Informação', hint: '' },
+        { key: 'info-soft', label: 'Informação (fundo)', hint: '' },
+        { key: 'success', label: 'Sucesso', hint: '' },
+        { key: 'success-soft', label: 'Sucesso (fundo)', hint: '' },
+      ],
+    },
   ];
+  const TOKENS: TokenDef[] = TOKEN_GROUPS.flatMap((g) => g.tokens);
   const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 
   let loading = $state(true);
@@ -134,28 +180,34 @@
       <h2>Cores</h2>
       <p class="muted">
         Tokens semânticos do design system — o servidor só aceita esta lista
-        (nenhum CSS arbitrário).
+        (nenhum CSS arbitrário). Deixe em branco para manter o tema padrão.
       </p>
-      {#each TOKENS as t (t.key)}
-        <label class="color-row" class:invalid={invalidColor(t.key)}>
-          <span class="color-label">{t.label} <small class="muted">({t.hint})</small></span>
-          <span class="color-inputs">
-            <input
-              type="color"
-              value={HEX_RE.test(colors[t.key] ?? '') ? colors[t.key] : '#15803d'}
-              oninput={(e) => {
-                colors[t.key] = (e.currentTarget as HTMLInputElement).value;
-                preview();
-              }}
-            />
-            <input
-              type="text"
-              placeholder="#15803d"
-              bind:value={colors[t.key]}
-              oninput={preview}
-            />
-          </span>
-        </label>
+      {#each TOKEN_GROUPS as group (group.title)}
+        <h3>{group.title}</h3>
+        {#each group.tokens as t (t.key)}
+          <label class="color-row" class:invalid={invalidColor(t.key)}>
+            <span class="color-label">
+              {t.label}
+              {#if t.hint}<small class="muted">({t.hint})</small>{/if}
+            </span>
+            <span class="color-inputs">
+              <input
+                type="color"
+                value={HEX_RE.test(colors[t.key] ?? '') ? colors[t.key] : '#15803d'}
+                oninput={(e) => {
+                  colors[t.key] = (e.currentTarget as HTMLInputElement).value;
+                  preview();
+                }}
+              />
+              <input
+                type="text"
+                placeholder="#15803d"
+                bind:value={colors[t.key]}
+                oninput={preview}
+              />
+            </span>
+          </label>
+        {/each}
       {/each}
     </Card>
   </div>
