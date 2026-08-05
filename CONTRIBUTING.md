@@ -1,7 +1,10 @@
 # Contributing
 
-> All code, comments, commits, PR descriptions, and documentation are in **English**.
-> End-user UI and civic content are in **Portuguese**. (PLAN.md language policy.)
+> All code, comments, commits, PR descriptions, and documentation are in **English** —
+> no exceptions inside this repository (ADR-0013). Portuguese lives ONLY in:
+> (1) the [l10n-brazil](https://github.com/agora-fed/l10n-brazil) localization module,
+> (2) end-user UI copy resolved per installation locale (Pindorama = pt-BR).
+> Legacy pt-BR comments found in core are bugs: translate them in the PR that touches them.
 
 ## Golden rules (from PLAN.md)
 

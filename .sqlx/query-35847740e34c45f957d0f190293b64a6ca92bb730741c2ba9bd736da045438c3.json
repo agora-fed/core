@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO admin_role_binding (id, org_id, citizen_id, role, created_at) VALUES ($1, $2, $3, 'owner', $4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "35847740e34c45f957d0f190293b64a6ca92bb730741c2ba9bd736da045438c3"
+}

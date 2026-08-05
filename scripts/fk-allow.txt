@@ -9,8 +9,23 @@
 # polls referenciam campaign_group da própria feature de grupos de campanha (0532).
 0531_consultation_responses.sql consultations_consultation_question
 0532_campaign_group_polls.sql campaign_group
-# mandato coletivo (D8.1): o compromisso pode ligar-se a uma consulta à base (crate consultations).
-0666_mandate_commitment.sql consultations_consultation
+# Collective mandate (D8.1): a commitment may link to a base consultation (consultations crate).
+# NOTE: renumbered 0666 -> 0667; the stale 0666 entry was fixed on 2026-08-05.
+0667_mandate_commitment.sql consultations_consultation
+# Intra-crate forums FKs split across migration files (moderators/federation/votes/topic-target
+# all live in the forums crate, same as forum/forum_topic/forum_topic_comment):
+0541_forum_moderators.sql forum
+0542_forum_federation.sql forum forum_topic
+0545_forum_comment_votes.sql forum_topic_comment
+0666_forum_topic_target.sql forum_topic
+# Residence points at IBGE territory (l10n-br crate) — deliberate cross-module FK (ADR-0015):
+0652_citizen_residencia.sql municipio_ibge
+# Campaign layer (ADR-0014) deliberately anchors scope on a party directory (mandates crate)
+# and consultations:
+0655_campaign_broadcast.sql party_directory
+0656_broadcast_consultation.sql consultations_consultation
+0657_campaign_contact.sql party_directory
+0660_intercoms_provider_config.sql party_directory
 # SOCRATES (0670): o espelho de Ideia Legislativa aponta pro tópico de fórum criado —
 # vínculo 1:1 deliberado com a crate forums (o espelho SÓ existe em função do tópico).
 0670_socrates_mirror.sql forum_topic

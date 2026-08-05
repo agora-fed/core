@@ -1,0 +1,15 @@
+# Gitleaks policy for agora-fed/core.
+# Extends the default ruleset; the allowlist below covers TEST FIXTURES only —
+# dummy signup payloads (@example.org, canonical fake CPFs like 52998224725)
+# that the generic-api-key rule flags in integration tests. Real credentials
+# never live in this repo (secrets come from the environment / K8s Secrets;
+# see docs/GITOPS.md and scripts/scan-secrets.sh).
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures: integration-test signup payloads with dummy passwords"
+paths = [
+  '''crates/[^/]+(/[^/]+)?/tests/.*\.rs''',
+]

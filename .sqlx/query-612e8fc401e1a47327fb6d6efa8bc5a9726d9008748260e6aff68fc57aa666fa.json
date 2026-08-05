@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_role (id, org_id, name, position, permissions) VALUES ($1, $2, 'Moderador', 10, ARRAY['content.moderate','reports.manage'])",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "612e8fc401e1a47327fb6d6efa8bc5a9726d9008748260e6aff68fc57aa666fa"
+}

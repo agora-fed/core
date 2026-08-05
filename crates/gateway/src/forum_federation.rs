@@ -1,20 +1,20 @@
-//! # F4 — fórum como ator `Group` do fediverso.
+//! # F4 — forums as Fediverse `Group` actors (FEP-1b12, outbound slice).
 //!
-//! Handle SEM prefixo (decisão 2026-07-26): segmentos do caminho INVERTIDOS
-//! unidos por ponto — `@ministerio-educacao@`, `@sp@`, `@saude.sp@` (secretaria),
-//! `@santos.sp@` (cidade), `@saude.santos.sp@` (seção municipal), `@ccj.senado@`.
-//! Resolução SEMPRE tenta cidadão primeiro (compat); fórum é o fallback.
+//! Handles carry NO prefix (decision 2026-07-26): path segments REVERSED and
+//! joined by dots — `@ministerio-educacao@`, `@sp@`, `@saude.sp@` (department),
+//! `@santos.sp@` (city), `@saude.santos.sp@` (municipal section), `@ccj.senado@`.
+//! Resolution ALWAYS tries a citizen first (compat); forums are the fallback.
 //!
-//! Fluxos: WebFinger/actor Group (federation.rs delega pra cá) · Follow→Accept
-//! assinado com a chave do fórum (geração preguiçosa) · Announce dos tópicos aos
-//! seguidores (fan-out varrido pelo worker, 1x por inbox) · Note dereferenciável
-//! do tópico em `/actors/<handle>/objects/<topic_id>`.
+//! Flows: WebFinger/Group actor (federation.rs delegates here) · Follow→Accept
+//! signed with the forum's key (lazy generation) · Announce of new topics to
+//! followers (fan-out swept by the worker, once per inbox) · dereferenceable
+//! topic Note at `/actors/<handle>/objects/<topic_id>`.
 
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-/// `saude.santos.sp` → `sp/santos/saude`. `None` se não parecer handle de fórum.
+/// `saude.santos.sp` → `sp/santos/saude`. `None` when it does not look like a forum handle.
 pub(crate) fn handle_to_path(handle: &str) -> Option<String> {
     if handle.is_empty() || handle.len() > 120 {
         return None;
@@ -41,7 +41,7 @@ pub(crate) fn path_to_handle(path: &str) -> String {
     segs.join(".")
 }
 
-/// Um fórum resolvido pra federação.
+/// A forum resolved for federation.
 #[derive(sqlx::FromRow, Debug)]
 pub(crate) struct FedForum {
     pub(crate) id: Uuid,
@@ -53,7 +53,7 @@ pub(crate) struct FedForum {
     pub(crate) banner_url: Option<String>,
 }
 
-/// Resolve um handle federado num fórum visível (federated + não oculto).
+/// Resolve a federated handle to a visible forum (federated + not hidden).
 pub(crate) async fn lookup_by_handle(db: &PgPool, handle: &str) -> Option<FedForum> {
     let path = handle_to_path(handle)?;
     sqlx::query_as(
@@ -68,7 +68,7 @@ pub(crate) async fn lookup_by_handle(db: &PgPool, handle: &str) -> Option<FedFor
     .filter(|f: &FedForum| f.federated)
 }
 
-/// Chave do Group — geração preguiçosa, corrida-safe (UPDATE guardado + re-select).
+/// Group keypair — lazy generation, race-safe (guarded UPDATE + re-select).
 pub(crate) async fn ensure_forum_keys(db: &PgPool, forum_id: Uuid) -> Option<(String, String)> {
     let row: Option<(Option<String>, Option<String>)> =
         sqlx::query_as("SELECT public_key_pem, private_key_pem FROM forum WHERE id = $1")
@@ -107,7 +107,7 @@ pub(crate) async fn ensure_forum_keys(db: &PgPool, forum_id: Uuid) -> Option<(St
     }
 }
 
-/// JRD do WebFinger pra um handle de fórum.
+/// WebFinger JRD for a forum handle.
 pub(crate) fn webfinger_jrd(host: &str, handle: &str, resource: &str) -> Value {
     json!({
         "subject": resource,
@@ -119,7 +119,7 @@ pub(crate) fn webfinger_jrd(host: &str, handle: &str, resource: &str) -> Value {
     })
 }
 
-/// Documento do ator `Group`.
+/// The `Group` actor document.
 pub(crate) fn group_actor_json(
     host: &str,
     handle: &str,
@@ -133,6 +133,8 @@ pub(crate) fn group_actor_json(
         "type": "Group",
         "preferredUsername": handle,
         "name": forum.name,
+        // User-facing copy: stays in the installation's locale until the i18n
+        // catalog lands (wave 2.5); the description itself is author-provided.
         "summary": if forum.description.is_empty() {
             format!("Fórum institucional /f/{} na DemocraciaBR.", forum.full_path)
         } else {
@@ -166,10 +168,10 @@ fn absolutize_url(host: &str, url: &str) -> String {
     }
 }
 
-/// Inbox do Group: `Follow` → registra seguidor (inbox REAL vindo do actor doc,
-/// não do payload — limita spoof) e devolve `Accept` assinado pela chave do fórum;
-/// `Undo{Follow}` → remove. Demais atividades: 202 ignoradas (v1 — comentários
-/// remotos entram na fase seguinte, com moderação).
+/// Group inbox: `Follow` → record the follower (the REAL inbox comes from the
+/// actor doc, not the payload — limits spoofing) and reply with an `Accept`
+/// signed by the forum key; `Undo{Follow}` → remove. Everything else: 202 and
+/// ignored (v1 — remote comments land in the next phase, behind moderation).
 pub(crate) async fn inbox(
     db: &PgPool,
     host: &str,
@@ -187,9 +189,9 @@ pub(crate) async fn inbox(
 
     match kind {
         "Follow" => {
-            // Busca o ator remoto (fetch assinado pela instância) e usa o inbox DECLARADO.
+            // Fetch the remote actor (instance-signed fetch) and use the DECLARED inbox.
             let Ok(doc) = crate::federation::fetch_remote_actor(actor_url).await else {
-                tracing::warn!(actor_url, "forum follow: ator remoto não resolveu");
+                tracing::warn!(actor_url, "forum follow: remote actor did not resolve");
                 return StatusCode::ACCEPTED;
             };
             let inbox_url = doc
@@ -213,7 +215,7 @@ pub(crate) async fn inbox(
             .bind(&inbox_url)
             .execute(db)
             .await;
-            // Accept assinado com a chave do Group — sem ele o Mastodon fica em "pendente".
+            // Accept signed with the Group key — without it Mastodon shows "pending".
             if let Some((_, private_pem)) = ensure_forum_keys(db, forum.id).await {
                 let accept = json!({
                     "@context": "https://www.w3.org/ns/activitystreams",
@@ -233,11 +235,11 @@ pub(crate) async fn inbox(
                     )
                     .await
                     {
-                        tracing::warn!(?err, inbox = %inbox2, "forum follow: Accept falhou");
+                        tracing::warn!(?err, inbox = %inbox2, "forum follow: Accept delivery failed");
                     }
                 });
             }
-            tracing::info!(forum = %forum.full_path, remote = %actor_url, "forum: novo seguidor fediverso");
+            tracing::info!(forum = %forum.full_path, remote = %actor_url, "forum: new fediverse follower");
             StatusCode::ACCEPTED
         }
         "Undo" => {
@@ -262,7 +264,7 @@ pub(crate) async fn inbox(
     }
 }
 
-/// Note AP dereferenciável de um tópico (`/actors/<handle>/objects/<topic_id>`).
+/// Dereferenceable AP Note for a topic (`/actors/<handle>/objects/<topic_id>`).
 pub(crate) async fn topic_object_json(
     db: &PgPool,
     host: &str,

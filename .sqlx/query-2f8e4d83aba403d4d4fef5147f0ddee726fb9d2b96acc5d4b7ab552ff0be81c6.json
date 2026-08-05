@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO citizen_role_binding (id, org_id, citizen_id, role_id, created_at) VALUES ($1, $2, $3, $4, now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2f8e4d83aba403d4d4fef5147f0ddee726fb9d2b96acc5d4b7ab552ff0be81c6"
+}

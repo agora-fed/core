@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.id, c.topic_id, c.author_id, c.remote_handle, c.federated, c.stance,\n                  c.favor_count, c.contra_count, c.ponderacao_count, c.body, c.created_at,\n                  (SELECT ci.karma FROM citizen ci WHERE ci.id = c.author_id) AS author_karma,\n                  COUNT(*) FILTER (WHERE tv.stance = 'favor')  AS \"favor_side!\",\n                  COUNT(*) FILTER (WHERE tv.stance = 'contra') AS \"contra_side!\"\n           FROM forum_topic_comment c\n           JOIN forum_comment_vote cv\n             ON cv.comment_id = c.id AND cv.stance = 'favor'\n           JOIN forum_topic_vote tv\n             ON tv.topic_id = c.topic_id AND tv.citizen_id = cv.citizen_id\n          WHERE c.topic_id = $1\n            AND c.moderation = 'approved'\n            AND c.hidden_at IS NULL\n            AND NOT c.federated\n          GROUP BY c.id\n         HAVING COUNT(*) FILTER (WHERE tv.stance = 'favor')  > 0\n            AND COUNT(*) FILTER (WHERE tv.stance = 'contra') > 0",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "topic_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "author_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "remote_handle",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "federated",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "stance",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "favor_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "contra_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "ponderacao_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "body",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "author_karma",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 12,
+        "name": "favor_side!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 13,
+        "name": "contra_side!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "98a76224e405900acad4127d85c63bbc37b10df9c44a9a2409e1f10436a205f7"
+}

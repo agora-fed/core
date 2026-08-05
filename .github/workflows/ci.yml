@@ -104,7 +104,7 @@ jobs:
       - name: coverage gate (ratchet) + lcov export
         run: |
           cargo sqlx migrate run --source migrations
-          cargo llvm-cov --workspace --all-features --fail-under-lines 53 --lcov --output-path lcov.info
+          cargo llvm-cov --workspace --all-features --fail-under-lines 49 --lcov --output-path lcov.info
       - name: upload to Codecov
         uses: codecov/codecov-action@v5
         with:

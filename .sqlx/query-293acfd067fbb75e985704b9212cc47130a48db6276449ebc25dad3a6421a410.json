@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO citizen (id, org_id, oidc_subject, verification_level, created_at) VALUES ($1, $2, $3, 'directory', $4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "293acfd067fbb75e985704b9212cc47130a48db6276449ebc25dad3a6421a410"
+}

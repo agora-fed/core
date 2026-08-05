@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_role (id, org_id, name, position, permissions) VALUES ($1, $2, 'Base', 0, ARRAY[]::text[])",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "14318e6f8de2831bc874bce4e0c9b23dcedaa67889addb10f5e3f857c7a2d25e"
+}

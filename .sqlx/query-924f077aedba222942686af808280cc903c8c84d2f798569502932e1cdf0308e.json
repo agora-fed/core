@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT topic, event_type, payload::text AS \"payload!\", occurred_at\n           FROM events_log WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "topic",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "event_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "payload!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "occurred_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      false
+    ]
+  },
+  "hash": "924f077aedba222942686af808280cc903c8c84d2f798569502932e1cdf0308e"
+}
