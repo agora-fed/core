@@ -1,15 +1,15 @@
-//! # Formulário de contato público (0.28.1).
+//! # Public contact form (0.28.1).
 //!
-//! `POST /contact` — único canal de contato do site. Nenhum endereço de
-//! e-mail é publicado em HTML (decisão anti-harvesting do steward): as
-//! páginas institucionais linkam `/contato/?setor=…` e a mensagem é
-//! encaminhada via SMTP (mesmo relay soberano das notificações) para a
+//! `POST /contact` — the site's only contact channel. No e-mail address
+//! is published in HTML (the steward's anti-harvesting decision): the
+//! institutional pages link `/contato/?setor=…` and the message is
+//! forwarded via SMTP (the same sovereign relay as the notifications) to the
 //! caixa interna `CONTACT_INBOX`.
 //!
-//! Defesas — endpoint público, sem autenticação:
-//! - honeypot: campo `website` preenchido → 200 "ok" sem enviar nada;
-//! - rate-limit em memória por IP (`X-Forwarded-For`, atrás do Caddy),
-//!   teto `CONTACT_RATE_MAX_PER_HOUR` (default 5) — pod único, sem DB;
+//! Defences — a public endpoint, no authentication:
+//! - honeypot: a filled `website` field → 200 "ok" without sending anything;
+//! - in-memory rate limit per IP (`X-Forwarded-For`, behind Caddy),
+//!   capped at `CONTACT_RATE_MAX_PER_HOUR` (default 5) — a single pod, no DB;
 //! - setor fechado em enum + limites de tamanho por campo.
 
 use std::collections::HashMap;
@@ -46,14 +46,14 @@ pub struct ContactBody {
     email: String,
     subject: String,
     message: String,
-    /// Honeypot — humano nunca vê o campo; bot que preenche recebe um
-    /// "ok" falso e a mensagem é descartada.
+    /// Honeypot — a human never sees the field; a bot that fills it receives a
+    /// fake "ok" and the message is discarded.
     #[serde(default)]
     website: String,
 }
 
-/// Setores expostos nas páginas institucionais. Fechado aqui — o rótulo
-/// entra no Subject pra triagem na caixa de destino.
+/// Sectors exposed on the institutional pages. Closed here — the label
+/// goes into the Subject for triage in the destination mailbox.
 fn sector_label(sector: &str) -> Option<&'static str> {
     match sector {
         "contato" => Some("Contato geral"),
@@ -78,8 +78,8 @@ fn caller_ip(headers: &HeaderMap) -> Option<String> {
 static RATE: LazyLock<Mutex<HashMap<String, Vec<Instant>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-/// `true` se o IP ainda tem cota na janela. `None` de IP (sem
-/// X-Forwarded-For) não trava — mesma postura do rate-limit do signup.
+/// `true` when the IP still has quota in the window. A `None` IP (no
+/// X-Forwarded-For) never blocks — the same posture as the signup rate limit.
 fn rate_allow(ip: Option<&str>) -> bool {
     let Some(ip) = ip else { return true };
     let max = std::env::var("CONTACT_RATE_MAX_PER_HOUR")
@@ -152,7 +152,7 @@ fn validate(body: &ContactBody) -> Result<&'static str, Box<Response>> {
 }
 
 async fn submit(headers: HeaderMap, Json(body): Json<ContactBody>) -> Response {
-    // Honeypot: responde sucesso sem efeito — não ensinar o bot.
+    // Honeypot: answer success with no effect — never teach the bot.
     if !body.website.trim().is_empty() {
         return (StatusCode::OK, Json(ApiResponse::ok(()))).into_response();
     }
@@ -196,7 +196,7 @@ async fn submit(headers: HeaderMap, Json(body): Json<ContactBody>) -> Response {
     }
 }
 
-/// Variante do `send_email` de [`crate::proposal_delivery`] com `Reply-To`
+/// A variant of [`crate::proposal_delivery`]'s `send_email` with `Reply-To`
 /// do remetente humano — responder na caixa de destino responde direto
 /// a quem escreveu.
 async fn send_with_reply_to(

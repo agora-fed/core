@@ -1,15 +1,15 @@
-//! Admin: fila de denúncias (`note_report`).
+//! Admin: the report queue (`note_report`).
 //!
-//! Fecha o ciclo aberto pela feature de "Denunciar publicação" no menu de
-//! 3-pontinhos: cada denúncia entra na tabela e aqui um moderador vê a fila,
-//! pode expandir cada uma e marcar como resolvida com notas.
+//! Closes the cycle opened by the "Report post" feature in the
+//! three-dot menu: each report enters the table and here a moderator sees the queue,
+//! can expand each one and mark it resolved with notes.
 //!
 //! - `GET  /admin/reports?status=pending|resolved&limit=&offset=` — lista
-//!   com joins pra hidratar autor da nota e denunciante.
+//!   with joins to hydrate the note's author and the reporter.
 //! - `POST /admin/reports/{id}/resolve {notes?}` — marca resolved_at + notas.
-//! - `POST /admin/reports/{id}/reopen` — desfaz resolução.
+//! - `POST /admin/reports/{id}/reopen` — undoes a resolution.
 //!
-//! Auth: `require_admin` (mesmo padrão dos outros admin_*).
+//! Auth: `require_admin` (the same pattern as the other admin_* modules).
 
 use axum::extract::{Json, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -28,14 +28,14 @@ pub fn routes(state: AppState) -> Router<()> {
         .route("/admin/reports", get(list_reports))
         .route("/admin/reports/{id}/resolve", post(resolve_report))
         .route("/admin/reports/{id}/reopen", post(reopen_report))
-        // Ações de moderação em contas (Fatia 2).
+        // Moderation actions on accounts (slice 2).
         .route("/admin/accounts/{id}/suspend", post(suspend_account))
         .route("/admin/accounts/{id}/unsuspend", post(unsuspend_account))
         .route("/admin/accounts/{id}/silence", post(silence_account))
         .route("/admin/accounts/{id}/unsilence", post(unsilence_account))
         // Audit log.
         .route("/admin/audit", get(list_audit))
-        // Federação server-wide.
+        // Server-wide federation.
         .route(
             "/admin/federation/domain_blocks",
             get(list_domain_blocks).post(add_domain_block_server),
@@ -48,7 +48,7 @@ pub fn routes(state: AppState) -> Router<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Guard (duplicado dos outros admin_*: pra evitar acoplamento cruzado).
+// Guard (duplicated from the other admin_* modules: to avoid cross-coupling).
 // ---------------------------------------------------------------------------
 
 async fn require_admin(headers: &HeaderMap, db: &PgPool) -> Result<Uuid, Response> {
@@ -135,7 +135,7 @@ struct ReportDto {
     resolution_notes: Option<String>,
     reporter_handle: Option<String>,
     reporter_display_name: Option<String>,
-    /// Quantas denúncias distintas essa mesma nota já acumulou.
+    /// How many distinct reports that same note has already accumulated.
     total_for_note: i64,
 }
 
@@ -344,7 +344,7 @@ async fn reopen_report(
 }
 
 // ---------------------------------------------------------------------------
-// Ações em contas (Fatia 2)
+// Actions on accounts (slice 2)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize, Default)]
@@ -384,7 +384,7 @@ async fn suspend_account(
     match res {
         Ok(r) if r.rows_affected() == 0 => not_found_json("Conta não encontrada."),
         Ok(_) => {
-            // Sessões ativas: força logout (best-effort).
+            // Active sessions: force logout (best-effort).
             let _ = sqlx::query(r"DELETE FROM auth_session WHERE citizen_id = $1")
                 .bind(id)
                 .execute(&state.db)
@@ -659,7 +659,7 @@ fn not_found_json(msg: &'static str) -> Response {
 }
 
 // ---------------------------------------------------------------------------
-// Federação server-wide
+// Server-wide federation
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Serialize)]

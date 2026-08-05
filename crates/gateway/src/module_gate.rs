@@ -1,13 +1,13 @@
-//! Gate de módulo por organização (R0.5 / #42, ADR-0011).
+//! Per-organization module gate (R0.5 / #42, ADR-0011).
 //!
-//! Um módulo está ATIVO numa org quando: é `core` (sempre), OU tem linha em `admin_feature_flag`
-//! com `enabled=true`, OU não tem linha e o manifesto diz `default_enabled`. `require_module`
-//! roda DENTRO do handler com o org do `CallerId` (emenda P3.1 — nunca middleware de router pra
-//! mutação, cujo org viria do body). Flags são cacheadas por 30s (emenda P3.3/P4.1 — cacheia só
-//! configuração, NUNCA grants de papel).
+//! A module is ACTIVE in an org when: it is `core` (always), OR it has a row in `admin_feature_flag`
+//! with `enabled=true`, OR it has no row and the manifest says `default_enabled`. `require_module`
+//! runs INSIDE the handler with the `CallerId`'s org (amendment P3.1 — never a router middleware for
+//! a mutation, whose org would come from the body). Flags are cached for 30s (amendment P3.3/P4.1 — cache
+//! configuration ONLY, NEVER role grants).
 //!
-//! `GET /orgs/{org}/modules` é PÚBLICO por design (emenda P6.3): expõe só o estado efetivo dos
-//! módulos, não as linhas cruas de flags (essas ficam atrás de flags.manage no admin).
+//! `GET /orgs/{org}/modules` is PUBLIC by design (amendment P6.3): it exposes only the modules' effective
+//! state, not the raw flag rows (those stay behind flags.manage in the admin).
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -27,12 +27,12 @@ use crate::module_catalog;
 
 const FLAG_TTL: Duration = Duration::from_secs(30);
 
-/// Cache (org, flag_key) → (lido_em, Option<enabled>). `None` = sem linha (usa default do manifesto).
+/// Cache (org, flag_key) → (read_at, Option<enabled>). `None` = no row (uses the manifest default).
 static FLAG_CACHE: std::sync::LazyLock<
     tokio::sync::RwLock<HashMap<(Uuid, String), (Instant, Option<bool>)>>,
 > = std::sync::LazyLock::new(|| tokio::sync::RwLock::new(HashMap::new()));
 
-/// Lê `enabled` de um `module.<id>` pra uma org, com cache TTL. `None` quando não há linha.
+/// Read `enabled` of a `module.<id>` for an org, with a TTL cache. `None` when there is no row.
 async fn flag_enabled(state: &AppState, org: Uuid, key: &str) -> Option<bool> {
     let ck = (org, key.to_owned());
     if let Some((at, val)) = FLAG_CACHE.read().await.get(&ck) {
@@ -52,7 +52,7 @@ async fn flag_enabled(state: &AppState, org: Uuid, key: &str) -> Option<bool> {
     val
 }
 
-/// Estado efetivo de um módulo numa org.
+/// Effective state of a module in an org.
 async fn module_active(state: &AppState, org: Uuid, m: &ModuleManifest) -> bool {
     if m.core {
         return true;
@@ -63,8 +63,8 @@ async fn module_active(state: &AppState, org: Uuid, m: &ModuleManifest) -> bool 
     }
 }
 
-/// Gate pra um handler: `Ok(())` se o módulo está ativo na org, senão 404 pronto (módulo off =
-/// a rota "não existe" pra essa org). Id desconhecido → Ok (não bloqueia o que não é módulo).
+/// Gate for a handler: `Ok(())` when the module is active in the org, otherwise a ready 404 (a module off =
+/// the route "does not exist" for that org). An unknown id → Ok (never block what is not a module).
 pub async fn require_module(state: &AppState, org: Uuid, module_id: &str) -> Result<(), Response> {
     let Some(m) = module_catalog::find(module_id) else {
         return Ok(());
@@ -84,7 +84,7 @@ pub async fn require_module(state: &AppState, org: Uuid, module_id: &str) -> Res
 }
 
 // ---------------------------------------------------------------------------
-// GET /orgs/{org}/modules — estado efetivo (público)
+// GET /orgs/{org}/modules — effective state (public)
 // ---------------------------------------------------------------------------
 
 #[derive(Serialize)]

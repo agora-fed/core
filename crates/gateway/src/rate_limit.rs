@@ -1,19 +1,19 @@
 //! # Rate-limit de escrita (0.42.0) — defesa contra spam/brigading.
 //!
-//! Até aqui só login/contato/audiência/post-federado tinham limite. Escritas
-//! sensíveis (votos, propostas, comentários, denúncias, campanha, título)
-//! ficavam abertas a scripts. Este middleware põe um teto GLOBAL de mutações
-//! por minuto por chamador nos métodos que mudam estado (POST/PUT/PATCH/DELETE).
+//! Until now only login/contact/audience/federated-post had a limit. Sensitive
+//! writes (votes, proposals, comments, reports, campaign, electoral registry)
+//! were open to scripts. This middleware puts a GLOBAL cap on mutations
+//! per minute per caller across the state-changing methods (POST/PUT/PATCH/DELETE).
 //!
-//! - Alvo: chamadas AUTENTICADAS (uma conta logada spammando). A chave é o
-//!   cidadão (`x-dsoc-citizen-id`, já setado pelo `inject_identity` — por isso
-//!   esta camada roda DEPOIS dele). Requisições anônimas passam: os endpoints
-//!   anônimos+mutantes (login/register/respond/contato) já têm limite próprio,
-//!   e votos/propostas/etc. exigem sessão (401 sem ela).
-//! - Janela fixa de 1 minuto, contador em memória (processo único; reset no
-//!   restart do pod é aceitável pra prevenção de abuso). Teto configurável via
+//! - Target: AUTHENTICATED calls (a logged-in account spamming). The key is the
+//!   citizen (`x-dsoc-citizen-id`, already set by `inject_identity` — which is why
+//!   this layer runs AFTER it). Anonymous requests pass: the anonymous+mutating
+//!   endpoints (login/register/respond/contact) already carry their own limit,
+//!   and votes/proposals/etc. require a session (401 without one).
+//! - A fixed 1-minute window, an in-memory counter (single process; a reset on
+//!   pod restart is acceptable for abuse prevention). The cap is configurable via
 //!   `RATE_LIMIT_WRITES_PER_MIN` (default 30).
-//! - Só conta métodos mutantes; GET/HEAD passam livres.
+//! - It counts mutating methods only; GET/HEAD pass freely.
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
@@ -47,7 +47,7 @@ fn current_minute() -> u64 {
         .unwrap_or(0)
 }
 
-/// Chave do cidadão autenticado, ou `None` para anônimo (que não limitamos aqui).
+/// The authenticated citizen's key, or `None` for anonymous (which we do not limit here).
 fn caller_key(headers: &HeaderMap) -> Option<String> {
     headers
         .get("x-dsoc-citizen-id")
@@ -86,8 +86,8 @@ fn too_many() -> Response {
         .into_response()
 }
 
-/// Middleware. Roda como a camada MAIS INTERNA (depois do inject_identity),
-/// então já enxerga o `x-dsoc-citizen-id` resolvido da sessão.
+/// Middleware. Runs as the INNERMOST layer (after inject_identity),
+/// so it already sees the `x-dsoc-citizen-id` resolved from the session.
 pub async fn rate_limit_middleware(req: Request, next: Next) -> Response {
     let mutating = matches!(
         *req.method(),
@@ -110,7 +110,7 @@ mod tests {
     #[test]
     fn caps_after_limit_in_same_window() {
         let key = format!("test:{}", current_minute());
-        // Com teto 3: os 3 primeiros passam (false), o 4º estoura (true).
+        // With a cap of 3: the first 3 pass (false), the 4th exceeds (true).
         assert!(!hit(&key, 3));
         assert!(!hit(&key, 3));
         assert!(!hit(&key, 3));

@@ -1,14 +1,14 @@
 //! Endpoints LGPD — direitos do titular (art. 18 Lei 13.709/2018).
 //!
-//! Duas ações que o cidadão pode acionar da UI de Configurações:
+//! Two actions the citizen can trigger from the Settings UI:
 //!
-//! - `GET  /me/lgpd/export` — devolve um JSON completo com todos os dados
+//! - `GET  /me/lgpd/export` — returns a complete JSON with all the data
 //!   pessoais dele armazenados (art. 18 II e V).
 //! - `POST /me/lgpd/delete-account` — soft-delete: marca `deleted_at`,
-//!   limpa PII (email, CPF, senha, título, gov.br, avatar), invalida
-//!   todas as sessões. Conteúdo público (propostas, comentários, votos)
-//!   fica com autor anonimizado (interesse público em accountability
-//!   histórica de mandato — LGPD art. 16).
+//!   wipes PII (e-mail, identity document, password, electoral registry, gov.br, avatar), invalidates
+//!   every session. Public content (proposals, comments, votes)
+//!   stays with an anonymized author (the public interest in historical
+//!   mandate accountability — LGPD art. 16).
 
 use axum::extract::State;
 use axum::http::{header, HeaderMap, StatusCode};
@@ -80,7 +80,7 @@ async fn build_export(db: &PgPool, citizen_id: Uuid) -> Result<serde_json::Value
             .fetch_one(db)
             .await?;
 
-    // Credentials (só e-mail; jamais o hash da senha).
+    // Credentials (e-mail only; never the password hash).
     let credentials: Vec<serde_json::Value> = sqlx::query_scalar(
         r"SELECT jsonb_build_object(
               'email', email,
@@ -104,7 +104,7 @@ async fn build_export(db: &PgPool, citizen_id: Uuid) -> Result<serde_json::Value
     .fetch_all(db)
     .await?;
 
-    // Propostas do cidadão.
+    // The citizen's proposals.
     let proposals: Vec<serde_json::Value> = sqlx::query_scalar(
         r"SELECT jsonb_build_object(
               'id', id, 'title', title, 'body', body, 'status', status,
@@ -120,7 +120,7 @@ async fn build_export(db: &PgPool, citizen_id: Uuid) -> Result<serde_json::Value
     .fetch_all(db)
     .await?;
 
-    // Votos que eu dei.
+    // Votes I cast.
     let votes: Vec<serde_json::Value> = sqlx::query_scalar(
         r"SELECT jsonb_build_object(
               'id', id, 'proposal_id', proposal_id, 'created_at', created_at
@@ -143,7 +143,7 @@ async fn build_export(db: &PgPool, citizen_id: Uuid) -> Result<serde_json::Value
     .fetch_all(db)
     .await?;
 
-    // Notificações que recebi.
+    // Notifications I received.
     let notifications: Vec<serde_json::Value> = sqlx::query_scalar(
         r"SELECT jsonb_build_object(
               'id', id, 'kind', kind, 'object_uri', object_uri,
@@ -191,12 +191,12 @@ async fn delete_account(State(state): State<AppState>, headers: HeaderMap) -> Re
     };
     let db = &state.db;
 
-    // Uma transação com todas as limpezas.
+    // A single transaction with every cleanup.
     let mut tx = match db.begin().await {
         Ok(t) => t,
         Err(err) => return storage(err),
     };
-    // 1. Marca deleted_at + apaga PII editável na citizen.
+    // 1. Mark deleted_at + wipe editable PII on citizen.
     if let Err(err) = sqlx::query(
         r"UPDATE citizen
              SET deleted_at = now(),
@@ -227,7 +227,7 @@ async fn delete_account(State(state): State<AppState>, headers: HeaderMap) -> Re
     {
         return storage(err);
     }
-    // 3. Mata todas as sessões.
+    // 3. Kill every session.
     if let Err(err) = sqlx::query("DELETE FROM auth_session WHERE citizen_id = $1")
         .bind(cid)
         .execute(&mut *tx)
@@ -253,7 +253,7 @@ async fn delete_account(State(state): State<AppState>, headers: HeaderMap) -> Re
     .execute(&mut *tx)
     .await
     {
-        // Não crítico — segue mesmo se falhar.
+        // Not critical — proceed even if it fails.
         tracing::warn!(?err, "lgpd delete: pending cleanup falhou");
     }
 

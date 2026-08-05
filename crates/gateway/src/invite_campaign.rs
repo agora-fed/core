@@ -1,19 +1,19 @@
 //! # Campanha de convites aos gabinetes (0.34.0).
 //!
-//! O gargalo estratégico do plano é adoção: a máquina de accountability só
-//! gera narrativa quando gabinetes respondem — e eles só respondem depois de
-//! entrar. Este módulo transforma o convite individual (`POST
-//! /mandates/{id}/invites`, dsoc-auth) numa CAMPANHA operável pelo admin:
+//! The plan's strategic bottleneck is adoption: the accountability machine only
+//! generates narrative when offices answer — and they only answer after they
+//! join. This module turns the individual invitation (`POST
+//! /mandates/{id}/invites`, dsoc-auth) into a CAMPAIGN the admin can operate:
 //!
-//! - `GET  /admin/invite-campaign/overview`   — funil: elegíveis, convidados,
+//! - `GET  /admin/invite-campaign/overview`   — the funnel: eligible, invited,
 //!   pendentes, aceitos, expirados (filtros sphere/house/uf/party).
 //! - `POST /admin/invite-campaign/send-batch` — envia um LOTE (1–50) pros
-//!   próximos elegíveis; cada envio passa pelo `MandateInviteService` real
-//!   (mesmas guardas: admin-only, token hasheado, TTL, e-mail com template).
+//!   next eligible ones; every send goes through the real `MandateInviteService`
+//!   (same guards: admin-only, hashed token, TTL, templated e-mail).
 //! - `GET  /admin/invite-campaign/invites`    — acompanhamento por status.
 //!
-//! O botão fica com o humano: nada aqui dispara sozinho — o lote sai quando
-//! o admin clica, no tamanho que o admin escolheu.
+//! The button stays with the human: nothing here fires on its own — the batch goes out when
+//! the admin clicks, at the size the admin chose.
 
 use axum::extract::{Json, Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -39,7 +39,7 @@ pub fn routes(state: AppState) -> Router<()> {
         .with_state(state)
 }
 
-// Mesma guarda dos outros módulos admin (email_templates, admin_users).
+// The same guard as the other admin modules (email_templates, admin_users).
 async fn require_admin(headers: &HeaderMap, db: &PgPool) -> std::result::Result<Uuid, Response> {
     let citizen_id: Uuid = headers
         .get("x-dsoc-citizen-id")
@@ -88,7 +88,7 @@ struct CampaignFilter {
 }
 
 /// Fragmento WHERE compartilhado + binds na ordem sphere, house, uf, party.
-/// Filtros são igualdade exata; `None` vira TRUE via `$n IS NULL`.
+/// Filters are exact equality; `None` becomes TRUE via `$n IS NULL`.
 const FILTER_SQL: &str = r"
       ($1::text IS NULL OR m.sphere = $1)
   AND ($2::text IS NULL OR m.house  = $2)
@@ -113,7 +113,7 @@ struct OverviewDto {
     eligible_now: i64,
 }
 
-/// `GET /admin/invite-campaign/overview` — o funil num SELECT só.
+/// `GET /admin/invite-campaign/overview` — the funnel in a single SELECT.
 async fn overview(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -185,8 +185,8 @@ async fn overview(
 struct SendBatchBody {
     #[serde(flatten)]
     filter: CampaignFilter,
-    /// Tamanho do lote (1–50, default 20). Pequeno DE PROPÓSITO: campanha
-    /// vai em ondas controladas, não em blast.
+    /// Batch size (1–50, default 20). Small ON PURPOSE: a campaign
+    /// goes in controlled waves, not in a blast.
     limit: Option<i64>,
 }
 
@@ -207,9 +207,9 @@ struct BatchResultDto {
     items: Vec<BatchItemDto>,
 }
 
-/// `POST /admin/invite-campaign/send-batch` — pega os próximos N elegíveis
-/// (nunca convidados ou com convite expirado) e dispara o convite real de
-/// cada um, sequencialmente. Erro num item não derruba o lote.
+/// `POST /admin/invite-campaign/send-batch` — takes the next N eligible ones
+/// (never invited, or with an expired invitation) and fires each one's real
+/// invitation, sequentially. An error on one item does not break the batch.
 async fn send_batch(
     State(state): State<AppState>,
     headers: HeaderMap,

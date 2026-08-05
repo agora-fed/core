@@ -1,14 +1,14 @@
-//! # Convite pra completar o perfil (0.49.0, migration 0534) — Fase 4 (adesão).
+//! # Invitation to complete the profile (0.49.0, migration 0534) — Phase 4 (adoption).
 //!
-//! Cidadão que se cadastrou mas nunca preencheu o perfil (sem `display_name` ou
-//! `handle`) fica invisível na plataforma. Aqui o ADMIN (owner/admin) vê quem
-//! está assim e dispara — num clique, um ou em lote — um e-mail convidando a
-//! completar. `profile_nudge_sent_at` marca o envio pra não repetir sem o admin
-//! mandar de novo. Nada é automático: o humano decide (LGPD/consentimento).
+//! A citizen who signed up but never filled in their profile (no `display_name` or
+//! `handle`) stays invisible on the platform. Here the ADMIN (owner/admin) sees who
+//! is in that state and fires — in one click, one at a time or in a batch — an e-mail inviting them
+//! to complete it. `profile_nudge_sent_at` records the send so it never repeats without the admin
+//! sending again. Nothing is automatic: the human decides (LGPD/consent).
 //!
-//! - `GET  /admin/profile-nudge/overview`   — funil: total, incompletos, ainda não convidados.
-//! - `GET  /admin/profile-nudge/candidates` — lista de incompletos (nome, handle, e-mail, quando).
-//! - `POST /admin/profile-nudge/send`       — envia o convite pra uma seleção (1–50) e marca.
+//! - `GET  /admin/profile-nudge/overview`   — the funnel: total, incomplete, not yet invited.
+//! - `GET  /admin/profile-nudge/candidates` — the list of incomplete ones (name, handle, e-mail, when).
+//! - `POST /admin/profile-nudge/send`       — sends the invitation to a selection (1–50) and records it.
 
 use std::time::Duration;
 
@@ -28,11 +28,11 @@ use crate::proposal_delivery::{smtp_from_env, SmtpConfig};
 
 const CANDIDATES_LIMIT: i64 = 500;
 const MAX_BATCH: usize = 50;
-/// Base pública pro link do e-mail (a página de edição de perfil).
+/// Public base for the e-mail's link (the profile edit page).
 const PROFILE_URL: &str = "https://democracia.social.br/configuracoes";
 
-/// Predicado de "perfil incompleto": sem nome de exibição ou sem handle, e não
-/// apagado. Mantido idêntico entre overview/candidates/send.
+/// The "incomplete profile" predicate: no display name or no handle, and not
+/// deleted. Kept identical across overview/candidates/send.
 const INCOMPLETE: &str = "c.deleted_at IS NULL AND (c.display_name IS NULL OR btrim(c.display_name) = '' OR c.handle IS NULL)";
 
 pub fn routes(state: AppState) -> Router<()> {
@@ -62,7 +62,7 @@ fn storage_error() -> Response {
     )
 }
 
-/// Gate owner/admin. Retorna Err(resposta pronta) quando não passa.
+/// Owner/admin gate. Returns Err(a ready response) when it does not pass.
 async fn require_admin(db: &PgPool, headers: &HeaderMap) -> Result<Uuid, Response> {
     let Some(citizen) = caller_citizen(headers) else {
         return Err(fail(
@@ -233,8 +233,8 @@ async fn send(
     let mut failed = 0usize;
 
     for id in &body.citizen_ids {
-        // Recarrega o alvo e reconfirma que AINDA está incompleto (evita mandar
-        // pra quem completou entre listar e enviar). Só e-mail de quem tem credencial.
+        // Reload the target and reconfirm it is STILL incomplete (avoids mailing
+        // someone who completed it between listing and sending). Only those with a credential get e-mail.
         let target: Option<(String, Option<String>)> = match sqlx::query_as(&format!(
             r"SELECT ac.email, c.display_name
                 FROM citizen c JOIN auth_credential ac ON ac.citizen_id = c.id
@@ -299,7 +299,7 @@ async fn send(
         .into_response()
 }
 
-/// Envia um e-mail de texto simples pelo relay SMTP soberano (mesmo transporte
+/// Send a plain-text e-mail through the sovereign SMTP relay (the same transport
 /// do /contato e do password-reset).
 async fn send_mail(
     cfg: &SmtpConfig,

@@ -3,9 +3,9 @@
 //! Two endpoints power the /politicos/gastos and /politicos/propostas pages:
 //!
 //! * `GET /api/v1/reports/gasto-parlamentar` — total cota parlamentar spend
-//!   grouped by (político | partido | cargo | esfera), filterable by
+//!   grouped by (official | party | office | sphere), filterable by
 //!   uf/house/party/sphere. Raw per-mandate totals come from two sources:
-//!   Câmara `/deputados/{id}/despesas` (JSON, paginated by `?ano=&pagina=`)
+//!   the lower house's `/deputados/{id}/despesas` (JSON, paginated by `?ano=&pagina=`)
 //!   for deputados, and Senado's CEAPS CSV
 //!   (`https://www.senado.leg.br/transparencia/LAI/verba/despesa_ceaps_{YYYY}.csv`,
 //!   Latin-1, `;`-separated) for senadores — matched by display_name
@@ -109,7 +109,7 @@ pub struct PropostaGroupRow {
     pub count: i64,
     pub published: i64,
     pub clustered: i64,
-    /// Only valid when grouping by político/mandate — for others it's the sum.
+    /// Only valid when grouping by official/mandate — for others it is the sum.
     pub answered: i64,
     pub ignored: i64,
     pub pending: i64,
@@ -376,7 +376,7 @@ struct MandateSlim {
     house: Option<String>,
     sphere: String,
     office: String,
-    /// Câmara/Senado numeric id — needed to hit the external API.
+    /// The legislature's numeric id — needed to hit the external API.
     external_id: Option<String>,
     /// `camara` | `senado` | other. `senado` = we skip external fetch (no cota).
     source: Option<String>,
@@ -422,10 +422,10 @@ async fn gasto_parlamentar(
     State(state): State<AppState>,
     Query(mut q): Query<GastoQuery>,
 ) -> Response {
-    // Sphere é federal-only aqui (ver load_mandate_slims). Se o cliente pediu
-    // estadual/municipal, normalizamos pra federal em vez de retornar 400 —
-    // links antigos com `?sphere=municipal` continuam funcionando, só que
-    // sobre a base federal (que é a única com dado real).
+    // Sphere is federal-only here (see load_mandate_slims). When a client asks for
+    // state/municipal we normalize to federal instead of returning 400 —
+    // old links with `?sphere=municipal` keep working, only over the
+    // federal base (the only one with real data).
     if q.filters.sphere.as_deref() != Some("federal") {
         q.filters.sphere = Some("federal".to_owned());
     }
@@ -448,7 +448,7 @@ async fn gasto_parlamentar(
             return (StatusCode::OK, Json(ApiResponse::ok(out))).into_response();
         }
     }
-    // Cold — refresh (or stale). Re-fetch mandate list from DB, then hit Câmara.
+    // Cold — refresh (or stale). Re-fetch the mandate list from the DB, then hit the API.
     let mandates = match load_mandate_slims(&state).await {
         Ok(v) => v,
         Err(err) => {
@@ -473,11 +473,11 @@ async fn gasto_parlamentar(
 async fn load_mandate_slims(state: &AppState) -> Result<Vec<MandateSlim>, sqlx::Error> {
     // NULL org_id excluded — we only ever aggregate DemocraciaBR org's mandates.
     //
-    // FEDERAL-ONLY: CEAP + CEAPS são cotas do Congresso Federal. Não faz
-    // sentido puxar 70k mandatos estaduais + municipais aqui (que não têm
+    // FEDERAL-ONLY: CEAP + CEAPS are quotas of the federal Congress. It makes no
+    // sense to pull 70k state + municipal mandates here (which have no
     // fonte de dado equivalente) — a query scanea a tabela toda inutilmente.
-    // Restrição federal deixa a leitura em ~594 rows, tornando o cold start
-    // ~50× mais rápido.
+    // The federal restriction keeps the read at ~594 rows, making the cold start
+    // ~50× faster.
     let rows: Vec<(
         Uuid,
         String,
@@ -523,7 +523,7 @@ async fn load_mandate_slims(state: &AppState) -> Result<Vec<MandateSlim>, sqlx::
 /// partial and would understate every mandate. `now` is passed in so tests
 /// can pin the choice.
 fn reporting_year_for(now: chrono::DateTime<chrono::Utc>) -> i32 {
-    // Câmara publishes expenses with a lag — use N-1 uniformly. If the
+    // The house publishes expenses with a lag — use N-1 uniformly. If the
     // current month is late in the year and N-1 is stable, this is safe.
     // (A future refinement: switch to current year once we're past March.)
     let year = now.date_naive().year();
@@ -531,10 +531,10 @@ fn reporting_year_for(now: chrono::DateTime<chrono::Utc>) -> i32 {
 }
 
 /// For each mandate, fetch the last-closed-year cota parlamentar from the
-/// Câmara open-data API. Senado mandates are recorded as zero (no
+/// the lower house's open-data API. Senate mandates are recorded as zero (no
 /// equivalent public endpoint here). Concurrency bounded by `CONCURRENCY`.
 ///
-/// The Câmara despesas endpoint pages at 100 items. Deputies file 200-400
+/// The expenses endpoint pages at 100 items. Deputies file 200-400
 /// items/year → we paginate `?ano=<year>&itens=100&pagina=<n>` until the
 /// server returns an empty `dados` array.
 async fn fetch_all_expenses(mandates: &[MandateSlim]) -> (RawMap, i32) {
@@ -631,7 +631,7 @@ async fn fetch_all_expenses(mandates: &[MandateSlim]) -> (RawMap, i32) {
 }
 
 /// Download + parse the Senado CEAPS CSV for `year`. Returns a
-/// `NAME_UPPERCASE → cents` map (integer cents to match the Câmara path).
+/// `NAME_UPPERCASE → cents` map (integer cents to match the upstream path).
 async fn fetch_senado_ceaps(cli: &reqwest::Client, year: i32) -> Result<HashMap<String, i64>, ()> {
     let url = format!("https://www.senado.leg.br/transparencia/LAI/verba/despesa_ceaps_{year}.csv");
     let resp = cli.get(&url).send().await.map_err(|_| ())?;

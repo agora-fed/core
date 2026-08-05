@@ -1,22 +1,22 @@
-//! # Reply-to-respond — resposta do gabinete sem conta (item 3, 0.30.0).
+//! # Reply-to-respond — the office answers without an account (item 3, 0.30.0).
 //!
-//! O gargalo do loop de consequência é a adoção pelo político: exigir
-//! cadastro pra responder é atrito que vira silêncio. Solução: os e-mails
+//! The consequence loop's bottleneck is adoption by the official: requiring
+//! registration in order to answer is friction that becomes silence. Solution: the e-mails
 //! de aviso ao gabinete carregam um link assinado
 //! (`/responder/?sla=<id>&t=<hmac>`); quem controla a caixa OFICIAL do
-//! mandato (dado público Câmara/Senado/TSE) responde direto na página, sem
-//! login. A posse do token É a autorização — mesmo modelo de um AR postal:
-//! quem assina o recebimento é quem detém o endereço.
+//! mandate (public data from the legislature/electoral authority) answers right on the page, with no
+//! login. Possession of the token IS the authorization — the same model as postal registered mail:
+//! whoever signs for delivery is whoever holds the address.
 //!
-//! Token: `hex(hmac_sha256(RESPOND_LINK_SECRET, sla_id))` — determinístico
-//! por SLA (o link do D+1 e o do D+2 são o mesmo), sem tabela nova. Sem a
-//! env o recurso fica dormant: links não são gerados e a superfície nega.
+//! Token: `hex(hmac_sha256(RESPOND_LINK_SECRET, sla_id))` — deterministic
+//! per SLA (the D+1 and D+2 links are the same), with no new table. Without the
+//! env var the feature stays dormant: links are not generated and the surface refuses.
 //!
-//! - `GET  /respond/context?sla&t` — contexto pra página (título, mandato,
-//!   prazo) mediante token válido.
+//! - `GET  /respond/context?sla&t` — context for the page (title, mandate,
+//!   deadline) given a valid token.
 //! - `POST /respond {sla_id, token, body, committed}` — registra a resposta
-//!   oficial via `ConsequenceService::respond` (Conflict = SLA já resolvido;
-//!   o desfecho público é permanente).
+//!   official via `ConsequenceService::respond` (Conflict = the SLA is already resolved;
+//!   the public outcome is permanent).
 
 use axum::extract::{Json, Query, State};
 use axum::http::StatusCode;
@@ -52,7 +52,7 @@ fn hex_decode(s: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
-/// Token determinístico do SLA. `None` = recurso dormant (env ausente).
+/// Deterministic token of the SLA. `None` = the feature is dormant (env absent).
 pub(crate) fn respond_token(sla_id: Uuid) -> Option<String> {
     let secret = std::env::var("RESPOND_LINK_SECRET").ok()?;
     if secret.trim().is_empty() {
@@ -63,7 +63,7 @@ pub(crate) fn respond_token(sla_id: Uuid) -> Option<String> {
     Some(hex_encode(&mac.finalize().into_bytes()))
 }
 
-/// Verificação em tempo constante (`Mac::verify_slice`); recomputar o HMAC
+/// Constant-time verification (`Mac::verify_slice`); recomputing the HMAC
 /// evita guardar token em claro em qualquer lugar.
 fn token_valid(sla_id: Uuid, presented: &str) -> bool {
     let Ok(secret) = std::env::var("RESPOND_LINK_SECRET") else {
@@ -203,7 +203,7 @@ mod tests {
         // Token de OUTRO SLA nunca autoriza este.
         let other = respond_token(Uuid::now_v7()).unwrap();
         assert!(!token_valid(sla, &other));
-        // Token adulterado / não-hex é recusado.
+        // A tampered / non-hex token is refused.
         assert!(!token_valid(sla, "zzzz"));
         std::env::remove_var("RESPOND_LINK_SECRET");
     }

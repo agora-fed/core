@@ -1,15 +1,15 @@
-//! # Gestão admin das áreas de interesse (`interest_area`) — migration 0661.
+//! # Admin management of interest areas (`interest_area`) — migration 0661.
 //!
-//! CRUD das áreas temáticas ministeriais (Saúde, Educação, Segurança…) que o cidadão marca no
-//! perfil (`citizen_interest`). Até então as 23 áreas eram apenas seedadas; aqui o admin ganha
-//! controle para adicionar/editar/remover/reordenar. Admin-gated via header `x-dsoc-citizen-id` +
-//! `admin_role_binding`. English identifiers no código; dados (nomes das áreas) em pt-BR.
-//! Runtime queries (sem macro `sqlx::query!`).
+//! CRUD of the ministerial thematic areas (Health, Education, Security…) the citizen marks on their
+//! profile (`citizen_interest`). Until now the 23 areas were merely seeded; here the admin gains
+//! control to add/edit/remove/reorder. Admin-gated via the `x-dsoc-citizen-id` header +
+//! `admin_role_binding`. English identifiers in the code; the data (area names) is pt-BR.
+//! Runtime queries (no `sqlx::query!` macro).
 //!
-//! - `GET    /admin/interest-areas`        — lista com contagem de cidadãos por área.
-//! - `POST   /admin/interest-areas`        — cria (slug/name/ministry/position).
+//! - `GET    /admin/interest-areas`        — a list with the citizen count per area.
+//! - `POST   /admin/interest-areas`        — create (slug/name/ministry/position).
 //! - `PUT    /admin/interest-areas/{slug}` — edita name/ministry/position.
-//! - `DELETE /admin/interest-areas/{slug}` — remove (409 se houver cidadão usando).
+//! - `DELETE /admin/interest-areas/{slug}` — remove (409 when a citizen still uses it).
 
 use axum::extract::{Json, Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -75,7 +75,7 @@ async fn require_admin(db: &PgPool, headers: &HeaderMap) -> Result<(), Response>
     }
 }
 
-// --- List: áreas + contagem de uso ---------------------------------------------------------------
+// --- List: areas + usage count -------------------------------------------------------------------
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
 struct AreaRow {
@@ -90,7 +90,7 @@ async fn list(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if let Err(r) = require_admin(&state.db, &headers).await {
         return r;
     }
-    // LEFT JOIN em citizen_interest para trazer quantos cidadãos usam cada área.
+    // LEFT JOIN on citizen_interest to bring how many citizens use each area.
     let rows: Result<Vec<AreaRow>, sqlx::Error> = sqlx::query_as(
         r"SELECT a.slug, a.name, a.ministry, a.position,
                  count(ci.citizen_id)::bigint AS citizen_count
@@ -120,7 +120,7 @@ struct CreateBody {
     position: Option<i32>,
 }
 
-/// Normaliza o slug: minúsculo, sem espaços nas pontas.
+/// Normalize the slug: lowercase, no leading/trailing whitespace.
 fn clean_slug(raw: &str) -> String {
     raw.trim().to_lowercase()
 }
@@ -241,7 +241,7 @@ async fn update(
     }
 }
 
-// --- Delete: só se não houver cidadão usando ----------------------------------------------------
+// --- Delete: only when no citizen is using it ---------------------------------------------------
 
 async fn remove(
     State(state): State<AppState>,
@@ -253,7 +253,7 @@ async fn remove(
     }
     let slug = clean_slug(&slug);
 
-    // Bloqueia a remoção se algum cidadão ainda tiver esta área marcada (409).
+    // Block removal when any citizen still has this area marked (409).
     let in_use: i64 =
         match sqlx::query_scalar("SELECT count(*) FROM citizen_interest WHERE area_slug = $1")
             .bind(&slug)
