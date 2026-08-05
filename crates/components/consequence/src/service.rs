@@ -155,7 +155,7 @@ impl ConsequenceService {
     /// envelopes are ignored (idempotent no-op), returning an empty vec.
     ///
     /// # Errors
-    /// Mirrors [`Self::start_sla`]; a falha em um gabinete interrompe e propaga (o redelivery
+    /// Mirrors [`Self::start_sla`]; a failure on one cabinet stops and propagates (the
     /// at-least-once completes the rest — each start is idempotent on its own).
     pub async fn consume(
         &self,

@@ -7,7 +7,7 @@
 --    The category follows Mastodon's vocabulary (spam / violation / other)
 --    so it is easy to recycle in a future export.
 -- 2. `domain_block` — a block at the whole-HOST level (e.g. blocking every
---    de `pravda.social.example`). Escondemos qualquer nota vindo desse host
+--    of `pravda.social.example`). We hide every note coming from that host
 --    from the citizen's feed. This differs from `actor_block`, which is per account.
 
 CREATE TABLE note_report (
@@ -18,8 +18,8 @@ CREATE TABLE note_report (
     -- object_uri of the reported note. Since remote notes have no FK, we leave
     -- solto igual a note_bookmark — sobrevive a purge do timeline remoto.
     object_uri         text NOT NULL,
-    -- Author of the note (actor_url) — to ease the "how many reports
-    -- essa conta acumulou".
+    -- Author of the note (actor_url) — to ease the "how many reports has
+    -- this account accumulated" question.
     author_actor_url   text NOT NULL,
     -- Fixed category of the report. A Mastodon-compatible vocabulary.
     category           text NOT NULL CHECK (category IN ('spam', 'violation', 'other')),

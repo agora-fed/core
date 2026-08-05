@@ -190,7 +190,7 @@ async fn directed_placeholder_mandate_never_dispatches() {
     let svc = service(db.clone());
     let org = seed_org(&db).await;
     let author = seed_citizen(&db, org).await;
-    // Placeholder da plataforma — canal MORTO; Tier 0 diz: nunca entregar/carimbar.
+    // Platform placeholder — a DEAD channel; Tier 0 says: never deliver, never stamp.
     let unreachable = seed_mandate(&db, org, "gab@parlamento.democracia.social.br").await;
     let path = seed_forum(&db, org, None).await;
 

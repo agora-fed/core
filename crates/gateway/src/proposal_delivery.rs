@@ -1,14 +1,14 @@
 //! Proposal delivery receipt — the `ProposalCreated` subscriber that
-//! dispara dois e-mails (autor + gabinete) e registra o timestamp de envio
-//! em `proposal.notified_{author,mandate}_at`.
+//! fires two e-mails (author + cabinet) and records the send timestamp
+//! in `proposal.notified_{author,mandate}_at`.
 //!
 //! Reuses the same SMTP transport as the other notifications (password_reset,
 //! signup_verify, mandate_invite). Without SMTP configured it logs the link at INFO
 //! and still writes the timestamp (dev-mode).
 //!
 //! # Contrato
-//! - Ao receber `Event::ProposalCreated { proposal, mandate, .. }`:
-//!   1. Resolve `author_citizen_id` + `title` + `body` da proposta.
+//! - On receiving `Event::ProposalCreated { proposal, mandate, .. }`:
+//!   1. Resolve the proposal's `author_citizen_id` + `title` + `body`.
 //!   2. Resolve `email` do autor via `auth_credential`.
 //!   3. Resolve `public_email` + `display_name` do mandato.
 //!   4. Sends two e-mails in parallel (spawn — never blocks the dispatch loop).
@@ -82,8 +82,8 @@ impl ProposalDeliverySub {
             r"SELECT pt.mandate_id,
                      pt.notified_at,
                      m.display_name,
-                     -- Integridade (A1/D4): placeholder da plataforma NÃO é canal real → NULL, pra
-                     -- nunca entregar num inbox morto nem carimbar 'notificado' (silêncio seria NOSSO).
+                     -- Integrity (A1/D4): the platform placeholder is NOT a real channel → NULL, so we
+                     -- never deliver to a dead inbox nor stamp 'notified' (the silence would be OURS).
                      CASE WHEN m.public_email ILIKE '%@parlamento.democracia.social.br'
                           THEN NULL ELSE m.public_email END AS public_email
                 FROM proposal_target pt
@@ -421,7 +421,7 @@ pub(crate) async fn send_email(
     subject: &str,
     body: &str,
 ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Delega ao INTERCOMS (ADR-0016, #68): unifica o envio de e-mail do gateway no
+    // Delegates to INTERCOMS (ADR-0016, #68): unifies the gateway's e-mail sending in the
     // `SmtpProvider`. Assinatura mantida — os ~4 callers (civic_notify, forum_mailer,
     // email_templates, federation) now send through INTERCOMS with no change.
     use crate::intercoms::{MessageSender, OutboundMessage, SmtpProvider};

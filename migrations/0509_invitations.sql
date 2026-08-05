@@ -1,4 +1,4 @@
--- 0509_invitations.sql — convites de conta (invitation).
+-- 0509_invitations.sql — account invitations (invitation).
 --
 -- A citizen mints a token another person uses at signup to create an account
 -- on the instance. Different from the "mandate_invite" (which assigns a mandate to an
@@ -14,7 +14,7 @@
 CREATE TABLE invitation (
     id                    uuid PRIMARY KEY,
     -- The citizen who minted the invitation. No CASCADE — the historical record stays
-    -- se o convidante sumir.
+    -- if the inviter disappears.
     invited_by_citizen_id uuid NOT NULL REFERENCES citizen(id),
     -- Token URL-safe. Case-sensitive; a UNIQUE cobre o lookup.
     token                 text NOT NULL UNIQUE,
@@ -44,7 +44,7 @@ COMMENT ON TABLE invitation IS
 
 ALTER TABLE invitation OWNER TO dsoc;
 
--- Vincular signup a um convite: adiciona coluna opcional em citizen apontando
+-- Linking a signup to an invitation: adds an optional column on citizen pointing
 -- for the used invitation. It eases "who invited whom" in the admin.
 ALTER TABLE citizen
     ADD COLUMN IF NOT EXISTS invited_via_invitation_id uuid REFERENCES invitation(id);

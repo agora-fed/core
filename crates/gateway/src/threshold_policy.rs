@@ -120,8 +120,8 @@ async fn voters_for_mandate(db: &PgPool, mandate_id: Uuid) -> Option<i64> {
     .flatten()
 }
 
-/// Middleware: reescreve `threshold` no create de proposta. Qualquer falha
-/// de parse deixa o request passar intacto — o handler valida como sempre.
+/// Middleware: rewrites `threshold` on proposal create. Any parse failure
+/// lets the request through untouched — the handler validates as always.
 pub async fn threshold_middleware(
     State(state): State<AppState>,
     req: Request,
@@ -182,11 +182,11 @@ mod tests {
 
     #[test]
     fn threshold_scales_with_electorate_and_clamps() {
-        // 0,05% de 1M de eleitores = 500.
+        // 0.05% of 1M voters = 500.
         assert_eq!(compute_threshold(Some(1_000_000), 0.0005, 25, 10_000), 500);
         // A small municipality falls back to the floor (0.05% of 8k = 4 → 25).
         assert_eq!(compute_threshold(Some(8_000), 0.0005, 25, 10_000), 25);
-        // Nacional bate no teto (0,05% de 155M = 77.500 → 10.000).
+        // National hits the ceiling (0.05% of 155M = 77,500 → 10,000).
         assert_eq!(
             compute_threshold(Some(155_000_000), 0.0005, 25, 10_000),
             10_000

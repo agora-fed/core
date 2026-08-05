@@ -1,7 +1,7 @@
 -- Migration 0530 — a tamper-proof events_log (0.42.0).
 --
 -- events_log was "append-only by convention" (a comment in 0001), with no
--- enforcement — um comprometimento de app/admin podia reescrever ou apagar o
+-- enforcement — an app/admin compromise could rewrite or erase the
 -- history — exactly what the social contract says must be prevented. Here:
 --   1. DELETE blocked (nothing ever deletes events — confirmed in the code).
 --   2. UPDATE may only change `processed_at` (the worker marks delivery); any
@@ -17,7 +17,7 @@ BEGIN;
 
 ALTER TABLE events_log ADD COLUMN row_hash bytea;
 
--- Backfill ANTES de criar os triggers (o anti-tamper bloquearia esta escrita).
+-- Backfill BEFORE creating the triggers (the anti-tamper guard would block this write).
 UPDATE events_log SET row_hash = sha256(convert_to(
     id::text || '|' || org_id::text || '|' || topic || '|' ||
     event_type || '|' || payload::text || '|' || occurred_at::text, 'UTF8'));

@@ -12,10 +12,10 @@
 --   3. The seed script can rerun and only fills what it knows.
 
 ALTER TABLE mandate
-    -- Sigla do partido como aparece na base oficial (PT, PCdoB, PSOL, PV, REDE…). Case
+    -- Party abbreviation as it appears in the official base (PT, PCdoB, PSOL, PV, REDE…). Case
     -- preserved so the UI can display "PCdoB" with the lowercase d.
     ADD COLUMN party text,
-    -- Sigla da UF (BA, SP, RJ…). Two chars but stored as text for stability.
+    -- State abbreviation (BA, SP, RJ…). Two chars but stored as text for stability.
     ADD COLUMN uf text,
     -- Casa do Congresso: 'camara' | 'senado'. Drives the UI filter and the cargo string.
     ADD COLUMN house text CHECK (house IS NULL OR house IN ('camara', 'senado')),

@@ -13,7 +13,7 @@ CREATE TABLE custom_emoji (
     shortcode    text NOT NULL UNIQUE
                  CHECK (shortcode ~ '^[A-Za-z0-9_-]+$'
                         AND char_length(shortcode) BETWEEN 2 AND 32),
-    -- URL relativa /media/emoji/{uuid}.png. Front sempre monta como
+    -- Relative URL /media/emoji/{uuid}.png. The front end always builds it
     -- absolute with our own host.
     url          text NOT NULL,
     -- When false, it disappears from the picker + the render (history is kept).

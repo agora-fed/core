@@ -120,7 +120,7 @@ async fn openapi() -> Json<serde_json::Value> {
 /// Anonymous requests pass through with no headers added.
 async fn inject_identity(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
     // SECURITY (2026-07-24): these headers ARE the authenticated-caller signal further down
-    // (CallerId em crates/app/src/caller.rs e require_admin leem eles). Um cliente NUNCA pode
+    // (CallerId in crates/app/src/caller.rs and require_admin read them). A client may NEVER
     // supply them — otherwise anyone impersonates any citizen (admins included). Strip
     // every client-supplied copy BEFORE resolving the session; only a real cookie/bearer sets
     // them again below. Defence in depth: the Caddy ingress removes them too
@@ -274,7 +274,7 @@ pub fn api_router(state: AppState) -> Router {
         .merge(preferences::routes(state.clone()))
         .merge(fediverso_admin::routes(state.clone()))
         .merge(signup_gates::routes(state.clone()))
-        // Atestado de cidadania por operador verificado (0.28.3).
+        // Citizenship attestation by a verified operator (0.28.3).
         .merge(attestations::routes(state.clone()))
         // Proof of notification — public timeline of the office warnings (0.29).
         .merge(notification_receipts::routes(state.clone()))
@@ -295,7 +295,7 @@ pub fn api_router(state: AppState) -> Router {
         // + territory + phases). Writes gated by the binding; public reads expose
         // item authorship only (never who voted).
         .merge(me_mandate_op::routes(state.clone()))
-        // Grupos de campanha — canal proativo campanha→eleitor (0.39, Fase 2.3).
+        // Campaign groups — the proactive campaign→voter channel (0.39, Phase 2.3).
         .merge(campaign_groups::routes(state.clone()))
         .merge(consultas_ext::routes(state.clone()))
         .merge(profile_nudge::routes(state.clone()))
@@ -335,8 +335,8 @@ pub fn api_router(state: AppState) -> Router {
             state.clone(),
             inject_identity,
         ))
-        // Regras de registro (0.28.2): email_domain_block + ip_rule valem
-        // de fato em register/login — administradas em /admin/email-domains
+        // Registration rules (0.28.2): email_domain_block + ip_rule take effect
+        // on register/login — administered at /admin/email-domains
         // e /admin/ip-rules.
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -369,11 +369,11 @@ pub fn api_router(state: AppState) -> Router {
         .merge(federation_public)
         // Embeddable scoreboard for the press (0.30.2) — at the root, a clean iframe URL.
         .merge(embed::routes(state.clone()))
-        // OG card PNG do placar (0.33.0) — raiz, apontada pelos og:image.
+        // Scoreboard OG card PNG (0.33.0) — at the root, pointed at by og:image.
         .merge(og_cards::routes(state.clone()))
         .merge(oauth)
         // gov.br OIDC — start/callback at the root because gov.br requires
-        // `redirect_uri` seja exatamente `<origin>/auth/govbr/callback`.
+        // `redirect_uri` to be exactly `<origin>/auth/govbr/callback`.
         .merge(govbr_oidc::root_routes(state.clone()))
         // Forums (/f/*): SPA fallback — the front end routes client-side; any path
         // serves the same f/index.html (forums/topics created at runtime never 404).

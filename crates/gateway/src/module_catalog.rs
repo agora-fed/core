@@ -41,7 +41,7 @@ const fn nav(label: &'static str, href: &'static str, order: i16) -> NavItem {
 
 /// The full registry, newest concerns last. Order is display order in the admin module list.
 pub static CATALOG: &[ModuleManifest] = &[
-    // --- Core (sempre on; gateable=false) --------------------------------------------------
+    // --- Core (always on; gateable=false) --------------------------------------------------
     ModuleManifest {
         id: "auth",
         title: "Identidade & convites",
@@ -433,7 +433,7 @@ mod tests {
                 assert_ne!(*dep, m.id, "{} depende de si mesmo", m.id);
             }
         }
-        // Grafo raso: nenhuma dep aponta de volta (checagem de ciclo simples).
+        // Shallow graph: no dep points back (a simple cycle check).
         for m in CATALOG {
             for dep in m.depends_on {
                 let dep_mod = CATALOG.iter().find(|x| x.id == *dep).unwrap();

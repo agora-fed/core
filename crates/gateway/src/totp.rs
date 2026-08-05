@@ -86,7 +86,7 @@ fn base32_decode(s: &str) -> Option<Vec<u8>> {
 
 // --- HOTP (RFC 4226) / TOTP (RFC 6238) ---
 fn hotp(secret: &[u8], counter: u64) -> u32 {
-    // HMAC-SHA1 aceita chave de qualquer tamanho: `new_from_slice` nunca falha aqui.
+    // HMAC-SHA1 accepts a key of any length: `new_from_slice` never fails here.
     // Even so, we handle it instead of `expect` (clippy::expect_used in the CI gate).
     let Ok(mut mac) = Hmac::<Sha1>::new_from_slice(secret) else {
         return 0;

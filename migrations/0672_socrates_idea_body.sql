@@ -21,7 +21,7 @@
 --                         "Aguardando envio à CDH", …), the datum that says whether the
 --                         idea is still alive in the Senate;
 --   * `apoiamentos_num` — the counter as a NUMBER. The `apoiamentos` column (text)
---                         continua existindo por compatibilidade: ela guarda a
+--                         still exists for compatibility: it holds
 --                         the Senate's formatting ("20.771", with a thousands dot),
 --                         which cannot be compared or sorted. The per-idea
 --                         endpoint gives the integer, so here it stays an integer;

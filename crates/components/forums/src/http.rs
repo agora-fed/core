@@ -37,9 +37,9 @@ pub struct ForumDto {
     pub description: String,
     /// `institucional` | `governanca` | `comunitario`.
     pub kind: String,
-    /// Esfera, se territorial.
+    /// Sphere, when territorial.
     pub esfera: Option<String>,
-    /// UF, se territorial.
+    /// State, when territorial.
     pub uf: Option<String>,
     /// Municipality, when territorial.
     pub municipio: Option<String>,
@@ -49,7 +49,7 @@ pub struct ForumDto {
     pub avatar_url: Option<String>,
     /// Forum banner (0543).
     pub banner_url: Option<String>,
-    /// Patamares de envio configurados.
+    /// Configured dispatch thresholds.
     pub thresholds: Vec<i32>,
 }
 
@@ -59,7 +59,7 @@ pub struct ForumDto {
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct TransparencyDto {
     /// `plena` (open data, offices connected) | `parcial` (has a site, no
-    /// dados abertos) | `ausente` (nenhum portal localizado).
+    /// open data) | `ausente` (no portal found).
     pub status: String,
     /// Official council site, when known (`base_url`). `None` when `ausente`.
     pub official_url: Option<String>,
@@ -131,7 +131,7 @@ pub struct ForumCommentDto {
     pub federated: bool,
     /// Stance declared alongside the argument (`favor`|`contra`|`ponderacao`|null).
     pub stance: Option<String>,
-    /// Votos a favor deste argumento (0545).
+    /// Votes in favour of this argument (0545).
     pub favor: i64,
     /// Votos contra.
     pub contra: i64,
@@ -161,7 +161,7 @@ pub struct TopicDetailDto {
     pub topic: TopicDto,
     /// Approved comments (local + federated).
     pub comments: Vec<ForumCommentDto>,
-    /// Recibos de envio institucional.
+    /// Institutional dispatch receipts.
     pub dispatches: Vec<DispatchDto>,
     /// This forum's effective PROPORTIONAL dispatch threshold (D3): the score
     /// the scoreboard must cross to summon the office, proportional to the

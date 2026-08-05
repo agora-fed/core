@@ -475,7 +475,7 @@ async fn load_mandate_slims(state: &AppState) -> Result<Vec<MandateSlim>, sqlx::
     //
     // FEDERAL-ONLY: CEAP + CEAPS are quotas of the federal Congress. It makes no
     // sense to pull 70k state + municipal mandates here (which have no
-    // fonte de dado equivalente) — a query scanea a tabela toda inutilmente.
+    // equivalent data source) — the query scans the whole table for nothing.
     // The federal restriction keeps the read at ~594 rows, making the cold start
     // ~50× faster.
     let rows: Vec<(

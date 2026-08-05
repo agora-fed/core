@@ -602,7 +602,7 @@ async fn contact_honeypot_pretends_success_and_sends_nothing() {
 #[tokio::test]
 async fn contact_rate_limits_per_ip() {
     // 5/h per IP (default). The 6th from the same IP must see 429 — before
-    // qualquer tentativa de SMTP.
+    // any SMTP attempt.
     let (app, _) = app().await;
     let body = r#"{"sector":"contato","name":"Nome","email":"a@b.co","subject":"assunto","message":"mensagem com tamanho ok"}"#;
     for _ in 0..5 {
@@ -762,7 +762,7 @@ async fn ip_deny_rule_gates_login_scope() {
         .insert("x-forwarded-for", "198.51.100.9".parse().unwrap());
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
-    // IP fora do deny: passa o gate e cai no 401 normal de credencial errada.
+    // IP outside the deny: passes the gate and lands on the normal 401 for bad credentials.
     // A unique IP per run — the attempt audit persists across executions
     // and a fixed IP would hit the rate limit (429) on the nth round.
     let b = Uuid::now_v7();
@@ -873,7 +873,7 @@ async fn attestations_public_list_starts_empty() {
 #[tokio::test]
 async fn attest_and_revoke_roundtrip() {
     let (app, st) = app().await;
-    // Atestador: operador de mandato (binding verificado).
+    // Attester: a mandate operator (verified binding).
     let (org, attester, cookie) = seed_session(&st.db).await;
     let mandate = Uuid::now_v7();
     sqlx::query(
@@ -1370,9 +1370,9 @@ async fn auth_me_reflects_session_and_logout_is_idempotent() {
 #[tokio::test]
 async fn admin_read_surface_is_gated_and_serves() {
     // Every admin read obeys the SAME rule: anonymous 401, ordinary session
-    // 403, admin nunca 401/403 nem 5xx. Um loop cobre as nove listas.
+    // 403, admin never 401/403 nor 5xx. One loop covers the nine lists.
     let (app, st) = app().await;
-    // admin_ext valida o binding na org DEFAULT fixa — o admin de teste
+    // admin_ext validates the binding in the fixed DEFAULT org — the test admin
     // must live in it (the other admin modules do not filter by org).
     let default_org = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
     let (org, citizen, admin_cookie) = seed_session_in_org(&st.db, default_org).await;
@@ -1578,7 +1578,7 @@ async fn me_admin_status_reflects_role() {
 #[tokio::test]
 async fn invitation_preview_unknown_token_is_invalid_not_error() {
     // The preview is public and enumeration-neutral: an unknown token returns
-    // 200 {valid:false} — nunca 500, nunca dados de outro convite.
+    // 200 {valid:false} — never 500, never another invitation's data.
     let (app, _) = app().await;
     let resp = app
         .oneshot(get("/api/v1/invitations/token-inexistente/preview"))
@@ -1592,7 +1592,7 @@ async fn invitation_preview_unknown_token_is_invalid_not_error() {
 #[tokio::test]
 async fn delivery_receipts_are_public_and_empty_for_unknown_proposal() {
     // The "digital registered mail" timeline is public by design; a proposal with no warnings
-    // devolve lista vazia — nunca 500, nunca 401.
+    // returns an empty list — never 500, never 401.
     let (app, _) = app().await;
     let resp = app
         .oneshot(get(&format!(
@@ -1917,7 +1917,7 @@ async fn campanha_publica_only_when_published() {
 }
 
 // ---------------------------------------------------------------------------
-// Grupos de campanha (0.39.0 — Fase 2.3)
+// Campaign groups (0.39.0 — Phase 2.3)
 // ---------------------------------------------------------------------------
 
 /// Create a mandate + binding (directory level) for the citizen — makes them a "politician".
@@ -1982,7 +1982,7 @@ async fn campaign_group_full_flow() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
 
-    // 3) Um eleitor (outra conta na mesma org) entra no grupo.
+    // 3) A voter (another account in the same org) joins the group.
     let (_, _, voter_cookie) = seed_session_in_org(&st.db, org).await;
     let resp = app
         .clone()
@@ -2120,7 +2120,7 @@ async fn campaign_group_poll_flow() {
         .unwrap()
         .to_owned();
 
-    // Um eleitor responde.
+    // A voter answers.
     let (_, _, voter) = seed_session_in_org(&st.db, org).await;
     let resp = app
         .clone()
@@ -2722,7 +2722,7 @@ async fn commitment_declare_consult_and_outcome_flow() {
         .as_str()
         .unwrap()
         .to_owned();
-    // A consulta foi mesmo criada no crate consultations.
+    // The consultation really was created in the consultations crate.
     let cc: i64 =
         sqlx::query_scalar("SELECT count(*) FROM consultations_consultation WHERE id = $1")
             .bind(Uuid::parse_str(&consultation_id).unwrap())
@@ -2987,7 +2987,7 @@ async fn op_operator_cannot_touch_other_mandate_round() {
 }
 
 // ---------------------------------------------------------------------------
-// SOCRATES — espelho de Ideias Legislativas do e-Cidadania (migration 0670)
+// SOCRATES — mirror of e-Cidadania Legislative Ideas (migration 0670)
 // ---------------------------------------------------------------------------
 // SECURITY: both endpoints are owner/admin gated (anonymous → 401, ordinary
 // citizen → 403). FUNCTIONAL: dedup by `ideia_id` → 409 `already_mirrored` with
@@ -3115,7 +3115,7 @@ async fn seed_socrates_mirror(db: &Db, org: Uuid, author: Uuid) -> (String, Uuid
 }
 
 /// Dedup: an already-mirrored idea answers 409 `already_mirrored` with the topic
-/// existente no `data` — e o check vem ANTES do fetch (nenhuma chamada de rede).
+/// existing one in `data` — and the check comes BEFORE the fetch (no network call).
 #[tokio::test]
 async fn admin_mirror_dedups_with_409_and_existing_topic() {
     let (app, st) = app().await;
@@ -3139,7 +3139,7 @@ async fn admin_mirror_dedups_with_409_and_existing_topic() {
     assert_eq!(v["error"]["code"], "already_mirrored");
     assert_eq!(v["data"]["topic_id"], topic_id.to_string());
 
-    // A URL completa da mesma ideia deduplica igual.
+    // The full URL of the same idea dedups identically.
     let url = format!("https://www12.senado.leg.br/ecidadania/visualizacaoideia?id={ideia_id}");
     let resp = app
         .oneshot(json_req(
@@ -3246,7 +3246,7 @@ async fn non_admin_cannot_list_socrates_runs() {
 // SECURITY: the backfill rewrites the body of ALL mirrored topics, so
 // the owner/admin gate is what stops an ordinary citizen from firing N calls to
 // the Senate portal and N writes to the forum. The gate blocks BEFORE any fetch
-// — nenhum teste aqui toca o Senado.
+// — no test here touches the Senate.
 
 #[tokio::test]
 async fn anonymous_cannot_backfill_socrates_mirrors() {

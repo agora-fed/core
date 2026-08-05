@@ -1,4 +1,4 @@
-//! # Rate-limit de escrita (0.42.0) — defesa contra spam/brigading.
+//! # Write rate limiting (0.42.0) — defence against spam/brigading.
 //!
 //! Until now only login/contact/audience/federated-post had a limit. Sensitive
 //! writes (votes, proposals, comments, reports, campaign, electoral registry)
@@ -26,7 +26,7 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use dsoc_api_contract::ApiResponse;
 
-/// (janela-em-minutos-epoch, contagem) por chave.
+/// (epoch-minute window, count) per key.
 type Buckets = HashMap<String, (u64, u32)>;
 static STATE: LazyLock<Mutex<Buckets>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -56,14 +56,14 @@ fn caller_key(headers: &HeaderMap) -> Option<String> {
         .map(|c| format!("c:{c}"))
 }
 
-/// Registra um hit na janela atual e diz se estourou o teto.
+/// Records a hit in the current window and says whether the cap was exceeded.
 fn hit(key: &str, per_min: u32) -> bool {
     let minute = current_minute();
     let mut map = match STATE.lock() {
         Ok(m) => m,
         Err(p) => p.into_inner(),
     };
-    // Poda barata: se o mapa cresceu muito, remove entradas de janelas velhas.
+    // Cheap pruning: if the map grew too large, drop entries from old windows.
     if map.len() > 10_000 {
         map.retain(|_, (w, _)| *w == minute);
     }

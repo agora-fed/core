@@ -13,7 +13,7 @@
 //! - `PUT /admin/users/{id}/party-role` — define ou remove
 //!   party_administrator (admin|moderador|none) + party_sigla.
 //!
-//! Auth: require_admin (mesmo pattern do email_templates.rs).
+//! Auth: require_admin (same pattern as email_templates.rs).
 
 use axum::extract::{Json, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -118,7 +118,7 @@ pub struct AdminUserRow {
     pub created_at: chrono::DateTime<chrono::Utc>,
     // Platform role (owner|admin|auditor) — NULL when there is none.
     pub platform_role: Option<String>,
-    // Papel de partido — (party_sigla, role). Se admin de mais de um, pega o primeiro.
+    // Party role — (party_sigla, role). If admin of more than one, take the first.
     pub party_admin_sigla: Option<String>,
     pub party_admin_role: Option<String>,
     // Civic profile — derived flags.
@@ -181,8 +181,8 @@ async fn list(
     let rows: Vec<AdminUserRow> = match sqlx::query_as(
         r"
         WITH
-          -- Um cidadão pode ter mais de um role no binding (ex.: admin +
-          -- owner). Colapsa pro mais alto: owner > admin > auditor.
+              -- A citizen may hold more than one role in the binding (e.g. admin +
+              -- owner). Collapse to the highest: owner > admin > auditor.
           plat AS (
             SELECT citizen_id,
                    CASE
@@ -232,8 +232,8 @@ async fn list(
           party_admin.party_sigla AS party_admin_sigla,
           party_admin.role      AS party_admin_role,
           COALESCE(mib_agg.has_it, FALSE) AS has_mandate,
-          -- Cidadão como candidato: se tem binding em mandate is_candidate
-          -- OU se o mandato dele aparece em candidacy.
+              -- Citizen as a candidate: either they have a binding on a mandate with
+              -- is_candidate, or their mandate appears in candidacy.
           COALESCE(
             (SELECT bool_or(m.is_candidate)
                FROM mandate_identity_binding mib
@@ -255,7 +255,7 @@ async fn list(
            OR lower(COALESCE(c.handle, ''))       LIKE $1
            OR lower(COALESCE(c.display_name, '')) LIKE $1
            OR lower(COALESCE(ac.email, ''))       LIKE $1)
-          -- party (filiação)
+              -- party (affiliation)
           AND ($2::text IS NULL OR c.party_sigla = $2)
           -- platform_role
           AND (
@@ -380,7 +380,7 @@ async fn update(
 struct PlatformRoleBody {
     /// `owner`|`admin`|`auditor`|`none` (remove).
     role: String,
-    /// Org sob a qual o papel vale. Se ausente, usamos o primeiro org da
+    /// Org the role applies to. When absent we use the first org in the
     /// table (a single-org install is the most common case today).
     #[serde(default)]
     org_id: Option<Uuid>,
@@ -392,11 +392,11 @@ struct PlatformRoleBody {
 
 /// Which role was assigned — carries the data the template needs.
 enum RoleNotice {
-    /// Admin de partido (sigla).
+    /// Party admin (sigla).
     PartyAdmin(String),
-    /// Moderador de partido (sigla).
+    /// Party moderator (sigla).
     PartyModerador(String),
-    /// Papel de plataforma (`owner`|`admin`|`auditor`).
+    /// Platform role (`owner`|`admin`|`auditor`).
     Platform(String),
 }
 
@@ -482,7 +482,7 @@ async fn set_platform_role(
     if let Err(r) = require_admin(&headers, &state.db).await {
         return r;
     }
-    // Org resolvido do body ou da citizen row.
+    // Org resolved from the body or from the citizen row.
     let org_id = match body.org_id {
         Some(o) => o,
         None => {
@@ -516,7 +516,7 @@ async fn set_platform_role(
             return storage_resp(err);
         }
     } else if matches!(body.role.as_str(), "owner" | "admin" | "auditor") {
-        // Substitui qualquer role antigo por este novo. Duas queries em
+        // Replace any previous role with this one. Two queries in
         // one tx — an sqlx prepared statement does not accept `DELETE ...; INSERT`.
         let mut tx = match state.db.begin().await {
             Ok(t) => t,
@@ -547,7 +547,7 @@ async fn set_platform_role(
         if let Err(err) = tx.commit().await {
             return storage_resp(err);
         }
-        // Avisa a pessoa por e-mail (background, best-effort).
+        // Tell the person by e-mail (background, best-effort).
         notify_role_bg(
             &state.db,
             citizen_id,
@@ -664,7 +664,7 @@ async fn set_party_role(
         if let Err(err) = tx.commit().await {
             return storage_resp(err);
         }
-        // Avisa a pessoa por e-mail (background, best-effort).
+        // Tell the person by e-mail (background, best-effort).
         let notice = if body.role == "admin" {
             RoleNotice::PartyAdmin(party.to_string())
         } else {

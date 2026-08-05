@@ -5,7 +5,7 @@
 -- come in F2 (backend). Here:
 --   1. DELETES every datum with the 'ponderacao' stance (topic vote, comment and comment vote) —
 --      Marcos' decision (the neutral option removed entirely).
---   2. Reduz o CHECK de stance a ('favor','contra') nas 3 tabelas.
+--   2. Narrows the stance CHECK to ('favor','contra') on the 3 tables.
 --   3. Adds `citizen.karma` (SO-style reputation; populated in F2).
 --
 -- `ponderacao_count` (forum_topic / forum_topic_comment) stays VESTIGIAL (always 0 now) and is

@@ -119,7 +119,7 @@ pub struct RegisterRequest {
     pub cpf: String,
     /// Full name — matched against the authorized base (R-KYC). Optional for
     /// compat: when present with birth date + sex, the signup is verified and blocks
-    /// em REJEITA. O front novo sempre envia.
+    /// on REJEITA. The new front end always sends it.
     #[serde(default)]
     pub nome_completo: Option<String>,
     /// Date of birth `YYYY-MM-DD`, for verification.
@@ -169,14 +169,14 @@ pub struct RegisterPoliticianRequest {
     pub mandate_id: uuid::Uuid,
 }
 
-/// Cadastro de candidato(a) SEM mandato (auto-declarado, migration 0526).
+/// Signup of a candidate WITHOUT a mandate (self-declared, migration 0526).
 /// Confirm materializes a mandate with `source='self'` + an `email`-level binding +
 /// candidacy `listed=false`. Runs against `POST /auth/register/candidate`.
 #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct RegisterCandidateRequest {
     /// Organization/tenant.
     pub org_id: uuid::Uuid,
-    /// Contact e-mail (verificado por link, como no register comum).
+    /// Contact e-mail (verified by link, as in the ordinary register).
     pub email: String,
     /// Password (>= 8 chars; stored Argon2id-hashed).
     pub password: String,

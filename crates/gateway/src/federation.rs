@@ -193,7 +193,7 @@ async fn object_handler(
         return StatusCode::BAD_REQUEST.into_response();
     };
     // Rebuild the stored activity_id (the object_id we are serving is
-    // derivado dele: /activities/note-<uuid> ↔ /objects/<uuid>).
+    // derived from it: /activities/note-<uuid> ↔ /objects/<uuid>).
     let activity_id = format!("https://{host}/actors/{handle}/activities/note-{id}");
     let object_url = format!("https://{host}/actors/{handle}/objects/{id}");
     let row: Result<Option<(Value,)>, _> = sqlx::query_as::<_, (Value,)>(
@@ -675,7 +675,7 @@ async fn inbox_post(
             // 0.32.0: a new follower also goes out by e-mail (template
             // `follow_new`), honouring `email_prefs.follow` — the key already
             // existed in the schema (0511) but nothing read it until now. Best-effort
-            // em spawn: o inbox nunca espera SMTP.
+            // in a spawn: the inbox never waits on SMTP.
             send_follow_email(
                 &state.db,
                 citizen.as_uuid(),
@@ -1452,7 +1452,7 @@ async fn post_my_note(
     caller: CallerId,
     AxumJson(body): AxumJson<PostNoteRequest>,
 ) -> Response {
-    // Rate limit ANTES de tudo — barato, dispensa carregar o profile.
+    // Rate limit BEFORE anything else — cheap, no need to load the profile.
     match sqlx::query_scalar::<_, chrono::DateTime<chrono::Utc>>(
         r"SELECT created_at FROM federation_outbox_entry
            WHERE citizen_id = $1
@@ -3164,8 +3164,8 @@ fn remote_handle_of(actor: &Value, actor_url: &str) -> String {
     format!("{user}@{host}")
 }
 
-/// 0.32.0: e-mail de "novo seguidor" (template `follow_new`), gated por
-/// `email_prefs.follow` (chave ausente = ligado). Best-effort: qualquer
+/// 0.32.0: the "new follower" e-mail (template `follow_new`), gated on
+/// `email_prefs.follow` (absent key = on). Best-effort: any
 /// failure becomes a log; the send itself runs in a spawn so it never holds the inbox.
 async fn send_follow_email(
     db: &sqlx::PgPool,
@@ -3799,7 +3799,7 @@ async fn my_followers_list(State(state): State<AppState>, caller: CallerId) -> R
 
 #[derive(Debug, Deserialize)]
 struct BulkFollowBody {
-    /// Lista de actor URLs (`https://host/users/x` ou `https://host/actors/y`) ou
+    /// List of actor URLs (`https://host/users/x` or `https://host/actors/y`) or
     /// `@user@host` handles. Handles are resolved via WebFinger.
     entries: Vec<String>,
 }
@@ -3902,7 +3902,7 @@ async fn bulk_follow(
             result.already += 1;
             continue;
         }
-        // Dispara o mesmo caminho do follow_remote via chamada interna helper.
+        // Fires the same path as follow_remote through an internal helper call.
         // Simplified: only validates that it resolves and inserts a pending row; real
         // delivery is the worker's job. To minimize duplication, it reuses the route:
         match do_follow_remote(&state, caller, &actor_url).await {

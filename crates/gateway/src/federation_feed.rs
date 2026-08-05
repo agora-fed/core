@@ -189,7 +189,7 @@ pub async fn list_feed(
                         WHERE r.citizen_id = $1 AND r.object_uri = feed.object_uri
                           AND r.kind = 'boost') AS boosted_by_me
           FROM (
-                -- DISTINCT ON: a mesma nota pode existir local (outbox) E ingerida via
+                -- DISTINCT ON: the same note may exist locally (outbox) AND ingested via
                 -- federacao (loop no proprio dominio). Duplicata derruba o {#each}
                 -- chaveado do front (each_key_duplicate) -- prefere a linha local.
                 SELECT DISTINCT ON (u.object_uri) u.*
@@ -213,8 +213,8 @@ pub async fn list_feed(
                   JOIN citizen c ON c.id = oe.citizen_id
                  WHERE oe.kind = 'Create'
                    AND oe.deleted_at IS NULL
-                   -- Suspensos pela moderação somem do feed. Silenciados só
-                   -- aparecem pra quem já os segue (mesmo caminho do OR abaixo).
+                   -- Accounts suspended by moderation drop out of the feed. Silenced ones only
+                   -- appear to those who already follow them (same path as the OR below).
                    AND c.suspended_at IS NULL
                    AND (
                         oe.citizen_id = $1
@@ -269,7 +269,7 @@ pub async fn list_feed(
                        NOT IN (SELECT domain FROM domain_block
                                 WHERE citizen_id = $1))
            -- Server-wide domain policy (migration 0508). 'suspend' = corte
-           -- total; 'silence' = só quem já segue continua vendo.
+           -- total; 'silence' = only those who already follow keep seeing it.
            AND (feed.author_actor_url IS NULL
                 OR lower(substring(feed.author_actor_url FROM '^https?://([^/]+)'))
                        NOT IN (SELECT domain FROM server_domain_block
@@ -402,7 +402,7 @@ pub async fn list_hashtag_timeline(
                false AS liked_by_me,
                false AS boosted_by_me
           FROM (
-                -- DISTINCT ON: a mesma nota pode existir local (outbox) E ingerida via
+                -- DISTINCT ON: the same note may exist locally (outbox) AND ingested via
                 -- federacao (loop no proprio dominio). Duplicata derruba o {#each}
                 -- chaveado do front (each_key_duplicate) -- prefere a linha local.
                 SELECT DISTINCT ON (u.object_uri) u.*
@@ -566,7 +566,7 @@ pub async fn list_thread_context(
                         WHERE r.citizen_id = $2 AND r.object_uri = feed.object_uri
                           AND r.kind = 'boost') AS boosted_by_me
           FROM (
-                -- DISTINCT ON: a mesma nota pode existir local (outbox) E ingerida via
+                -- DISTINCT ON: the same note may exist locally (outbox) AND ingested via
                 -- federacao (loop no proprio dominio). Duplicata derruba o {#each}
                 -- chaveado do front (each_key_duplicate) -- prefere a linha local.
                 SELECT DISTINCT ON (u.object_uri) u.*

@@ -2,7 +2,7 @@
 //!
 //! Aggregates, read-only, what the previous phases produced: size of the own contact base (F4), the
 //! consent rate per level (F2), the history of broadcasts + micro-consultations (F3). Gating: platform
-//! plataforma OU qualquer `party_administrator` do partido. English API, runtime queries.
+//! admin OR any `party_administrator` of the party. English API, runtime queries.
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -34,7 +34,7 @@ fn storage_error() -> Response {
     )
 }
 
-/// Admin de plataforma OU qualquer party_administrator do partido.
+/// Platform admin OR any party_administrator of the party.
 async fn party_authorized(
     state: &AppState,
     caller: &CallerId,

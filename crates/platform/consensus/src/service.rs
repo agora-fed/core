@@ -239,7 +239,7 @@ impl ClusterService {
         }
         // NLI pair judge: distance says "same topic", the judge says whether
         // it is the SAME ASK — homonyms ("obra do mestre Picasso" vs "mestre
-        // de obras", cosine 0.068) and different-scope asks read as Neutral
+        // foreman", cosine 0.068) and different-scope asks read as Neutral
         // and must not merge. Fail-open: a judge error is "no opinion", the
         // cheaper guards above already had their say.
         if let (Decision::Merge { cluster, distance }, Some(judge)) = (decision, &self.judge) {

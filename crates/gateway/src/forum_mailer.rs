@@ -5,7 +5,7 @@
 //! pending ones, assembles the institutional e-mail — the debate's link + a sample of the
 //! comments — sends it through the same SMTP as the other notifications and stamps
 //! `sent_at` (guarded by `IS NULL`: a resend never duplicates). Without SMTP configured
-//! (dev), loga e carimba — mesmo contrato do proposal_delivery.
+//! (dev), logs and stamps — same contract as proposal_delivery.
 
 use sqlx::PgPool;
 use uuid::Uuid;

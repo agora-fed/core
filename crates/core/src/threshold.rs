@@ -66,14 +66,14 @@ mod tests {
 
     #[test]
     fn escala_com_o_eleitorado_e_faz_clamp() {
-        // 0,05% de 1M de eleitores = 500.
+        // 0.05% of 1M voters = 500.
         assert_eq!(
             proportional_threshold(Some(1_000_000), 0.0005, 25, 10_000),
             500
         );
         // A small municipality falls back to the floor (0.05% of 8k = 4 → floor 25).
         assert_eq!(proportional_threshold(Some(8_000), 0.0005, 25, 10_000), 25);
-        // Nacional bate no teto (0,05% de 155M = 77.500 → teto 10.000).
+        // National hits the ceiling (0.05% of 155M = 77,500 → ceiling 10,000).
         assert_eq!(
             proportional_threshold(Some(155_000_000), 0.0005, 25, 10_000),
             10_000

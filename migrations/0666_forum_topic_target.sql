@@ -3,13 +3,13 @@
 -- The Propose ≡ Forum merge: the forum topic becomes the ONLY deliberative
 -- unit and gains the power the "proposal" had — directing a demand
 -- at SPECIFIC office(s). One door, one yardstick: the same points scoreboard and
--- o mesmo patamar proporcional (dsoc_core::proportional_threshold, piso 10) do
+-- the same proportional threshold (dsoc_core::proportional_threshold, floor 10) as the
 -- forum; the target only changes WHERE the dispatch goes once the threshold crosses.
 --
 -- A topic WITHOUT a target → the section's curated contact (current behaviour, ADR-0019/D3).
 -- A topic WITH a target → dispatches to each reachable mandate's public_email (the
 -- @parlamento.democracia.social.br placeholder is filtered in the service — Tier 0,
--- igual proposal_delivery: nunca entregamos num inbox morto nem carimbamos SLA).
+-- same as proposal_delivery: we never deliver to a dead inbox nor stamp an SLA).
 --
 -- FKs: forum_topic is intra-file (forums, 0540); mandate is a core identity
 -- table — both allowed by the REGISTRY.md rule.
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS forum_topic_target (
     PRIMARY KEY (topic_id, mandate_id)
 );
 
--- O painel do gabinete lista "tópicos dirigidos a mim" — consulta por mandato.
+-- The cabinet panel lists "topics directed at me" — a query by mandate.
 CREATE INDEX IF NOT EXISTS forum_topic_target_mandate_idx
     ON forum_topic_target (mandate_id, topic_id);
 

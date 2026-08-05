@@ -102,7 +102,7 @@ impl AdminService {
     ///
     /// SECURITY (2026-07-26, security queue R0.4 / ADR-0011): this used to require only
     /// `VerificationLevel::Directory` — ANY verified citizen could `bind_role` to themselves
-    /// mesmo o papel `owner`. Agora exige um binding `owner`|`admin` em `admin_role_binding`
+    /// including the `owner` role. It now requires an `owner`|`admin` binding in `admin_role_binding`
     /// (root of trust: `scripts/bootstrap-admin.sh` seeds the first owner via SQL).
     /// The verification-level gate stays as defence in depth. Interim gate
     /// until R0.3's `RequirePermission`/`roles.manage`.

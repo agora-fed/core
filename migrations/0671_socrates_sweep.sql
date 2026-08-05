@@ -1,14 +1,14 @@
 -- 0671_socrates_sweep — SOCRATES v2: AUTOMATIC sweep of Legislative Ideas.
 --
 -- The MVP (0670) was admin-curated: someone pasted the idea's URL into the panel. v2
--- descobre sozinha as ideias EM ALTA no e-Cidadania a partir de duas fontes
+-- discovers the TRENDING e-Cidadania ideas on its own from two of
 -- the Senate's public sources (the `restcolecaomaisideia` JSON API and the
 -- `principalideia` page), mirrors the new ones and RE-SYNCS the support counter of
 -- those already mirrored — the support count is the only dynamic datum that matters
 -- (20,000 supporters = the idea becomes a formal legislative suggestion).
 --
--- Por isso `socrates_mirror` ganha:
---   * `apoiamentos`        — o contador COMO O SENADO FORMATA ("20.771"): guardar
+-- So `socrates_mirror` gains:
+--   * `apoiamentos`        — the counter AS THE SENATE FORMATS IT ("20.771"): storing
 --                            text avoids inventing thousands-separator parsing and keeps the
 --                            topic body faithful to the source;
 --   * `porcentagem_favor`  — the favourability index the collection returns;
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS socrates_sweep_run (
     found       int NOT NULL DEFAULT 0,
     mirrored    int NOT NULL DEFAULT 0,
     skipped     int NOT NULL DEFAULT 0,
-    -- Erros consolidados da rodada (fetch/parse/espelho); NULL = rodada limpa.
+    -- Consolidated errors of the round (fetch/parse/mirror); NULL = a clean round.
     error       text
 );
 

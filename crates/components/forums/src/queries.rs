@@ -12,7 +12,7 @@ pub struct ForumRow {
     pub id: Uuid,
     /// Owning organization.
     pub org_id: Uuid,
-    /// Pai na hierarquia, se houver.
+    /// Parent in the hierarchy, when there is one.
     pub parent_id: Option<Uuid>,
     /// Segmento do caminho.
     pub slug: String,
@@ -24,9 +24,9 @@ pub struct ForumRow {
     pub description: String,
     /// `institucional` | `governanca` | `comunitario`.
     pub kind: String,
-    /// Esfera federativa, se territorial.
+    /// Federative sphere, when territorial.
     pub esfera: Option<String>,
-    /// UF, se territorial.
+    /// State, when territorial.
     pub uf: Option<String>,
     /// Municipality, when territorial.
     pub municipio: Option<String>,
@@ -82,9 +82,9 @@ pub struct CommentRow {
     pub id: Uuid,
     /// Owning topic.
     pub topic_id: Uuid,
-    /// Autor local, se local.
+    /// Local author, when local.
     pub author_id: Option<Uuid>,
-    /// Handle do ator remoto, se federado.
+    /// Remote actor handle, when federated.
     pub remote_handle: Option<String>,
     /// Federado?
     pub federated: bool,
@@ -118,7 +118,7 @@ pub struct BridgeCommentRow {
     pub contra_side: i64,
 }
 
-/// Um recibo de envio institucional por patamar.
+/// One institutional dispatch receipt per threshold.
 #[derive(Debug, Clone)]
 pub struct DispatchRow {
     /// Id.
@@ -839,7 +839,7 @@ pub async fn refresh_topic_counters(
                 FROM forum_comment_vote fcv
                 JOIN forum_topic_comment fc ON fc.id = fcv.comment_id
                WHERE fc.topic_id = $1) cv,
-             -- base por votante: ±2 se a pessoa TAMBÉM comentou (argumentou), ±1 se só votou.
+             -- per-voter base: ±2 if the person ALSO commented (argued), ±1 if they only voted.
              (SELECT COALESCE(SUM(
                        CASE WHEN tv.stance = 'favor' THEN
                               CASE WHEN EXISTS (SELECT 1 FROM forum_topic_comment fc2
@@ -853,7 +853,7 @@ pub async fn refresh_topic_counters(
                                    THEN -2 ELSE -1 END
                        END), 0)::bigint AS "base!"
                 FROM forum_topic_vote tv WHERE tv.topic_id = $1) pos,
-             -- amplificação: voto no argumento × stance do argumento (matriz ADR-0019).
+             -- amplification: vote on the argument × the argument's stance (ADR-0019 matrix).
              (SELECT COALESCE(SUM(
                        CASE
                          WHEN fc.stance = 'favor'  AND fcv.stance = 'favor'  THEN 2
@@ -1193,7 +1193,7 @@ pub async fn municipal_transparency(
 ) -> Result<Option<(String, Option<String>)>, sqlx::Error> {
     // A single pass: the LEFT JOIN LATERAL brings the official site (when catalogued)
     // and the EXISTS brings the real connected-office signal — without consuming the executor
-    // duas vezes.
+    // twice.
     let (base_url, has_reachable): (Option<String>, bool) = sqlx::query_as(
         r#"
         SELECT

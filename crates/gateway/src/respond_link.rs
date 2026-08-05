@@ -2,7 +2,7 @@
 //!
 //! The consequence loop's bottleneck is adoption by the official: requiring
 //! registration in order to answer is friction that becomes silence. Solution: the e-mails
-//! de aviso ao gabinete carregam um link assinado
+//! warning e-mails to the cabinet carry a signed link
 //! (`/responder/?sla=<id>&t=<hmac>`); quem controla a caixa OFICIAL do
 //! mandate (public data from the legislature/electoral authority) answers right on the page, with no
 //! login. Possession of the token IS the authorization — the same model as postal registered mail:
@@ -64,7 +64,7 @@ pub(crate) fn respond_token(sla_id: Uuid) -> Option<String> {
 }
 
 /// Constant-time verification (`Mac::verify_slice`); recomputing the HMAC
-/// evita guardar token em claro em qualquer lugar.
+/// avoids storing the token in the clear anywhere.
 fn token_valid(sla_id: Uuid, presented: &str) -> bool {
     let Ok(secret) = std::env::var("RESPOND_LINK_SECRET") else {
         return false;
@@ -200,7 +200,7 @@ mod tests {
         let sla = Uuid::now_v7();
         let token = respond_token(sla).expect("token com secret setado");
         assert!(token_valid(sla, &token));
-        // Token de OUTRO SLA nunca autoriza este.
+        // A token for ANOTHER SLA never authorises this one.
         let other = respond_token(Uuid::now_v7()).unwrap();
         assert!(!token_valid(sla, &other));
         // A tampered / non-hex token is refused.

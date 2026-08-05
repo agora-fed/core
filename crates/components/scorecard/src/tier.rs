@@ -169,7 +169,7 @@ pub fn better_than_pct(your_rate: u32, peer_rates: &[u32]) -> Option<u32> {
     Some(pct.min(100))
 }
 
-/// "Top Y%": complemento de [`better_than_pct`] — quanto menor, mais no topo. `better_than = 90%`
+/// "Top Y%": the complement of [`better_than_pct`] — the smaller, the closer to the top. `better_than = 90%`
 /// becomes `Top 10%`. Minimum 1% (never "Top 0%").
 #[must_use]
 pub fn top_pct(better_than: u32) -> u32 {

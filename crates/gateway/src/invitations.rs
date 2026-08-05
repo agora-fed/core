@@ -1,4 +1,4 @@
-//! Convites de conta (migration 0509).
+//! Account invitations (migration 0509).
 //!
 //! Endpoints:
 //! - `POST   /api/v1/invitations` — create (authenticated). Body: `{ target_email?, notes?, max_uses?, expires_in_hours? }`.

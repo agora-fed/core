@@ -2,7 +2,7 @@
 //! personal fields were captured (name/sex/birth were discarded; the nick was automatic).
 //!
 //! - `GET  /me/profile-status`   — {complete, missing:[...]} — the front end uses it to decide the gate.
-//! - `POST /me/complete-profile` — grava nome→display_name/legal_name, sexo→gender, nascimento→
+//! - `POST /me/complete-profile` — stores name→display_name/legal_name, sex→gender, birth→
 //!   birth_date, and optionally swaps the nick (handle) when it is still the automatic `cidadao-*`.
 //!
 //! Runtime queries (the gateway's pattern). CallerId provides the authenticated identity.

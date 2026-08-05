@@ -137,7 +137,7 @@ pub(crate) async fn list_tallies<'e, E: PgExecutor<'e>>(
 // Cross-table reads for the urgent-vote gate (0.25.0-fediverse — P4.3).
 //
 // Intentional exception to the "each crate reads only its own tables" rule: the gate
-// depende de `proposal.urgencia` (owner: dsoc-proposals) + `citizen.titulo_status`
+// depends on `proposal.urgencia` (owner: dsoc-proposals) + `citizen.titulo_status`
 // (owner: dsoc-auth). Both are identity-tier **facts** — the same justification
 // that already lets votes read `citizen.verification_level` via `authz.require`.
 // check-crate-boundaries.sh validates Cargo deps, not SQL, so this passes.

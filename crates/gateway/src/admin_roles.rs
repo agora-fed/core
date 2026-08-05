@@ -1,7 +1,7 @@
 //! `/admin/roles` — CRUD of configurable roles + assignment + the permission catalog (R4).
 //!
-//! Gated por `roles.manage` (via [`crate::authz_ext::require_permission`]) MAIS a hierarquia do
-//! Mastodon: you may only create/edit/delete a role of a LOWER `position` than yours, and only grant a role
+//! Gated on `roles.manage` (via [`crate::authz_ext::require_permission`]) PLUS Mastodon's
+//! hierarchy: you may only create/edit/delete a role of a LOWER `position` than yours, and only grant a role
 //! below you. `administrator` bypasses the hierarchy. The front end's checkbox matrix is
 //! built from `GET /admin/permission-catalog`, which comes from the manifests (R0.1).
 

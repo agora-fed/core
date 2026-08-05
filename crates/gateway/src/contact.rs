@@ -10,7 +10,7 @@
 //! - honeypot: a filled `website` field → 200 "ok" without sending anything;
 //! - in-memory rate limit per IP (`X-Forwarded-For`, behind Caddy),
 //!   capped at `CONTACT_RATE_MAX_PER_HOUR` (default 5) — a single pod, no DB;
-//! - setor fechado em enum + limites de tamanho por campo.
+//! - sector closed as an enum + per-field length limits.
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
@@ -197,7 +197,7 @@ async fn submit(headers: HeaderMap, Json(body): Json<ContactBody>) -> Response {
 }
 
 /// A variant of [`crate::proposal_delivery`]'s `send_email` with `Reply-To`
-/// do remetente humano — responder na caixa de destino responde direto
+/// of the human sender — replying in the destination mailbox answers straight
 /// a quem escreveu.
 async fn send_with_reply_to(
     cfg: &SmtpConfig,

@@ -1,7 +1,7 @@
 -- Migration 0106 — e-mail verification before the account is created.
 --
 -- Today's flow: POST /auth/register creates citizen + credential + session
--- imediatamente. Fluxo novo: /auth/register grava um pending_signup +
+-- immediately. The new flow: /auth/register stores a pending_signup and
 -- sends a link by e-mail; /auth/register/confirm redeems the token and creates the
 -- account atomically. No row in `citizen` until verification passes
 -- — the identity document never gets "stuck" behind invalid e-mails or sock puppets.
@@ -22,9 +22,9 @@ CREATE TABLE auth_pending_signup (
     -- Normalized e-mail (trim + lowercase). Not UNIQUE: there may be two
     -- pendings for the same e-mail — the winner is whoever confirms first, and the
     -- loser gets a conflict on the INSERT into auth_credential (which IS unique
-    -- por (org_id, email) via migration 0101).
+-- unique per (org_id, email) via migration 0101).
     email          text NOT NULL,
-    -- Argon2id hash da senha, produzido no request e reutilizado no confirm.
+    -- Argon2id password hash, produced on the request and reused on the confirm.
     password_hash  text NOT NULL,
     -- The identity document, only normalized (11 digits, algorithmically checked already).
     cpf            text NOT NULL,
@@ -42,7 +42,7 @@ CREATE TABLE auth_pending_signup (
     expires_at     timestamptz NOT NULL,
     -- Set on a successful confirmation. NULL = redeemable.
     used_at        timestamptz,
-    -- IP de origem, best-effort (audit).
+    -- Origin IP, best-effort (audit).
     request_ip     text,
     created_at     timestamptz NOT NULL,
 
@@ -50,12 +50,12 @@ CREATE TABLE auth_pending_signup (
     CHECK (role = 'cidadao' OR mandate_id IS NOT NULL)
 );
 
--- Lookup por token_hash (path do confirm).
+-- Lookup by token_hash (the confirm path).
 CREATE INDEX auth_pending_signup_token_hash_idx
     ON auth_pending_signup (token_hash);
 
--- Facilita "invalidar pending live pro mesmo e-mail" no request path
--- (mesma UX do password_reset: re-request substitui o anterior).
+-- Eases "invalidate the live pending for the same e-mail" on the request path
+-- (same UX as password_reset: a re-request replaces the previous one).
 CREATE INDEX auth_pending_signup_email_live_idx
     ON auth_pending_signup (org_id, email)
     WHERE used_at IS NULL;
@@ -67,12 +67,12 @@ COMMENT ON TABLE auth_pending_signup IS
 COMMENT ON COLUMN auth_pending_signup.token_hash IS
     'sha256(token); plaintext nunca persistido.';
 
--- Default de is_public: agora true. Novos cadastros aparecem em buscas /
+-- Default for is_public: now true. New signups appear in searches /
 -- webfinger without requiring an opt-in. The user disables it in Settings → profile.
 -- (Existing accounts stay as they were — no automatic backfill.)
 ALTER TABLE citizen ALTER COLUMN is_public SET DEFAULT true;
 
--- Em prod, migrations rodam como `postgres` (via runbook) enquanto o gateway
+-- In prod, migrations run as `postgres` (via the runbook) while the gateway
 -- connects as `dsoc`. Without an explicit OWNER, new tables end up owned
 -- by the user running the script → a 42501 "permission denied" at runtime.
 -- Aligned with the `citizen` pattern (dsoc-owned). Idempotent.

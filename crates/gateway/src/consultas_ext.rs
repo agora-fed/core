@@ -241,7 +241,7 @@ async fn detail(
     };
     let qids: Vec<Uuid> = questions.iter().map(|(qid, _, _)| *qid).collect();
 
-    // Agregado por (pergunta, resposta).
+    // Aggregated per (question, answer).
     let tallies: Vec<(Uuid, String, i64)> = match sqlx::query_as(
         r"SELECT question_id, answer, count(*)
             FROM consultation_response

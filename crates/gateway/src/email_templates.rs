@@ -236,14 +236,14 @@ async fn update(
 #[derive(Debug, Deserialize)]
 struct SendTestBody {
     to: String,
-    /// Valores de exemplo pros placeholders; ausente fica `{{var}}` literal.
+    /// Sample values for the placeholders; when absent `{{var}}` stays literal.
     #[serde(default)]
     context: HashMap<String, String>,
 }
 
 /// `POST /admin/email-templates/{key}/send-test` — renders what is
 /// SAVED and sends it to the given address through the real production path
-/// (mesmo SMTP, mesmo wrapper HTML). Subject ganha prefixo `[TESTE]`.
+/// (same SMTP, same HTML wrapper). The subject gains a `[TESTE]` prefix.
 async fn send_test(
     State(state): State<AppState>,
     headers: HeaderMap,

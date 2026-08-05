@@ -1,4 +1,4 @@
--- Migration 0107 — rate-limit de /auth/login por IP (P5.1).
+-- Migration 0107 — per-IP rate limit on /auth/login (P5.1).
 --
 -- With no attempt counter today, an attacker can brute-force passwords
 -- via /auth/login freely. A minimalist table: it records every attempt
@@ -26,7 +26,7 @@ CREATE TABLE auth_login_attempt (
 CREATE INDEX auth_login_attempt_ip_at_idx
     ON auth_login_attempt (request_ip, at DESC);
 
--- Cleanup by cutoff — precisa varrer eficientemente por at antigo.
+-- Cleanup by cutoff — must sweep efficiently by old `at`.
 CREATE INDEX auth_login_attempt_at_idx
     ON auth_login_attempt (at);
 

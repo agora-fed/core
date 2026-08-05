@@ -7,7 +7,7 @@
 //!    `GET /auth/govbr/callback?code=...&state=...`.
 //! 3. Callback:
 //!    a. valida state (CSRF) contra o cookie.
-//!    b. troca code por tokens no `/token` do gov.br.
+//!    b. exchanges the code for tokens at gov.br's `/token`.
 //!    c. valida id_token JWT (issuer, aud, exp).
 //!    d. reads `sub`, `name`, `email`, `amr` (assurance).
 //!    e. upserts into `citizen` (govbr_sub as the key):
@@ -26,7 +26,7 @@
 //! Security:
 //! - `state` (32 bytes random) + `nonce` (32 bytes random) em cookie HttpOnly
 //!   with a 10-minute TTL. The callback validates BOTH.
-//! - `id_token` conferido por JWKS do gov.br (cached por 1 h).
+//! - `id_token` checked against gov.br's JWKS (cached for 1 h).
 //! - `client_secret` NUNCA sai do backend.
 
 use axum::extract::{Query, State};
@@ -41,7 +41,7 @@ use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-/// Rotas montadas na RAIZ do gateway (fora do `/api/v1`) — o gov.br exige
+/// Routes mounted at the gateway ROOT (outside `/api/v1`) — gov.br requires
 /// that `redirect_uri` be exactly `<origin>/auth/govbr/callback`.
 pub fn root_routes(state: AppState) -> Router<()> {
     Router::new()
@@ -120,7 +120,7 @@ async fn start(State(_state): State<AppState>) -> Response {
     };
     let state_tok = urlsafe_random(32);
     let nonce_tok = urlsafe_random(32);
-    // Cookie combina os dois em `state|nonce`, HttpOnly, 10 min.
+    // The cookie combines both as `state|nonce`, HttpOnly, 10 min.
     let cookie = format!(
         "dsoc_govbr={}|{}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600",
         state_tok, nonce_tok
@@ -185,7 +185,7 @@ async fn callback(
         return Redirect::to("/entrar?govbr_erro=state_mismatch").into_response();
     }
 
-    // 1. Troca code por tokens.
+    // 1. Exchange the code for tokens.
     let token_resp = match exchange_code(&cfg, &code).await {
         Ok(t) => t,
         Err(err) => {

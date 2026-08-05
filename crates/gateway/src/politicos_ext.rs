@@ -31,7 +31,7 @@ pub fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/politicos/browse", get(browse))
         .route("/politicos/municipios", get(municipios))
-        // Resumo territorial (0.38.0 — Fase 2.2): eleitorado + mandatos por
+        // Territorial summary (0.38.0 — Phase 2.2): electorate + mandates per
         // a municipality's party, for the /municipio page.
         .route("/politicos/territorio", get(territorio))
         .with_state(state)

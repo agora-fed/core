@@ -1,7 +1,7 @@
 //! Citizen interests (ministerial thematic areas) — migration 0661.
 //!
 //! The citizen marks on their profile which areas they want to follow (Health, Education, Security, Revenue
-//! Federal, Cultura, Esporte…), baseadas na estrutura ministerial. Alimenta o direcionamento
+//! Federal, Culture, Sport…), based on the ministerial structure. It feeds the targeting
 //! future updates/consultations by theme. English identifiers in the code; areas in pt (data).
 //! Runtime queries.
 //!

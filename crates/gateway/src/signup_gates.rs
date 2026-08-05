@@ -1,4 +1,4 @@
-//! Gates de cadastro/login (migration 0514).
+//! Signup/login gates (migration 0514).
 //!
 //! - `GET  /admin/email_domain_blocks`
 //! - `POST /admin/email_domain_blocks {domain, reason?}`
@@ -14,8 +14,8 @@
 //! `/api/v1` router (the tables belong to this module; dsoc-auth does not
 //! know them — no cross-crate coupling):
 //! - `POST …/auth/register[/politician]`: refuses an e-mail whose domain is in
-//!   `email_domain_block` e IP negado por `ip_rule` (escopo signup/all);
-//! - `POST …/auth/login`: recusa IP negado por `ip_rule` (escopo login/all).
+//!   `email_domain_block`, and an IP denied by `ip_rule` (signup/all scope);
+//! - `POST …/auth/login`: refuses an IP denied by `ip_rule` (login/all scope).
 //!
 //! `citizen.pending_review` is enforced INSIDE dsoc-auth (its own table):
 //! `GATEWAY_SIGNUP_REQUIRES_REVIEW=true` makes confirm create the account
@@ -418,16 +418,16 @@ async fn reject_pending(
 }
 
 // ---------------------------------------------------------------------------
-// Enforcement — middleware nas rotas de register/login (0.28.2)
+// Enforcement — middleware on the register/login routes (0.28.2)
 // ---------------------------------------------------------------------------
 
 /// Cap of the body buffered by the middleware on gated routes. Real
 /// register/login payloads are ~200 bytes; 32 KiB leaves room without opening a DoS.
 const GATE_BODY_LIMIT: usize = 32 * 1024;
 
-/// Middleware aplicado ao router `/api/v1`: intercepta register/login e
+/// Middleware applied to the `/api/v1` router: intercepts register/login and
 /// aplica as regras administradas em /admin/email-domains e /admin/ip-rules.
-/// Falha ABERTA em erro de DB (log + segue) — indisponibilidade de storage
+/// Fails OPEN on a DB error (log + carry on) — a storage outage
 /// cannot bring down signup/login entirely; the rule applies again on the
 /// next healthy request.
 pub async fn gates_middleware(State(state): State<AppState>, req: Request, next: Next) -> Response {
@@ -549,7 +549,7 @@ async fn ip_denied(db: &PgPool, ip: IpAddr, scope: &str) -> bool {
 
 /// 0514 semantics: a matching deny denies; if ANY allow exists in the
 /// scope, the pool becomes an allowlist (an IP outside every allow is denied);
-/// allowlist vazia = todos passam.
+/// an empty allowlist = everyone passes.
 fn ip_denied_by_rules(ip: IpAddr, rules: &[(String, String)]) -> bool {
     let mut has_allow = false;
     let mut allowed = false;
@@ -641,7 +641,7 @@ mod tests {
             ("192.168.0.0/16".to_owned(), "allow".to_owned()),
             ("10.0.0.0/8".to_owned(), "deny".to_owned()),
         ];
-        // Dentro do allow: passa. Fora de todo allow: negado. Deny sempre nega.
+        // Inside an allow: passes. Outside every allow: denied. A deny always denies.
         assert!(!ip_denied_by_rules(ip("192.168.5.5"), &rules));
         assert!(ip_denied_by_rules(ip("172.16.0.1"), &rules));
         assert!(ip_denied_by_rules(ip("10.0.0.1"), &rules));

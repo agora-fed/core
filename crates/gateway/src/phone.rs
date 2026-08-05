@@ -3,7 +3,7 @@
 //! **Opt-in.** The citizen supplies the phone; we send a 6-digit code by SMS (via
 //! INTERCOMS/`SmsGatewayProvider`, ADR-0016) and they confirm. We store only the code's SHA-256
 //! (TTL 10 min). It enables SMS 2FA (not recommended — an alternative for e-mail loss) and the
-//! alcance por SMS. English API, runtime queries.
+//! SMS reach. English API, runtime queries.
 //!
 //! - `GET  /me/phone`        — my phone + whether it is verified.
 //! - `POST /me/phone`        — define o telefone e dispara o OTP.
@@ -116,7 +116,7 @@ async fn set_phone(
             "Telefone inválido (use DDD e número).",
         );
     };
-    // Cooldown de reenvio.
+    // Resend cooldown.
     let recent: bool = match sqlx::query_scalar(
         r"SELECT EXISTS(SELECT 1 FROM phone_otp
                          WHERE citizen_id = $1 AND created_at > now() - ($2 || ' seconds')::interval)",

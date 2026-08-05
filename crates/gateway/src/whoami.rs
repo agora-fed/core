@@ -3,8 +3,8 @@
 //! chamadas separadas (`/me` + `/me/admin-status` + `/me/mandate`).
 //!
 //! Composes: profile (reusing `ProfileService.get`) + mandate/binding (reusing
-//! `MandateRegistry.find_my_mandate`) + papel de plataforma (`admin_role_binding`) +
-//! papel de partido (`party_administrator`). Deriva `civic_type` (cidadao|candidato|politico).
+//! `MandateRegistry.find_my_mandate`) + platform role (`admin_role_binding`) +
+//! party role (`party_administrator`). Derives `civic_type` (cidadao|candidato|politico).
 //!
 //! Auth: the identity comes from the `x-dsoc-citizen-id` header that the `inject_identity`
 //! middleware injects from the session/bearer (the client NEVER sends that header — it is stripped at the edge).
@@ -113,7 +113,7 @@ async fn whoami(State(state): State<AppState>, headers: HeaderMap) -> Response {
         Err(_) => None,
     };
 
-    // Papel de plataforma (owner > admin > auditor).
+    // Platform role (owner > admin > auditor).
     let platform_role: Option<String> = sqlx::query_scalar(
         r"SELECT role FROM admin_role_binding
            WHERE citizen_id = $1

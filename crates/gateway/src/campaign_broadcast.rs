@@ -1,4 +1,4 @@
-//! `/admin/parties/{sigla}/directories/{id}/broadcast` — broadcast consentido de campanha
+//! `/admin/parties/{sigla}/directories/{id}/broadcast` — consented campaign broadcast
 //! (AGORA F3, #60, migration 0655). The flagship.
 //!
 //! A **municipal** directory sends a message to its consented base. The platform resolves
@@ -7,7 +7,7 @@
 //! (`SmtpProvider`) — only to those people, never exposing the list. Opt-out in the footer. A
 //! 24h cooldown per directory (anti-spam). Recorded in `campaign_broadcast` (audit + rate limit).
 //!
-//! Gating: admin de plataforma (`party.manage`/`administrator`) OU `party_administrator` do
+//! Gating: platform admin (`party.manage`/`administrator`) OR the party's `party_administrator`
 //! party (national or of this directory). English API per ADR-0013. Runtime queries.
 
 use axum::extract::{Json, Path, State};
@@ -65,7 +65,7 @@ struct BroadcastBody {
 struct BroadcastResult {
     recipients: i64,
     broadcast_id: Uuid,
-    /// Consulta criada (micro-consulta), se houve perguntas — o front mostra o link.
+    /// Consultation created (micro-consultation), when there were questions — the front end shows the link.
     consultation_id: Option<Uuid>,
 }
 
@@ -308,7 +308,7 @@ async fn broadcast(
         Some(cid)
     };
 
-    // Registra o broadcast (auditoria + rate-limit) ANTES de enviar.
+    // Record the broadcast (audit + rate limit) BEFORE sending.
     let broadcast_id: Uuid = match sqlx::query_scalar(
         r"INSERT INTO campaign_broadcast (org_id, party_sigla, directory_id, sent_by, subject, body, recipients, consultation_id)
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",

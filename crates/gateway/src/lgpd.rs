@@ -2,9 +2,9 @@
 //!
 //! Two actions the citizen can trigger from the Settings UI:
 //!
-//! - `GET  /me/lgpd/export` — returns a complete JSON with all the data
-//!   pessoais dele armazenados (art. 18 II e V).
-//! - `POST /me/lgpd/delete-account` — soft-delete: marca `deleted_at`,
+//! - `GET  /me/lgpd/export` — returns a complete JSON with every piece of their
+//!   personal data we hold (art. 18 II and V).
+//! - `POST /me/lgpd/delete-account` — soft-delete: marks `deleted_at`,
 //!   wipes PII (e-mail, identity document, password, electoral registry, gov.br, avatar), invalidates
 //!   every session. Public content (proposals, comments, votes)
 //!   stays with an anonymized author (the public interest in historical
@@ -131,7 +131,7 @@ async fn build_export(db: &PgPool, citizen_id: Uuid) -> Result<serde_json::Value
     .fetch_all(db)
     .await?;
 
-    // Emendas propostas por mim.
+    // Amendments I proposed.
     let amendments: Vec<serde_json::Value> = sqlx::query_scalar(
         r"SELECT jsonb_build_object(
               'id', id, 'proposal_id', proposal_id, 'body', body,
@@ -243,7 +243,7 @@ async fn delete_account(State(state): State<AppState>, headers: HeaderMap) -> Re
     {
         return storage(err);
     }
-    // 5. Pending signup (se tiver).
+    // 5. Pending signup (if any).
     if let Err(err) = sqlx::query(
         "DELETE FROM auth_pending_signup WHERE email IN (
             SELECT email FROM auth_credential WHERE citizen_id = $1

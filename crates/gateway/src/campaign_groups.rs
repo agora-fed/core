@@ -1,11 +1,11 @@
-//! # Grupos de campanha (0.39.0, migration 0527) — Fase 2.3.
+//! # Campaign groups (0.39.0, migration 0527) — Phase 2.3.
 //!
 //! A proactive campaign→voter channel. Until now the official only REACTED to demands
 //! under an SLA; here they CREATE a space, the voter joins, and the campaign publishes
 //! updates the members see.
 //!
 //! - `POST   /me/campaign-group`         — create/update the official's group (gate: is_politico).
-//! - `GET    /me/campaign-group`         — painel do dono: grupo + nº de membros + posts.
+//! - `GET    /me/campaign-group`         — the owner's panel: group + member count + posts.
 //! - `POST   /me/campaign-group/posts`   — the owner publishes an update.
 //! - `GET    /campaign-groups/{id}`      — the PUBLIC page (name, owner, member count, posts, sou_membro).
 //! - `POST   /campaign-groups/{id}/join` — o eleitor entra (idempotente).

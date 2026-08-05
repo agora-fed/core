@@ -5,7 +5,7 @@
 //! Gating reusa [`crate::campaign_broadcast::authorized`]. English API, runtime queries. O envio
 //! that consumes this config is slice #69b (SMS broadcast).
 //!
-//! - `GET    …/sms-gateway` — {configured, url} (credenciais nunca retornam).
+//! - `GET    …/sms-gateway` — {configured, url} (credentials never come back).
 //! - `PUT    …/sms-gateway` — grava/atualiza {url, user?, pass?}.
 //! - `DELETE …/sms-gateway` — remove.
 

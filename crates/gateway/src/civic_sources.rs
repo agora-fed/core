@@ -4,7 +4,7 @@
 //! base URL and the probe status. Feeds the per-platform extraction strategy. Reads the table
 //! `civic_source` (migration 0662). Paginado + filtrado. Runtime queries.
 //!
-//! - `GET /admin/civic-sources/overview` — contagem por plataforma × status do probe.
+//! - `GET /admin/civic-sources/overview` — count per platform × probe status.
 //! - `GET /admin/civic-sources`          — lista paginada (filtros uf/plataforma/status/q).
 
 use axum::extract::{Query, State};

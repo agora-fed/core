@@ -5,8 +5,8 @@
 
 use crate::proposal_delivery::SmtpConfig;
 
-/// Envia um e-mail multipart (texto-plano como fallback + HTML da marca via
-/// [`dsoc_db::email_templates::html_wrap`]) — mesmo formato do mandate_invite /
+/// Sends a multipart e-mail (plain text as the fallback + branded HTML via
+/// [`dsoc_db::email_templates::html_wrap`]) — same shape as mandate_invite /
 /// password-reset. `body_text` is the already-rendered plain-text body (no HTML);
 /// `html_wrap` wraps it in the layout with logo/footer. Errors come back as `Err`.
 pub(crate) async fn send_html(
@@ -15,7 +15,7 @@ pub(crate) async fn send_html(
     subject: &str,
     body_text: &str,
 ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Delega ao INTERCOMS (ADR-0016, #68): o envio real vive no `SmtpProvider`.
+    // Delegates to INTERCOMS (ADR-0016, #68): the real sending lives in `SmtpProvider`.
     // The signature is kept so existing callers are untouched.
     use crate::intercoms::{MessageSender, OutboundMessage, SmtpProvider};
     SmtpProvider::new(cfg.clone())

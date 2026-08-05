@@ -1,16 +1,16 @@
-//! # Atestado de cidadania por operador verificado (0.28.3, migration 0519).
+//! # Citizenship attestation by a verified operator (0.28.3, migration 0519).
 //!
 //! Web of trust: while there is no institutional verification (TSE/gov.br),
 //! whoever ALREADY holds a strong identity on the platform — a mandate operator
-//! (`mandate_identity_binding`) ou admin de partido aceito
+//! (`mandate_identity_binding`) or an accepted party admin
 //! (`party_administrator`) — may publicly attest that they know a
 //! citizen. The attestation is auditable (who, when, with what power) and
 //! revocable by the attester themselves; the badge shows on the public profile.
 //!
 //! - `GET    /citizens/{id}/attestations` — public; with a session it includes
 //!   `viewer_can_attest`/`viewer_attested` for the UI.
-//! - `POST   /citizens/{id}/attestations {note?}` — atesta (ou revive um
-//!   atestado revogado do mesmo par).
+//! - `POST   /citizens/{id}/attestations {note?}` — attest (or revive a
+//!   revoked attestation for the same pair).
 //! - `DELETE /citizens/{id}/attestations` — revoke one's own attestation.
 
 use axum::extract::{Json, Path, State};
@@ -151,7 +151,7 @@ async fn list(
 }
 
 // ---------------------------------------------------------------------------
-// POST — atestar (ou reviver atestado revogado do mesmo par)
+// POST — attest (or revive a revoked attestation for the same pair)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]

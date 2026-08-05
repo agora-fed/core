@@ -195,7 +195,7 @@ struct SignupPendingDto {
     email: String,
 }
 
-/// `POST /auth/register` — inicia o cadastro. Grava um pending_signup e
+/// `POST /auth/register` — starts the signup. Stores a pending_signup and
 /// fires an e-mail with the `/confirmar-conta?token=…` link. **Does not create the
 /// account** nor return a session — the front end navigates to "check your e-mail".
 async fn register(
@@ -272,8 +272,8 @@ async fn register_politician(
     }
 }
 
-/// `POST /auth/register/candidate` — cadastro de candidato(a) SEM mandato
-/// (0526). Valida os metadados da candidatura, grava a pending e envia o
+/// `POST /auth/register/candidate` — signup of a candidate WITHOUT a mandate
+/// (0526). Validates the candidacy metadata, stores the pending and sends the
 /// verification link. Same response shape as `/auth/register`.
 async fn register_candidate(
     State(state): State<AppState>,
@@ -314,13 +314,13 @@ async fn register_candidate(
     }
 }
 
-/// Corpo de `POST /auth/register/confirm`.
+/// Body of `POST /auth/register/confirm`.
 #[derive(Debug, Deserialize)]
 struct RegisterConfirmBody {
     token: String,
 }
 
-/// Corpo de `POST /auth/register/resend`. Mesmo shape do password-reset
+/// Body of `POST /auth/register/resend`. Same shape as password-reset
 /// request — org_id + email, no password (we reuse the pending one).
 #[derive(Debug, Deserialize)]
 struct RegisterResendBody {
@@ -385,7 +385,7 @@ async fn register_confirm(
 /// 10/h is already a bot/brute-force signal.
 const DEFAULT_LOGIN_RATE_MAX_PER_HOUR: i64 = 10;
 
-/// `POST /auth/login` — authenticate with e-mail + senha. Rate-limitado por
+/// `POST /auth/login` — authenticate with e-mail + password. Rate-limited per
 /// IP: 10 attempts/hour (success + failure), configurable via env. Every
 /// attempt is audited in `auth_login_attempt`.
 async fn login(
@@ -559,7 +559,7 @@ fn message_for(error: &Error) -> &'static str {
 
 fn error_response(error: &Error) -> Response {
     // Log internal detail server-side only; the body carries a stable code + safe message.
-    // Debug (`?error`) walks the `#[source]` chain — Display esconde a causa raiz (por design,
+    // Debug (`?error`) walks the `#[source]` chain — Display hides the root cause (by design,
     // to avoid leaking it in the response), which hampers diagnosis in the logs.
     if matches!(error, Error::Storage(_) | Error::Dependency { .. }) {
         tracing::error!(code = error.code(), detail = ?error, "auth request failed");

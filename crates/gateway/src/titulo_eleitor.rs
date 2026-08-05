@@ -5,7 +5,7 @@
 //! (with a special rule for SP and MG), DV2 = mod 11 over UF + DV1 with weights
 //! 7..=9.
 //!
-//! `POST /api/v1/me/titulo-eleitor` valida algoritmicamente e grava
+//! `POST /api/v1/me/titulo-eleitor` validates algorithmically and stores
 //! `titulo_status = 'validated'`. Promotion to `'verified'` (a cross-check with
 //! future TSE open data) is left to a later slice.
 

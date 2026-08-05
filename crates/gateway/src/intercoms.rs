@@ -5,7 +5,7 @@
 //! o [`Channel`], e o [`SmtpProvider`] (e-mail via SMTP/lettre — o `mailer::send_html`
 //! now delegates here). Next steps (same issue #68 / #69): extract into a
 //! shared crate (so auth can use it for OTP/2FA), `MailgunProvider` + bulk
-//! massa, `SmsGatewayProvider`, config por escopo cifrada e rate-limit (SMS 1/semana).
+//! bulk, `SmsGatewayProvider`, encrypted per-scope config and rate limiting (SMS 1/week).
 
 use async_trait::async_trait;
 
@@ -21,7 +21,7 @@ pub(crate) fn config_key() -> Option<String> {
         .filter(|k| !k.is_empty())
 }
 
-/// Canal de envio outbound.
+/// Outbound delivery channel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Channel {
     Email,
@@ -117,7 +117,7 @@ impl MessageSender for SmtpProvider {
     }
 }
 
-/// Config de um SMSGateway (app Android sms-gate.app) — URL do endpoint de mensagem + basic auth.
+/// Config of an SMSGateway (the sms-gate.app Android app) — message endpoint URL + basic auth.
 /// Increment 1 (#69): config from env (platform level). Per-scope config (directory/campaign)
 /// encrypted = the next step.
 #[derive(Clone)]
@@ -148,7 +148,7 @@ pub(crate) fn sms_from_env() -> Option<SmsConfig> {
     })
 }
 
-/// Provider de SMS via SMSGateway (app Android sms-gate.app). POST JSON
+/// SMS provider via SMSGateway (the sms-gate.app Android app). POSTs JSON
 /// `{message, phoneNumbers:[...]}` with basic auth. The `Sms` channel only.
 #[derive(Debug)]
 pub struct SmsGatewayProvider {

@@ -8,7 +8,7 @@
 //!
 //! * `GET /politicos/{mandate_id}/responsiveness` — C1 (badge + streak) + C2 (comparison with peers
 //!   of the same level/UF) in a single payload, ready for the official's public page.
-//! * `GET /politicos/responsiveness/peers?sphere=&uf=&house=&party=` — C2 standalone: agregados de
+//! * `GET /politicos/responsiveness/peers?sphere=&uf=&house=&party=` — C2 standalone: aggregates of
 //!   a slice (mean response rate, median latency, group size).
 //!
 //! The decision logic (tier/percentile) is PURE and tested in `dsoc_scorecard::tier`; here we only

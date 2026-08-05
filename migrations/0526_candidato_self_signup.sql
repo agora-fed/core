@@ -9,11 +9,11 @@
 --   1. `mandate.source = 'self'` — a mandate created by the candidate themselves at
 --      signup (is_candidate=true, never set by a seed until now).
 --   2. `auth_pending_signup.role = 'candidato'` + `candidate_meta` jsonb —
---      o request guarda nome de urna/cargo/UF/partido; o confirm materializa
---      mandate + binding + candidacy numa tx (mesmo pattern do politico).
+--      the request holds ballot name/office/state/party; the confirm materialises
+--      mandate + binding + candidacy in one tx (the same pattern as politico).
 --   3. `candidacy.listed` — product decision 2026-07-24: a self-declared one does NOT
 --      enter the public /eleicoes comparator until verification (attestation
---      de partido/mandato, match TSE ou admin). Import TSE continua listado
+--      party/mandate, a TSE match or an admin). A TSE import stays listed
 --      (DEFAULT true); o self-signup insere `listed = false`.
 --
 -- O binding do candidato nasce `verification_level = 'email'` (autodeclarado)
@@ -21,7 +21,7 @@
 
 BEGIN;
 
--- 1. mandate.source aceita 'self' (mesmo pattern do 0503).
+-- 1. mandate.source accepts 'self' (the same pattern as 0503).
 ALTER TABLE mandate
     DROP CONSTRAINT IF EXISTS mandate_source_check;
 ALTER TABLE mandate
@@ -31,7 +31,7 @@ ALTER TABLE mandate
 COMMENT ON COLUMN mandate.source IS
     '0.36.0: origem da row. assembleia=feed estadual; tse=CSV de eleitos; self=cadastro do próprio candidato (is_candidate=true).';
 
--- 2. pending signup: papel 'candidato' + metadados da candidatura.
+-- 2. pending signup: role 'candidato' + the candidacy metadata.
 ALTER TABLE auth_pending_signup
     ADD COLUMN candidate_meta jsonb;
 

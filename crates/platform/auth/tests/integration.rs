@@ -539,7 +539,7 @@ async fn signup_verify_confirm_materializes_citizen_and_session() {
             .unwrap();
     assert_eq!(live, Some(session.id), "sessão viva depois do commit");
 
-    // Retry do mesmo token deve falhar (single-use, agora used_at NOT NULL).
+    // Retrying the same token must fail (single-use, used_at now NOT NULL).
     let err = svc.confirm(&token).await.unwrap_err();
     assert!(matches!(err, dsoc_core::Error::Unauthorized));
 }

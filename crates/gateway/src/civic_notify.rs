@@ -53,7 +53,7 @@ impl EventHandler for CivicNotifySub {
                 )
                 .await;
                 // Complete phase E: automatic amplification on the fediverse, in
-                // nome do autor. Best-effort — falha aqui nunca derruba a
+                // the author's name. Best-effort — a failure here never brings down the
                 // neither the in-app notification above nor the dispatch loop.
                 self.auto_federate_threshold(proposal.as_uuid()).await;
             }
@@ -64,7 +64,7 @@ impl EventHandler for CivicNotifySub {
                     "o mandato tem prazo pra responder sua proposta",
                 )
                 .await;
-                // 0.32.0: D0 do "AR digital" — o 1º aviso formal ao gabinete
+                // 0.32.0: D0 of the "digital registered mail" — the 1st formal warning to the cabinet
                 // goes out HERE (with the answer-without-an-account link) and records
                 // receipt #1 of the chain. Without it the worker's D+1/D+2 ladder never
                 // disparava: a query exige `count(receipts) BETWEEN 1 AND 2`.
@@ -78,7 +78,7 @@ impl EventHandler for CivicNotifySub {
                 )
                 .await;
                 // Block C (C3): the ANSWER federates positively — symmetric to
-                // `auto_federate_silence`. A regra de ouro do plano: toda
+                // `auto_federate_silence`. The plan's golden rule: every
                 // amplified negative consequence must have its positive
                 // counterpart. Silence already became a Note; so does the answer.
                 self.auto_federate_response(sla.as_uuid()).await;
@@ -279,7 +279,7 @@ impl CivicNotifySub {
         // 0.32.0: beyond in-app + push, the 3 civic milestones also go out by
         // e-mail to the author (threshold crossed, answer, silence). The
         // `sla_started` one stays in-app only — it arrives seconds after the threshold
-        // e viraria e-mail duplicado. Opt-out por `email_prefs` (chave =
+        // and would become a duplicate e-mail. Opt-out via `email_prefs` (key =
         // kind; ausente = ligado).
         self.email_author(author, proposal_id, kind).await;
     }
@@ -700,7 +700,7 @@ fn build_silence_note(
 }
 
 /// Body of the threshold Note. The title is capped to fit comfortably within the
-/// de 3000 chars do `create_public_note`; a hashtag alimenta a timeline
+/// of `create_public_note`'s 3000 chars; the hashtag feeds the timeline
 /// local `#DemocraciaBR` and of the remote instances.
 fn build_threshold_note(title: &str, proposal_url: &str) -> String {
     let title_short: String = title.chars().take(140).collect();

@@ -284,7 +284,7 @@ async fn create_directory(
         );
     }
     // Responsible citizen mandatory (a direct id or an @handle resolved here) — the same
-    // contrato da rota 0.37.0 em dsoc-mandates::parties.
+    // route contract of 0.37.0 in dsoc-mandates::parties.
     let responsavel = if let Some(id) = body.responsavel_citizen_id {
         id
     } else if let Some(handle) = body

@@ -8,7 +8,7 @@
 //!
 //! Rasterization is 100% in-process (`image` + `ab_glyph`, DejaVu Sans embedded
 //! in the binary — Bitstream Vera license, freely redistributable): zero external
-//! externa de screenshot/navegador. Cache 5 min, mesmo TTL do embed.
+//! screenshot/browser dependency. Cached 5 min, the same TTL as the embed.
 
 use axum::extract::{Path, State};
 use axum::http::{header, StatusCode};
@@ -87,7 +87,7 @@ async fn placar_card(State(state): State<AppState>, Path(file): Path<String>) ->
             StatusCode::OK,
             [
                 (header::CONTENT_TYPE, "image/png".to_owned()),
-                // 5 min — placar muda devagar; crawler de OG re-busca por link.
+                // 5 min — the scoreboard moves slowly; an OG crawler refetches per link.
                 (header::CACHE_CONTROL, "public, max-age=300".to_owned()),
             ],
             bytes,
@@ -307,7 +307,7 @@ fn render_certificate(
     let rate = tier::response_rate_pct(answered, ignored);
 
     let mut img = RgbaImage::from_pixel(W, H, BG);
-    // Moldura de certificado: borda dupla na cor do selo.
+    // Certificate frame: a double border in the badge colour.
     fill_rect(&mut img, 0, 0, W, 12, accent);
     fill_rect(&mut img, 0, H - 12, W, 12, accent);
     fill_rect(&mut img, 0, 0, 12, H, accent);

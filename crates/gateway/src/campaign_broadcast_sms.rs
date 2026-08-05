@@ -1,16 +1,16 @@
-//! `/admin/parties/{sigla}/directories/{id}/broadcast-sms` — broadcast SMS consentido de campanha
+//! `/admin/parties/{sigla}/directories/{id}/broadcast-sms` — consented campaign SMS broadcast
 //! (AGORA #69b, INTERCOMS/ADR-0016). Complements the e-mail broadcast (F3) with the SMS channel.
 //!
 //! A **municipal** directory fires a short SMS at its consented base that has **verified their
 //! phone**, using the **directory's own SMSGateway** (encrypted config #69a). The platform
 //! resolves WHO authorized it (4-level consent 0654 × residence 0652) and sends **via INTERCOMS**
-//! (`SmsGatewayProvider`) — nunca expondo a lista.
+//! (`SmsGatewayProvider`) — never exposing the list.
 //!
 //! **Rate limit (product rule):** directories/candidates may send **1 SMS per week**;
 //! **only the platform OWNER** (administrator) sends without a limit. The e-mails' 24h
 //! cooldown is independent — SMS costs money and is more intrusive, so it has its own lock.
 //!
-//! Gating reusa [`crate::campaign_broadcast::authorized`]. English API por ADR-0013. Runtime queries.
+//! Gating reuses [`crate::campaign_broadcast::authorized`]. English API per ADR-0013. Runtime queries.
 
 use axum::extract::{Json, Path, State};
 use axum::http::StatusCode;
@@ -246,7 +246,7 @@ async fn broadcast_sms(
     };
     let recipients = phones.len() as i64;
 
-    // Registra o broadcast (canal SMS) ANTES de enviar — auditoria + base do rate-limit.
+    // Record the broadcast (SMS channel) BEFORE sending — audit + rate-limit basis.
     let subject = format!("SMS {sigla}");
     let broadcast_id: Uuid = match sqlx::query_scalar(
         r"INSERT INTO campaign_broadcast

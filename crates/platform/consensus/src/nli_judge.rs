@@ -185,7 +185,7 @@ impl NliJudge {
     ///   measured 0.98 on the creche pair);
     /// - anything else (neutral, weak pluralities) → `false`: same topic at
     ///   best, not the same ask. This is what kills homonyms ("obra do mestre
-    ///   Picasso" vs "mestre de obras"), same-place-different-intervention
+    ///   Picasso" vs "site foreman"), same-place-different-intervention
     ///   pairs, and related-but-different-scope asks.
     ///
     /// # Errors

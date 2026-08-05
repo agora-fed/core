@@ -7,8 +7,8 @@
 //!
 //! - `GET    /admin/forums?q=&limit=&offset=`      — a list with e-mail + pending items.
 //! - `PATCH  /admin/forums/{id}`                   — contact_email / thresholds.
-//! - `GET    /admin/forums/{id}/moderators`        — lista moderadores (handle).
-//! - `POST   /admin/forums/{id}/moderators`        — adiciona por handle.
+//! - `GET    /admin/forums/{id}/moderators`        — list moderators (handle).
+//! - `POST   /admin/forums/{id}/moderators`        — add by handle.
 //! - `DELETE /admin/forums/{id}/moderators/{cid}`  — remove.
 
 use axum::extract::{Path, Query, State};

@@ -303,7 +303,7 @@ async fn anonymous_caller_is_forbidden_by_handler() {
 }
 
 /// Insert a minimal proposal with an explicit `urgencia`. `mandate` is also required
-/// existir por causa do FK. Retorna o proposal id.
+/// to exist because of the FK. Returns the proposal id.
 async fn seed_proposal(db: &Db, org: OrgId, urgencia: &str) -> ProposalId {
     // Seed the mandate first (mandatory FK).
     let mandate_id = uuid::Uuid::now_v7();

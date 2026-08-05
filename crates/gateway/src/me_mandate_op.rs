@@ -28,10 +28,10 @@
 //! Logged-in citizen:
 //! - `POST /op/rounds/{id}/items` — submit an item (only in the `propostas` phase).
 //! - `POST /op/rounds/{id}/vote` — vote on an item (only in the `votacao` phase), upsert
-//!   1 voto por rodada.
+//!   one vote per round.
 //!
 //! Public:
-//! - `GET /op/rounds/{id}` — rodada + itens + contagem de votos + ranking dentro
+//! - `GET /op/rounds/{id}` — round + items + vote counts + ranking within
 //!   the budget.
 //! - `GET /politicos/{mandate_id}/op` — rodadas do mandato.
 //!
@@ -417,7 +417,7 @@ async fn submit_item(
             );
         }
     }
-    // A rodada precisa existir E estar na fase 'propostas'.
+    // The round must exist AND be in the 'propostas' phase.
     let phase: Option<String> = match sqlx::query_scalar("SELECT phase FROM op_round WHERE id = $1")
         .bind(id)
         .fetch_optional(&state.db)
@@ -502,7 +502,7 @@ async fn cast_vote(
             )
         }
     }
-    // O item precisa pertencer a ESTA rodada (evita votar em item de outra).
+    // The item must belong to THIS round (stops voting on another round's item).
     let belongs: bool = match sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM op_item WHERE id = $1 AND round_id = $2)",
     )
@@ -723,7 +723,7 @@ struct RoundSummaryDto {
     created_at: DateTime<Utc>,
 }
 
-/// `GET /op/rounds` — rodadas recentes de todos os mandatos (descoberta + SSG).
+/// `GET /op/rounds` — recent rounds across all mandates (discovery + SSG).
 /// Public: aggregate metadata only, no PII.
 async fn recent_rounds(State(state): State<AppState>) -> Response {
     let rounds: Vec<RoundSummaryDto> = match sqlx::query_as(

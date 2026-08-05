@@ -1,8 +1,8 @@
 //! # Proof of notification — the "digital registered mail of silence" (0.29, migration 0521).
 //!
-//! Todo e-mail ao gabinete vira um recibo hash-encadeado por proposta:
+//! Every e-mail to a cabinet becomes a hash-chained receipt per proposal:
 //! `hash = sha256(prev|proposal|recipient|attempt|outcome|sent_at)`, with
-//! genesis `sha256("genesis:<proposal_id>")`. Adulterar um recibo quebra a
+//! genesis `sha256("genesis:<proposal_id>")`. Tampering with a receipt breaks the
 //! the chain from there on — anyone can verify it with sha256 by hand.
 //!
 //! - Writing: [`record`] is called by `proposal_delivery` (D0) and by the

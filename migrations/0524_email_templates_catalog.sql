@@ -4,20 +4,20 @@
 -- catalog: every e-mail the platform sends (or starts sending in this
 -- version) has a row the admin can edit at /admin/email-templates.
 --
--- Novos e-mails introduzidos na 0.32.0:
+-- New e-mails introduced in 0.32.0:
 -- - welcome                    → welcome after the account is activated
 -- - follow_new                 → someone followed you (gated by email_prefs.follow)
 -- - sla_started_mandate        → D0 to the office when the SLA starts (with the
 --                                answer-without-an-account link). It also records
 --                                receipt #1 — without it the worker's D+1/D+2
---                                "AR digital" nunca disparava.
+--                                "digital registered mail" never fired.
 -- - proposal_threshold_author  → sua proposta cruzou o gatilho
 -- - sla_response_author        → o mandato respondeu
 -- - sla_expired_author         → public silence recorded
 --
 -- Already hardcoded in the code and now becoming templates:
 -- - mandate_invite             → invitation to claim a mandate (dsoc-auth)
--- - sla_reminder_mandate       → lembretes D+1/D+2 ao gabinete (worker)
+-- - sla_reminder_mandate       → D+1/D+2 reminders to the cabinet (worker)
 --
 -- Idempotent: a re-run updates the defaults without wiping the admin's edits
 -- (the same pattern as 0151).

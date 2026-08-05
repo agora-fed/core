@@ -228,7 +228,7 @@ async fn bookmark_status(
     let Some(citizen) = caller_citizen(&headers) else {
         return unauthorized();
     };
-    // Aceita tanto o UUID de mastodon_status_id quanto o object_uri cru
+    // Accepts both the mastodon_status_id UUID and the raw object_uri
     // (AP URL, e.g. https://mastodon.social/users/x/statuses/123) — o
     // the second case covers remote outbox notes that do not yet have
     // mapeamento local, tipicamente vindas do proxy do perfil.
@@ -312,7 +312,7 @@ async fn unbookmark_status(
     }
 }
 
-/// Body for POST/DELETE `/api/v1/me/bookmarks` — apenas `object_uri` cru.
+/// Body for POST/DELETE `/api/v1/me/bookmarks` — just the raw `object_uri`.
 #[derive(Debug, Deserialize)]
 struct BookmarkUriBody {
     object_uri: String,
@@ -1300,7 +1300,7 @@ async fn list_timeline(
 }
 
 // ---------------------------------------------------------------------------
-// Mute/Block/Report/Domain-block por actor_url ou host
+// Mute/Block/Report/Domain-block by actor_url or host
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]

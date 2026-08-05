@@ -139,7 +139,7 @@ async fn grant_consent(
         .filter(|s| !s.is_empty())
         .map(str::to_owned);
 
-    // Shape por escopo (espelha o CHECK da 0654).
+    // Shape per scope (mirrors the CHECK in 0654).
     let shape_ok = match scope.as_str() {
         "all_parties" => party.is_none() && uf.is_none() && municipio.is_none(),
         "party" => party.is_some() && uf.is_none() && municipio.is_none(),

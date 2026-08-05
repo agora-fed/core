@@ -4,8 +4,8 @@
 //! - `GET  /api/v1/announcements/active` — public. Active = published_at NOT NULL,
 //!   within starts_at..ends_at (when set), not dismissed by the caller.
 //! - `POST /api/v1/admin/announcements` — create (admin).
-//! - `GET  /api/v1/admin/announcements` — lista todos, inclusive rascunhos.
-//! - `PATCH /api/v1/admin/announcements/{id}` — edita body/severity/janela.
+//! - `GET  /api/v1/admin/announcements` — list all, drafts included.
+//! - `PATCH /api/v1/admin/announcements/{id}` — edit body/severity/window.
 //! - `POST /api/v1/admin/announcements/{id}/publish` — marca published_at=now.
 //! - `POST /api/v1/admin/announcements/{id}/unpublish` — zera published_at.
 //! - `DELETE /api/v1/admin/announcements/{id}` — apaga.

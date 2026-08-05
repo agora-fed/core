@@ -1,4 +1,4 @@
--- 0514_signup_gates.sql — 3 tabelas de gate no cadastro/login + coluna
+-- 0514_signup_gates.sql — 3 signup/login gate tables + an approval
 -- of approval on citizen.
 --
 -- 1. email_domain_block: a signup e-mail whose domain is in this table is

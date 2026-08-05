@@ -77,14 +77,14 @@ impl PendingRole {
 /// Target election of a candidate signup. When 2028 arrives, this becomes env/config.
 const CANDIDATE_ELECTION_YEAR: i32 = 2026;
 
-/// Metadados da candidatura auto-declarada (migration 0526). Validados no
-/// request ([`CandidateMeta::validated`]), persistidos como jsonb na pending
+/// Metadata of the self-declared candidacy (migration 0526). Validated on the
+/// request ([`CandidateMeta::validated`]), persisted as jsonb on the pending
 /// e materializados no confirm (mandate + binding + candidacy).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CandidateMeta {
     /// Ballot name (public).
     pub display_name: String,
-    /// Cargo pretendido — mesmo eixo de `candidacy.office`.
+    /// Office sought — the same axis as `candidacy.office`.
     pub office: String,
     /// UF (mandatory except for president).
     pub uf: Option<String>,
@@ -96,7 +96,7 @@ pub struct CandidateMeta {
     pub number: Option<String>,
 }
 
-/// Esfera derivada do cargo — mesma taxonomia de `candidacy.office`/`election.sphere`.
+/// Sphere derived from the office — the same taxonomy as `candidacy.office`/`election.sphere`.
 fn office_sphere(office: &str) -> Option<&'static str> {
     match office {
         "presidente" | "senador" | "deputado_federal" => Some("federal"),
@@ -186,7 +186,7 @@ pub enum ConfirmOutcome {
 }
 
 /// Does the instance require manual approval of new signups? The env var name
-/// segue o documentado na migration 0514 (`GATEWAY_SIGNUP_REQUIRES_REVIEW`).
+/// follows what migration 0514 documents (`GATEWAY_SIGNUP_REQUIRES_REVIEW`).
 fn signup_requires_review() -> bool {
     std::env::var("GATEWAY_SIGNUP_REQUIRES_REVIEW")
         .map(|v| matches!(v.trim(), "1" | "true" | "TRUE" | "yes" | "on"))
@@ -224,7 +224,7 @@ pub struct SignupVerifyService {
 pub struct SignupIdentity {
     /// Nome completo informado.
     pub nome_completo: Option<String>,
-    /// Data de nascimento `YYYY-MM-DD`.
+    /// Birth date `YYYY-MM-DD`.
     pub nascimento: Option<String>,
     /// Sexo `M`/`F`.
     pub sexo: Option<String>,
@@ -413,7 +413,7 @@ impl SignupVerifyService {
     /// a `listed=false` candidacy. Verification (party/TSE/admin) comes later.
     ///
     /// # Errors
-    /// Idem [`Self::request_cidadao`] + [`Error::Validation`] pros campos da
+    /// Same as [`Self::request_cidadao`] + [`Error::Validation`] for the candidacy
     /// candidatura.
     pub async fn request_candidato(
         &self,
@@ -506,7 +506,7 @@ impl SignupVerifyService {
     ) -> Result<()> {
         let now = self.clock.now();
         // Per-IP rate limit BEFORE anything else — cheap (one query) and it avoids
-        // gastar Argon2 em cima de flood.
+        // spending Argon2 on a flood.
         if let Some(ip) = request_ip {
             let since = now - chrono::Duration::hours(1);
             let count = queries::pending_signup_count_by_ip_since(&self.db, ip, since)
@@ -734,7 +734,7 @@ impl SignupVerifyService {
     /// there is no live pending, it silently does nothing — the wire response is
     /// 200 either way (enumeration-safe, the password_reset pattern).
     ///
-    /// Reaproveita password_hash+cpf+role+mandate_id da pending existente
+    /// Reuses password_hash+cpf+role+mandate_id from the existing pending
     /// (the user types nothing new). Mints a fresh token, invalidates the previous
     /// pending row, inserts a new one, fires the e-mail.
     ///
@@ -799,7 +799,7 @@ impl SignupVerifyService {
     /// `cutoff_days` days ago. Returns how many were deleted — useful for metrics.
     ///
     /// # Errors
-    /// [`Error::Storage`] em falha de DELETE.
+    /// [`Error::Storage`] on a DELETE failure.
     pub async fn cleanup_expired(&self, cutoff_days: i64) -> Result<u64> {
         let cutoff = self.clock.now() - chrono::Duration::days(cutoff_days.max(1));
         queries::pending_signup_cleanup_expired(&self.db, cutoff)
@@ -812,7 +812,7 @@ impl SignupVerifyService {
     /// cutoff_days for operational consistency.
     ///
     /// # Errors
-    /// [`Error::Storage`] em falha de DELETE.
+    /// [`Error::Storage`] on a DELETE failure.
     pub async fn cleanup_login_attempts_via(
         state: &dsoc_app::AppState,
         cutoff_days: i64,
@@ -833,8 +833,8 @@ impl SignupVerifyService {
     /// [`Error::Unauthorized`] for an invalid/expired/already-used token
     /// (deliberadamente opaco);
     /// [`Error::Conflict`] when the e-mail or document was taken by another signup
-    /// entre o request e o confirm (mesma mensagem do register atual);
-    /// [`Error::Storage`] em falha dura.
+    /// between the request and the confirm (the same message as the current register);
+    /// [`Error::Storage`] on a hard failure.
     pub async fn confirm(&self, token: &str) -> Result<ConfirmOutcome> {
         let hash = sha256(token);
         let now = self.clock.now();

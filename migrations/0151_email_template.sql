@@ -27,7 +27,7 @@ CREATE TABLE email_template (
     -- Fallback: if the admin wipes everything (`subject=''`), rendering falls back to the default.
     default_subject  text NOT NULL,
     default_body     text NOT NULL,
-    -- Array de placeholders aceitos, ex.: {'author_name', 'proposal_title', 'proposal_url'}.
+    -- Array of accepted placeholders, e.g. {'author_name', 'proposal_title', 'proposal_url'}.
     variables        text[] NOT NULL DEFAULT '{}',
     updated_at       timestamptz NOT NULL,
     updated_by       uuid REFERENCES citizen(id),

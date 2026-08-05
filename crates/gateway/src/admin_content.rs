@@ -238,7 +238,7 @@ async fn delete_mandate(
             "Hard-delete exige ?force=true. Use ocultar para remover de forma reversível.",
         );
     }
-    // Cascata numa tx: se sobrar qualquer FK, roll-back e erro (nunca corrompe).
+    // Cascade in one tx: any FK left behind rolls back with an error (never corrupts).
     let mut tx = match state.db.begin().await {
         Ok(t) => t,
         Err(err) => {

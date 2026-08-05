@@ -466,8 +466,8 @@ pub(crate) async fn insert_mandate_identity_binding<'e, E: PgExecutor<'e>>(
 }
 
 /// Create the `mandate` row of a self-declared candidate (0526).
-/// `source='self'` + `is_candidate=true`; `source_external_id` = uuid do
-/// citizen (chave natural, garante 1 mandato self por conta).
+/// `source='self'` + `is_candidate=true`; `source_external_id` = the citizen's
+/// uuid (natural key, guaranteeing one self mandate per account).
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn insert_mandate_self_candidate<'e, E: PgExecutor<'e>>(
     ex: E,
@@ -1682,7 +1682,7 @@ pub(crate) async fn pending_signup_invalidate_live_for_email<'e, E: PgExecutor<'
 
 /// Look up a redeemable pending by token_hash + expiry guard. Returns
 /// `None` for an unknown / expired / already-used token (confirm never says
-/// ao chamador qual caso ocorreu).
+/// to the caller which case occurred).
 pub(crate) async fn pending_signup_find_live<'e, E: PgExecutor<'e>>(
     ex: E,
     token_hash: &[u8],
@@ -1705,12 +1705,12 @@ pub(crate) async fn pending_signup_find_live<'e, E: PgExecutor<'e>>(
     Ok(row)
 }
 
-/// Conta pending_signups criadas por um `request_ip` desde `since`. Usada
+/// Counts pending_signups created by a `request_ip` since `since`. Used
 /// by the signup rate limit: bots with valid documents could flood
 /// pending_signups; we cap 3/hour per IP as defence in depth
 /// (the SMTP relay would already reject bulk sends, but better not to get there).
-/// `request_ip = NULL` (X-Forwarded-For ausente) escapa por design — nunca
-/// contamos o mesmo bucket "sem-IP".
+/// `request_ip = NULL` (X-Forwarded-For absent) escapes by design — we never
+/// count the same "no-IP" bucket.
 pub(crate) async fn pending_signup_count_by_ip_since<'e, E: PgExecutor<'e>>(
     ex: E,
     request_ip: &str,
@@ -1727,7 +1727,7 @@ pub(crate) async fn pending_signup_count_by_ip_since<'e, E: PgExecutor<'e>>(
     Ok(count)
 }
 
-/// Acha a pending live mais recente por `(org_id, email)`, se houver. Usada
+/// Finds the most recent live pending for `(org_id, email)`, if any. Used
 /// by the resend endpoint: reuses password_hash+cpf+role+mandate_id from the
 /// pending that is still alive (otherwise the user would have to type everything
 /// again). Same UX as password_reset's "a new link kills the previous one".

@@ -6,7 +6,7 @@
 //! citizen-bot with a fixed UUID in 0670) mirrors the idea as a topic of the
 //! `senado` forum, opening the debate the portal does not allow.
 //!
-//! Dois caminhos alimentam o mesmo espelho:
+//! Two paths feed the same mirror:
 //!
 //! 1. **Admin curation** (MVP, 0670): the admin pastes the URL/ID → the gateway
 //!    fetches the idea from the per-id JSON endpoint → creates the bot-signed topic.
@@ -40,7 +40,7 @@
 //! - `GET  /admin/socrates/mirrors`  — lista os espelhos existentes.
 //! - `POST /admin/socrates/sweep`    — fire a round now (owner/admin gate).
 //! - `GET  /admin/socrates/runs`     — log of the latest rounds.
-//! - `POST /admin/socrates/backfill` — reescreve o corpo de TODOS os espelhos
+//! - `POST /admin/socrates/backfill` — rewrites the body of ALL mirrors
 //!   (those created before v3 gain agenda/support/status in one pass).
 //!
 //! Bot author: the forums' HTTP `create_topic` requires a verified caller; here the
@@ -69,7 +69,7 @@ const DEFAULT_ORG_UUID: Uuid = uuid::uuid!("11111111-1111-1111-1111-111111111111
 const SOCRATES_CITIZEN_ID: Uuid = uuid::uuid!("50c7a7e5-0000-4000-8000-000000000001");
 /// Destination forum of the mirrors (institutional root seeded by seed-forums.sql).
 const SENADO_FORUM_PATH: &str = "senado";
-/// User-Agent honesto no fetch ao portal do Senado.
+/// Honest User-Agent on the fetch to the Senate portal.
 const FETCH_USER_AGENT: &str = "democracia.social.br SOCRATES (contato: /contato)";
 /// Fetch timeout (the portal is slow at peak hours; 10s covers it).
 const FETCH_TIMEOUT_SECS: u64 = 10;
@@ -94,11 +94,11 @@ const IDEIA_LINK_MARKER: &str = "visualizacaoideia?id=";
 /// Default cap of NEW mirrors per round (env `SOCRATES_SWEEP_MAX`). A round
 /// that exceeds the cap leaves the rest for the next one — the forum never floods.
 const DEFAULT_SWEEP_MAX: usize = 10;
-/// `socrates_mirror.origin` de um espelho colado por admin.
+/// `socrates_mirror.origin` of a mirror pasted in by an admin.
 const ORIGIN_MANUAL: &str = "manual";
 /// `socrates_mirror.origin` of a mirror discovered by the sweep.
 const ORIGIN_SWEEP: &str = "sweep";
-/// Teto do texto de erro consolidado gravado em `socrates_sweep_run.error`.
+/// Cap on the consolidated error text stored in `socrates_sweep_run.error`.
 const RUN_ERROR_MAX_CHARS: usize = 500;
 /// Server-rendered prefix of the idea page's `<title>`.
 const TITLE_PREFIX: &str = "Ideia Legislativa - ";
@@ -358,7 +358,7 @@ fn parse_apoios_num(value: &serde_json::Value) -> Option<i64> {
     }
 }
 
-/// Parseia o JSON de UMA ideia. `None` = resposta fora do formato conhecido
+/// Parses the JSON of ONE idea. `None` = a response outside the known format
 /// (the caller then falls back to HTML instead of mirroring garbage).
 fn parse_idea_detail(json: &str) -> Option<IdeaDetail> {
     let value: serde_json::Value = serde_json::from_str(json).ok()?;
@@ -417,7 +417,7 @@ fn apoios_display(num: Option<i64>, texto: Option<&str>) -> Option<String> {
         .or_else(|| texto.map(str::to_owned))
 }
 
-/// Trunca a pauta ao teto do corpo preservando caracteres inteiros.
+/// Truncates the agenda to the body cap, preserving whole characters.
 fn clamp_pauta(pauta: &str) -> String {
     if pauta.chars().count() <= MAX_DESCRICAO_CHARS {
         return pauta.to_owned();
@@ -489,7 +489,7 @@ fn topic_body(
 struct IdeaCandidate {
     ideia_id: String,
     titulo: Option<String>,
-    /// Contador de apoios COMO O SENADO FORMATA ("20.771").
+    /// Support counter AS THE SENATE FORMATS IT ("20.771").
     apoiamentos: Option<String>,
     porcentagem_favor: Option<i32>,
 }
@@ -638,7 +638,7 @@ struct MirrorEntry {
 /// Result of one sweep round — what the panel shows and what goes to the log.
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct SweepStats {
-    /// Ideias distintas vistas nas duas fontes.
+    /// Distinct ideas seen across the two sources.
     pub found: usize,
     /// Ideas that became a new topic in this round.
     pub mirrored: usize,
@@ -867,7 +867,7 @@ async fn mirror_candidate(
     .execute(&mut *tx)
     .await;
     match inserted {
-        // Corrida: outro caminho espelhou entre o dedup e o commit — aborta o
+        // Race: another path mirrored between the dedup and the commit — abort the
         // topic (implicit rollback when the tx drops) and reports the conflict.
         Ok(r) if r.rows_affected() == 0 => {
             drop(tx);
@@ -1075,7 +1075,7 @@ async fn list_runs(State(state): State<AppState>, headers: HeaderMap) -> Respons
 // Automatic sweep (v2)
 // ---------------------------------------------------------------------------
 
-/// Teto de espelhos NOVOS por rodada (`SOCRATES_SWEEP_MAX`, default 10).
+/// Cap on NEW mirrors per round (`SOCRATES_SWEEP_MAX`, default 10).
 fn sweep_max() -> usize {
     parse_sweep_max(std::env::var("SOCRATES_SWEEP_MAX").ok().as_deref())
 }
@@ -1099,7 +1099,7 @@ pub async fn sweep_once(state: &AppState) -> Result<SweepStats, String> {
     let run_id = Uuid::now_v7();
     let started_at = state.clock.now();
     // The row is born BEFORE the network call: a stalled round shows up in the panel with
-    // `finished_at` nulo em vez de sumir.
+    // a null `finished_at` instead of disappearing.
     if let Err(err) = sqlx::query(
         "INSERT INTO socrates_sweep_run (id, started_at, found, mirrored, skipped)
          VALUES ($1, $2, 0, 0, 0)",
@@ -1221,7 +1221,7 @@ async fn sweep_inner(state: &AppState, max_new: usize) -> Result<SweepStats, Str
     }
 
     // v3: re-sync the BODY of the mirrors (including those that did not appear
-    // nas fontes desta rodada — apoios mudam mesmo em ideia fora do topo).
+    // in this round's sources — support changes even for an idea outside the top).
     // The most stale first, up to the cap.
     let refresh = refresh_mirrors(state, Some(SWEEP_REFRESH_MAX)).await;
     stats.refreshed = refresh.refreshed;
@@ -1230,8 +1230,8 @@ async fn sweep_inner(state: &AppState, max_new: usize) -> Result<SweepStats, Str
     Ok(stats)
 }
 
-/// Re-sincroniza `apoiamentos`/`porcentagem_favor`/`apoios_updated_at` de um
-/// espelho existente. `false` = nada foi atualizado (falha logada, rodada segue).
+/// Re-syncs `apoiamentos`/`porcentagem_favor`/`apoios_updated_at` of an
+/// existing mirror. `false` = nothing was updated (failure logged, the round goes on).
 async fn refresh_apoios(state: &AppState, candidate: &IdeaCandidate, now: DateTime<Utc>) -> bool {
     let updated = sqlx::query(
         "UPDATE socrates_mirror
@@ -1282,7 +1282,7 @@ struct MirrorRow {
 
 /// Os espelhos a re-sincronizar, os mais desatualizados primeiro (`NULLS FIRST`
 /// puts exactly those that never had a filled body at the front).
-/// `limit = None` = todos (o caminho do backfill).
+/// `limit = None` = all of them (the backfill path).
 async fn load_mirror_rows(db: &PgPool, limit: Option<i64>) -> Result<Vec<MirrorRow>, sqlx::Error> {
     type Row = (
         String,
@@ -1406,7 +1406,7 @@ async fn refresh_mirror(
 /// Quantos espelhos foram VISTOS e quantos foram efetivamente reescritos.
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct RefreshStats {
-    /// Espelhos considerados nesta passada.
+    /// Mirrors considered in this pass.
     pub total: usize,
     /// Mirrors whose body was rewritten (support/status/agenda changed).
     pub refreshed: usize,
@@ -1596,7 +1596,7 @@ mod tests {
     // Inline fixture with the REAL shape observed live; the Senate is never
     // chamado em teste.
 
-    /// Shape real de `GET /ecidadania/restideialegislativa?id=212832`.
+    /// The real shape of `GET /ecidadania/restideialegislativa?id=212832`.
     const DETAIL_FIXTURE: &str = r#"{
         "situacaoIdeiaId":10,
         "situacaoIdeiaDescricao":"Convertida em Proposição",
@@ -1754,7 +1754,7 @@ mod tests {
     // Inline fixtures with the REAL shape observed live; the Senate is never
     // chamado em teste.
 
-    /// Shape real de `GET /ecidadania/restcolecaomaisideia` (array, ~5 itens).
+    /// The real shape of `GET /ecidadania/restcolecaomaisideia` (an array, ~5 items).
     const COLLECTION_FIXTURE: &str = r#"[
         {"count":"3.235","titulo":"Disponibilização de Gasolina Pura","id":227319,
          "porcentagemFavor":103,"apoiamentos":"20.771"},

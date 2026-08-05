@@ -1,4 +1,4 @@
-//! # Campanha de convites aos gabinetes (0.34.0).
+//! # Invitation campaign to the cabinets (0.34.0).
 //!
 //! The plan's strategic bottleneck is adoption: the accountability machine only
 //! generates narrative when offices answer — and they only answer after they
@@ -6,11 +6,11 @@
 //! /mandates/{id}/invites`, dsoc-auth) into a CAMPAIGN the admin can operate:
 //!
 //! - `GET  /admin/invite-campaign/overview`   — the funnel: eligible, invited,
-//!   pendentes, aceitos, expirados (filtros sphere/house/uf/party).
-//! - `POST /admin/invite-campaign/send-batch` — envia um LOTE (1–50) pros
-//!   next eligible ones; every send goes through the real `MandateInviteService`
+//! - `GET  /admin/invite-campaign/overview`   — the funnel: eligible, invited,
+//!   pending, accepted, expired (sphere/house/state/party filters).
+//! - `POST /admin/invite-campaign/send-batch` — sends a BATCH (1–50) to the
 //!   (same guards: admin-only, hashed token, TTL, templated e-mail).
-//! - `GET  /admin/invite-campaign/invites`    — acompanhamento por status.
+//! - `GET  /admin/invite-campaign/invites`    — tracking by status.
 //!
 //! The button stays with the human: nothing here fires on its own — the batch goes out when
 //! the admin clicks, at the size the admin chose.
@@ -80,14 +80,14 @@ async fn require_admin(headers: &HeaderMap, db: &PgPool) -> std::result::Result<
 
 #[derive(Debug, Deserialize)]
 struct CampaignFilter {
-    /// Default 'federal' — a campanha da janela eleitoral mira os 594.
+    /// Default 'federal' — the electoral-window campaign targets the 594.
     sphere: Option<String>,
     house: Option<String>,
     uf: Option<String>,
     party: Option<String>,
 }
 
-/// Fragmento WHERE compartilhado + binds na ordem sphere, house, uf, party.
+/// Shared WHERE fragment + binds in the order sphere, house, state, party.
 /// Filters are exact equality; `None` becomes TRUE via `$n IS NULL`.
 const FILTER_SQL: &str = r"
       ($1::text IS NULL OR m.sphere = $1)

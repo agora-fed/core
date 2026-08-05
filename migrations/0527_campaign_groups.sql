@@ -1,4 +1,4 @@
--- Migration 0527 — grupos de campanha (Fase 2.3).
+-- Migration 0527 — campaign groups (Phase 2.3).
 --
 -- A "campaign group" is the proactive campaign→voter channel that was missing: today
 -- the official only REACTS to demands under an SLA (the mandate panel). Here they CREATE
@@ -11,7 +11,7 @@
 
 BEGIN;
 
--- campaign_group — um grupo por mandato (UNIQUE mandate_id). owner_citizen_id
+-- campaign_group — one group per mandate (UNIQUE mandate_id). owner_citizen_id
 -- records who created it (the official logged in at the time).
 CREATE TABLE campaign_group (
     id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -26,7 +26,7 @@ CREATE TABLE campaign_group (
 );
 CREATE INDEX campaign_group_org_idx ON campaign_group (org_id, id);
 
--- campaign_group_member — o roster de apoiadores. UNIQUE torna o join idempotente.
+-- campaign_group_member — the supporter roster. UNIQUE makes the join idempotent.
 CREATE TABLE campaign_group_member (
     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     group_id    uuid NOT NULL REFERENCES campaign_group(id) ON DELETE CASCADE,

@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS proposal_target (
 CREATE INDEX IF NOT EXISTS proposal_target_mandate_idx
     ON proposal_target (mandate_id, proposal_id);
 
--- Backfill: toda proposta existente vira 1 linha (seu alvo principal),
+-- Backfill: every existing proposal becomes 1 row (its primary target),
 -- preserving the legacy receipt. Idempotent for re-runs.
 INSERT INTO proposal_target (proposal_id, mandate_id, notified_at, created_at)
 SELECT id, mandate_id, notified_mandate_at, created_at

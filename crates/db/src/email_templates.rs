@@ -78,8 +78,8 @@ pub fn substitute(input: &str, vars: &HashMap<&str, String>) -> String {
 
 // ---------------------------------------------------------------------------
 // Presentation layer (0.32.1): templates remain PLAIN TEXT — the admin does not
-// precisa saber HTML — e o wrapper embrulha o corpo renderizado num layout
-// de marca (logo + cores + links estilizados). Os senders mandam
+// need to know HTML — and the wrapper wraps the rendered body in a branded
+// layout (logo + colours + styled links). The senders send
 // multipart/alternative: plain text as the fallback, HTML as the presentation.
 // ---------------------------------------------------------------------------
 

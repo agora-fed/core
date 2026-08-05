@@ -124,7 +124,7 @@ async fn vapid_pub() -> Response {
 /// endpoint returning 410 Gone is marked `dead_at = now` and never
 /// retried. An isolated failure never blocks the other subscriptions.
 ///
-/// `payload_json` chega ao service worker como `event.data.text()` — front
+/// `payload_json` reaches the service worker as `event.data.text()` — the front end
 /// espera `{title, body, url}` e mostra `showNotification(title, {body, ...})`.
 pub async fn send_to_citizen(db: &PgPool, citizen_id: Uuid, payload_json: &str) {
     let cfg = match VapidConfig::from_env() {

@@ -5,17 +5,17 @@
 //!
 //! Public:
 //! - `POST /audience/subscribe`  — capture from the site ("get updates"):
-//!   e-mail + nome/UF opcionais, consent LGPD, honeypot + rate-limit por IP
+//!   e-mail + optional name/state, LGPD consent, honeypot + per-IP rate limit
 //!   (the same posture as the contact form).
 //! - `GET  /audience/unsubscribe?token=…` — one-click opt-out, no
 //!   login; returns a minimal HTML page. It never deletes the row (the opt-out
 //!   registrado protege contra re-import acidental).
 //!
 //! Admin:
-//! - `GET    /admin/audience/stats`      — totais + recorte por segmento.
+//! - `GET    /admin/audience/stats`      — totals + a breakdown per segment.
 //! - `GET    /admin/audience`            — filterable listing.
 //! - `POST   /admin/audience/import`     — import an existing list with a
-//!   base legal declarada; nunca rebaixa consent nem ressuscita opt-out.
+//!   declared legal basis; never downgrades consent nor resurrects an opt-out.
 //! - `GET    /admin/audience/export.csv` — a base em CSV.
 //! - `DELETE /admin/audience/{id}`       — permanent removal (LGPD).
 
@@ -415,7 +415,7 @@ struct ImportContact {
 
 #[derive(Debug, Deserialize)]
 struct ImportBody {
-    /// Slug curto identificando a lista (vira `source = 'import:<slug>'`).
+    /// Short slug identifying the list (becomes `source = 'import:<slug>'`).
     source_slug: String,
     /// LGPD: 'consent' only when the list was collected WITH consent for
     /// this purpose; otherwise 'legitimate_interest' + notes explaining its origin.
@@ -435,7 +435,7 @@ struct ImportResultDto {
 }
 
 /// `POST /admin/audience/import`. Import NUNCA rebaixa consent existente
-/// nem limpa opt-out — quem se descadastrou continua descadastrado mesmo
+/// nor clears an opt-out — whoever unsubscribed stays unsubscribed even
 /// even when it appears in the imported list.
 async fn import(
     State(state): State<AppState>,

@@ -1,6 +1,6 @@
 -- 0666_mandate_commitment.sql — Mandato coletivo: compromisso consultivo declarado (D8.1).
 --
--- Tese (accountability ≠ poder): um mandato coletivo (Bancada Ativista/SP, Gabinetona) se
+-- Thesis (accountability ≠ power): a collective mandate (Bancada Ativista/SP, Gabinetona)
 -- PUBLICLY COMMITS to listening to its base before voting on a topic. The commitment is
 -- VOLUNTARY and CONSULTATIVE — a mandate is non-delegable by law, so the software delivers only
 -- the TRANSPARENCY of the commitment, NEVER legal binding. The UI never says "binding".
@@ -10,9 +10,9 @@
 -- aggregation come for free from the /consulta page); (3) publicly records whether it FOLLOWED the
 -- result or not. The scorecard stops being "accusation" and becomes "instruction".
 --
--- FKs: `mandate_id` → tabela de identidade central (permitida por REGISTRY.md). `consultation_id`
+-- FKs: `mandate_id` → the central identity table (allowed by REGISTRY.md). `consultation_id`
 -- → `consultations_consultation` (the consultations crate) — a legitimate intra-platform FK, declared
--- em scripts/fk-allow.txt (mesmo caso do broadcast→consulta, 0656).
+-- in scripts/fk-allow.txt (the same case as broadcast→consultation, 0656).
 --
 -- Idempotente: rerun-safe.
 

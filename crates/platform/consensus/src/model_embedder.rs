@@ -222,7 +222,7 @@ mod tests {
         // gated — both tracked for the V2 model upgrade, larger model + intent
         // guard): domain acronyms miss the merge (UBS ≙ health post ≈ 0.111,
         // just above threshold); "same street, different intervention" can
-        // false-merge (ciclovia vs recapear a mesma avenida ≈ 0.078).
+        // false-merge (a bike lane vs resurfacing the same avenue ≈ 0.078).
         let acronym = d(
             "Construir uma UBS no bairro",
             "Precisamos de um posto de saúde na nossa região",

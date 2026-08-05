@@ -76,7 +76,7 @@ pub struct TopicDetail {
     pub topic: TopicRow,
     /// Approved comments (local + federated).
     pub comments: Vec<CommentRow>,
-    /// Recibos de envio institucional.
+    /// Institutional dispatch receipts.
     pub dispatches: Vec<DispatchRow>,
     /// This forum's effective proportional dispatch threshold (D3) — the score
     /// the scoreboard must cross to summon the office. The UI displays
@@ -160,7 +160,7 @@ impl ForumService {
             Err(e) => return Err(map_sqlx(e)),
         }
         // Does not exist — materialize only if the LAST segment is a template section
-        // sob um pai territorial existente.
+        // under an existing territorial parent.
         if segments.len() < 2 {
             return Err(Error::NotFound("fórum não encontrado".to_owned()));
         }
@@ -395,13 +395,13 @@ impl ForumService {
         let dispatches = queries::list_dispatches(&mut *tx, id)
             .await
             .map_err(map_sqlx)?;
-        // Um lookup de eleitorado alimenta os dois derivados (D3 + D5/D6).
+        // One electorate lookup feeds both derivations (D3 + D5/D6).
         let voters = queries::forum_territory_voters(&mut *tx, topic.forum_id)
             .await
             .map_err(map_sqlx)?;
         // Destino do encaminhamento, NOMEADO (a resposta a "encaminhar pra quem?"):
         // the topic's reachable targets (B1) or the section with a curated contact. None
-        // canal → None (a UI fala "pendente"; nunca prometemos inbox morto — Tier 0).
+        // channel → None (the UI says "pending"; we never promise a dead inbox — Tier 0).
         let targets = queries::topic_target_names(&mut *tx, id)
             .await
             .map_err(map_sqlx)?;
@@ -445,7 +445,7 @@ impl ForumService {
     /// both sides; see `domain::bridge_score`). An ADDITIVE layer on top of the
     /// cheering scoreboard: it highlights what UNITES those who disagree.
     ///
-    /// Ordena por bridge score desc, desempata por volume de endosso cruzado e
+    /// Orders by bridge score desc, breaks ties by cross-endorsement volume and
     /// then by recency (deterministic), and cuts at `limit` (1..=20). Applies the
     /// SAME aggregate-privacy rule as the detail (D5/D6): in a small municipality
     /// the author is pseudonymized by the caller via `aggregate_only`.
@@ -685,7 +685,7 @@ impl ForumService {
                 }
             } else {
                 // Directed (B1) — Tier 0: the placeholder already arrives as a NULL e-mail from
-                // `topic_targets` (mesmo filtro do proposal_delivery). NUNCA registramos
+                // `topic_targets` (same filter as proposal_delivery). We NEVER record
                 // a receipt for an unreachable target — the silence would be the platform's, not
                 // the official's. One receipt per REACHABLE target (mandate_id discriminates in the UNIQUE).
                 let mut any = false;
@@ -736,7 +736,7 @@ impl ForumService {
     /// without sphere/electorate → floor (fail-safe; never switches the trigger off).
     ///
     /// # Errors
-    /// [`Error::Storage`] se a consulta ao eleitorado falhar.
+    /// [`Error::Storage`] when the electorate query fails.
     async fn forum_escalation_threshold(
         executor: impl sqlx::PgExecutor<'_>,
         forum_id: Uuid,

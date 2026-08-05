@@ -282,7 +282,7 @@ async fn get_party(
 // Write surface (0.37.0 — Fase 2.1)
 // ---------------------------------------------------------------------------
 
-/// Corpo de `POST /parties/{sigla}/directories`. A esfera determina quais campos
+/// Body of `POST /parties/{sigla}/directories`. The sphere determines which fields
 /// territorial fields are mandatory (the database CHECK enforces it, but we validate
 /// early for a friendly 400 instead of a constraint 500).
 #[derive(Debug, Deserialize)]
@@ -514,7 +514,7 @@ async fn create_directory(
         .fetch_one(&mut *tx)
         .await?;
         // `accepted_at = now()`: direct designation by someone who already holds write power
-        // no partido, mesmo shape do assign do gateway (admin_parties).
+        // in the party, the same shape as the gateway's assign (admin_parties).
         sqlx::query(
             r"INSERT INTO party_administrator
                 (org_id, party_sigla, directory_id, citizen_id, role, invited_by, accepted_at)
@@ -865,7 +865,7 @@ async fn load_party_detail(
 
 /// Members derived from a directory: the mandates of the same party whose sphere and
 /// territory match the directory. Municipal matches on (party, sphere, uf,
-/// municipio); estadual por (party, sphere, uf); federal por (party, sphere).
+/// municipio); estadual on (party, sphere, uf); federal on (party, sphere).
 /// It is the same derivation `PartyDetail.svelte` did client-side — now on the
 /// server, anchored to a real directory.
 async fn load_directory_members(

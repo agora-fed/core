@@ -41,11 +41,11 @@ pub struct ProposalRow {
     /// Author avatar object key (JOIN from citizen). Composed into a URL at the http layer.
     pub author_avatar_object_key: Option<String>,
     /// Urgency level (`comum` | `urgente`), migration 0302. Voting `urgente` requires
-    /// `titulo_status ∈ (validated,verified)` — gate na crate votes (0.25.0-fediverso).
+    /// `titulo_status ∈ (validated,verified)` — gated in the votes crate (0.25.0-fediverse).
     pub urgencia: String,
     /// Timestamp of the confirmation e-mail to the author (migration 0303).
     pub notified_author_at: Option<DateTime<Utc>>,
-    /// Timestamp do e-mail entregue ao gabinete (migration 0303).
+    /// Timestamp of the e-mail delivered to the cabinet (migration 0303).
     pub notified_mandate_at: Option<DateTime<Utc>>,
     /// Creation time.
     pub created_at: DateTime<Utc>,
@@ -150,7 +150,7 @@ pub async fn insert_proposal(
     })
 }
 
-/// Conta os mandatos existentes e as esferas distintas de um conjunto de ids (0537).
+/// Counts the existing mandates and the distinct spheres of a set of ids (0537).
 ///
 /// # Errors
 /// Propagates the underlying `sqlx::Error`.

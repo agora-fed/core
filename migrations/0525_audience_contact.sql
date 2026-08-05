@@ -2,16 +2,16 @@
 --
 -- "I wanted a good base first": before a campaign, an AUDIENCE. This
 -- table is the single base of potential people — captured on the site (a form
--- "receba novidades", consent LGPD) ou importadas de listas existentes
+-- "receive updates", LGPD consent) or imported from existing lists
 -- (with a declared legal basis). The monthly digest (#12) and any send
--- futuro consomem DAQUI, sempre honrando unsubscribed_at.
+-- future send draws FROM HERE, always honouring unsubscribed_at.
 --
 -- LGPD:
 -- - legal_basis records WHY we may talk to the person:
 --   'consent' (they asked on the site — consented_at records when) or
---   'legitimate_interest' (import justificado — notes deve dizer a origem).
+--   'legitimate_interest' (a justified import — notes must state the origin).
 -- - unsubscribe_token enables one-click opt-out without a login; the
---   descadastro NUNCA apaga a linha (proof de opt-out > re-import acidental).
+--   unsubscribe NEVER deletes the row (proof of opt-out > accidental re-import).
 -- - The e-mail is unique: re-signup/re-import only updates, never duplicates.
 
 BEGIN;
@@ -22,8 +22,8 @@ CREATE TABLE audience_contact (
     name              text,
     uf                text,
     municipio         text,
-    -- Free-form segment for send targeting: cidadao | politico | imprensa |
-    -- parceiro | outro (no CHECK — the vocabulary will evolve).
+    -- Free-form segment for send targeting: `cidadao` | `politico` | `imprensa` |
+    -- `parceiro` | `outro` (no CHECK — the vocabulary will evolve).
     segment           text NOT NULL DEFAULT 'cidadao',
     -- Where it came from: 'site_form' | 'import:<list-slug>' | 'manual'.
     source            text NOT NULL,

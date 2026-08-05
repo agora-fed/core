@@ -361,8 +361,8 @@ fn subscriptions(state: &AppState) -> Vec<Subscription> {
                 profiles: ProfileService::from_state(state),
             }),
         ),
-        // Recibo de entrega da proposta (autor + gabinete). No ProposalCreated,
-        // dispara dois e-mails via SMTP e grava os timestamps em
+        // Proposal delivery receipt (author + cabinet). On ProposalCreated it
+        // fires two e-mails over SMTP and records the timestamps in
         // proposal.notified_{author,mandate}_at.
         sub(
             "proposal-delivery-worker",
@@ -478,7 +478,7 @@ pub fn spawn(state: AppState) {
         sweep_ms,
     ));
 
-    // 0.28.4 (fatia 2a): re-embeda o backlog da era do stub FNV — rows de
+    // 0.28.4 (slice 2a): re-embeds the backlog from the FNV stub era — rows with
     // consensus_embedding rows without a text_sample gain a real vector + a direction
     // signature + an NLI sample, and the cluster's centroid is recomputed. It goes
     // quiet on its own once the backlog dries up.
@@ -514,8 +514,8 @@ pub fn spawn(state: AppState) {
 /// tick takes up to [`REEMBED_BATCH`] proposals with an empty `text_sample`, fetches
 /// the text in the composition root (another crate's table — the same pattern as
 /// [`ConsensusSub`]) e re-embeda via [`dsoc_consensus::ClusterService::re_embed`].
-/// A proposal whose fetch fails stays in the backlog and is retried on the next tick
-/// (log em warn); o loop nunca derruba o worker.
+/// [`ConsensusSub`]) and re-embeds via [`dsoc_consensus::ClusterService::re_embed`].
+/// (warn log); the loop never brings the worker down.
 async fn reembed_backlog_loop(state: AppState) {
     let reembed_ms = env_ms("WORKER_REEMBED_MS", DEFAULT_REEMBED_MS);
     let consensus = dsoc_consensus::ClusterService::from_state(&state);
@@ -570,7 +570,7 @@ async fn reembed_backlog_loop(state: AppState) {
     }
 }
 
-/// 0.29 — escada de avisos do "AR digital do silêncio": SLA `pending`
+/// 0.29 — warning ladder of the "digital registered mail of silence": SLA `pending`
 /// within the deadline, with 1–2 receipts and the last one over 24h old, receives a
 /// reminder (D+1, then D+2) — and each resend becomes a hash-chained receipt
 /// via [`crate::notification_receipts::record`]. It stops when the office
@@ -784,9 +784,9 @@ async fn auto_delete_notes_loop(state: AppState) {
 }
 
 /// Cleanup loop for `auth_pending_signup` + `auth_login_attempt`. It performs
-/// dois DELETEs por tick (barato, indexed); nunca falha o processo.
+/// two DELETEs per tick (cheap, indexed); it never fails the process.
 /// Resends delivery of proposals whose e-mail never confirmed (`notified_*_at` NULL).
-/// Ver [`crate::proposal_delivery::ProposalDeliverySub::sweep_undelivered`].
+/// See [`crate::proposal_delivery::ProposalDeliverySub::sweep_undelivered`].
 async fn proposal_delivery_retry_loop(
     sub: crate::proposal_delivery::ProposalDeliverySub,
     period_ms: u64,

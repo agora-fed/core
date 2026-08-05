@@ -20,7 +20,15 @@ MAX_PT=0   # reached 2026-08-05: Rust AND migration SQL both at zero — only go
 
 # Portuguese markers: diacritics English never uses, plus frequent stopwords
 # that survive accent-free writing ("nao", "pra", "que", ...).
-PT_RE='[çãõáéíóúâêôàÇÃÕÁÉÍÓÚÂÊÔÀ]|\b([Nn]ão|nao|pra|pro|[Qq]ue|[Pp]ara|[Cc]om|[Uu]ma|[Dd]os|[Dd]as|[Pp]elo|[Pp]ela|[Qq]uando|[Oo]nde|[Pp]orque|[Tt]ambém|[Jj]á|[Ss]ó|[Ss]er|[Tt]em|[Ff]az|[Uu]sa|[Cc]ria|[Ee]ntão|[Aa]inda|[Cc]ada|[Ss]em|[Mm]as|[Ss]obre|[Dd]epois|[Aa]ntes)\b'
+#
+# The word list is the WEAK half of this detector and its blind spots are real:
+# a line reading "dois DELETEs por tick (barato, indexed); nunca falha o
+# processo" was scored as English by the original list, because none of "por",
+# "nunca", "dois" or "falha" was in it. Every word added below is one that does
+# not collide with English — "no", "da", "as" and "e" are deliberately ABSENT
+# for that reason, and so is "agora", which would match this framework's own
+# name. When a false negative surfaces, extend the list; do not lower the floor.
+PT_RE='[çãõáéíóúâêôàÇÃÕÁÉÍÓÚÂÊÔÀ]|\b([Nn]ão|nao|pra|pro|[Qq]ue|[Pp]ara|[Cc]om|[Uu]ma|[Dd]os|[Dd]as|[Pp]elo|[Pp]ela|[Qq]uando|[Oo]nde|[Pp]orque|[Tt]ambém|[Jj]á|[Ss]ó|[Ss]er|[Tt]em|[Ff]az|[Uu]sa|[Cc]ria|[Ee]ntão|[Aa]inda|[Cc]ada|[Ss]em|[Mm]as|[Ss]obre|[Dd]epois|[Aa]ntes|[Pp]or|nunca|dois|duas|isso|esse|essa|aqui|seja|sendo|feito|feita|fica|vira|roda|precisa|deve|pode|sempre|nenhum|nenhuma|qualquer|todos|todas|algum|alguma|assim|apenas|enquanto|mesmo|mesma|outro|outra|muito|muitos|poucos|falha|falhou|grava|guarda|manda|envia|recebe|vale|nada|hoje|dele|dela|neste|nesta|deste|desta|pelos|pelas|nossos|nossa|nosso|[Dd]e|[Dd]a|[Nn]a|nas|[Uu]m|[Aa]o|aos|se|num|numa)\b'
 
 # Only PROSE is judged. What follows is DATA or an IDENTIFIER that merely
 # happens to be Portuguese — a value, not the language of the documentation —

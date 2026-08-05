@@ -133,7 +133,7 @@ struct CrmDto {
 
 #[derive(Debug, Deserialize)]
 struct CrmParams {
-    /// Filtro opcional por status (`respondida|pendente|silencio|aberta`).
+    /// Optional filter by status (`respondida|pendente|silencio|aberta`).
     status: Option<String>,
     /// Optional filter by theme (the exact label returned in `themes[].theme`).
     theme: Option<String>,
@@ -260,7 +260,7 @@ fn status_label(sla_status: Option<&str>) -> &'static str {
     }
 }
 
-/// Agrega linhas cruas em contatos (por pessoa) + temas + totais. Aplica os
+/// Aggregates raw rows into contacts (per person) + themes + totals. Applies the
 /// optional status/theme filters BEFORE aggregating, so the counters
 /// reflect exactly what the UI shows.
 fn build_crm(
@@ -357,7 +357,7 @@ fn build_crm(
         }
     }
 
-    // Contatos na ordem de contato mais recente (order preserva o 1º-visto = mais recente).
+    // Contacts in most-recent-contact order (the order preserves first-seen = most recent).
     let contacts: Vec<CrmContact> = order
         .into_iter()
         .filter_map(|id| by_citizen.remove(&id))

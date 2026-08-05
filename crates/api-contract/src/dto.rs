@@ -58,17 +58,17 @@ pub struct ProposalDto {
     /// When the moderator cleared it (`moderation.cleared` event). Null while in draft.
     #[serde(default)]
     pub published_at: Option<DateTime<Utc>>,
-    /// Recibo de entrega ao autor (0.25.0-fediverso). `Some(ts)` = e-mail de
+    /// Delivery receipt to the author (0.25.0-fediverse). `Some(ts)` = e-mail
     /// the confirmation has been sent; `None` = not yet. Populated by the worker
     /// `proposal-delivery-worker`.
     #[serde(default)]
     pub notified_author_at: Option<DateTime<Utc>>,
-    /// Recibo de entrega ao gabinete (mandate.public_email). `Some(ts)` = e-mail
+    /// Delivery receipt to the cabinet (mandate.public_email). `Some(ts)` = e-mail
     /// was handed to the SMTP relay; `None` = not yet (or a mandate with no e-mail).
     #[serde(default)]
     pub notified_mandate_at: Option<DateTime<Utc>>,
     /// Recipients of the proposal (0537 — multi-office), primary first. Populated
-    /// no detalhe (`GET /proposals/{id}`) e no create; vazio nas listagens (leves).
+    /// in the detail (`GET /proposals/{id}`) and on create; empty in the (light) listings.
     #[serde(default)]
     pub targets: Vec<ProposalTargetDto>,
     /// Creation time.
@@ -97,7 +97,7 @@ pub struct MandateDto {
     pub onboarded: bool,
     /// Sigla do partido (e.g. `PT`, `PSOL`). `None` for legacy/fictional mandates.
     pub party: Option<String>,
-    /// Sigla da UF (e.g. `BA`, `SP`). `None` when not applicable.
+    /// State abbreviation (e.g. `BA`, `SP`). `None` when not applicable.
     pub uf: Option<String>,
     /// Casa: `camara` | `senado`. `None` for legacy.
     pub house: Option<String>,

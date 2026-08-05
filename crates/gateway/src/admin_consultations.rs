@@ -63,7 +63,7 @@ fn storage_error() -> Response {
     )
 }
 
-/// Exige admin de plataforma (owner/admin) na org do chamador. Retorna a org resolvida.
+/// Requires a platform admin (owner/admin) in the caller's org. Returns the resolved org.
 async fn require_admin(db: &PgPool, headers: &HeaderMap) -> Result<Uuid, Response> {
     let Some(citizen) = caller_citizen(headers) else {
         return Err(fail(
@@ -97,7 +97,7 @@ async fn require_admin(db: &PgPool, headers: &HeaderMap) -> Result<Uuid, Respons
 
 #[derive(Debug, Deserialize)]
 struct ListParams {
-    /// Filtro por status ('open' | 'closed').
+    /// Filter by status ('open' | 'closed').
     status: Option<String>,
     /// Search (ILIKE) in the title.
     q: Option<String>,

@@ -20,7 +20,7 @@ pub const MAX_COMMENT_LEN: usize = 10_000;
 /// A default section of a territorial forum (state/municipality), materialized on demand.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TerritorialSection {
-    /// Segmento de caminho (`saude`).
+    /// Path segment (`saude`).
     pub slug: &'static str,
     /// Display name (`Saúde`).
     pub name: &'static str,
@@ -393,9 +393,9 @@ mod tests {
         assert_eq!(thresholds_to_fire(1000, &t, 0), (vec![1000], 1));
         // Replay with the index already advanced: nothing re-fires.
         assert_eq!(thresholds_to_fire(1500, &t, 1), (vec![], 1));
-        // Salto direto por dois patamares: ambos disparam, em ordem.
+        // Jumping two thresholds at once: both fire, in order.
         assert_eq!(thresholds_to_fire(20_000, &t, 0), (vec![1000, 10_000], 2));
-        // Fim da lista.
+        // End of the list.
         assert_eq!(thresholds_to_fire(1_000_000, &t, 3), (vec![], 3));
     }
 

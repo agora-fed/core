@@ -76,7 +76,7 @@ pub struct MandateView {
     pub public_handle: String,
     /// Sigla do partido (when this is a real seated parliamentarian).
     pub party: Option<String>,
-    /// Sigla da UF.
+    /// State abbreviation.
     pub uf: Option<String>,
     /// Casa: `camara` | `senado`.
     pub house: Option<String>,

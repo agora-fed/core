@@ -12,14 +12,14 @@
 //! Only the mandate's operator: whoever holds a binding in `mandate_identity_binding` (the same
 //! criterion as the mandate panel, the CRM and `campanha.rs`). The commitment's `mandate_id` is
 //! ALWAYS resolved from the caller's binding — it is structurally impossible for an operator to
-//! gabinete (as escritas chaveiam por `mandate_id = <mandato do caller>`).
+//! another cabinet (the writes key on `mandate_id = <the caller's mandate>`).
 //!
 //! - `POST /me/mandate/commitments`            — declare a commitment (topic + description).
 //! - `POST /me/mandate/commitments/{id}/consult` — open a consultation with the base (reusing the
-//!   consultations; grava `consultation_id`).
-//! - `POST /me/mandate/commitments/{id}/outcome` — registra `seguiu`/`nao_seguiu` + nota.
+//!   consultations crate; stores `consultation_id`).
+//! - `POST /me/mandate/commitments/{id}/outcome` — records `seguiu`/`nao_seguiu` + a note.
 //! - `GET  /politicos/{mandate_id}/commitments`  — PUBLIC: the mandate's public commitments +
-//!   outcome + (se houver consulta) o agregado concordo/neutro/discordo.
+//!   outcome + (when a consultation exists) the agree/neutral/disagree aggregate.
 //!
 //! ## Nota LGPD
 //! The public surface exposes **public data** only: topic, description, declared result and the
@@ -137,7 +137,7 @@ async fn require_operator_mandate(db: &PgPool, headers: &HeaderMap) -> Result<Uu
 }
 
 // ---------------------------------------------------------------------------
-// POST /me/mandate/commitments — declara um compromisso
+// POST /me/mandate/commitments — declare a commitment
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]

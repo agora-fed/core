@@ -46,8 +46,8 @@ pub enum Error {
         source: Box<dyn std::error::Error + Send + Sync>,
     },
 
-    /// O chamador estourou um limite de taxa (por IP, por citizen, etc.).
-    /// Mensagem em pt-BR (public-safe) segue no wrapper — a domain layer
+    /// The caller exceeded a rate limit (per IP, per citizen, and so on).
+    /// The public-safe pt-BR message travels in the wrapper — the domain layer
     /// picks *how many* / *in which window* according to the policy at hand.
     #[error("rate limited: {0}")]
     RateLimit(String),

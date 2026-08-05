@@ -3,7 +3,7 @@
 -- MOTIVATION (incident 2026-07-31): two identical "Diretório Municipal PT-Ubatuba"
 -- created 49s apart in production. 0204 validates the federative SHAPE (sphere ↔
 -- uf/municipio) but nothing prevented two directories of the same party in the SAME territory —
--- qualquer duplo clique, retry de rede ou corrida entre abas criava outro.
+-- any double click, network retry or race between tabs created another.
 --
 -- NULLS NOT DISTINCT (PG15+) is essential: federal has uf/municipio NULL and state has
 -- municipio NULL; with the default (NULLS DISTINCT) those spheres would stay duplicable.
