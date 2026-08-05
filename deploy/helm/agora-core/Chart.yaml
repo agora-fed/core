@@ -1,0 +1,16 @@
+apiVersion: v2
+name: agora-core
+description: >-
+  AGORA — democratic infrastructure framework (stateless tier). Deploys the
+  gateway (API + web bundle). Stateful sovereign services (PostgreSQL+pgvector,
+  SMTP, embeddings) are consumed as external services, never managed here.
+  IPv6-first. Installations localize via l10n modules (e.g. agora-fed/l10n-brazil).
+type: application
+version: 0.1.0
+appVersion: "0.66.0"
+home: https://github.com/agora-fed/core
+sources:
+  - https://github.com/agora-fed/core
+maintainers:
+  - name: AGORA Federation
+    url: https://github.com/agora-fed

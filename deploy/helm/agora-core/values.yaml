@@ -1,0 +1,51 @@
+# AGORA core — default values for a generic installation.
+#
+# The stateful sovereign tier (PostgreSQL+pgvector, SMTP relay, embeddings) is
+# NOT managed by this chart — it is consumed as external services. Secrets are
+# referenced by NAME, never by value.
+#
+# GitOps contract (docs/GITOPS.md): production changes land as a git commit
+# bumping `image.tag` here (or in the installation's values file). The
+# pull-based agent on the cluster host applies whatever git says — nothing else.
+
+network:
+  # IPv6-first. IPv4 is an explicit opt-in fallback only.
+  ipFamily: IPv6
+  ipFamilyPolicy: SingleStack
+
+image:
+  registry: ghcr.io
+  repository: agora-fed/core
+  pullPolicy: IfNotPresent
+  tag: ""            # defaults to .Chart.AppVersion; production pins an explicit vX.Y.Z
+
+gateway:
+  enabled: true
+  replicaCount: 2
+  containerPort: 8080
+  resources:
+    requests: { cpu: "100m", memory: "64Mi" }
+    limits:   { cpu: "500m", memory: "256Mi" }
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+# External sovereign dependencies — provided via a Kubernetes Secret created
+# out-of-band (DATABASE_URL, SMTP_*, OIDC_*, ...). Never stored in git.
+externalSecrets:
+  name: agora-core-secrets
+
+config:
+  # Which l10n module drives identity/territory for this installation
+  # (e.g. "BR" -> agora-fed/l10n-brazil). Empty = country-agnostic core only.
+  localization: ""
+  oidcIssuer: ""
+  embeddingsUrl: ""
+
+ingress:
+  enabled: true
+  className: "haproxy"
+  host: "agora.example.org"
+  tls: true

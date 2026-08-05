@@ -1,0 +1,11 @@
+[Unit]
+Description=AGORA GitOps sync (git is the only path to production)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/agora-sync.sh
+User=root
+# Helm/kubectl need the k3s kubeconfig.
+Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml

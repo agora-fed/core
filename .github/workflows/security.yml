@@ -1,0 +1,29 @@
+# Security — supply-chain audit & secret scan (SECURITY.md; PLAN.md principles 8, 11).
+name: security
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 6 * * 1" # weekly Monday sweep
+
+jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: tracked-file secret scan
+        run: ./scripts/scan-secrets.sh
+      - name: gitleaks (full history)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: cargo-deny (licenses, advisories, bans)
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check

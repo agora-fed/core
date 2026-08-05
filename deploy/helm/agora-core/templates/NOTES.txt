@@ -1,0 +1,12 @@
+AGORA core deployed.
+
+  Release:  {{ .Release.Name }}
+  Image:    {{ include "agora.image" . }}
+  Host:     {{ .Values.ingress.host }}
+
+Health check:
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+  curl -6 https://{{ .Values.ingress.host }}/health
+
+GitOps reminder: production changes only land through git (docs/GITOPS.md).
+Bump image.tag in the installation values file and let the sync agent apply it.

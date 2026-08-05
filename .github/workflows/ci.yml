@@ -1,0 +1,140 @@
+# CI — GitHub mirror of the sovereign Forgejo gate (.forgejo/workflows/ci.yml).
+# Same jobs, same rules: fmt, clippy -D warnings, boundary guards, tests against
+# real PostgreSQL (pgvector), coverage ratchet + Codecov upload.
+#
+# GitOps rule (docs/GITOPS.md): NOTHING reaches production except through git —
+# a release tag on a commit where this workflow is green.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: rustfmt
+        run: cargo fmt --all -- --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: clippy (deny warnings)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  boundaries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: crate-boundary + schema + secret guards
+        run: |
+          ./scripts/check-crate-boundaries.sh
+          ./scripts/check-migration-numbers.sh
+          ./scripts/check-fk-targets.sh
+          ./scripts/check-lints-optin.sh
+          ./scripts/scan-secrets.sh
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # pgvector bundled; pgcrypto ships with core Postgres.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: dsoc
+          POSTGRES_PASSWORD: dsoc
+          POSTGRES_DB: agora_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U dsoc"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://dsoc:dsoc@127.0.0.1:5432/agora_ci
+      SQLX_OFFLINE: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: install sqlx-cli
+        run: command -v sqlx >/dev/null || cargo install sqlx-cli --no-default-features --features postgres,rustls --locked
+      - name: migrate + workspace tests (real PostgreSQL)
+        run: |
+          cargo sqlx migrate run --source migrations
+          cargo test --workspace --all-features
+
+  coverage:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: dsoc
+          POSTGRES_PASSWORD: dsoc
+          POSTGRES_DB: agora_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U dsoc"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://dsoc:dsoc@127.0.0.1:5432/agora_ci
+      SQLX_OFFLINE: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: install tooling
+        run: |
+          command -v cargo-llvm-cov >/dev/null || cargo install cargo-llvm-cov --locked
+          command -v sqlx >/dev/null || cargo install sqlx-cli --no-default-features --features postgres,rustls --locked
+      # RATCHET, not aspiration: --fail-under-lines is the measured floor and may
+      # only go UP. Raise it in the same PR that adds coverage; lowering it is a
+      # regression and needs an ADR-grade justification. Destination: 95%
+      # (docs/TESTING.md; enforced on NEW code today via codecov.yml patch gate).
+      - name: coverage gate (ratchet) + lcov export
+        run: |
+          cargo sqlx migrate run --source migrations
+          cargo llvm-cov --workspace --all-features --fail-under-lines 53 --lcov --output-path lcov.info
+      - name: upload to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          fail_ci_if_error: false
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: build web (Astro SSG)
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: helm lint + template (agora-core + democracia-social)
+        run: |
+          helm lint deploy/helm/agora-core
+          helm template agora deploy/helm/agora-core > /tmp/agora.yaml
+          helm lint deploy/helm/democracia-social
+          helm template democracia-social deploy/helm/democracia-social \
+            -f deploy/helm/democracia-social/values-prod.yaml > /tmp/ds.yaml

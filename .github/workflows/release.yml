@@ -1,0 +1,55 @@
+# Release — the ONLY producer of production artifacts (docs/GITOPS.md).
+#
+# A signed-off release is a git tag `v*` on a green commit. This workflow turns
+# that tag into:
+#   * ghcr.io/agora-fed/core:<tag>  (+ :latest)   — the runnable image
+#   * oci://ghcr.io/agora-fed/charts/agora-core   — the packaged Helm chart
+#
+# Production then PULLS the tag referenced in git (deploy/gitops/) — no human
+# pushes an image or runs helm against prod by hand, ever.
+name: release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/agora-fed/core
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: build & push image (self-contained multi-stage)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.full
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.ref_name }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: package + push chart as OCI
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+          VERSION="${GITHUB_REF_NAME#v}"
+          helm package deploy/helm/agora-core --version "$VERSION" --app-version "$GITHUB_REF_NAME"
+          helm push "agora-core-$VERSION.tgz" oci://ghcr.io/agora-fed/charts

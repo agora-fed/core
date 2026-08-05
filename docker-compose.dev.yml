@@ -1,0 +1,73 @@
+# AGORA — quick-and-dirty dev/test environment. NOT for production
+# (production is GitOps-only: docs/GITOPS.md).
+#
+#   docker compose -f docker-compose.dev.yml up --build     # full stack
+#   docker compose -f docker-compose.dev.yml up db          # DB only (cargo runs on host)
+#
+# Full stack: PostgreSQL 16 + pgvector, migrations, and the gateway built
+# from source in-container (first build takes a while; later builds hit the
+# Docker layer cache). Gateway on http://localhost:8080 — API under /api/v1,
+# web bundle at /.
+#
+# DB-only + host flow:
+#   docker compose -f docker-compose.dev.yml up -d db
+#   export DATABASE_URL=postgres://dsoc:dsoc@localhost:55432/agora_dev
+#   cargo sqlx migrate run --source migrations
+#   cargo run -p dsoc-gateway
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: dsoc
+      POSTGRES_PASSWORD: dsoc   # dev-only credential, never reused anywhere
+      POSTGRES_DB: agora_dev
+    ports:
+      # 55432 on the host to avoid colliding with a host PostgreSQL on 5432.
+      - "55432:5432"
+    volumes:
+      - agora-dev-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dsoc -d agora_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    image: rust:1.94-trixie
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://dsoc:dsoc@db:5432/agora_dev
+    volumes:
+      - ./migrations:/migrations:ro
+      - agora-dev-cargo:/usr/local/cargo/registry
+    command: >
+      bash -c "command -v sqlx >/dev/null ||
+               cargo install sqlx-cli --no-default-features --features postgres,rustls --locked;
+               sqlx migrate run --source /migrations"
+
+  gateway:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.full
+      args:
+        # Empty = the SSG bundle calls the API on the same origin (this container).
+        PUBLIC_API_BASE: ""
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://dsoc:dsoc@db:5432/agora_dev
+      GATEWAY_PORT: "8080"
+      RUST_LOG: info,dsoc_gateway=debug
+      PUBLIC_ORIGIN: http://localhost:8080
+    ports:
+      - "8080:8080"
+
+volumes:
+  agora-dev-pg:
+  agora-dev-cargo:

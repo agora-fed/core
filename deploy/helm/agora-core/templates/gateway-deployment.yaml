@@ -1,0 +1,52 @@
+{{- if .Values.gateway.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agora.fullname" . }}
+  labels: {{- include "agora.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.gateway.autoscaling.enabled }}
+  replicas: {{ .Values.gateway.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels: {{- include "agora.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "agora.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: gateway
+          image: {{ include "agora.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.gateway.containerPort }}
+          env:
+            - name: GATEWAY_PORT
+              value: "{{ .Values.gateway.containerPort }}"
+            {{- with .Values.config.localization }}
+            - name: AGORA_LOCALIZATION
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.config.oidcIssuer }}
+            - name: OIDC_ISSUER
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.config.embeddingsUrl }}
+            - name: EMBEDDINGS_URL
+              value: {{ . | quote }}
+            {{- end }}
+          # Sovereign secrets injected by name, never by value.
+          envFrom:
+            - secretRef:
+                name: {{ .Values.externalSecrets.name }}
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources: {{- toYaml .Values.gateway.resources | nindent 12 }}
+{{- end }}

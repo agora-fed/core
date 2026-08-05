@@ -1,0 +1,21 @@
+# PINDORAMA — the Brazilian installation of AGORA (democracia.social.br).
+# Localization: agora-fed/l10n-brazil (CPF, voter registry, IBGE territory).
+#
+# GitOps: this file IS the production desired state. Deploys happen by
+# committing a new image.tag here — never by hand (docs/GITOPS.md).
+
+image:
+  tag: ""   # pin the released tag, e.g. "v0.67.0" — empty means chart appVersion
+
+externalSecrets:
+  name: democracia-social-secrets
+
+config:
+  localization: "BR"
+  oidcIssuer: "https://id.pop.coop"
+  embeddingsUrl: "http://embeddings.democracia-social.svc:8081"
+
+ingress:
+  className: "haproxy"
+  host: "democracia.social.br"
+  tls: true

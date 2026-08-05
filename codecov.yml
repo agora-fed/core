@@ -1,0 +1,30 @@
+# Codecov policy (docs/TESTING.md + docs/GITOPS.md).
+#
+# Two gates, one destination:
+#  * patch  — REQUIRED 95%: every line of NEW/CHANGED code must arrive tested.
+#  * project — ratchet: total coverage may never DROP (threshold 0.5% for
+#    runner variance). The floor climbs with every tested PR until it reaches
+#    the 95% destination; at that point flip `project.default.target` to 95%.
+coverage:
+  status:
+    project:
+      default:
+        target: auto        # ratchet: compare against base commit
+        threshold: 0.5%     # tolerated runner variance, NOT a budget to spend
+        informational: false
+    patch:
+      default:
+        target: 95%
+        informational: false
+
+comment:
+  layout: "condensed_header, diff, files"
+  behavior: default
+  require_changes: true
+
+ignore:
+  - "web/dist/**"
+  - "deploy/**"
+  - "scripts/**"
+  - "logo-preview/**"
+  - "brand/**"
