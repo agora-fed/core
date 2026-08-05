@@ -16,29 +16,53 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-MAX_PT=16   # measured 2026-08-05: Rust at ZERO; migration SQL comments remain — only goes DOWN
+MAX_PT=0   # reached 2026-08-05: Rust AND migration SQL both at zero — only goes DOWN
 
 # Portuguese markers: diacritics English never uses, plus frequent stopwords
 # that survive accent-free writing ("nao", "pra", "que", ...).
 PT_RE='[çãõáéíóúâêôàÇÃÕÁÉÍÓÚÂÊÔÀ]|\b([Nn]ão|nao|pra|pro|[Qq]ue|[Pp]ara|[Cc]om|[Uu]ma|[Dd]os|[Dd]as|[Pp]elo|[Pp]ela|[Qq]uando|[Oo]nde|[Pp]orque|[Tt]ambém|[Jj]á|[Ss]ó|[Ss]er|[Tt]em|[Ff]az|[Uu]sa|[Cc]ria|[Ee]ntão|[Aa]inda|[Cc]ada|[Ss]em|[Mm]as|[Ss]obre|[Dd]epois|[Aa]ntes)\b'
 
-# Proper nouns and identifiers quoted as DATA are not prose: `Saúde` as a
-# section name or "São Paulo" in an example is a value, not documentation
-# language. Strip inline-code spans and quoted strings before judging.
-strip_data() { sed -E 's/`[^`]*`//g; s/"[^"]*"//g'; }
+# Only PROSE is judged. What follows is DATA or an IDENTIFIER that merely
+# happens to be Portuguese — a value, not the language of the documentation —
+# so it is stripped before the match. Each rule earns its place with a real
+# false positive it removes:
+#   `code` "quoted" 'literal'   → `Saúde` as a column value, 'mailinator.com'
+#   kebab/snake identifiers     → nao-binarie, prefiro-nao-dizer, e-Título
+#   host names and /routes      → fcm.googleapis.com, /sobre
+#   slash pairs, arrow mappings → pro/con (English!), owner→Proprietário
+#   (a|b|c) enum lists          → (mulher|homem|nao-binarie|prefiro-nao-dizer)
+strip_data() {
+  sed -E "
+    s/\`[^\`]*\`//g
+    s/\"[^\"]*\"//g
+    s/'[^']*'//g
+    s/\([^)]*\|[^)]*\)//g
+    s/[[:alnum:]]+[-_][[:alnum:]_-]+//g
+    s|[[:alnum:]-]+(\.[[:alnum:]-]+)+(/[^ ]*)?||g
+    s@(^|[[:space:]])/[[:alnum:]/_-]+@@g
+    s|[[:alpha:]]+/[[:alpha:]]+||g
+    s/→[[:alpha:]]+//g
+  "
+}
+
+# Brazilian institutions keep their own names inside English prose: "the
+# Câmara's open-data API" is an English sentence naming a real body, not
+# Portuguese documentation. Strictly proper nouns — never common words.
+PROPER_RE='Câmara|Senado|Presidência|Assembleia|Divulgação de Candidaturas'
+strip_proper() { sed -E "s/($PROPER_RE)//g"; }
 
 count_rust() {
   git ls-files '*.rs' \
     | grep -v '^crates/platform/l10n-br/' \
     | xargs grep -hE '^\s*//' 2>/dev/null \
-    | strip_data \
+    | strip_data | strip_proper \
     | grep -cE "$PT_RE" || true
 }
 
 count_sql() {
   git ls-files 'migrations/*.sql' \
     | xargs grep -hE '^\s*--' 2>/dev/null \
-    | strip_data \
+    | strip_data | strip_proper \
     | grep -cE "$PT_RE" || true
 }
 
