@@ -8,6 +8,7 @@
     adminPutBranding,
     type BrandingDto,
   } from '../../lib/api';
+  import { brandingLoadState } from '../../lib/branding';
   import { toast } from '../../lib/toasts';
   import Card from '../ui/Card.svelte';
   import Button from '../ui/Button.svelte';
@@ -118,9 +119,9 @@
   async function reload() {
     loading = true;
     error = null;
-    const res = await adminGetBranding();
-    if (res.success && res.data) fromDto(res.data);
-    else error = res.error?.message ?? 'Falha ao carregar identidade visual.';
+    const state = brandingLoadState(await adminGetBranding());
+    if ('loaded' in state) fromDto(state.loaded);
+    else error = state.failed;
     loading = false;
   }
 
@@ -130,14 +131,14 @@
       return;
     }
     saving = true;
-    const res = await adminPutBranding(toDto());
+    const state = brandingLoadState(await adminPutBranding(toDto()));
     saving = false;
-    if (res.success && res.data) {
-      fromDto(res.data);
+    if ('loaded' in state) {
+      fromDto(state.loaded);
       preview();
       toast('Identidade visual salva. Recarregue para ver em todo o site.', 'success');
     } else {
-      toast(res.error?.message ?? 'Falha ao salvar.', 'error');
+      toast(state.failed, 'error');
     }
   }
 

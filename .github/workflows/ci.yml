@@ -125,6 +125,11 @@ jobs:
         run: |
           npm ci
           npm run build
+      - name: frontend tests (vitest — API contract suites)
+        working-directory: web
+        run: npm test
+      - name: web type-safety ratchet (svelte-check)
+        run: bash scripts/check-web-types.sh
 
   helm:
     runs-on: ubuntu-latest

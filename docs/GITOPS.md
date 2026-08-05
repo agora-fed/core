@@ -41,6 +41,20 @@ developer ──PR──▶ main (CI green: fmt+clippy+tests+coverage+boundaries
    ```
 4. Push to `main`. Within ~2 minutes the sync agent applies it atomically.
 
+## Post-deploy verification (MANDATORY)
+
+A deploy is NOT done when the rollout succeeds — it is done when the feature
+is seen working in production **through a real browser**. Non-negotiable
+(2026-08-05 incident: green backend tests + healthy /health, broken panel):
+
+```sh
+cd web && npx playwright test tests/ui/   # runs against https://democracia.social.br
+```
+
+Every new feature ships with its own spec under `web/tests/ui/` covering the
+production surface it added. curl on `/health` is a liveness check, not a
+verification.
+
 ## How to roll back
 
 ```sh
