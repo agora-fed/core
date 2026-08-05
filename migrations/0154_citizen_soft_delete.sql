@@ -1,16 +1,16 @@
--- Migration 0154 — soft delete de citizen (LGPD art. 18 VI).
+-- Migration 0154 — soft delete of citizen (LGPD art. 18 VI).
 --
--- Excluir conta hard-delete quebra FKs cruzados (proposta autor=citizen,
--- sla mandate_binding, votos, comentários). Solução LGPD-compliant:
---   1. `deleted_at` timestamp na citizen.
---   2. Endpoints que listam citizens filtram `WHERE deleted_at IS NULL`.
---   3. Dados sensíveis (email, cpf) são limpos no delete; ID + handle
---      opaco ficam pra manter referências históricas de accountability.
+-- Hard-deleting an account breaks cross FKs (proposal author=citizen,
+-- sla mandate_binding, votes, comments). LGPD-compliant solution:
+--   1. A `deleted_at` timestamp on citizen.
+--   2. Endpoints listing citizens filter `WHERE deleted_at IS NULL`.
+--   3. Sensitive data (email, cpf) is wiped on delete; the ID + an opaque
+--      handle remain to keep historical accountability references.
 --
--- LGPD art. 16: dados podem ser retidos quando necessários pro
--- exercício de direitos em processo judicial ou pra atender obrigação
--- legal. Registros públicos de votação/proposta se enquadram (interesse
--- público em accountability histórica de mandato).
+-- LGPD art. 16: data may be retained when necessary for exercising
+-- rights in judicial proceedings or to comply with a legal obligation.
+-- Public voting/proposal records qualify (public interest in the
+-- historical accountability of a mandate).
 
 BEGIN;
 

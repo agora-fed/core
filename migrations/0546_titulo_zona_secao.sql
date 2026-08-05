@@ -1,15 +1,15 @@
--- Migration 0546 — Zona e Seção eleitorais no título de eleitor.
+-- Migration 0546 — electoral zone and section on the voter registration card.
 --
--- Complementa a 0105: além do número do título, o cidadão pode registrar a
--- ZONA e a SEÇÃO onde vota (constam no próprio título/e-Título). São dados
--- auxiliares — não entram na validação algorítmica dos dígitos e não mudam
--- o `titulo_status`; servem pra futura segmentação territorial fina (local
--- de votação) e pro cross-check TSE quando houver.
+-- Complements 0105: besides the card number, a citizen may record the ZONE
+-- and SECTION where they vote (both printed on the card/e-Título). These are
+-- auxiliary data — they do not take part in the check-digit validation and do
+-- not change `titulo_status`; they serve future fine-grained territorial
+-- segmentation (polling place) and a TSE cross-check once available.
 --
--- Formato TSE: zona com até 4 dígitos, seção com até 4 dígitos. Guardamos
--- como texto normalizado (só dígitos).
+-- TSE format: zone up to 4 digits, section up to 4 digits. Stored as
+-- normalised text (digits only).
 --
--- Idempotente: rerun-safe.
+-- Idempotent: rerun-safe.
 
 BEGIN;
 

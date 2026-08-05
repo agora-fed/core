@@ -1,14 +1,14 @@
--- 0542_forum_federation — F4: fórum como ator Group seguível do fediverso.
+-- 0542_forum_federation — F4: the forum as a followable fediverse Group actor.
 --
--- Handle federado SEM prefixo (decisão 2026-07-26): segmentos do caminho
--- INVERTIDOS unidos por ponto — @ministerio-educacao@, @sp@, @saude.sp@
--- (secretaria estadual), @santos.sp@ (cidade), @saude.santos.sp@ (seção
--- municipal), @ccj.senado@ (comissão). Chaves do Group ficam nas colunas
--- public/private_key_pem da 0540 (geração preguiçosa no 1º uso).
+-- Federated handle WITHOUT a prefix (decision 2026-07-26): path segments
+-- REVERSED and joined by dots — @ministerio-educacao@, @sp@, @saude.sp@
+-- (state secretariat), @santos.sp@ (city), @saude.santos.sp@ (municipal
+-- section), @ccj.senado@ (committee). The Group's keys live in the
+-- public/private_key_pem columns from 0540 (generated lazily on first use).
 
 BEGIN;
 
--- Seguidores remotos de um fórum (Follow → Accept assinado pelo Group).
+-- Remote followers of a forum (Follow → Accept signed by the Group).
 CREATE TABLE IF NOT EXISTS forum_follower (
     forum_id          uuid NOT NULL REFERENCES forum(id),
     remote_actor_url  text NOT NULL,
@@ -18,8 +18,8 @@ CREATE TABLE IF NOT EXISTS forum_follower (
     PRIMARY KEY (forum_id, remote_actor_url)
 );
 
--- Fan-out do Announce de cada tópico aos seguidores — 1 linha por (tópico, inbox),
--- varrida pelo worker (mesmo padrão do forum_dispatch: envio nunca duplica).
+-- Fan-out of each topic's Announce to the followers — 1 row per (topic, inbox),
+-- swept by the worker (same pattern as forum_dispatch: delivery never duplicates).
 CREATE TABLE IF NOT EXISTS forum_announce_delivery (
     id               uuid PRIMARY KEY,
     topic_id         uuid NOT NULL REFERENCES forum_topic(id),
@@ -35,7 +35,7 @@ CREATE INDEX IF NOT EXISTS forum_announce_pending_idx
 COMMENT ON TABLE forum_follower IS 'Seguidores ActivityPub de um fórum (ator Group, 0542).';
 COMMENT ON TABLE forum_announce_delivery IS 'Fan-out de Announce dos tópicos aos seguidores do fórum (0542).';
 
--- Prod aplica migrations como postgres; o gateway conecta como dsoc.
+-- Prod applies migrations as postgres; the gateway connects as dsoc.
 ALTER TABLE forum_follower OWNER TO dsoc;
 ALTER TABLE forum_announce_delivery OWNER TO dsoc;
 

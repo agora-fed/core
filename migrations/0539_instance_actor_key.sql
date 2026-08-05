@@ -1,13 +1,13 @@
--- 0539_instance_actor_key — chave do ATOR DE INSTÂNCIA (fetch assinado).
+-- 0539_instance_actor_key — the INSTANCE ACTOR's key (signed fetch).
 --
--- Instâncias Mastodon em modo seguro (AUTHORIZED_FETCH) exigem que até o GET
--- de um Actor venha assinado por HTTP Signature. Sem isso o lookup federado
--- (`/federation/lookup`) e a verificação de assinaturas inbound falham com 401
--- contra essas instâncias (caso real: wetdry.world).
+-- Mastodon instances in secure mode (AUTHORIZED_FETCH) require even the GET
+-- of an Actor to carry an HTTP Signature. Without it, federated lookup
+-- (`/federation/lookup`) and inbound signature verification fail with 401
+-- against those instances (real case: wetdry.world).
 --
--- Este é o par de chaves do ator de instância (`/actors/instance`, tipo
--- Application — mesmo padrão do Mastodon), gerado UMA vez pelo gateway no boot
--- (lazy; ON CONFLICT DO NOTHING resolve corrida entre réplicas). Linha única.
+-- This is the instance actor's key pair (`/actors/instance`, type
+-- Application — same pattern as Mastodon), generated ONCE by the gateway at boot
+-- (lazily; ON CONFLICT DO NOTHING settles the race between replicas). Single row.
 
 BEGIN;
 
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS federation_instance_key (
 COMMENT ON TABLE federation_instance_key IS
     'Par de chaves do ator de instância (/actors/instance) — assina fetches ActivityPub (0539).';
 
--- Prod aplica migrations como postgres; o gateway conecta como dsoc.
+-- Prod applies migrations as postgres; the gateway connects as dsoc.
 ALTER TABLE federation_instance_key OWNER TO dsoc;
 
 COMMIT;

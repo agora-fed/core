@@ -1,25 +1,25 @@
--- 0663_civic_activity.sql — atividade legislativa extraída (ÁGORA #73, ADR-0018).
+-- 0663_civic_activity.sql — extracted legislative activity (AGORA #73, ADR-0018).
 --
--- Fundação da meta-análise cívica: proposições/atas (matérias), autoria e votações, extraídas da
--- MESMA API SAPL do #72 e chaveadas por (uf, município) + `civic_source`. Fonte primária pública
--- (atos públicos). A destilação NLP/LLM (fase seguinte) roda SOBRE estas tabelas, sempre citando a
--- fonte. NÃO substitui `parlamentar_activity.rs` (federal/estadual por API própria) — cobre o municipal.
+-- Foundation of civic meta-analysis: bills/minutes (matters), authorship and votes, extracted from
+-- the SAME SAPL API as #72 and keyed by (uf, municipality) + `civic_source`. Public primary source
+-- (public acts). NLP/LLM distillation (next phase) runs ON TOP of these tables, always citing the
+-- source. Does NOT replace `parlamentar_activity.rs` (federal/state via their own API) — it covers municipal.
 --
--- Idempotente: rerun-safe. Dedupe por (source_base_url, external_id).
+-- Idempotent: rerun-safe. Dedupe by (source_base_url, external_id).
 
 BEGIN;
 
--- Proposições E atas (no SAPL, atas são matérias com tipo próprio) — o texto navegável do cidadão.
+-- Bills AND minutes (in SAPL, minutes are matters with their own type) — the citizen-browsable text.
 CREATE TABLE IF NOT EXISTS civic_proposal (
     id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     uf                text NOT NULL,
     municipio         text NOT NULL,
-    source_base_url   text NOT NULL,               -- ex.: https://sapl.campinas.sp.leg.br
-    external_id       text NOT NULL,               -- id da matéria no SAPL (estável na instância)
+    source_base_url   text NOT NULL,               -- e.g. https://sapl.campinas.sp.leg.br
+    external_id       text NOT NULL,               -- matter id in SAPL (stable within the instance)
     numero            integer,
     ano               integer,
     tipo              text,                         -- 'Indicação', 'Projeto de Lei', 'Ata'…
-    ementa            text,                         -- resumo/objeto (base da destilação)
+    ementa            text,                         -- summary/subject (basis of the distillation)
     data_apresentacao date,
     created_at        timestamptz NOT NULL DEFAULT now()
 );
@@ -28,11 +28,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS civic_proposal_source_ext_uidx
 CREATE INDEX IF NOT EXISTS civic_proposal_uf_muni_ano_idx
     ON civic_proposal (uf, municipio, ano);
 
--- Autoria: liga a proposição ao autor. `mandate_id` casado quando possível (mesmo casamento do #72).
+-- Authorship: links the bill to its author. `mandate_id` matched when possible (same matching as #72).
 CREATE TABLE IF NOT EXISTS civic_proposal_author (
     proposal_id     uuid NOT NULL REFERENCES civic_proposal(id) ON DELETE CASCADE,
-    mandate_id      uuid REFERENCES mandate(id),   -- NULL enquanto não casado
-    autor_external_id text,                        -- id do parlamentar no SAPL
+    mandate_id      uuid REFERENCES mandate(id),   -- NULL while unmatched
+    autor_external_id text,                        -- member id in SAPL
     autor_nome      text NOT NULL,
     primeiro_autor  boolean NOT NULL DEFAULT false,
     PRIMARY KEY (proposal_id, autor_nome)
@@ -40,17 +40,17 @@ CREATE TABLE IF NOT EXISTS civic_proposal_author (
 CREATE INDEX IF NOT EXISTS civic_proposal_author_mandate_idx
     ON civic_proposal_author (mandate_id) WHERE mandate_id IS NOT NULL;
 
--- Votações (ordem do dia): resultado por matéria — base do "o que votam".
+-- Votes (order of the day): outcome per matter — the basis of "what they vote on".
 CREATE TABLE IF NOT EXISTS civic_vote (
     id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     uf                  text NOT NULL,
     municipio           text NOT NULL,
     source_base_url     text NOT NULL,
-    external_id         text NOT NULL,             -- id da ordemdia no SAPL
+    external_id         text NOT NULL,             -- ordemdia id in SAPL
     data_ordem          date,
     resultado           text,                      -- 'Aprovado', 'Rejeitado'…
     tipo_votacao        text,                      -- 'simbolica', 'nominal', 'secreta'
-    materia_external_id text,                       -- matéria votada (liga a civic_proposal)
+    materia_external_id text,                       -- matter voted on (links to civic_proposal)
     created_at          timestamptz NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS civic_vote_source_ext_uidx

@@ -1,15 +1,15 @@
--- Migration 0411 — kinds cívicas em `user_notification` (0.25.0-fediverso Feed).
+-- Migration 0411 — civic kinds in `user_notification` (0.25.0-fediverse Feed).
 --
--- A tabela nasceu (0406) só com kinds Mastodon (mention/reply/favourite/reblog/follow).
--- Agora que o loop 'propor → cluster → threshold → SLA → resposta OU silêncio' está
--- em produção (dsoc-consequence + dsoc-scorecard), o cidadão precisa saber:
+-- The table was born (0406) with Mastodon kinds only (mention/reply/favourite/reblog/follow).
+-- Now that the 'propose → cluster → threshold → SLA → answer OR silence' loop is
+-- in production (dsoc-consequence + dsoc-scorecard), the citizen needs to know:
 --
--- - `proposal_threshold`: sua proposta cruzou o gatilho da consequência.
--- - `sla_started`: o relógio do mandato começou a rodar sobre sua proposta.
--- - `sla_response`: o mandato respondeu (accountability convertida).
--- - `sla_expired`: o SLA venceu sem resposta — silêncio público registrado.
+-- - `proposal_threshold`: their proposal crossed the consequence trigger.
+-- - `sla_started`: the mandate's clock started running on their proposal.
+-- - `sla_response`: the mandate answered (accountability delivered).
+-- - `sla_expired`: the SLA expired with no answer — public silence recorded.
 --
--- Aditivo: CHECK constraint troca, nada de dado migra.
+-- Additive: the CHECK constraint is swapped, no data migrates.
 
 BEGIN;
 
@@ -19,9 +19,9 @@ ALTER TABLE user_notification
 ALTER TABLE user_notification
     ADD CONSTRAINT user_notification_kind_check
     CHECK (kind IN (
-        -- Fediverso (0406).
+        -- Fediverse (0406).
         'mention', 'reply', 'favourite', 'reblog', 'follow',
-        -- Cívicas (0411, 0.25.0-fediverso Feed).
+        -- Civic (0411, 0.25.0-fediverse Feed).
         'proposal_threshold', 'sla_started', 'sla_response', 'sla_expired'
     ));
 

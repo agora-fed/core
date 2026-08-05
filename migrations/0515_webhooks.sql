@@ -1,23 +1,23 @@
--- 0515_webhooks.sql — webhooks servidor-wide.
+-- 0515_webhooks.sql — server-wide webhooks.
 --
--- Cada webhook é uma URL que recebe POST com payload JSON quando um
--- evento assinado acontece. Igual ao Mastodon:
---   * report.created — nova denúncia entrou na fila.
---   * account.approved — conta aprovada na revisão manual.
---   * account.suspended — conta suspensa pela moderação.
+-- Each webhook is a URL that receives a POST with a JSON payload when a
+-- subscribed event happens. Same as Mastodon:
+--   * report.created — a new report entered the queue.
+--   * account.approved — account approved in manual review.
+--   * account.suspended — account suspended by moderation.
 --
--- Segurança: assinamos a request com HMAC-SHA256 usando `secret` gerado
--- na criação e mostrado UMA vez. Header `X-DemocraciaBR-Signature`.
+-- Security: we sign the request with HMAC-SHA256 using `secret`, generated
+-- on creation and shown ONCE. Header `X-DemocraciaBR-Signature`.
 
 CREATE TABLE webhook (
     id            uuid PRIMARY KEY,
     url           text NOT NULL,
-    -- Lista de eventos que disparam. Ex.: ['report.created'].
+    -- Events that fire it. E.g. ['report.created'].
     events        text[] NOT NULL,
-    -- HMAC secret (base64url, 32 bytes). NÃO expõe após criação.
+    -- HMAC secret (base64url, 32 bytes). NOT exposed after creation.
     secret        text NOT NULL,
     enabled       boolean NOT NULL DEFAULT true,
-    -- Última tentativa de entrega (status, quando).
+    -- Last delivery attempt (status, when).
     last_status   integer,
     last_delivery_at timestamptz,
     created_at    timestamptz NOT NULL DEFAULT now(),

@@ -1,14 +1,14 @@
--- 0538_sla_per_gabinete — um relógio de SLA POR GABINETE (fase 2 do 0537).
+-- 0538_sla_per_gabinete — one SLA clock PER CABINET (phase 2 of 0537).
 --
--- Com propostas multi-destinatário, a cobrança formal deve valer para TODOS os
--- gabinetes: cada mandato destinatário ganha seu próprio SLA (prazo, escada de
--- avisos D0/D+1/D+2 e registro público de silêncio individuais). A unicidade
--- idempotente do consumo de `proposals.threshold.crossed` passa de
--- (proposal, cluster) para (proposal, cluster, mandate).
+-- With multi-recipient proposals, the formal demand must hold for EVERY
+-- cabinet: each recipient mandate gets its own SLA (deadline, D0/D+1/D+2
+-- warning ladder and its own public record of silence). The idempotent
+-- uniqueness of consuming `proposals.threshold.crossed` moves from
+-- (proposal, cluster) to (proposal, cluster, mandate).
 --
--- Linhas existentes continuam válidas (todas têm mandate_id NOT NULL); a nova
--- constraint é estritamente mais permissiva por proposta e igualmente estrita
--- por gabinete. Idempotente pra re-run.
+-- Existing rows stay valid (all have mandate_id NOT NULL); the new
+-- constraint is strictly more permissive per proposal and equally strict
+-- per cabinet. Idempotent on re-run.
 
 BEGIN;
 

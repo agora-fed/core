@@ -16,7 +16,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-MAX_PT=296   # measured 2026-08-05: Rust at ZERO; migration SQL comments remain — only goes DOWN
+MAX_PT=191   # measured 2026-08-05: Rust at ZERO; migration SQL comments remain — only goes DOWN
 
 # Portuguese markers: diacritics English never uses, plus frequent stopwords
 # that survive accent-free writing ("nao", "pra", "que", ...).

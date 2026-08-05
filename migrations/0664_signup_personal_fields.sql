@@ -1,16 +1,16 @@
--- 0664_signup_personal_fields.sql — dados pessoais obrigatórios no cadastro (ÁGORA).
+-- 0664_signup_personal_fields.sql — mandatory personal data at signup (AGORA).
 --
--- Diretriz do Marcos (2026-07-28): Nome, Sobrenome, Nick (fediverso), Sexo, CPF, Data de
--- nascimento, Estado e Município são OBRIGATÓRIOS no cadastro do cidadão; só o título é opcional.
--- Hoje o form coleta nome/nascimento/sexo mas o backend os DESCARTA (o `auth_pending_signup` não
--- tinha colunas), e o nick nunca era coletado (handle auto). Esta migração dá onde guardar:
+-- Product decision (2026-07-28): first name, last name, nick (fediverse handle), gender, CPF,
+-- birth date, state and municipality are MANDATORY at citizen signup; only the voter ID is optional.
+-- Today the form collects name/birth date/gender but the backend DISCARDS them (`auth_pending_signup`
+-- had no columns), and the nick was never collected (auto handle). This migration adds the storage:
 --
--- - `citizen.birth_date` — data de nascimento (não havia coluna).
--- - `auth_pending_signup.{full_name,gender,birth_date,handle}` — carregam do cadastro até o
---   `signup_verify` materializar o `citizen`. `gender` reusa o vocabulário de `citizen.gender`
---   (mulher|homem|nao-binarie|prefiro-nao-dizer); o form mapeia sexo F→mulher, M→homem.
+-- - `citizen.birth_date` — date of birth (there was no column).
+-- - `auth_pending_signup.{full_name,gender,birth_date,handle}` — carried from signup until
+--   `signup_verify` materialises the `citizen`. `gender` reuses the `citizen.gender` vocabulary
+--   (mulher|homem|nao-binarie|prefiro-nao-dizer); the form maps F→mulher, M→homem.
 --
--- Idempotente: rerun-safe.
+-- Idempotent: rerun-safe.
 
 BEGIN;
 
