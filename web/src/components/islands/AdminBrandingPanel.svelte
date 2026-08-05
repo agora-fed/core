@@ -119,8 +119,8 @@
     loading = true;
     error = null;
     const res = await adminGetBranding();
-    if (res.ok && res.data) fromDto(res.data);
-    else error = res.error ?? 'Falha ao carregar identidade visual.';
+    if (res.success && res.data) fromDto(res.data);
+    else error = res.error?.message ?? 'Falha ao carregar identidade visual.';
     loading = false;
   }
 
@@ -132,12 +132,12 @@
     saving = true;
     const res = await adminPutBranding(toDto());
     saving = false;
-    if (res.ok && res.data) {
+    if (res.success && res.data) {
       fromDto(res.data);
       preview();
       toast('Identidade visual salva. Recarregue para ver em todo o site.', 'success');
     } else {
-      toast(res.error ?? 'Falha ao salvar.', 'error');
+      toast(res.error?.message ?? 'Falha ao salvar.', 'error');
     }
   }
 
