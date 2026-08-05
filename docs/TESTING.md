@@ -59,3 +59,29 @@ cargo test -p e2e --test core_loop     # the thesis E2E
 
 Every crate's `CRATE.md` enumerates the behaviors under test. New behavior ⇒ new test first
 (TDD: RED → GREEN → refactor). The catalog is reviewed in PR; missing tests block merge.
+
+## Coverage: measured baseline and the road to 95%
+
+Destination: **95% line coverage**, enforced two ways (codecov.yml):
+- **patch gate, required today**: every new/changed line arrives ≥95% tested;
+- **project ratchet**: total coverage may never drop (CI `--fail-under-lines`
+  is the measured floor and only goes UP — raising it belongs in the same PR
+  that adds coverage).
+
+Measured baseline (2026-08-05, full workspace against a fully migrated
+PostgreSQL): **49.8% lines**. Per-crate reality:
+
+| Band | Crates | Read |
+|---|---|---|
+| 90–97% | `core`, `assemblies`, `consultations`, `events`, `clients/federation`, `scorecard` | already at or near destination |
+| 76–90% | most `components/*`, `spaces/*`, `platform/*` | close; targeted tests finish the job |
+| 50–55% | `auth` (4.9k lines), `consensus`, `storage` | needs a real test push |
+| 43% | `forums` (1.7k lines) | needs a real test push |
+| **29%** | **`gateway` (27.5k lines)** | **THE gap — ~19.4k uncovered lines, more than the whole rest of the workspace** |
+
+Conclusion the numbers force: the road to 95% **is** the gateway — and the
+strategy is not "write 19k lines of gateway tests". It is the same strategy as
+the modularity plan (docs/FEDIVERSE-STRATEGY.md §5.1, wave 2): move logic out
+of the gateway into owned, unit-tested crates, leaving the gateway as thin
+mounting/translation code, while every extraction lands with tests under the
+95% patch gate. Coverage and architecture converge on the same work.
