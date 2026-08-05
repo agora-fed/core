@@ -10,8 +10,10 @@
 //! * `GET    /topics/{id}/representatives` — PUBLIC aggregate per mandate
 //!   (never lists citizens — LGPD/ADR-0005 posture) + `mine` when authed.
 //! * `POST   /topics/{id}/representatives` — auth; body `{mandate_id}`;
-//!   upsert (re-tagging replaces the citizen's previous pick).
-//! * `DELETE /topics/{id}/representatives` — auth; removes the caller's tag.
+//!   ADDS a pick (a citizen may mark several mandates, capped at
+//!   [`MAX_TAGS_PER_CITIZEN`]; duplicates are idempotent).
+//! * `DELETE /topics/{id}/representatives/{mandate_id}` — auth; removes ONE
+//!   of the caller's picks.
 //!
 //! Daily sweep: [`daily_alert_sweep`] — claims `(mandate, day)` in
 //! `mandate_alert_delivery` (idempotent), then mails the consolidated alert.
@@ -38,14 +40,19 @@ const AGGREGATE_LIMIT: i64 = 20;
 /// Max mandates alerted per sweep tick (backpressure; the claim makes the
 /// remainder pick up on the next tick).
 const SWEEP_BATCH: i64 = 50;
+/// Cap of representatives one citizen may mark on one topic (0677): enough
+/// for a caucus, small enough that "tag everyone" cannot dilute the ranking.
+pub const MAX_TAGS_PER_CITIZEN: i64 = 5;
 
 pub fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route(
             "/topics/{id}/representatives",
-            get(list_representatives)
-                .post(tag_representative)
-                .delete(untag_representative),
+            get(list_representatives).post(tag_representative),
+        )
+        .route(
+            "/topics/{id}/representatives/{mandate_id}",
+            axum::routing::delete(untag_representative),
         )
         .with_state(state)
 }
@@ -66,13 +73,13 @@ pub struct TopicRepresentativeDto {
     pub tag_count: i64,
 }
 
-/// `GET` response: ranked aggregates + the caller's own pick (when authed).
+/// `GET` response: ranked aggregates + the caller's own picks (when authed).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopicRepresentativesDto {
     pub representatives: Vec<TopicRepresentativeDto>,
     pub total_tags: i64,
-    /// The mandate the CALLER tagged on this topic (`null` when anonymous or untagged).
-    pub mine: Option<Uuid>,
+    /// The mandates the CALLER tagged on this topic (empty when anonymous or untagged).
+    pub mine: Vec<Uuid>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -171,16 +178,16 @@ async fn list_representatives(
     let mine = match caller_citizen(&headers) {
         Some(citizen) => sqlx::query_scalar::<_, Uuid>(
             "SELECT mandate_id FROM topic_representative_tag \
-             WHERE org_id = $1 AND topic_id = $2 AND citizen_id = $3",
+             WHERE org_id = $1 AND topic_id = $2 AND citizen_id = $3 \
+             ORDER BY created_at ASC",
         )
         .bind(org)
         .bind(topic_id)
         .bind(citizen)
-        .fetch_optional(&state.db)
+        .fetch_all(&state.db)
         .await
-        .ok()
-        .flatten(),
-        None => None,
+        .unwrap_or_default(),
+        None => Vec::new(),
     };
 
     let representatives = rows
@@ -256,11 +263,28 @@ async fn tag_representative(
             "Mandato inválido.",
         );
     }
+    // Cap per citizen per topic (0677): additive picks, bounded.
+    let current: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM topic_representative_tag \
+         WHERE org_id = $1 AND topic_id = $2 AND citizen_id = $3",
+    )
+    .bind(org)
+    .bind(topic_id)
+    .bind(citizen)
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(0);
+    if current >= MAX_TAGS_PER_CITIZEN {
+        return fail(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "limit",
+            "Você já marcou o máximo de representantes nesta pauta.",
+        );
+    }
     let result = sqlx::query(
         r"INSERT INTO topic_representative_tag (org_id, topic_id, mandate_id, citizen_id)
           VALUES ($1, $2, $3, $4)
-          ON CONFLICT (org_id, topic_id, citizen_id)
-          DO UPDATE SET mandate_id = EXCLUDED.mandate_id, created_at = now()",
+          ON CONFLICT (org_id, topic_id, citizen_id, mandate_id) DO NOTHING",
     )
     .bind(org)
     .bind(topic_id)
@@ -281,11 +305,12 @@ async fn tag_representative(
     }
 }
 
-/// `DELETE /topics/{id}/representatives` — remove the caller's tag.
+/// `DELETE /topics/{id}/representatives/{mandate_id}` — remove ONE of the
+/// caller's picks.
 async fn untag_representative(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path(topic_id): Path<Uuid>,
+    Path((topic_id, mandate_id)): Path<(Uuid, Uuid)>,
 ) -> Response {
     let Some(citizen) = caller_citizen(&headers) else {
         return fail(
@@ -296,11 +321,12 @@ async fn untag_representative(
     };
     let _ = sqlx::query(
         "DELETE FROM topic_representative_tag \
-         WHERE org_id = $1 AND topic_id = $2 AND citizen_id = $3",
+         WHERE org_id = $1 AND topic_id = $2 AND citizen_id = $3 AND mandate_id = $4",
     )
     .bind(caller_org(&headers))
     .bind(topic_id)
     .bind(citizen)
+    .bind(mandate_id)
     .execute(&state.db)
     .await;
     (StatusCode::OK, Json(ApiResponse::ok(()))).into_response()

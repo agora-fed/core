@@ -12,6 +12,7 @@
     type TopicRepresentativesDto,
     type MandateDto,
   } from '../lib/api';
+  import { nameMatches } from '../lib/parties';
 
   let { topicId }: { topicId: string } = $props();
 
@@ -23,13 +24,7 @@
   let pool = $state<MandateDto[] | null>(null);
 
   const filtered = $derived(
-    (pool ?? [])
-      .filter((m) =>
-        query.trim().length < 2
-          ? false
-          : m.display_name.toLowerCase().includes(query.trim().toLowerCase()),
-      )
-      .slice(0, 8),
+    (pool ?? []).filter((m) => nameMatches(m.display_name, query)).slice(0, 8),
   );
 
   async function reload() {
@@ -41,9 +36,16 @@
     picking = !picking;
     notice = null;
     if (picking && !pool) {
-      // Federal chamber + senate fit in one page each; client-side filter.
-      const res = await getMandates(undefined, 100, 0, 'federal');
-      pool = res.ok && res.data ? res.data : [];
+      // The server pages at 100 rows — walk ALL federal mandates (~594:
+      // câmara + senado) so nobody is unfindable (Sâmia incident, 2026-08-05).
+      const all: MandateDto[] = [];
+      for (let offset = 0; offset < 1000; offset += 100) {
+        const res = await getMandates(undefined, 100, offset, 'federal');
+        const page = res.ok && res.data ? res.data : [];
+        all.push(...page);
+        if (page.length < 100) break;
+      }
+      pool = all;
     }
   }
 
@@ -54,7 +56,6 @@
     const res = await tagTopicRepresentative(topicId, m.id);
     busy = false;
     if (res.success) {
-      picking = false;
       query = '';
       await reload();
     } else if (res.error?.code === 'unauthorized') {
@@ -64,10 +65,10 @@
     }
   }
 
-  async function untag() {
+  async function untag(mandateId: string) {
     if (busy) return;
     busy = true;
-    const res = await untagTopicRepresentative(topicId);
+    const res = await untagTopicRepresentative(topicId, mandateId);
     busy = false;
     if (res.success) await reload();
   }
@@ -78,14 +79,14 @@
 <section class="rep-widget" aria-label="Quem deve te representar nesta causa">
   <h2 class="rep-title">🗳 Quem deve te representar nesta causa?</h2>
   <p class="muted small">
-    Marque um mandato: no fim do dia a plataforma envia a ele um resumo
+    Marque até 5 mandatos: no fim do dia a plataforma envia a cada um o resumo
     consolidado do que a população está cobrando. Números sempre agregados.
   </p>
 
   {#if data && data.representatives.length > 0}
     <ol class="rep-list">
       {#each data.representatives as r (r.mandate_id)}
-        <li class="rep-item" class:mine={data.mine === r.mandate_id}>
+        <li class="rep-item" class:mine={data.mine.includes(r.mandate_id)}>
           {#if r.avatar_url}
             <img class="rep-avatar" src={r.avatar_url} alt="" loading="lazy" />
           {:else}
@@ -100,8 +101,13 @@
           <span class="rep-count" title="cidadãos que marcaram">
             {r.tag_count.toLocaleString('pt-BR')}
           </span>
-          {#if data.mine === r.mandate_id}
-            <button type="button" class="rep-untag" onclick={untag} disabled={busy}>
+          {#if data.mine.includes(r.mandate_id)}
+            <button
+              type="button"
+              class="rep-untag"
+              onclick={() => untag(r.mandate_id)}
+              disabled={busy}
+            >
               desmarcar
             </button>
           {/if}
@@ -113,7 +119,11 @@
   {/if}
 
   <button type="button" class="rep-cta" onclick={openPicker}>
-    {picking ? 'Fechar' : data?.mine ? 'Trocar representante' : 'Marcar representante'}
+    {picking
+      ? 'Fechar'
+      : (data?.mine.length ?? 0) > 0
+        ? 'Marcar mais um representante'
+        : 'Marcar representante'}
   </button>
 
   {#if picking}

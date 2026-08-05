@@ -24,7 +24,7 @@ const AGG: TopicRepresentativesDto = {
     },
   ],
   total_tags: 42,
-  mine: null,
+  mine: [],
 };
 
 const envelope = (body: unknown, status = 200) =>
@@ -85,7 +85,7 @@ describe('representatives wire contract', () => {
     expect(res.error?.code).toBe('unauthorized');
   });
 
-  it('DELETE hits the same path (untag)', async () => {
+  it('DELETE targets ONE pick by mandate id (multi-representative, 0677)', async () => {
     let url = '';
     let method = '';
     vi.stubGlobal(
@@ -96,8 +96,8 @@ describe('representatives wire contract', () => {
         return envelope({ success: true, data: null, error: null, meta: null });
       }),
     );
-    await untagTopicRepresentative(TOPIC);
-    expect(url).toContain(`/api/v1/topics/${TOPIC}/representatives`);
+    await untagTopicRepresentative(TOPIC, 'm-1');
+    expect(url).toContain(`/api/v1/topics/${TOPIC}/representatives/m-1`);
     expect(method).toBe('DELETE');
   });
 
@@ -106,5 +106,17 @@ describe('representatives wire contract', () => {
     expect(keys).not.toContain('citizen_id');
     expect(keys).not.toContain('citizens');
     expect(Object.keys(AGG)).toEqual(['representatives', 'total_tags', 'mine']);
+  });
+});
+
+describe('picker search (Sâmia incident, 2026-08-05)', () => {
+  it('matches names accent- and case-insensitively, both directions', async () => {
+    const { nameMatches } = await import('../src/lib/parties');
+    expect(nameMatches('Sâmia Bomfim', 'samia')).toBe(true);
+    expect(nameMatches('Sâmia Bomfim', 'SÂMIA')).toBe(true);
+    expect(nameMatches('Natália Bonavides', 'bonavides')).toBe(true);
+    expect(nameMatches('Natália Bonavides', 'nátalia'.normalize('NFC'))).toBe(true);
+    expect(nameMatches('Sâmia Bomfim', 'x')).toBe(false); // < 2 chars never matches
+    expect(nameMatches('Sâmia Bomfim', 'benavides')).toBe(false); // typo is still a miss
   });
 });

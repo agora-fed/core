@@ -36,3 +36,15 @@ export function partyColor(sigla: string): string {
 export function chapterUrl(sigla: string, chapterId: string): string {
   return `/partidos/${partySlug(sigla)}/diretorio/?id=${encodeURIComponent(chapterId)}`;
 }
+
+/** Accent-and-case-insensitive name match (picker search: "samia" finds
+ * "Sâmia"). NFD-strip diacritics on BOTH sides before the substring test. */
+export function nameMatches(name: string, query: string): boolean {
+  const norm = (s: string) =>
+    s
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase();
+  const q = norm(query.trim());
+  return q.length >= 2 && norm(name).includes(q);
+}

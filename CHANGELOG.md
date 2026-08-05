@@ -7,6 +7,21 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 
 ## [Unreleased]
 
+## [0.70.0] — 2026-08-05
+
+### Added
+- **Multiple representatives per cause** (0677): a citizen can now mark up to
+  **5 mandates** on one topic (their whole caucus, not just one name) — each
+  at most once, `DELETE .../representatives/{mandate_id}` removes one pick,
+  `mine` became a list. The cap keeps "tag everyone" noise out of the ranking.
+
+### Fixed
+- **Picker could not find Sâmia Bomfim / Natália Bonavides**: the widget only
+  fetched the first server page (100 rows of ~594 federal mandates) and the
+  filter was accent-sensitive ("samia" missed "Sâmia"). It now walks ALL
+  federal pages and matches names diacritic- and case-insensitively
+  (`nameMatches`, unit-tested both directions + a Playwright search check).
+
 ## [0.69.0] — 2026-08-05
 
 ### Added

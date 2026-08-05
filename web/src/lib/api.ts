@@ -3754,8 +3754,8 @@ export interface TopicRepresentativeDto {
 export interface TopicRepresentativesDto {
   representatives: TopicRepresentativeDto[];
   total_tags: number;
-  /** The mandate the CALLER tagged (null when anonymous or untagged). */
-  mine: string | null;
+  /** The mandates the CALLER tagged (empty when anonymous or untagged). */
+  mine: string[];
 }
 export const getTopicRepresentatives = (topicId: string) =>
   apiGet<TopicRepresentativesDto>(
@@ -3765,5 +3765,7 @@ export const tagTopicRepresentative = (topicId: string, mandateId: string) =>
   apiPost<null>(`/api/v1/topics/${encodeURIComponent(topicId)}/representatives`, {
     mandate_id: mandateId,
   });
-export const untagTopicRepresentative = (topicId: string) =>
-  apiDelete<null>(`/api/v1/topics/${encodeURIComponent(topicId)}/representatives`);
+export const untagTopicRepresentative = (topicId: string, mandateId: string) =>
+  apiDelete<null>(
+    `/api/v1/topics/${encodeURIComponent(topicId)}/representatives/${encodeURIComponent(mandateId)}`,
+  );

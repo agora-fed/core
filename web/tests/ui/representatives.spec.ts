@@ -50,3 +50,16 @@ test('topic page renders the representative widget', async ({ page, request }) =
   ).toBeVisible();
   expect(jsErrors, `uncaught JS: ${jsErrors.join(' | ')}`).toHaveLength(0);
 });
+
+test('picker finds accented names beyond the first page (Sâmia)', async ({
+  page,
+  request,
+}) => {
+  test.skip(!(await topicExists(request)), 'anchor topic absent in this environment');
+
+  await page.goto(`/f/topico/${TOPIC}`);
+  await page.getByRole('button', { name: /marcar (mais um )?representante/i }).click();
+  const search = page.getByRole('searchbox', { name: /buscar representante/i });
+  await search.fill('samia'); // no accent on purpose — must still match Sâmia
+  await expect(page.getByText(/Sâmia/i).first()).toBeVisible({ timeout: 15_000 });
+});

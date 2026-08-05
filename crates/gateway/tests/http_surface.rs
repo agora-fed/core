@@ -3612,7 +3612,7 @@ async fn representative_tag_full_lifecycle_and_privacy() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // Re-tagging the SAME citizen replaces, never duplicates (one per citizen).
+    // A second pick ADDS (0677: multiple representatives per citizen, capped).
     let mandate2 = seed_rep_mandate(&st.db, org, "Dep. Dois").await;
     let resp = app
         .clone()
@@ -3626,8 +3626,8 @@ async fn representative_tag_full_lifecycle_and_privacy() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // Public aggregate: one tag total, on mandate2, `mine` set for the caller —
-    // and the raw payload NEVER contains the citizen's UUID (LGPD posture).
+    // Public aggregate: BOTH picks count, `mine` lists both — and the raw
+    // payload NEVER contains the citizen's UUID (LGPD posture).
     let resp = app
         .clone()
         .oneshot(get_with_cookie(
@@ -3638,17 +3638,57 @@ async fn representative_tag_full_lifecycle_and_privacy() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body = body_json(resp).await;
-    assert_eq!(body["data"]["total_tags"], 1, "body={body}");
-    assert_eq!(
-        body["data"]["representatives"][0]["mandate_id"],
-        mandate2.to_string()
-    );
-    assert_eq!(body["data"]["representatives"][0]["tag_count"], 1);
-    assert_eq!(body["data"]["mine"], mandate2.to_string());
+    assert_eq!(body["data"]["total_tags"], 2, "body={body}");
+    let mine: Vec<String> = body["data"]["mine"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_owned())
+        .collect();
+    assert!(mine.contains(&mandate.to_string()) && mine.contains(&mandate2.to_string()));
     assert!(
         !body.to_string().contains(&citizen.to_string()),
         "citizen UUID leaked in aggregate payload"
     );
+
+    // Duplicate pick is idempotent; the cap (5) refuses the 6th DISTINCT one.
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/topics/{topic}/representatives"),
+            Some(&cookie),
+            &format!("{{\"mandate_id\":\"{mandate2}\"}}"),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK, "duplicate is a no-op");
+    for i in 0..3 {
+        let extra = seed_rep_mandate(&st.db, org, &format!("Dep. Extra {i}")).await;
+        let resp = app
+            .clone()
+            .oneshot(json_req(
+                "POST",
+                &format!("/api/v1/topics/{topic}/representatives"),
+                Some(&cookie),
+                &format!("{{\"mandate_id\":\"{extra}\"}}"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+    let sixth = seed_rep_mandate(&st.db, org, "Dep. Sexto").await;
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "POST",
+            &format!("/api/v1/topics/{topic}/representatives"),
+            Some(&cookie),
+            &format!("{{\"mandate_id\":\"{sixth}\"}}"),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY, "cap of 5");
 
     // Unknown mandate is a validation error; unknown topic a 404.
     let resp = app
@@ -3672,12 +3712,12 @@ async fn representative_tag_full_lifecycle_and_privacy() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 
-    // Untag: aggregate returns to zero.
+    // Untag ONE pick: the rest stay (total drops by exactly one).
     let resp = app
         .clone()
         .oneshot(json_req(
             "DELETE",
-            &format!("/api/v1/topics/{topic}/representatives"),
+            &format!("/api/v1/topics/{topic}/representatives/{mandate2}"),
             Some(&cookie),
             "{}",
         ))
@@ -3693,8 +3733,15 @@ async fn representative_tag_full_lifecycle_and_privacy() {
         .await
         .unwrap();
     let body = body_json(resp).await;
-    assert_eq!(body["data"]["total_tags"], 0);
-    assert!(body["data"]["mine"].is_null());
+    assert_eq!(
+        body["data"]["total_tags"], 4,
+        "5 picks minus the removed one"
+    );
+    assert!(!body["data"]["mine"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|v| v.as_str() == Some(&mandate2.to_string())));
 }
 
 #[tokio::test]
