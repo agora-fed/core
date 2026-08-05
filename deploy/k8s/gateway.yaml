@@ -28,7 +28,7 @@ spec:
       dnsPolicy: Default
       containers:
       - name: gateway
-        image: docker.io/library/dsoc-gateway:0.70.0
+        image: docker.io/library/dsoc-gateway:0.70.1
         imagePullPolicy: Never        # image imported into containerd (k8s.io ns) on this node
         envFrom: [ { secretRef: { name: dsoc-gateway-secrets } } ]
         env:
