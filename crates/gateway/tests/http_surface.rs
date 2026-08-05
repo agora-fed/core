@@ -3963,6 +3963,85 @@ async fn group_inbox_rejects_malformed_signature_and_unknown_handle() {
 }
 
 // ---------------------------------------------------------------------------
+// Retention of the inbound-activity idempotency logs (issue #10).
+//
+// These ran as a background loop that only LOGS its errors, so the first
+// version shipped to production broken (42883: `make_interval` has no `bigint`
+// overload) and stayed silent for a full release. The loop body is split out
+// precisely so a test can execute the real DELETE against real PostgreSQL —
+// a unit test with a mocked pool would have reproduced the bug, not caught it.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn inbox_seen_retention_deletes_only_rows_past_the_window() {
+    let (_, st) = app().await;
+    let org = uuid::uuid!("11111111-1111-1111-1111-111111111111");
+    sqlx::query(
+        "INSERT INTO org (id, slug, name, created_at) VALUES ($1, $2, 'Org', $3)
+                 ON CONFLICT (id) DO NOTHING",
+    )
+    .bind(org)
+    .bind(format!("org-{}", org.simple()))
+    .bind(Utc::now())
+    .execute(&st.db)
+    .await
+    .expect("seed org");
+    let (forum, _) = seed_federated_forum(&st.db, org).await;
+
+    let old_id = format!("https://remote.example/activities/old-{}", Uuid::now_v7());
+    let new_id = format!("https://remote.example/activities/new-{}", Uuid::now_v7());
+    for (activity_id, age_days) in [(&old_id, 90_i64), (&new_id, 1_i64)] {
+        sqlx::query(
+            "INSERT INTO forum_inbox_seen (activity_id, forum_id, seen_at)
+             VALUES ($1, $2, now() - make_interval(days => $3::int))",
+        )
+        .bind(activity_id)
+        .bind(forum)
+        .bind(i32::try_from(age_days).unwrap())
+        .execute(&st.db)
+        .await
+        .expect("seed inbox_seen row");
+    }
+
+    // The call under test — this is the statement that was failing in production.
+    let pruned = dsoc_gateway::worker::prune_inbox_seen(&st.db, "forum_inbox_seen", 30)
+        .await
+        .expect("retention DELETE must succeed against real PostgreSQL");
+    assert!(pruned >= 1, "the 90-day-old row must be pruned");
+
+    let old_gone: bool = sqlx::query_scalar(
+        "SELECT NOT EXISTS(SELECT 1 FROM forum_inbox_seen WHERE activity_id = $1)",
+    )
+    .bind(&old_id)
+    .fetch_one(&st.db)
+    .await
+    .unwrap();
+    let new_kept: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM forum_inbox_seen WHERE activity_id = $1)")
+            .bind(&new_id)
+            .fetch_one(&st.db)
+            .await
+            .unwrap();
+    assert!(old_gone, "a row past the window must be deleted");
+    assert!(
+        new_kept,
+        "a row inside the window must survive — pruning it would let a live redelivery replay"
+    );
+}
+
+/// Every table the loop sweeps must accept the statement. Catches the case where
+/// one log has a different column type or name from the other.
+#[tokio::test]
+async fn inbox_seen_retention_runs_against_every_configured_table() {
+    let (_, st) = app().await;
+    for table in dsoc_gateway::worker::INBOX_SEEN_TABLES {
+        dsoc_gateway::worker::prune_inbox_seen(&st.db, table, 30)
+            .await
+            .unwrap_or_else(|e| panic!("retention DELETE failed on {table}: {e}"));
+    }
+}
+
+// ---------------------------------------------------------------------------
 // SECURITY — the inbound signature must be bound to THIS request (issue #10)
 //
 // #6 made the Group inbox require a signature. A signature covers HEADERS, not

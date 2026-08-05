@@ -76,7 +76,7 @@ const DEFAULT_SOCRATES_SWEEP_MS: u64 = 6 * 60 * 60 * 1000;
 /// against any implementation's backoff schedule while keeping the tables bounded;
 /// replay of anything older is already refused by the `Date` skew window, which is
 /// measured in hours. Override with `FEDERATION_INBOX_RETENTION_DAYS`.
-const DEFAULT_INBOX_SEEN_RETENTION_DAYS: i64 = 30;
+const DEFAULT_INBOX_SEEN_RETENTION_DAYS: i32 = 30;
 
 /// Read a millisecond interval from the environment, falling back to `default`.
 fn env_ms(key: &str, default: u64) -> u64 {
@@ -726,32 +726,60 @@ async fn socrates_sweep_loop(state: AppState) {
 ///
 /// Runs hourly, deletes by the `seen_at` index, and never fails the process.
 async fn inbox_seen_retention_loop(state: AppState) {
-    let days = std::env::var("FEDERATION_INBOX_RETENTION_DAYS")
-        .ok()
-        .and_then(|v| v.parse::<i64>().ok())
-        .filter(|&v| v > 0)
-        .unwrap_or(DEFAULT_INBOX_SEEN_RETENTION_DAYS);
+    let days = inbox_retention_days();
     let mut ticker = interval(Duration::from_secs(60 * 60)); // 1h
     ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
     loop {
         ticker.tick().await;
-        for table in ["federation_inbox_seen", "forum_inbox_seen"] {
-            // The table name is from the fixed literal array above, never from input.
-            let sql =
-                format!("DELETE FROM {table} WHERE seen_at < now() - make_interval(days => $1)");
-            match sqlx::query(&sql).bind(days).execute(&state.db).await {
-                Ok(r) if r.rows_affected() > 0 => {
-                    tracing::info!(
-                        table,
-                        pruned = r.rows_affected(),
-                        "inbox_seen retention tick"
-                    );
+        for table in INBOX_SEEN_TABLES {
+            match prune_inbox_seen(&state.db, table, days).await {
+                Ok(n) if n > 0 => {
+                    tracing::info!(table, pruned = n, "inbox_seen retention tick");
                 }
                 Ok(_) => {}
                 Err(err) => tracing::warn!(error = ?err, table, "inbox_seen retention failed"),
             }
         }
     }
+}
+
+/// The idempotency logs the retention loop trims. A FIXED literal set — the table
+/// name is interpolated into SQL, so it must never come from input.
+pub const INBOX_SEEN_TABLES: [&str; 2] = ["federation_inbox_seen", "forum_inbox_seen"];
+
+/// Retention window in days, from `FEDERATION_INBOX_RETENTION_DAYS`.
+fn inbox_retention_days() -> i32 {
+    std::env::var("FEDERATION_INBOX_RETENTION_DAYS")
+        .ok()
+        .and_then(|v| v.parse::<i32>().ok())
+        .filter(|&v| v > 0)
+        .unwrap_or(DEFAULT_INBOX_SEEN_RETENTION_DAYS)
+}
+
+/// Delete rows older than `days` from one idempotency log; returns how many went.
+///
+/// `days` is an `i32` cast to `int` in SQL on purpose. `make_interval` has no
+/// `bigint` overload, so binding an `i64` fails at runtime with 42883 — which is
+/// exactly how this shipped broken in 0.72.0 and stayed silent, because the loop
+/// only logs its errors. Splitting it out of the loop is what lets a test see it.
+///
+/// # Errors
+/// Returns the `sqlx::Error` when the DELETE fails.
+pub async fn prune_inbox_seen(
+    db: &sqlx::PgPool,
+    table: &str,
+    days: i32,
+) -> std::result::Result<u64, sqlx::Error> {
+    debug_assert!(
+        INBOX_SEEN_TABLES.contains(&table),
+        "table must come from the literal set"
+    );
+    let sql = format!("DELETE FROM {table} WHERE seen_at < now() - make_interval(days => $1::int)");
+    sqlx::query(&sql)
+        .bind(days)
+        .execute(db)
+        .await
+        .map(|r| r.rows_affected())
 }
 
 /// Walks every account with the `auto_delete_notes_older_than_days` preference
