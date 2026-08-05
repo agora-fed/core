@@ -45,28 +45,6 @@ pub fn routes(state: AppState) -> Router<()> {
 // Guards
 // ---------------------------------------------------------------------------
 
-fn unauthorized() -> Response {
-    (
-        StatusCode::UNAUTHORIZED,
-        Json(ApiResponse::<()>::fail(
-            "http_401",
-            "Autenticação necessária.",
-        )),
-    )
-        .into_response()
-}
-
-fn forbidden() -> Response {
-    (
-        StatusCode::FORBIDDEN,
-        Json(ApiResponse::<()>::fail(
-            "http_403",
-            "Acesso restrito a administradores.",
-        )),
-    )
-        .into_response()
-}
-
 fn server_error() -> Response {
     (
         StatusCode::INTERNAL_SERVER_ERROR,
@@ -75,41 +53,17 @@ fn server_error() -> Response {
         .into_response()
 }
 
-/// Read the authenticated citizen from the trusted header injected by the
-/// gateway's `inject_identity` middleware. We DON'T use the `CallerId`
-/// extractor here because it returns a 401 `(StatusCode, &'static str)` on
-/// miss and we want the ApiResponse JSON envelope shape instead.
-fn caller_citizen(headers: &HeaderMap) -> Option<Uuid> {
-    headers
-        .get("x-dsoc-citizen-id")?
-        .to_str()
-        .ok()?
-        .parse()
-        .ok()
-}
-
 /// Verify the caller has at least `admin` role in DEFAULT_ORG_UUID. Returns
 /// `Ok(())` on pass, or a ready-to-return 403 envelope. `auditor` alone is
 /// NOT sufficient: these endpoints mutate role bindings and hide notes.
-async fn require_admin(state: &AppState, citizen: Uuid) -> Result<(), Response> {
-    let row: Option<(i32,)> = sqlx::query_as(
-        r"SELECT 1 FROM admin_role_binding
-           WHERE org_id = $1 AND citizen_id = $2
-             AND role IN ('owner', 'admin')
-           LIMIT 1",
-    )
-    .bind(DEFAULT_ORG_UUID)
-    .bind(citizen)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|err| {
-        tracing::error!(error = ?err, "require_admin: query failed");
-        server_error()
-    })?;
-    if row.is_none() {
-        return Err(forbidden());
-    }
-    Ok(())
+/// Org-scoped admin gate — delegates to [`crate::authz_ext::require_org_admin`]
+/// (issue #8). This copy previously hard-bound `DEFAULT_ORG_UUID` regardless of
+/// who was calling: fail-closed rather than an escalation, but still not the
+/// caller's org, so a legitimate admin of a second org would have been denied.
+async fn require_admin(state: &AppState, headers: &HeaderMap) -> Result<(), Response> {
+    crate::authz_ext::require_org_admin(&state.db, headers)
+        .await
+        .map(|_| ())
 }
 
 // ---------------------------------------------------------------------------
@@ -129,10 +83,7 @@ struct StatsPayload {
 }
 
 async fn stats(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    let Some(citizen) = caller_citizen(&headers) else {
-        return unauthorized();
-    };
-    if let Err(resp) = require_admin(&state, citizen).await {
+    if let Err(resp) = require_admin(&state, &headers).await {
         return resp;
     }
     // Individual `SELECT count(*)` per table. Each returns a single-row
@@ -231,10 +182,7 @@ async fn users_list(
     headers: HeaderMap,
     Query(q): Query<UsersQuery>,
 ) -> Response {
-    let Some(citizen) = caller_citizen(&headers) else {
-        return unauthorized();
-    };
-    if let Err(resp) = require_admin(&state, citizen).await {
+    if let Err(resp) = require_admin(&state, &headers).await {
         return resp;
     }
     let limit = q.limit.unwrap_or(25).clamp(1, 200);
@@ -335,10 +283,7 @@ async fn users_set_role(
     Path(citizen_id): Path<Uuid>,
     Json(body): Json<SetRoleBody>,
 ) -> Response {
-    let Some(caller) = caller_citizen(&headers) else {
-        return unauthorized();
-    };
-    if let Err(resp) = require_admin(&state, caller).await {
+    if let Err(resp) = require_admin(&state, &headers).await {
         return resp;
     }
     let normalized = body
@@ -447,10 +392,7 @@ async fn federation_peers(
     headers: HeaderMap,
     Query(q): Query<PeersQuery>,
 ) -> Response {
-    let Some(citizen) = caller_citizen(&headers) else {
-        return unauthorized();
-    };
-    if let Err(resp) = require_admin(&state, citizen).await {
+    if let Err(resp) = require_admin(&state, &headers).await {
         return resp;
     }
     let limit = q.limit.unwrap_or(50).clamp(1, 500);
@@ -553,10 +495,7 @@ async fn notes_hide(
     headers: HeaderMap,
     Path(note_id): Path<Uuid>,
 ) -> Response {
-    let Some(citizen) = caller_citizen(&headers) else {
-        return unauthorized();
-    };
-    if let Err(resp) = require_admin(&state, citizen).await {
+    if let Err(resp) = require_admin(&state, &headers).await {
         return resp;
     }
     // A "note" in this codebase is either a LOCAL outbox entry OR a REMOTE
