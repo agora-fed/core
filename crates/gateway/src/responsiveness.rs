@@ -1,19 +1,19 @@
-//! # Responsividade do mandato — a VITRINE positiva do político (Bloco C do plano).
+//! # Mandate responsiveness — the official's positive SHOWCASE (Block C of the plan).
 //!
-//! Hoje o placar só oferece AMEAÇA (o silêncio vira registro público). Este módulo inverte a
-//! economia de reputação: a partir dos MESMOS contadores `answered`/`ignored` e da latência que o
-//! `dsoc-scorecard` já projeta (NÃO reinventamos o ledger), derivamos um selo/tier, o "responde em
-//! ~N dias", a sequência de respostas (streak) e o comparativo com pares — o motivo POSITIVO pra um
+//! Today the scorecard offers only a THREAT (silence becomes a public record). This module inverts
+//! the reputation economy: from the SAME `answered`/`ignored` counters and the latency that
+//! `dsoc-scorecard` already projects (we do NOT reinvent the ledger), we derive a badge/tier, the
+//! "answers in ~N days", the streak of answers and the peer comparison — the POSITIVE reason for an
 //! vereador/deputado QUERER reivindicar e usar o placar.
 //!
-//! * `GET /politicos/{mandate_id}/responsiveness` — C1 (selo + streak) + C2 (comparativo com pares
-//!   do mesmo nível/UF) num payload só, pronto pra página pública do político.
+//! * `GET /politicos/{mandate_id}/responsiveness` — C1 (badge + streak) + C2 (comparison with peers
+//!   of the same level/UF) in a single payload, ready for the official's public page.
 //! * `GET /politicos/responsiveness/peers?sphere=&uf=&house=&party=` — C2 standalone: agregados de
-//!   um recorte (média de resposta, latência mediana, tamanho do grupo).
+//!   a slice (mean response rate, median latency, group size).
 //!
-//! A lógica de decisão (tier/percentil) é PURA e vive testada em `dsoc_scorecard::tier`; aqui só
-//! consultamos (runtime sqlx, sem `.sqlx` — mesmo padrão do `politicos_ext.rs`/`og_cards.rs`) e
-//! montamos o DTO. LGPD: tudo exposto já é público (o placar É o artefato público de accountability).
+//! The decision logic (tier/percentile) is PURE and tested in `dsoc_scorecard::tier`; here we only
+//! query (runtime sqlx, no `.sqlx` — the same pattern as `politicos_ext.rs`/`og_cards.rs`) and
+//! assemble the DTO. LGPD: everything exposed is already public (the scorecard IS the public accountability artifact).
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -49,35 +49,35 @@ fn server_error() -> Response {
 // C1 + C2 — GET /politicos/{mandate_id}/responsiveness
 // ---------------------------------------------------------------------------
 
-/// O selo derivado + os números que o sustentam.
+/// The derived badge + the numbers backing it.
 #[derive(Debug, Serialize)]
 struct TierDto {
-    /// Token estável (unrated|building|bronze|silver|gold) — casa com CSS/badge no front.
+    /// Stable token (unrated|building|bronze|silver|gold) — matches the CSS/badge on the front end.
     key: String,
-    /// Rótulo pt-BR ("Ouro", "Prata"…).
+    /// pt-BR label ("Ouro", "Prata"…).
     label: String,
     /// Medalha (emoji).
     medal: String,
-    /// Explicação de uma linha.
+    /// One-line explanation.
     blurb: String,
 }
 
-/// Comparativo com os pares do mesmo nível/UF ("você respondeu 78% · média do RS 21%").
+/// Comparison with peers of the same level/UF ("you answered 78% · the RS average is 21%").
 #[derive(Debug, Serialize)]
 struct PeerComparisonDto {
-    /// Rótulo do recorte comparado (ex.: "RS", ou o nível quando a UF é desconhecida).
+    /// Label of the compared slice (e.g. "RS", or the level when the UF is unknown).
     scope: String,
-    /// Quantos pares comparáveis (com ao menos uma demanda) existem no recorte.
+    /// How many comparable peers (with at least one demand) exist in the slice.
     peer_count: i64,
-    /// Média das taxas de resposta dos pares (0–100).
+    /// Mean response rate of the peers (0–100).
     peer_avg_rate: Option<u32>,
-    /// % de pares que este mandato supera.
+    /// % of peers this mandate beats.
     better_than_pct: Option<u32>,
     /// "Top Y%" — complemento do anterior (menor = melhor).
     top_pct: Option<u32>,
 }
 
-/// Payload público da responsividade de um mandato.
+/// Public payload of a mandate's responsiveness.
 #[derive(Debug, Serialize)]
 struct ResponsivenessDto {
     mandate_id: Uuid,
@@ -88,23 +88,23 @@ struct ResponsivenessDto {
     house: Option<String>,
     /// Demandas respondidas dentro do prazo.
     answered: i64,
-    /// Demandas ignoradas (silêncio público).
+    /// Ignored demands (public silence).
     ignored: i64,
-    /// Taxa de resposta 0–100 (None quando não há demandas).
+    /// Response rate 0–100 (None when there are no demands).
     response_rate: Option<u32>,
-    /// Latência mediana das respostas, em horas (None quando nada respondido).
+    /// Median response latency, in hours (None when nothing was answered).
     median_response_hours: Option<f64>,
-    /// "Responde em ~N dias" (None quando nada respondido).
+    /// "Answers in ~N days" (None when nothing was answered).
     responds_in_days: Option<f64>,
-    /// Respostas consecutivas mais recentes (medalha de consistência).
+    /// Most recent consecutive answers (the consistency medal).
     answer_streak: u32,
     /// O selo/tier.
     tier: TierDto,
-    /// Comparativo com pares.
+    /// Peer comparison.
     peer: PeerComparisonDto,
 }
 
-/// Linha do mandato + contadores do placar (LEFT JOIN: mandato sem placar ainda conta 0/0).
+/// Mandate row + scorecard counters (LEFT JOIN: a mandate without a scorecard still counts 0/0).
 type MandateScorecardRow = (
     String,         // display_name
     String,         // office
@@ -158,7 +158,7 @@ async fn mandate_responsiveness(
             .into_response();
     };
 
-    // Latência mediana + streak vêm do ledger (scorecard_entry), quando há placar.
+    // Median latency + streak come from the ledger (scorecard_entry), when a scorecard exists.
     let (median, streak) = match scorecard_id {
         Some(sid) => match load_entries(&state, sid).await {
             Ok((med, strk)) => (med, strk),
@@ -170,7 +170,7 @@ async fn mandate_responsiveness(
     let response_rate = tier::response_rate_pct(answered, ignored);
     let tier_val = tier::responsiveness_tier(answered, ignored, median);
 
-    // Comparativo com pares: mesmo nível (sphere) + mesma UF, excluindo o próprio.
+    // Peer comparison: same level (sphere) + same UF, excluding this mandate.
     let peer = match load_peer_comparison(
         &state,
         mandate_id,
@@ -208,7 +208,7 @@ async fn mandate_responsiveness(
     (StatusCode::OK, Json(ApiResponse::ok(dto))).into_response()
 }
 
-/// Carrega latência mediana (das respondidas) e o streak de respostas mais recentes do ledger.
+/// Load the median latency (of the answered ones) and the streak of most recent answers from the ledger.
 async fn load_entries(state: &AppState, scorecard_id: Uuid) -> Result<(Option<f64>, u32), ()> {
     // Mais recente primeiro: o streak conta as respostas consecutivas do topo.
     let rows: Vec<(String, Option<f64>)> = sqlx::query_as(
@@ -222,7 +222,7 @@ async fn load_entries(state: &AppState, scorecard_id: Uuid) -> Result<(Option<f6
     .await
     .map_err(|err| tracing::error!(?err, "responsiveness: entries"))?;
 
-    // Outcomes na ordem lida (desc) → streak. Latências das respondidas → mediana pura.
+    // Outcomes in read order (desc) → streak. Latencies of the answered ones → a pure median.
     let outcomes: Vec<Outcome> = rows
         .iter()
         .filter_map(|(o, _)| o.parse::<Outcome>().ok())
@@ -235,7 +235,7 @@ async fn load_entries(state: &AppState, scorecard_id: Uuid) -> Result<(Option<f6
     Ok((median_hours(&hours), tier::current_answer_streak(&outcomes)))
 }
 
-/// Monta o comparativo com pares (mesmo `sphere` + `uf`), excluindo o próprio mandato.
+/// Assemble the peer comparison (same `sphere` + `uf`), excluding this mandate.
 async fn load_peer_comparison(
     state: &AppState,
     mandate_id: Uuid,
@@ -260,7 +260,7 @@ async fn load_peer_comparison(
     })
 }
 
-/// As taxas (0–100) dos pares comparáveis: mandatos do mesmo nível/UF com ao menos uma demanda.
+/// The rates (0–100) of comparable peers: mandates of the same level/UF with at least one demand.
 async fn load_peer_rates(
     state: &AppState,
     mandate_id: Uuid,
@@ -313,20 +313,20 @@ struct PeersParams {
 
 #[derive(Debug, Serialize)]
 struct PeersAggregateDto {
-    /// Recorte consultado (ecoado de volta pra clareza no front).
+    /// The queried slice (echoed back for clarity on the front end).
     sphere: Option<String>,
     uf: Option<String>,
     house: Option<String>,
     party: Option<String>,
-    /// Mandatos com ao menos uma demanda no recorte.
+    /// Mandates with at least one demand in the slice.
     peer_count: i64,
-    /// Média das taxas de resposta individuais (0–100).
+    /// Mean of the individual response rates (0–100).
     avg_response_rate: Option<u32>,
     /// Taxa agregada (soma respondidas / soma total) — o "78% vs 21%" honesto do grupo.
     overall_rate: Option<u32>,
-    /// Latência mediana das respostas de TODO o grupo (horas), via percentile_cont.
+    /// Median response latency of the WHOLE group (hours), via percentile_cont.
     median_response_hours: Option<f64>,
-    /// Total de respondidas e ignoradas no recorte (transparência do denominador).
+    /// Total answered and ignored in the slice (transparency of the denominator).
     total_answered: i64,
     total_ignored: i64,
 }
@@ -338,7 +338,7 @@ async fn peers_aggregate(State(state): State<AppState>, Query(p): Query<PeersPar
     let house = clean(p.house);
     let party = clean(p.party);
 
-    // Taxas individuais + totais agregados num só SELECT sobre o recorte.
+    // Individual rates + aggregate totals in a single SELECT over the slice.
     let rows: Vec<(i64, i64)> = match sqlx::query_as(
         r"SELECT s.answered, s.ignored
             FROM scorecard s
@@ -372,8 +372,8 @@ async fn peers_aggregate(State(state): State<AppState>, Query(p): Query<PeersPar
     let total_ignored: i64 = rows.iter().map(|(_, i)| *i).sum();
     let overall_rate = tier::response_rate_pct(total_answered, total_ignored);
 
-    // Latência mediana do grupo inteiro — feita no Postgres (percentile_cont) pra não puxar todas
-    // as linhas do ledger pro processo.
+    // Median latency of the whole group — done in Postgres (percentile_cont) so we never pull every
+    // ledger row into the process.
     let median: Option<f64> = match sqlx::query_scalar(
         r"SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY e.response_hours)
             FROM scorecard_entry e

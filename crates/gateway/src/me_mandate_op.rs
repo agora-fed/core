@@ -1,44 +1,44 @@
-//! # Orçamento participativo — piloto de MANDATO (D8.3).
+//! # Participatory budgeting — a MANDATE pilot (D8.3).
 //!
-//! O salto de "medir raiva" para "exercer poder": a base decide onde vai uma
-//! fatia REAL de verba. Piloto viável = **verba de emenda de um mandato** (um
-//! vereador/deputado aliado), NÃO a prefeitura — evita o ciclo institucional
-//! longo. Referência: Orçamento Participativo de Porto Alegre. A copy em toda
-//! superfície é honesta: *"piloto — verba de emenda do mandato"*.
+//! The leap from "measuring anger" to "exercising power": the base decides where a
+//! REAL slice of funding goes. A viable pilot = **one mandate's amendment funds** (an
+//! allied council member/deputy), NOT the city hall — this avoids the long
+//! institutional cycle. Reference: Porto Alegre's Participatory Budget. The copy on every
+//! surface is honest: *"pilot — the mandate's amendment funds"*.
 //!
-//! O que separa OP de "mais uma enquete" é a **prestação de contas**: depois da
-//! votação, cada item ganha um `execution_status` (previsto → em_andamento →
-//! concluído / não executado) que fecha o loop de poder.
+//! What separates PB from "one more poll" is the **accountability**: after the
+//! vote, each item gets an `execution_status` (planned → in progress →
+//! completed / not executed) that closes the power loop.
 //!
-//! ## Ciclo de uma rodada (`op_round.phase`)
+//! ## Cycle of a round (`op_round.phase`)
 //! `propostas` → `votacao` → `resultado` → `execucao`
 //!
 //! ## Gate do operador
-//! Mesmíssimo critério de `campanha.rs` / `me_mandate_crm.rs`: quem tem vínculo
-//! em `mandate_identity_binding`. O vínculo é a autorização E a chave de escopo —
-//! um operador só mexe nas rodadas do PRÓPRIO mandato (todo UPDATE chaveia por
+//! Exactly the same criterion as `campanha.rs` / `me_mandate_crm.rs`: whoever holds a binding
+//! in `mandate_identity_binding`. The binding is both the authorization AND the scope key —
+//! an operator only touches rounds of their OWN mandate (every UPDATE keys on
 //! `op_round.mandate_id = <mandato do caller>`).
 //!
 //! ## Endpoints
 //! Operador (gate):
-//! - `POST /me/mandate/op/rounds` — cria rodada (title, budget, território).
-//! - `POST /me/mandate/op/rounds/{id}/phase` — avança fase.
-//! - `POST /me/mandate/op/rounds/{id}/items/{item}/execution` — marca execução.
+//! - `POST /me/mandate/op/rounds` — create a round (title, budget, territory).
+//! - `POST /me/mandate/op/rounds/{id}/phase` — advance the phase.
+//! - `POST /me/mandate/op/rounds/{id}/items/{item}/execution` — mark execution.
 //!
-//! Cidadão logado:
-//! - `POST /op/rounds/{id}/items` — submete item (só na fase `propostas`).
-//! - `POST /op/rounds/{id}/vote` — vota num item (só na fase `votacao`), upsert
+//! Logged-in citizen:
+//! - `POST /op/rounds/{id}/items` — submit an item (only in the `propostas` phase).
+//! - `POST /op/rounds/{id}/vote` — vote on an item (only in the `votacao` phase), upsert
 //!   1 voto por rodada.
 //!
-//! Público:
+//! Public:
 //! - `GET /op/rounds/{id}` — rodada + itens + contagem de votos + ranking dentro
-//!   do orçamento.
+//!   the budget.
 //! - `GET /politicos/{mandate_id}/op` — rodadas do mandato.
 //!
 //! ## Nota LGPD
-//! A superfície pública só expõe **autoria pública** de itens (mesmo princípio
-//! da autoria de proposta). Nunca expõe quem votou em quê — o voto por-cidadão
-//! fica em `op_vote` e só alimenta a CONTAGEM agregada.
+//! The public surface only exposes the **public authorship** of items (the same principle
+//! as proposal authorship). It never exposes who voted for what — the per-citizen vote
+//! stays in `op_vote` and only feeds the aggregate COUNT.
 
 use axum::extract::{Json, Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -54,10 +54,10 @@ use uuid::Uuid;
 
 const MAX_TITLE: usize = 160;
 const MAX_DESCRIPTION: usize = 2000;
-/// Teto de sanidade da verba: R$ 100 milhões em centavos. Emenda de mandato
-/// nunca chega perto — mas barra digitação com zeros a mais.
+/// Sanity cap on the budget: R$ 100 million in cents. A mandate's amendment funds
+/// never come close — but it blocks a typo with extra zeros.
 const MAX_BUDGET_CENTS: i64 = 10_000_000_000;
-/// Teto de itens lidos por rodada — a superfície pública é um resumo.
+/// Cap of items read per round — the public surface is a summary.
 const ITEMS_LIMIT: i64 = 500;
 const ROUNDS_LIMIT: i64 = 100;
 
@@ -119,7 +119,7 @@ fn ok_json<T: Serialize>(data: T) -> Response {
     (StatusCode::OK, Json(ApiResponse::ok(data))).into_response()
 }
 
-/// Gate + escopo: resolve o mandato do caller pelo vínculo. `None` = sem vínculo.
+/// Gate + scope: resolves the caller's mandate from the binding. `None` = no binding.
 async fn caller_mandate(db: &PgPool, citizen: Uuid) -> Result<Option<Uuid>, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT mandate_id FROM mandate_identity_binding \
@@ -131,34 +131,34 @@ async fn caller_mandate(db: &PgPool, citizen: Uuid) -> Result<Option<Uuid>, sqlx
 }
 
 // ---------------------------------------------------------------------------
-// Ranking dentro do orçamento (PURO — testável sem DB)
+// Ranking within the budget (PURE — testable without a DB)
 // ---------------------------------------------------------------------------
 
-/// Entrada mínima do ranqueador: votos e custo estimado (centavos, opcional).
+/// Minimal input to the ranker: votes and estimated cost (cents, optional).
 #[derive(Debug, Clone, Copy)]
 struct RankInput {
     votes: i64,
     estimated_cents: Option<i64>,
 }
 
-/// Saída por item: posição no ranking (1-based) e se CABE na verba acumulada.
+/// Output per item: rank position (1-based) and whether it FITS the accumulated budget.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RankOutput {
     rank: i32,
     fits: bool,
 }
 
-/// **Ranking dentro do orçamento** (o coração do "vencedor = conjunto que cabe").
+/// **Ranking within the budget** (the heart of "the winner = the set that fits").
 ///
-/// Ordena por votos desc (empate → ordem de entrada, estável) e, guloso, marca
-/// `fits=true` enquanto o custo acumulado dos itens que cabem não estoura o
-/// `budget_cents`. Item sem estimativa (`None`) nunca "cabe" — não dá pra
-/// prometer o que não se sabe custar — mas ainda recebe posição no ranking.
+/// Orders by votes desc (ties → entry order, stable) and, greedily, marks
+/// `fits=true` while the accumulated cost of the fitting items stays within
+/// `budget_cents`. An item without an estimate (`None`) never "fits" — one cannot
+/// promise what one cannot cost — but it still receives a rank position.
 ///
-/// Retorna um vetor alinhado ao índice de entrada (não à ordem de votos), pra o
-/// chamador só casar de volta nos itens originais.
+/// Returns a vector aligned to the input index (not to vote order), so the
+/// caller only has to match it back onto the original items.
 fn rank_within_budget(items: &[RankInput], budget_cents: i64) -> Vec<RankOutput> {
-    // Índices ordenados por votos desc, empate por ordem original (estável).
+    // Indices ordered by votes desc, ties by original order (stable).
     let mut order: Vec<usize> = (0..items.len()).collect();
     order.sort_by(|&a, &b| items[b].votes.cmp(&items[a].votes).then_with(|| a.cmp(&b)));
 
@@ -185,7 +185,7 @@ fn rank_within_budget(items: &[RankInput], budget_cents: i64) -> Vec<RankOutput>
 }
 
 // ---------------------------------------------------------------------------
-// POST /me/mandate/op/rounds — operador cria uma rodada
+// POST /me/mandate/op/rounds — the operator creates a round
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
@@ -263,7 +263,7 @@ async fn create_round(
 }
 
 // ---------------------------------------------------------------------------
-// POST /me/mandate/op/rounds/{id}/phase — operador avança a fase
+// POST /me/mandate/op/rounds/{id}/phase — the operator advances the phase
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
@@ -291,7 +291,7 @@ async fn advance_phase(
     if !PHASES.contains(&body.phase.as_str()) {
         return fail(StatusCode::BAD_REQUEST, "invalid_phase", "Fase inválida.");
     }
-    // Escopo: só rodada DESTE mandato. rows_affected=0 ⇒ não é sua (ou não existe).
+    // Scope: only a round of THIS mandate. rows_affected=0 ⇒ not yours (or absent).
     let res = sqlx::query("UPDATE op_round SET phase = $1 WHERE id = $2 AND mandate_id = $3")
         .bind(&body.phase)
         .bind(id)
@@ -309,7 +309,7 @@ async fn advance_phase(
 }
 
 // ---------------------------------------------------------------------------
-// POST /me/mandate/op/rounds/{id}/items/{item}/execution — prestação de contas
+// POST /me/mandate/op/rounds/{id}/items/{item}/execution — accountability
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
@@ -341,8 +341,8 @@ async fn mark_execution(
             "Status de execução inválido.",
         );
     }
-    // Escopo duplo: o item precisa ser da rodada {id} E a rodada ser do mandato
-    // do caller. A subquery garante que operador de outro gabinete não marca aqui.
+    // Double scope: the item must belong to round {id} AND the round must belong to the
+    // caller's mandate. The subquery guarantees an operator of another office cannot mark here.
     let res = sqlx::query(
         "UPDATE op_item SET execution_status = $1 \
          WHERE id = $2 AND round_id = $3 \
@@ -371,7 +371,7 @@ async fn mark_execution(
 }
 
 // ---------------------------------------------------------------------------
-// POST /op/rounds/{id}/items — cidadão logado submete um item (fase propostas)
+// POST /op/rounds/{id}/items — a logged-in citizen submits an item (proposals phase)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
@@ -463,7 +463,7 @@ async fn submit_item(
 }
 
 // ---------------------------------------------------------------------------
-// POST /op/rounds/{id}/vote — cidadão logado vota (fase votacao), 1 por rodada
+// POST /op/rounds/{id}/vote — a logged-in citizen votes (voting phase), 1 per round
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
@@ -524,7 +524,7 @@ async fn cast_vote(
             "Item não encontrado nesta rodada.",
         );
     }
-    // Upsert: 1 voto por (rodada, cidadão). Trocar de item sobrescreve.
+    // Upsert: 1 vote per (round, citizen). Switching item overwrites.
     let res = sqlx::query(
         "INSERT INTO op_vote (round_id, item_id, citizen_id) \
          VALUES ($1, $2, $3) \
@@ -546,7 +546,7 @@ async fn cast_vote(
 }
 
 // ---------------------------------------------------------------------------
-// GET /op/rounds/{id} — superfície pública (rodada + itens + ranking)
+// GET /op/rounds/{id} — public surface (round + items + ranking)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Serialize)]
@@ -556,13 +556,13 @@ struct PublicItemDto {
     description: String,
     estimated_cents: Option<i64>,
     votes: i64,
-    /// Autoria pública (handle) — `None` se item do gabinete/anônimo.
+    /// Public authorship (handle) — `None` when the item is the office's/anonymous.
     author_handle: Option<String>,
     author_display_name: Option<String>,
     execution_status: Option<String>,
-    /// Posição no ranking por votos (1-based). Só significativo em resultado/execução.
+    /// Rank position by votes (1-based). Only meaningful in the result/execution phases.
     rank: i32,
-    /// Cabe na verba acumulada (o "vencedor" é o conjunto que cabe).
+    /// Fits within the accumulated budget (the "winner" is the set that fits).
     fits_budget: bool,
     created_at: DateTime<Utc>,
 }
@@ -578,7 +578,7 @@ struct PublicRoundDto {
     municipio_ibge: Option<i32>,
     phase: String,
     total_votes: i64,
-    /// Soma dos custos dos itens que cabem (o compromisso do conjunto vencedor).
+    /// Sum of the costs of the fitting items (the winning set's commitment).
     allocated_cents: i64,
     items: Vec<PublicItemDto>,
     created_at: DateTime<Utc>,
@@ -707,7 +707,7 @@ async fn public_round(State(state): State<AppState>, Path(id): Path<Uuid>) -> Re
 }
 
 // ---------------------------------------------------------------------------
-// GET /politicos/{mandate_id}/op — rodadas de um mandato (superfície pública)
+// GET /politicos/{mandate_id}/op — a mandate's rounds (public surface)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -724,7 +724,7 @@ struct RoundSummaryDto {
 }
 
 /// `GET /op/rounds` — rodadas recentes de todos os mandatos (descoberta + SSG).
-/// Público: só metadados agregados, sem PII.
+/// Public: aggregate metadata only, no PII.
 async fn recent_rounds(State(state): State<AppState>) -> Response {
     let rounds: Vec<RoundSummaryDto> = match sqlx::query_as(
         "SELECT r.id, r.title, r.budget_cents, r.uf, r.municipio_ibge, r.phase, \
@@ -786,7 +786,7 @@ mod tests {
 
     #[test]
     fn ranks_by_votes_desc_stable_on_ties() {
-        // b tem mais votos; a e c empatam → mantêm ordem de entrada (a antes de c).
+        // b has more votes; a and c tie → they keep entry order (a before c).
         let items = [item(3, Some(100)), item(5, Some(100)), item(3, Some(100))];
         let out = rank_within_budget(&items, 1_000);
         assert_eq!(out[1].rank, 1); // b (5 votos) é o 1º
@@ -796,8 +796,8 @@ mod tests {
 
     #[test]
     fn fits_marks_the_winning_set_within_budget() {
-        // Orçamento 250. Por votos desc: a(300,cost150), b(200,cost150), c(100,cost90).
-        // a cabe (150 ≤ 250). b NÃO cabe (150+150=300 > 250). c cabe (150+90=240 ≤ 250).
+        // Budget 250. By votes desc: a(300,cost150), b(200,cost150), c(100,cost90).
+        // a fits (150 ≤ 250). b does NOT (150+150=300 > 250). c fits (150+90=240 ≤ 250).
         let items = [
             item(300, Some(150)),
             item(200, Some(150)),
@@ -807,7 +807,7 @@ mod tests {
         assert!(out[0].fits, "a deve caber");
         assert!(!out[1].fits, "b não deve caber");
         assert!(out[2].fits, "c deve caber (pula o que não coube)");
-        // Acumulado dos que cabem = 150 + 90 = 240.
+        // Accumulated cost of the fitting items = 150 + 90 = 240.
         let allocated: i64 = items
             .iter()
             .zip(out.iter())

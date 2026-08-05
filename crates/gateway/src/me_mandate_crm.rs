@@ -1,31 +1,31 @@
-//! # CRM de gabinete (C6 do plano de crítica de produto).
+//! # Office CRM (C6 of the product critique plan).
 //!
-//! O 1º motivo NÃO-defensivo pra o gabinete abrir o app: em vez de "fila de
-//! tarefas com prazo correndo", mostra **quem te procurou e o que pediu** — uma
-//! ferramenta de RELACIONAMENTO com a base, não de cobrança.
+//! The 1st NON-defensive reason for an office to open the app: instead of a "task queue
+//! with a running deadline", it shows **who approached you and what they asked** — a
+//! RELATIONSHIP tool for the base, not a pressure tool.
 //!
 //! ## Gate
-//! Só o operador do mandato: quem tem vínculo em `mandate_identity_binding`
-//! (mesmo critério do painel-mandato e da `campanha.rs`). O CRM é sempre
-//! escopado ao mandato DAQUELE operador — a query chaveia por
-//! `proposal_target.mandate_id = <mandato do caller>`, então é estruturalmente
-//! impossível um operador ver o CRM de outro gabinete.
+//! Only the mandate's operator: whoever holds a binding in `mandate_identity_binding`
+//! (the same criterion as the mandate panel and `campanha.rs`). The CRM is always
+//! scoped to THAT operator's mandate — the query keys on
+//! `proposal_target.mandate_id = <the caller's mandate>`, so it is structurally
+//! impossible for an operator to see another office's CRM.
 //!
-//! - `GET /me/mandate/crm` — pessoas que dirigiram propostas a este mandato,
-//!   com histórico por pessoa, tema (agrupamento leve por palavra-chave) e
-//!   status (respondida/pendente/silêncio/aberta).
+//! - `GET /me/mandate/crm` — people who directed proposals at this mandate,
+//!   with a history per person, a theme (light keyword grouping) and a
+//!   status (answered/pending/silence/open).
 //!
 //! ## Nota LGPD (CUIDADO)
-//! Só expõe **dado JÁ PÚBLICO**: a autoria de uma proposta dirigida é pública
-//! (a página pública `/propostas/{id}` já mostra `author_handle`,
-//! `author_public_handle` e o título/corpo). Este endpoint reagrega esse mesmo
-//! dado público POR PESSOA, para o gabinete destinatário.
+//! It only exposes **ALREADY-PUBLIC data**: the authorship of a directed proposal is public
+//! (the public page `/propostas/{id}` already shows `author_handle`,
+//! `author_public_handle` and the title/body). This endpoint re-aggregates that same
+//! public data PER PERSON, for the recipient office.
 //!
-//! **NUNCA** expõe votos/apoios (agregados e privados por design — a plataforma
-//! nem guarda o voto por-cidadão de forma consultável aqui), nem PII de
-//! `auth_credential` (e-mail/telefone/CPF). Propostas anônimas
-//! (`author_citizen_id IS NULL`) ficam de fora: não há pessoa com quem
-//! construir relacionamento e não há autoria pública a atribuir.
+//! It **NEVER** exposes votes/support (aggregate and private by design — the platform
+//! does not even keep a per-citizen vote queryable here), nor PII from
+//! `auth_credential` (e-mail/phone/document). Anonymous proposals
+//! (`author_citizen_id IS NULL`) are left out: there is no person to build a
+//! relationship with and no public authorship to attribute.
 
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -39,8 +39,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
-/// Teto de linhas lidas — o CRM é um resumo, não um export. Em prod a escala é
-/// pequena; a paginação fina fica pra quando um gabinete tiver milhares.
+/// Cap of rows read — the CRM is a summary, not an export. At production scale this is
+/// small; fine-grained pagination waits until an office has thousands.
 const CRM_LIMIT: i64 = 1000;
 
 pub fn routes(state: AppState) -> Router<()> {
@@ -72,12 +72,12 @@ fn storage_error() -> Response {
 // DTOs
 // ---------------------------------------------------------------------------
 
-/// Uma demanda (proposta dirigida) de uma pessoa a este mandato.
+/// One demand (a directed proposal) from a person to this mandate.
 #[derive(Debug, Serialize)]
 struct CrmDemand {
     proposal_id: Uuid,
     title: String,
-    /// Tema derivado por palavra-chave (agrupamento leve, sem embeddings — C7).
+    /// Theme derived by keyword (light grouping, no embeddings — C7).
     theme: String,
     /// `respondida` | `pendente` | `silencio` | `aberta` (aguardando apoios).
     status: String,
@@ -85,13 +85,13 @@ struct CrmDemand {
     created_at: DateTime<Utc>,
 }
 
-/// Uma pessoa que procurou o gabinete, com seu histórico de demandas.
+/// A person who approached the office, with their history of demands.
 #[derive(Debug, Serialize)]
 struct CrmContact {
     citizen_id: Uuid,
-    /// Handle escolhido (`@fulana`) — pode ser `None` se nunca definiu.
+    /// Chosen handle (`@fulana`) — may be `None` when never set.
     handle: Option<String>,
-    /// Handle opaco público (`u-<hex>`), sempre presente — fallback de exibição.
+    /// Opaque public handle (`u-<hex>`), always present — the display fallback.
     public_handle: String,
     display_name: Option<String>,
     avatar_url: Option<String>,
@@ -105,7 +105,7 @@ struct CrmContact {
     demands: Vec<CrmDemand>,
 }
 
-/// Agregação leve por tema (fundação do C7 — agregador de demandas).
+/// Light aggregation by theme (groundwork for C7 — the demand aggregator).
 #[derive(Debug, Serialize)]
 struct CrmTheme {
     theme: String,
@@ -135,7 +135,7 @@ struct CrmDto {
 struct CrmParams {
     /// Filtro opcional por status (`respondida|pendente|silencio|aberta`).
     status: Option<String>,
-    /// Filtro opcional por tema (rótulo exato retornado em `themes[].theme`).
+    /// Optional filter by theme (the exact label returned in `themes[].theme`).
     theme: Option<String>,
 }
 
@@ -143,7 +143,7 @@ struct CrmParams {
 // Handler
 // ---------------------------------------------------------------------------
 
-/// Linha crua da query (uma por demanda dirigida ao mandato).
+/// Raw query row (one per demand directed at the mandate).
 #[derive(sqlx::FromRow)]
 struct CrmRow {
     proposal_id: Uuid,
@@ -171,7 +171,7 @@ async fn crm(
         );
     };
 
-    // Gate + resolução do mandato: o vínculo é a autorização E a chave de escopo.
+    // Gate + mandate resolution: the binding is the authorization AND the scope key.
     let mandate_id: Option<Uuid> = match sqlx::query_scalar(
         "SELECT mandate_id FROM mandate_identity_binding \
          WHERE citizen_id = $1 ORDER BY verified_at DESC LIMIT 1",
@@ -197,9 +197,9 @@ async fn crm(
     let media_base = std::env::var("MEDIA_BASE_URL").unwrap_or_else(|_| "/media".to_owned());
     let media_base = media_base.trim_end_matches('/').to_owned();
 
-    // Só propostas com autor NÃO-nulo (autoria pública). Anônimas ficam de fora
-    // (nada de PII, nada de relacionamento sem contraparte). O status vem do SLA
-    // deste mandato, quando existe; sem SLA a demanda ainda reúne apoios ("aberta").
+    // Only proposals with a NON-null author (public authorship). Anonymous ones are left out
+    // (no PII, no relationship without a counterpart). The status comes from this
+    // mandate's SLA, when one exists; without an SLA the demand is still gathering support ("open").
     let rows: Vec<CrmRow> = match sqlx::query_as(
         r"
         SELECT p.id                 AS proposal_id,
@@ -246,11 +246,11 @@ async fn crm(
 }
 
 // ---------------------------------------------------------------------------
-// Agregação (pura — testável sem DB)
+// Aggregation (pure — testable without a DB)
 // ---------------------------------------------------------------------------
 
-/// Mapeia o status do SLA para o vocabulário do CRM. Sem SLA = a demanda ainda
-/// reúne apoios (não cruzou o gatilho) → "aberta".
+/// Map the SLA status onto the CRM's vocabulary. No SLA = the demand is still
+/// gathering support (it has not crossed the trigger) → "open".
 fn status_label(sla_status: Option<&str>) -> &'static str {
     match sla_status {
         Some("answered") | Some("acted") => "respondida",
@@ -261,8 +261,8 @@ fn status_label(sla_status: Option<&str>) -> &'static str {
 }
 
 /// Agrega linhas cruas em contatos (por pessoa) + temas + totais. Aplica os
-/// filtros opcionais de status/tema ANTES de agregar, pra os contadores
-/// refletirem exatamente o que a UI mostra.
+/// optional status/theme filters BEFORE aggregating, so the counters
+/// reflect exactly what the UI shows.
 fn build_crm(
     mandate_id: Uuid,
     rows: Vec<CrmRow>,
@@ -270,7 +270,7 @@ fn build_crm(
     status_filter: Option<&str>,
     theme_filter: Option<&str>,
 ) -> CrmDto {
-    // Preserva a ordem de aparição (rows já vêm por created_at DESC).
+    // Preserves order of appearance (rows already arrive by created_at DESC).
     let mut order: Vec<Uuid> = Vec::new();
     let mut by_citizen: BTreeMap<Uuid, CrmContact> = BTreeMap::new();
     let mut theme_demands: BTreeMap<String, i64> = BTreeMap::new();
@@ -326,7 +326,7 @@ fn build_crm(
             "silencio" => entry.silence_count += 1,
             _ => entry.open_count += 1,
         }
-        // rows vêm DESC: o 1º visto é o mais recente, o último o mais antigo.
+        // rows arrive DESC: the first seen is the most recent, the last the oldest.
         if row.created_at > entry.last_contact_at {
             entry.last_contact_at = row.created_at;
         }
@@ -364,7 +364,7 @@ fn build_crm(
         .collect();
     totals.contacts = contacts.len() as i64;
 
-    // Temas ordenados por volume desc, depois alfabético (estável).
+    // Themes ordered by volume desc, then alphabetically (stable).
     let mut themes: Vec<CrmTheme> = theme_demands
         .into_iter()
         .map(|(theme, demands_count)| {
@@ -390,13 +390,13 @@ fn build_crm(
     }
 }
 
-/// Agrupamento leve por tema (fundação do C7). Sem embeddings: casa o
-/// título+corpo (minúsculas) contra um dicionário curado de temas cívicos
-/// brasileiros. Primeira correspondência vence; sem correspondência → "Geral".
-/// Substituível por embeddings reais (C7) sem mudar o contrato do endpoint.
+/// Light grouping by theme (groundwork for C7). No embeddings: it matches the
+/// title+body (lowercased) against a curated dictionary of Brazilian civic
+/// themes. First match wins; no match → "Geral".
+/// Replaceable by real embeddings (C7) without changing the endpoint's contract.
 fn derive_theme(title: &str, body: &str) -> String {
     let hay = format!("{title} {body}").to_lowercase();
-    // (rótulo, palavras-chave). Ordem = prioridade.
+    // (label, keywords). Order = priority.
     const THEMES: &[(&str, &[&str])] = &[
         (
             "Saúde",
@@ -616,12 +616,12 @@ mod tests {
         assert_eq!(dto.totals.answered, 1);
         assert_eq!(dto.totals.silence, 1);
         assert_eq!(dto.totals.open, 1);
-        // Ana tem 2 demandas; janela de contato cobre t0..t1.
+        // Ana has 2 demands; the contact window covers t0..t1.
         let ana_c = dto.contacts.iter().find(|c| c.citizen_id == ana).unwrap();
         assert_eq!(ana_c.demands_count, 2);
         assert_eq!(ana_c.first_contact_at, t0);
         assert_eq!(ana_c.last_contact_at, t1);
-        // Saúde agrega 2 demandas de 1 pessoa.
+        // Health aggregates 2 demands from 1 person.
         let saude = dto.themes.iter().find(|t| t.theme == "Saúde").unwrap();
         assert_eq!(saude.demands_count, 2);
         assert_eq!(saude.contacts_count, 1);
