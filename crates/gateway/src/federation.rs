@@ -427,24 +427,17 @@ async fn inbox_post(
     };
     let svc = ProfileService::from_state(&state);
     let org = OrgId::from_uuid(DEFAULT_ORG_UUID);
-    let profile = match svc.find_public_by_handle(org, &handle).await {
-        Ok(p) => p,
-        // F4: inbox de FÓRUM (Group) — Follow/Undo tratados no módulo dedicado.
-        Err(_) => {
-            if let Some(forum) = crate::forum_federation::lookup_by_handle(&state.db, &handle).await
-            {
-                let Ok(activity) = serde_json::from_slice::<Value>(&body) else {
-                    return StatusCode::BAD_REQUEST.into_response();
-                };
-                let status =
-                    crate::forum_federation::inbox(&state.db, &host, &handle, &forum, &activity)
-                        .await;
-                return status.into_response();
-            }
-            return StatusCode::NOT_FOUND.into_response();
-        }
+    // Resolve the recipient BEFORE authenticating, but MUTATE NOTHING until the
+    // signature is verified. A Group/forum handle takes the dedicated branch —
+    // which, since issue #6, runs only AFTER the same verification the Person
+    // inbox performs (SECURITY: an unsigned Undo{Follow} used to delete rows).
+    let forum_recipient = match svc.find_public_by_handle(org, &handle).await {
+        Ok(p) => Ok(p),
+        Err(_) => match crate::forum_federation::lookup_by_handle(&state.db, &handle).await {
+            Some(forum) => Err(forum),
+            None => return StatusCode::NOT_FOUND.into_response(),
+        },
     };
-    let citizen = CitizenId::from_uuid(profile.citizen_id);
 
     // --- 1. Parse Signature header ---------------------------------------------------------
     let sig_value = match headers.get("signature").and_then(|v| v.to_str().ok()) {
@@ -555,6 +548,42 @@ async fn inbox_post(
         tracing::warn!("inbox activity missing id");
         return StatusCode::BAD_REQUEST.into_response();
     }
+
+    // --- 4b. Group/forum recipient: authenticated path (issue #6) --------------------------
+    // Reached ONLY after signature verification. The declared `actor` must be
+    // the signer — otherwise a valid signer could act on behalf of anyone.
+    let profile = match forum_recipient {
+        Ok(profile) => profile,
+        Err(forum) => {
+            let declared_actor = activity.get("actor").and_then(Value::as_str).unwrap_or("");
+            if declared_actor != signer_actor_url {
+                tracing::warn!(
+                    declared = declared_actor,
+                    signer = %signer_actor_url,
+                    "forum inbox: actor does not match the signer"
+                );
+                return StatusCode::UNAUTHORIZED.into_response();
+            }
+            // Insert-before-act idempotency (0678): a replayed activity is a no-op.
+            let fresh = sqlx::query(
+                "INSERT INTO forum_inbox_seen (activity_id, forum_id) \
+                 VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            )
+            .bind(&activity_id)
+            .bind(forum.id)
+            .execute(&state.db)
+            .await
+            .map(|r| r.rows_affected() > 0)
+            .unwrap_or(false);
+            if !fresh {
+                return StatusCode::ACCEPTED.into_response();
+            }
+            let status =
+                crate::forum_federation::inbox(&state.db, &host, &handle, &forum, &activity).await;
+            return status.into_response();
+        }
+    };
+    let citizen = CitizenId::from_uuid(profile.citizen_id);
 
     // --- 5. Idempotency: short-circuit duplicates ------------------------------------------
     match svc.mark_inbox_seen(&activity_id, citizen).await {

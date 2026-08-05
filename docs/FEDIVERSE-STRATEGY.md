@@ -118,6 +118,8 @@ This is a genuine Mastodon-compatible implementation, not a skeleton:
 | `Group` actor with `publicKey` | ✅ | `group_actor_json()` |
 | WebFinger resolution of forum handles | ✅ | `webfinger_jrd()`, delegated by `federation.rs` |
 | Territorial reversed handle (`saude.santos.sp`) | ✅ | `handle_to_path()`/`path_to_handle()` |
+| HTTP-Signature verification on the Group inbox | ✅ | `federation.rs` §4b (issue #6, v0.71.0) |
+| Inbox idempotency (`forum_inbox_seen`, 0678) | ✅ | insert-before-act |
 | `Follow` → `Accept` signed with the Group key | ✅ | `inbox()` |
 | `Undo{Follow}` | ✅ | `inbox()` |
 | `audience` on the object | ✅ | `topic_object_json()` |

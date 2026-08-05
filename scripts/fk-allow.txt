@@ -32,3 +32,5 @@
 # Tag-a-representative (issue #3): tags join a forum topic (forums crate) and a mandate
 # (mandates crate) — the deliberate cross-module link IS the feature.
 0676_topic_representative_tags.sql forum_topic
+# Group inbox idempotency (issue #6): the log belongs to the forums crate, same as forum.
+0678_forum_inbox_seen.sql forum

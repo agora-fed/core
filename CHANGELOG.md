@@ -7,6 +7,23 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 
 ## [Unreleased]
 
+## [0.71.0] — 2026-08-05
+
+### Security
+- **The Group/forum inbox now requires a verified HTTP Signature** (issue #6).
+  The forum branch of `POST /actors/{handle}/inbox` ran *before* the signature
+  section, so any unauthenticated caller could act as any actor: an unsigned
+  `Undo{Follow}` deleted a `forum_follower` row, and an unsigned `Follow`
+  inserted one (plus a server-side fetch of an attacker-supplied URL). The
+  branch now runs only after the same parse → fetch signer key → build signing
+  string → verify path the `Person` inbox uses, and additionally:
+  * rejects when the declared `actor` differs from the verified signer (401);
+  * enforces insert-before-act idempotency in the new `forum_inbox_seen`
+    table (migration 0678) — a replayed activity is a no-op `202`;
+  * mutates nothing before verification (recipient resolution is read-only).
+  Regression tests assert an unsigned `Undo{Follow}` leaves the follower row
+  intact and that malformed signatures / unknown handles never mutate state.
+
 ## [0.70.2] — 2026-08-05
 
 ### Improved

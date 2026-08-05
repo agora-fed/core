@@ -3805,3 +3805,159 @@ async fn representative_daily_sweep_is_idempotent_and_consolidated() {
             .unwrap();
     assert_eq!(rows, 1, "sweep must never double-send a day");
 }
+
+// ---------------------------------------------------------------------------
+// SECURITY — Group/forum inbox requires a verified HTTP Signature (issue #6)
+// ---------------------------------------------------------------------------
+
+/// Seed a federated forum reachable at the handle it returns.
+async fn seed_federated_forum(db: &Db, org: Uuid) -> (Uuid, String) {
+    let forum = Uuid::now_v7();
+    // UUIDv7 is time-ordered: the LEADING hex is shared by uuids minted in the
+    // same millisecond, so slice the TRAILING (random) half for the slug.
+    let hex = forum.simple().to_string();
+    let slug = format!("sec{}", &hex[hex.len() - 12..]);
+    sqlx::query(
+        "INSERT INTO forum (id, org_id, slug, full_path, name, kind, federated, created_at)
+         VALUES ($1, $2, $3, $3, 'Fórum federado (teste)', 'institucional', true, $4)",
+    )
+    .bind(forum)
+    .bind(org)
+    .bind(&slug)
+    .bind(Utc::now())
+    .execute(db)
+    .await
+    .expect("seed federated forum");
+    (forum, slug)
+}
+
+/// An UNSIGNED activity must never mutate forum state. Before issue #6 the
+/// forum branch ran before the signature section, so this `Undo{Follow}`
+/// deleted the follower row outright.
+#[tokio::test]
+async fn unsigned_group_inbox_activity_is_rejected_and_mutates_nothing() {
+    let (app, st) = app().await;
+    let org = uuid::uuid!("11111111-1111-1111-1111-111111111111");
+    sqlx::query(
+        "INSERT INTO org (id, slug, name, created_at) VALUES ($1, $2, 'Org', $3)
+                 ON CONFLICT (id) DO NOTHING",
+    )
+    .bind(org)
+    .bind(format!("org-{}", org.simple()))
+    .bind(Utc::now())
+    .execute(&st.db)
+    .await
+    .expect("seed org");
+    let (forum, slug) = seed_federated_forum(&st.db, org).await;
+
+    // A follower the attacker will try to remove without any signature.
+    let victim = "https://remote.example/users/victim";
+    sqlx::query(
+        "INSERT INTO forum_follower (forum_id, remote_actor_url, remote_inbox_url, accepted_at)
+         VALUES ($1, $2, 'https://remote.example/inbox', now())",
+    )
+    .bind(forum)
+    .bind(victim)
+    .execute(&st.db)
+    .await
+    .expect("seed follower");
+
+    let undo = serde_json::json!({
+        "id": "https://evil.example/activities/undo-1",
+        "type": "Undo",
+        "actor": victim,
+        "object": { "type": "Follow", "actor": victim }
+    })
+    .to_string();
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/actors/{slug}/inbox"))
+                .header(header::HOST, "democracia.social.br")
+                .header(header::CONTENT_TYPE, "application/activity+json")
+                .body(Body::from(undo))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::UNAUTHORIZED,
+        "unsigned Group activity must be refused"
+    );
+
+    let still_there: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM forum_follower WHERE forum_id = $1 AND remote_actor_url = $2)",
+    )
+    .bind(forum)
+    .bind(victim)
+    .fetch_one(&st.db)
+    .await
+    .unwrap();
+    assert!(
+        still_there,
+        "SECURITY REGRESSION: unsigned Undo{{Follow}} deleted a forum_follower row"
+    );
+}
+
+/// A malformed/garbage Signature header is refused before any forum lookup
+/// side effect — and an unknown handle still 404s (no enumeration change).
+#[tokio::test]
+async fn group_inbox_rejects_malformed_signature_and_unknown_handle() {
+    let (app, st) = app().await;
+    let org = uuid::uuid!("11111111-1111-1111-1111-111111111111");
+    sqlx::query(
+        "INSERT INTO org (id, slug, name, created_at) VALUES ($1, $2, 'Org', $3)
+                 ON CONFLICT (id) DO NOTHING",
+    )
+    .bind(org)
+    .bind(format!("org-{}", org.simple()))
+    .bind(Utc::now())
+    .execute(&st.db)
+    .await
+    .expect("seed org");
+    let (_, slug) = seed_federated_forum(&st.db, org).await;
+
+    let body = serde_json::json!({
+        "id": "https://evil.example/activities/x",
+        "type": "Follow",
+        "actor": "https://evil.example/users/x"
+    })
+    .to_string();
+
+    // Garbage Signature header -> 400 (parse), never a mutation.
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/actors/{slug}/inbox"))
+                .header(header::HOST, "democracia.social.br")
+                .header("signature", "not-a-signature")
+                .body(Body::from(body.clone()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert!(
+        resp.status() == StatusCode::BAD_REQUEST || resp.status() == StatusCode::UNAUTHORIZED,
+        "got {}",
+        resp.status()
+    );
+
+    // Unknown handle stays 404 even unsigned.
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/actors/nao-existe-mesmo/inbox")
+                .header(header::HOST, "democracia.social.br")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
