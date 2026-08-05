@@ -1,23 +1,23 @@
-//! # Signup verify — verificação de e-mail antes de criar a conta (0.25.0-fediverso).
+//! # Signup verify — e-mail verification before the account exists (0.25.0-fediverse).
 //!
-//! Fluxo antigo: `POST /auth/register` gravava citizen + credential + session
-//! imediatamente. Isso significava que qualquer bot com CPF válido criava
-//! conta viva sem provar controle do e-mail, e um CPF ficava travado por
-//! e-mails errados/inválidos.
+//! Old flow: `POST /auth/register` wrote citizen + credential + session
+//! immediately. That meant any bot with a valid identity document created a
+//! live account without proving control of the e-mail, and a document stayed
+//! locked by wrong/invalid e-mails.
 //!
-//! Fluxo novo (`ADR-0011`):
-//! 1. **Request** (`POST /auth/register` ou `.../politician`): normalizamos,
-//!    validamos e hasheamos tudo, e persistimos numa `auth_pending_signup`
-//!    (migration 0106) com um token SHA-256. **Nenhuma linha em `citizen`
-//!    ainda.** Um e-mail com link `<origin>/confirmar-conta?token=…` sai
-//!    pela infra SMTP existente (mesmo transport do password-reset).
+//! New flow (`ADR-0011`):
+//! 1. **Request** (`POST /auth/register` or `.../politician`): we normalize,
+//!    validate and hash everything, and persist an `auth_pending_signup`
+//!    (migration 0106) with a SHA-256 token. **No row in `citizen`**
+//!    yet. An e-mail with the link `<origin>/confirmar-conta?token=…` goes out
+//!    through the existing SMTP infrastructure (the password-reset transport).
 //! 2. **Confirm** (`POST /auth/register/confirm`): recebemos o plaintext do
-//!    link, achamos a pending pelo hash, e materializamos citizen, credential
-//!    e sessão numa única transação (mark used, insert citizen, insert
+//!    link, find the pending row by hash, and materialize citizen, credential
+//!    and session in a single transaction (mark used, insert citizen, insert
 //!    credential, [politico: mandate_binding + is_public=true], issue session).
 //!
-//! Espelha o pattern do [`crate::password_reset`] — mesmo hashing, mesma TTL
-//! curta, mesmo cuidado de dev-mode logar o link quando SMTP não configurado.
+//! Mirrors the [`crate::password_reset`] pattern — same hashing, same short
+//! TTL, same dev-mode care of logging the link when SMTP is unconfigured.
 
 use std::time::Duration;
 
@@ -36,18 +36,18 @@ use crate::domain;
 use crate::queries;
 use crate::service::IssuedSession;
 
-/// Default TTL do link de verificação (24h). Override com `AUTH_SIGNUP_VERIFY_TTL_SECS`.
+/// Default TTL of the verification link (24h). Override with `AUTH_SIGNUP_VERIFY_TTL_SECS`.
 const DEFAULT_TTL_SECS: i64 = 24 * 3600;
-/// Bytes aleatórios no token (256 bits → 43 chars base64url no-pad). Mesmo tamanho do password_reset.
+/// Random bytes in the token (256 bits → 43 base64url chars, no padding). Same size as password_reset.
 const TOKEN_BYTES: usize = 32;
-/// SMTP send timeout — não travar a requisição se o relay estiver lento.
+/// SMTP send timeout — never stall the request when the relay is slow.
 const SMTP_TIMEOUT_SECS: u64 = 5;
-/// Janela e teto do rate-limit por IP no `request` (P3.1). Configurável via
-/// `AUTH_SIGNUP_RATE_MAX_PER_HOUR` (default 3). Sem override quando
-/// `request_ip=None` — quem não vem com X-Forwarded-For não trava ninguém.
+/// Window and cap of the per-IP rate limit on `request` (P3.1). Configurable via
+/// `AUTH_SIGNUP_RATE_MAX_PER_HOUR` (default 3). No override when
+/// `request_ip=None` — a caller without X-Forwarded-For never locks anyone out.
 const DEFAULT_RATE_MAX_PER_HOUR: i64 = 3;
 
-/// Papel do cadastro pendente. Determina qual materialização o `confirm`
+/// Role of the pending signup. Determines which materialization `confirm`
 /// executa (register vs register_politician).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PendingRole {
@@ -74,7 +74,7 @@ impl PendingRole {
     }
 }
 
-/// Eleição-alvo do cadastro de candidato(a). Quando 2028 chegar, vira env/config.
+/// Target election of a candidate signup. When 2028 arrives, this becomes env/config.
 const CANDIDATE_ELECTION_YEAR: i32 = 2026;
 
 /// Metadados da candidatura auto-declarada (migration 0526). Validados no
@@ -82,17 +82,17 @@ const CANDIDATE_ELECTION_YEAR: i32 = 2026;
 /// e materializados no confirm (mandate + binding + candidacy).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CandidateMeta {
-    /// Nome de urna (público).
+    /// Ballot name (public).
     pub display_name: String,
     /// Cargo pretendido — mesmo eixo de `candidacy.office`.
     pub office: String,
-    /// UF (obrigatória exceto presidente).
+    /// UF (mandatory except for president).
     pub uf: Option<String>,
-    /// Município (obrigatório pra cargos municipais).
+    /// Municipality (mandatory for municipal offices).
     pub municipio: Option<String>,
-    /// Sigla do partido na filiação atual.
+    /// Party sigla of the current affiliation.
     pub party_sigla: String,
-    /// Número de urna, se já definido pelo partido.
+    /// Ballot number, when the party has already assigned one.
     pub number: Option<String>,
 }
 
@@ -110,7 +110,7 @@ impl CandidateMeta {
     /// Normaliza + valida. Retorna `(meta_normalizada, sphere)`.
     ///
     /// # Errors
-    /// [`Error::Validation`] com mensagem amigável pra cada campo inválido.
+    /// [`Error::Validation`] with a friendly message per invalid field.
     pub fn validated(mut self) -> Result<(Self, &'static str)> {
         self.display_name = self.display_name.trim().to_owned();
         if self.display_name.chars().count() < 3 || self.display_name.chars().count() > 80 {
@@ -177,15 +177,15 @@ impl CandidateMeta {
     }
 }
 
-/// Resultado do `confirm`: sessão pronta (instância aberta) ou conta criada
-/// mas travada em revisão manual (`GATEWAY_SIGNUP_REQUIRES_REVIEW`, 0514).
+/// Result of `confirm`: a ready session (open instance) or an account created
+/// but held for manual review (`GATEWAY_SIGNUP_REQUIRES_REVIEW`, 0514).
 #[derive(Debug)]
 pub enum ConfirmOutcome {
     Session(Box<IssuedSession>),
     PendingReview { email: String },
 }
 
-/// A instância exige aprovação manual de novos cadastros? Nome da env var
+/// Does the instance require manual approval of new signups? The env var name
 /// segue o documentado na migration 0514 (`GATEWAY_SIGNUP_REQUIRES_REVIEW`).
 fn signup_requires_review() -> bool {
     std::env::var("GATEWAY_SIGNUP_REQUIRES_REVIEW")
@@ -202,9 +202,9 @@ struct SmtpConfig {
     from: String,
 }
 
-/// Serviço da verificação de e-mail no cadastro. Segue o mesmo shape do
-/// [`crate::password_reset::PasswordResetService`] — construção via
-/// [`Self::from_state`] pra ler SMTP + origem pública do ambiente.
+/// Service for e-mail verification at signup. Follows the same shape as
+/// [`crate::password_reset::PasswordResetService`] — construction via
+/// [`Self::from_state`] to read SMTP + the public origin from the environment.
 #[derive(Clone)]
 pub struct SignupVerifyService {
     db: Db,
@@ -217,9 +217,9 @@ pub struct SignupVerifyService {
     identity_verifier: std::sync::Arc<dyn crate::identity_verify::IdentityVerifier>,
 }
 
-/// Dados de identidade auto-declarados no cadastro, confrontados com a base
-/// autorizada (R-KYC #50). Todos opcionais por compat; o front novo envia
-/// nome+nascimento+sexo (verificação) e, opcionalmente, o título de eleitor.
+/// Self-declared identity data at signup, matched against the authorized base
+/// (R-KYC #50). All optional for compat; the new front end sends
+/// name+birth+sex (verification) and, optionally, the electoral registry.
 #[derive(Debug, Clone, Default)]
 pub struct SignupIdentity {
     /// Nome completo informado.
@@ -228,19 +228,19 @@ pub struct SignupIdentity {
     pub nascimento: Option<String>,
     /// Sexo `M`/`F`.
     pub sexo: Option<String>,
-    /// Título de eleitor (opcional; sem ele = sem poder de voto).
+    /// Electoral registry (optional; without it = no voting power).
     pub titulo_eleitor: Option<String>,
-    /// UF de domicílio (sigla 2 letras). Obrigatória para cidadão (eixo territorial).
+    /// Residence UF (2-letter code). Mandatory for a citizen (the territorial axis).
     pub uf: Option<String>,
-    /// Município de domicílio (código IBGE). Obrigatório para cidadão; deve
-    /// existir em `municipio_ibge` e pertencer à `uf`.
+    /// Residence municipality (IBGE code). Mandatory for a citizen; must exist
+    /// in `municipio_ibge` and belong to the `uf`.
     pub municipio_ibge: Option<i32>,
-    /// Nick escolhido pro fediverso (handle). Obrigatório pro cidadão (0664).
+    /// Chosen fediverse nick (handle). Mandatory for a citizen (0664).
     pub handle: Option<String>,
 }
 
-/// Normaliza+valida um nick de fediverso: minúsculas, `[a-z0-9_]`, 3–30 chars.
-/// Retorna o handle normalizado ou erro de validação. Usado no cadastro (0664).
+/// Normalize+validate a fediverse nick: lowercase, `[a-z0-9_]`, 3–30 chars.
+/// Returns the normalized handle or a validation error. Used at signup (0664).
 pub fn normalize_handle(raw: &str) -> Result<String> {
     let h = raw.trim().trim_start_matches('@').to_lowercase();
     let ok = (3..=30).contains(&h.chars().count())
@@ -257,9 +257,9 @@ pub fn normalize_handle(raw: &str) -> Result<String> {
     }
 }
 
-/// Slug ASCII de um nome pra derivar um handle (B4). Minúsculas, acentos comuns
-/// do português dobrados pra ASCII, separadores (espaço/pontuação) viram `_` e o
-/// resto é descartado. Ex.: "José da Silva" → "jose_da_silva".
+/// ASCII slug of a name to derive a handle (B4). Lowercase, common Portuguese
+/// diacritics folded to ASCII, separators (space/punctuation) become `_` and the
+/// rest is dropped. E.g. "José da Silva" → "jose_da_silva".
 fn slugify_name(name: &str) -> String {
     let mut out = String::new();
     let mut pending_sep = false;
@@ -289,7 +289,7 @@ fn slugify_name(name: &str) -> String {
     out
 }
 
-/// Mapeia o sexo do formulário (`F`/`M`) para o vocabulário de `citizen.gender`.
+/// Map the form's sex (`F`/`M`) onto the `citizen.gender` vocabulary.
 fn sexo_to_gender(sexo: &str) -> Option<&'static str> {
     match sexo.trim().to_uppercase().as_str() {
         "F" => Some("mulher"),
@@ -309,10 +309,10 @@ impl std::fmt::Debug for SignupVerifyService {
 }
 
 impl SignupVerifyService {
-    /// Constrói o serviço explicitamente, útil pra testes de integração que
-    /// injetam `Db` + `Arc<dyn Clock>` diretos (sem passar por `AppState`
-    /// nem env vars). Sempre em dev-mode (SMTP=None) — o e-mail é logado,
-    /// não enviado.
+    /// Build the service explicitly — useful for integration tests that inject
+    /// `Db` + `Arc<dyn Clock>` directly (bypassing `AppState` and env vars).
+    /// Always in dev-mode (SMTP=None) — the e-mail is logged,
+    /// never sent.
     #[must_use]
     pub fn new_for_tests(
         db: Db,
@@ -329,16 +329,16 @@ impl SignupVerifyService {
             ttl_secs,
             session_ttl_secs,
             cpf_verifier: std::sync::Arc::new(AlgorithmicCpfVerifier),
-            // Testes não têm serviço externo: Noop (skipped → cadastro segue).
+            // Tests have no external service: Noop (skipped → signup proceeds).
             identity_verifier: std::sync::Arc::new(crate::identity_verify::NoopIdentityVerifier),
         }
     }
 
-    /// Constrói a partir do `AppState` + env. Env recognizadas:
+    /// Build from `AppState` + env. Recognized env vars:
     /// - `PUBLIC_ORIGIN` (default `https://democracia.social.br`)
     /// - `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM`
     /// - `AUTH_SIGNUP_VERIFY_TTL_SECS` (default 86400)
-    /// - `AUTH_SESSION_TTL_SECS` (default `DEFAULT_SESSION_TTL_SECS`, usado quando o confirm emite sessão)
+    /// - `AUTH_SESSION_TTL_SECS` (default `DEFAULT_SESSION_TTL_SECS`, used when confirm issues a session)
     #[must_use]
     pub fn from_state(state: &dsoc_app::AppState) -> Self {
         let public_origin = std::env::var("PUBLIC_ORIGIN")
@@ -369,20 +369,20 @@ impl SignupVerifyService {
             ttl_secs,
             session_ttl_secs,
             cpf_verifier: std::sync::Arc::new(AlgorithmicCpfVerifier),
-            // HTTP se CPF_VERIFY_URL estiver setada, senão Noop (degradação graciosa).
+            // HTTP when CPF_VERIFY_URL is set, otherwise Noop (graceful degradation).
             identity_verifier: crate::identity_verify::from_env(),
         }
     }
 
-    /// Passo 1a — cidadão comum. Normaliza + valida CPF + hasheia a senha +
-    /// gera token + persiste pending + dispara e-mail. Sempre retorna sucesso
-    /// no wire (mesma resistência a enumeração do password_reset): quem informou
-    /// um e-mail existente descobre isso via *outro* caminho — o unique-violation
-    /// só ocorre no confirm.
+    /// Step 1a — ordinary citizen. Normalizes + validates the document + hashes the
+    /// password + mints the token + persists the pending row + fires the e-mail. Always
+    /// succeeds on the wire (the password_reset enumeration resistance): someone who
+    /// supplied an existing e-mail learns that through *another* path — the
+    /// unique violation only happens at confirm.
     ///
     /// # Errors
-    /// [`Error::Validation`] pra e-mail/senha/CPF inválidos;
-    /// [`Error::Storage`] em falha dura de persistência.
+    /// [`Error::Validation`] for an invalid e-mail/password/document;
+    /// [`Error::Storage`] on a hard persistence failure.
     pub async fn request_cidadao(
         &self,
         org: OrgId,
@@ -406,11 +406,11 @@ impl SignupVerifyService {
         .await
     }
 
-    /// Passo 1c — candidato(a) SEM mandato (0526). Não há prova automática
-    /// possível (a pessoa ainda não consta em registro oficial nenhum), então
-    /// os metadados são validados e guardados como auto-declaração; o confirm
-    /// materializa mandate `source='self'` + binding nível `email` + candidacy
-    /// `listed=false`. A verificação (partido/TSE/admin) vem depois.
+    /// Step 1c — candidate WITHOUT a mandate (0526). No automatic proof is
+    /// possible (the person appears in no official registry yet), so the
+    /// metadata is validated and stored as a self-declaration; confirm
+    /// materializes a mandate with `source='self'` + an `email`-level binding +
+    /// a `listed=false` candidacy. Verification (party/TSE/admin) comes later.
     ///
     /// # Errors
     /// Idem [`Self::request_cidadao`] + [`Error::Validation`] pros campos da
@@ -445,14 +445,14 @@ impl SignupVerifyService {
         .await
     }
 
-    /// Passo 1b — político(a). Antes de qualquer coisa, valida que
-    /// `email == mandate.public_email` (o único proof automático de controle
-    /// do mandato). Erro opaco em caso de mismatch — mesma lógica do
-    /// register_politician atual, pra não vazar enumeração de mandatos.
+    /// Step 1b — politician. Before anything else, validates that
+    /// `email == mandate.public_email` (the only automatic proof of control over
+    /// the mandate). An opaque error on mismatch — the same logic as the current
+    /// register_politician, so mandate enumeration never leaks.
     ///
     /// # Errors
-    /// Idem [`Self::request_cidadao`] + [`Error::Conflict`] quando o mandato
-    /// não existe ou o e-mail não confere.
+    /// Same as [`Self::request_cidadao`] + [`Error::Conflict`] when the mandate
+    /// does not exist or the e-mail does not match.
     pub async fn request_politico(
         &self,
         org: OrgId,
@@ -488,8 +488,8 @@ impl SignupVerifyService {
         .await
     }
 
-    // 8 args: o pipeline de signup é uma sequência linear de dados validados;
-    // agrupar em struct só adicionaria uma camada sem callers extras (2 sites).
+    // 8 args: the signup pipeline is a linear sequence of validated data;
+    // grouping them into a struct would add a layer with no extra callers (2 sites).
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     async fn request_common(
@@ -505,7 +505,7 @@ impl SignupVerifyService {
         request_ip: Option<&str>,
     ) -> Result<()> {
         let now = self.clock.now();
-        // Rate-limit por IP ANTES de tudo — barato (uma query) e evita
+        // Per-IP rate limit BEFORE anything else — cheap (one query) and it avoids
         // gastar Argon2 em cima de flood.
         if let Some(ip) = request_ip {
             let since = now - chrono::Duration::hours(1);
@@ -526,11 +526,11 @@ impl SignupVerifyService {
         let email = normalize_email(email)?;
         let cpf = Cpf::parse(cpf_raw)?;
 
-        // R-KYC #50: quando nome+data+sexo vêm informados, confronta com a base
-        // autorizada via o SaaS cpf-verify. REJEITA bloqueia o cadastro; as demais
-        // faixas (ACEITA/REVISA/ESCALA) e Skipped (serviço ausente/fora — fail-open)
-        // seguem. A revisão humana das faixas REVISA/ESCALA é tratada na fatia de
-        // persistência (parte 2); aqui só barramos o negativo claro.
+        // R-KYC #50: when name+birth+sex arrive, match them against the authorized
+        // base via the cpf-verify SaaS. REJECT blocks the signup; the other bands
+        // (ACCEPT/REVIEW/ESCALATE) and Skipped (service absent/down — fail-open)
+        // proceed. Human review of the REVIEW/ESCALATE bands is handled in the
+        // persistence slice (part 2); here we only block the clear negative.
         if let (Some(nome), true) = (
             identity
                 .nome_completo
@@ -558,9 +558,9 @@ impl SignupVerifyService {
             }
         }
 
-        // Domicílio obrigatório para cidadão (0651/0652/0653): UF + município IBGE,
-        // e o município tem de existir e pertencer à UF. Político/candidato não
-        // declaram domicílio aqui — o território vem do mandato/candidatura.
+        // Residence mandatory for a citizen (0651/0652/0653): UF + IBGE municipality,
+        // and the municipality must exist and belong to the UF. Politicians/candidates
+        // do not declare residence here — their territory comes from the mandate/candidacy.
         let (residencia_uf, residencia_municipio) = if role == PendingRole::Cidadao {
             let uf = identity
                 .uf
@@ -586,11 +586,11 @@ impl SignupVerifyService {
             (None, None)
         };
 
-        // Dados pessoais do cidadão. OBRIGATÓRIO no cadastro: nome (com sobrenome)
-        // e nascimento (este último alimenta a verificação R-KYC junto do CPF).
-        // OPCIONAL (B4 — onboarding enxuto): sexo (ProfileGate coleta depois) e o
-        // nick do fediverso (derivado do nome; editável em Configurações).
-        // Político/candidato herdam nome/território do mandato/candidatura → None.
+        // The citizen's personal data. MANDATORY at signup: name (with a surname)
+        // and birth date (the latter feeds R-KYC verification alongside the document).
+        // OPTIONAL (B4 — lean onboarding): sex (ProfileGate collects it later) and the
+        // fediverse nick (derived from the name; editable in Settings).
+        // Politicians/candidates inherit name/territory from the mandate/candidacy → None.
         let (full_name, gender, birth_date, handle) = if role == PendingRole::Cidadao {
             let Some(nome) = identity
                 .nome_completo
@@ -603,8 +603,8 @@ impl SignupVerifyService {
             if nome.split_whitespace().count() < 2 {
                 return Err(Error::Validation("informe nome e sobrenome".to_owned()));
             }
-            // B4: sexo OPCIONAL. Quando ausente fica None; o ProfileGate coleta
-            // depois (profile-status já lista "sexo" como faltante).
+            // B4: sex is OPTIONAL. Absent stays None; ProfileGate collects it
+            // later (profile-status already lists "sexo" as missing).
             let gender = identity.sexo.as_deref().and_then(sexo_to_gender);
             let Some(birth_raw) = identity
                 .nascimento
@@ -618,9 +618,9 @@ impl SignupVerifyService {
             };
             let birth_date = chrono::NaiveDate::parse_from_str(birth_raw, "%Y-%m-%d")
                 .map_err(|_| Error::Validation("data de nascimento inválida".to_owned()))?;
-            // B4: nick não é mais pedido no cadastro. Se o cidadão informou um
-            // (fluxo avançado/futuro), respeitamos e validamos; senão derivamos do
-            // nome. handle=None faz o confirm() cair no automático `cidadao-<id8>`.
+            // B4: the nick is no longer asked at signup. If the citizen supplied one
+            // (advanced/future flow) we honour and validate it; otherwise we derive it
+            // from the name. handle=None makes confirm() fall back to `cidadao-<id8>`.
             let handle = match identity
                 .handle
                 .as_deref()
@@ -651,7 +651,7 @@ impl SignupVerifyService {
             (None, None, None, None)
         };
 
-        // Trava mínima de senha aqui — bater com validação do register atual.
+        // Minimal password floor here — matches the current register validation.
         if password.len() < 8 {
             return Err(Error::Validation(
                 "senha deve ter ao menos 8 caracteres".to_owned(),
@@ -662,7 +662,7 @@ impl SignupVerifyService {
         let token_hash = sha256(&token);
         let expires_at = now + chrono::Duration::seconds(self.ttl_secs);
 
-        // Mesma UX do password_reset: novo link mata o antigo pro mesmo e-mail.
+        // Same UX as password_reset: a new link kills the previous one for that e-mail.
         queries::pending_signup_invalidate_live_for_email(&self.db, org.as_uuid(), &email, now)
             .await
             .map_err(map_sqlx)?;
@@ -696,19 +696,19 @@ impl SignupVerifyService {
         Ok(())
     }
 
-    /// Deriva um handle único a partir do nome (B4 — nick não é mais pedido no
-    /// cadastro). Faz o slug ASCII do nome, garante 1º caractere-letra e 3–30
-    /// chars, e resolve colisão com sufixo numérico. Retorna `None` quando não há
-    /// base utilizável (nome só com símbolos) ou todas as variantes já estão
-    /// tomadas — nesse caso o `confirm()` gera o automático `cidadao-<id8>`.
+    /// Derive a unique handle from the name (B4 — the nick is no longer asked at
+    /// signup). ASCII-slugs the name, guarantees a letter as the first character and
+    /// 3–30 chars, and resolves collisions with a numeric suffix. Returns `None` when
+    /// there is no usable base (a name of symbols only) or every variant is already
+    /// taken — in that case `confirm()` generates the automatic `cidadao-<id8>`.
     async fn derive_unique_handle(&self, org: Uuid, name: &str) -> Result<Option<String>> {
         let mut base = slugify_name(name);
-        // 1º caractere precisa ser letra (regra do handle).
+        // The first character must be a letter (handle rule).
         if !base.chars().next().is_some_and(|c| c.is_ascii_lowercase()) {
             base.insert(0, 'c');
         }
-        // Deixa folga pra um sufixo numérico dentro do teto de 30 chars. base é
-        // ASCII puro (slugify), então truncar por bytes é seguro.
+        // Leave room for a numeric suffix within the 30-char cap. The base is pure
+        // ASCII (slugify), so truncating by bytes is safe.
         base.truncate(26);
         while base.ends_with('_') {
             base.pop();
@@ -716,8 +716,8 @@ impl SignupVerifyService {
         if base.len() < 3 {
             return Ok(None);
         }
-        // Tenta o base puro e depois base2..=base9. O confirm() re-checa a
-        // disponibilidade e cai no automático se perder a corrida request→confirm.
+        // Try the bare base, then base2..=base9. confirm() re-checks availability
+        // and falls back to the automatic handle if it loses the request→confirm race.
         for suffix in std::iter::once(String::new()).chain((2..=9).map(|n| n.to_string())) {
             let candidate = format!("{base}{suffix}");
             if queries::handle_available(&self.db, org, &candidate)
@@ -730,16 +730,16 @@ impl SignupVerifyService {
         Ok(None)
     }
 
-    /// Reenvia o link de verificação pra um e-mail que tem pending viva. Se
-    /// não houver pending live, silenciosamente não faz nada — resposta 200
-    /// no wire independe (enumeration-safe, mesmo padrão do password_reset).
+    /// Resend the verification link to an e-mail with a live pending row. When
+    /// there is no live pending, it silently does nothing — the wire response is
+    /// 200 either way (enumeration-safe, the password_reset pattern).
     ///
     /// Reaproveita password_hash+cpf+role+mandate_id da pending existente
-    /// (o usuário não digita nada de novo). Gera token novo, invalida a
-    /// pending anterior, insere nova, dispara e-mail.
+    /// (the user types nothing new). Mints a fresh token, invalidates the previous
+    /// pending row, inserts a new one, fires the e-mail.
     ///
     /// # Errors
-    /// [`Error::Storage`] em falha dura de persistência.
+    /// [`Error::Storage`] on a hard persistence failure.
     pub async fn resend(&self, org: OrgId, email: &str, request_ip: Option<&str>) -> Result<()> {
         let now = self.clock.now();
         let email = match normalize_email(email) {
@@ -795,8 +795,8 @@ impl SignupVerifyService {
         Ok(())
     }
 
-    /// Cleanup worker (P3.3): remove pendings expiradas há mais de
-    /// `cutoff_days` dias. Retorna quantas foram apagadas — útil pra métricas.
+    /// Cleanup worker (P3.3): removes pendings that expired more than
+    /// `cutoff_days` days ago. Returns how many were deleted — useful for metrics.
     ///
     /// # Errors
     /// [`Error::Storage`] em falha de DELETE.
@@ -807,9 +807,9 @@ impl SignupVerifyService {
             .map_err(map_sqlx)
     }
 
-    /// Cleanup do `auth_login_attempt` (P5.1). Não faz parte do serviço de
-    /// signup em si, mas rodamos no mesmo worker pra economizar loops. Usa
-    /// o mesmo cutoff_days por consistência operacional.
+    /// Cleanup of `auth_login_attempt` (P5.1). Not part of the signup service
+    /// itself, but we run it in the same worker to save loops. Uses the same
+    /// cutoff_days for operational consistency.
     ///
     /// # Errors
     /// [`Error::Storage`] em falha de DELETE.
@@ -823,16 +823,16 @@ impl SignupVerifyService {
             .map_err(map_sqlx)
     }
 
-    /// Passo 2 — redime o token e materializa a conta. Em instância aberta
-    /// retorna a sessão pronta pra o handler HTTP setar o cookie; quando
-    /// `GATEWAY_SIGNUP_REQUIRES_REVIEW` está ligada (migration 0514), a conta
-    /// nasce com `pending_review = true`, NENHUMA sessão é emitida e o
-    /// outcome diz ao front que falta aprovação de admin (/admin/revisoes).
+    /// Step 2 — redeem the token and materialize the account. On an open instance
+    /// it returns the session ready for the HTTP handler to set the cookie; when
+    /// `GATEWAY_SIGNUP_REQUIRES_REVIEW` is on (migration 0514), the account is
+    /// born with `pending_review = true`, NO session is issued and the outcome
+    /// tells the front end that admin approval is missing (/admin/revisoes).
     ///
     /// # Errors
-    /// [`Error::Unauthorized`] pra token inválido/expirado/já usado
+    /// [`Error::Unauthorized`] for an invalid/expired/already-used token
     /// (deliberadamente opaco);
-    /// [`Error::Conflict`] se e-mail ou CPF já foram levados por outro cadastro
+    /// [`Error::Conflict`] when the e-mail or document was taken by another signup
     /// entre o request e o confirm (mesma mensagem do register atual);
     /// [`Error::Storage`] em falha dura.
     pub async fn confirm(&self, token: &str) -> Result<ConfirmOutcome> {
@@ -853,8 +853,8 @@ impl SignupVerifyService {
         let cpf_status = self.cpf_verifier.verify(&cpf).await;
         let level = match role {
             PendingRole::Politico => VerificationLevel::Directory,
-            // Candidato auto-declarado NÃO ganha 'directory' — não há registro
-            // oficial pra conferir. Sobe via atestação/TSE/admin depois.
+            // A self-declared candidate does NOT get 'directory' — there is no official
+            // record to check against. They climb via attestation/TSE/admin later.
             PendingRole::Cidadao | PendingRole::Candidato => match cpf_status {
                 crate::credential::CpfStatus::Verified => VerificationLevel::Strong,
                 _ => VerificationLevel::Email,
@@ -864,14 +864,14 @@ impl SignupVerifyService {
 
         let mut tx = self.db.begin().await.map_err(map_sqlx)?;
         // Mark used PRIMEIRO. Se algo mais adiante falhar, a tx roll-back e o
-        // token permanece redimível — usuário pode tentar de novo pelo mesmo link.
+        // the token stays redeemable — the user can retry with the same link.
         queries::pending_signup_mark_used(&mut *tx, row.id, now)
             .await
             .map_err(map_sqlx)?;
 
         let citizen = CitizenId::new();
         // Dados pessoais do cadastro (0664): nome → display_name + legal_name (o nome
-        // civil informado é o mesmo que aparece), sexo → gender, nascimento → birth_date.
+        // the given civil name is the one shown), sex → gender, birth → birth_date.
         queries::insert_credential_citizen(
             &mut *tx,
             citizen.as_uuid(),
@@ -888,9 +888,9 @@ impl SignupVerifyService {
         .await
         .map_err(map_register_sqlx)?;
 
-        // Handle do fediverso: usa o NICK escolhido no cadastro (0664) se ainda estiver
-        // livre; senão cai no automático `cidadao-<id8>` (único por construção). Político/
-        // candidato (sem nick no cadastro) também caem no automático — trocam depois.
+        // Fediverse handle: uses the NICK chosen at signup (0664) when still free;
+        // otherwise falls back to the automatic `cidadao-<id8>` (unique by construction).
+        // Politicians/candidates (no nick at signup) also fall back — they change it later.
         let chosen = match row.handle.as_deref() {
             Some(h)
                 if queries::handle_available(&mut *tx, org.as_uuid(), h)
@@ -922,8 +922,8 @@ impl SignupVerifyService {
         .map_err(map_register_sqlx)?;
 
         if role == PendingRole::Politico {
-            // is_public já defaulta a true na migration 0106, mas político é
-            // ir além: transparência é NÃO-opt-out — força explícito.
+            // is_public already defaults to true in migration 0106, but a politician
+            // goes further: transparency is NOT opt-out — force it explicitly.
             queries::force_citizen_public(&mut *tx, citizen.as_uuid())
                 .await
                 .map_err(map_sqlx)?;
@@ -943,7 +943,7 @@ impl SignupVerifyService {
         }
 
         if role == PendingRole::Candidato {
-            // Mesma transparência não-opt-out do político: candidatura é pública.
+            // Same non-opt-out transparency as the politician: a candidacy is public.
             queries::force_citizen_public(&mut *tx, citizen.as_uuid())
                 .await
                 .map_err(map_sqlx)?;
@@ -964,8 +964,8 @@ impl SignupVerifyService {
                         )))
                     })
                 })?;
-            // Defensivo: re-valida o que o request gravou (o CHECK do banco só
-            // garante presença do jsonb, não o shape).
+            // Defensive: re-validate what the request wrote (the database CHECK only
+            // guarantees the jsonb is present, not its shape).
             let (meta, sphere) = meta.validated()?;
             let mandate_id = Uuid::now_v7();
             queries::insert_mandate_self_candidate(
@@ -983,8 +983,8 @@ impl SignupVerifyService {
             )
             .await
             .map_err(map_sqlx)?;
-            // Binding nível 'email' — o gate is_politico destrava (painel +
-            // /me/campanha), mas o selo público segue "autodeclarada".
+            // 'email'-level binding — the is_politico gate unlocks (panel +
+            // /me/campanha), but the public badge still reads self-declared.
             queries::insert_mandate_identity_binding(
                 &mut *tx,
                 Uuid::now_v7(),
@@ -996,9 +996,9 @@ impl SignupVerifyService {
             )
             .await
             .map_err(map_sqlx)?;
-            // Candidatura fora do comparador (listed=false) até verificação.
-            // Sem eleição correspondente cadastrada, segue sem candidacy — o
-            // mandato/binding bastam pras ferramentas.
+            // Candidacy outside the comparator (listed=false) until verification.
+            // With no matching election registered, it proceeds without a candidacy — the
+            // mandate/binding are enough for the tooling.
             if let Some(election_id) =
                 queries::find_election_id(&mut *tx, org.as_uuid(), CANDIDATE_ELECTION_YEAR, sphere)
                     .await
@@ -1043,16 +1043,16 @@ impl SignupVerifyService {
         )
         .await?;
         tx.commit().await.map_err(map_sqlx)?;
-        // Onboarding federado pós-commit, best-effort (falha aqui NUNCA derruba o
-        // cadastro): chaves do ator (perfil resolvível no fediverso desde o 1º
-        // segundo) + follow automático do perfil oficial @socrates (comunicados).
+        // Federated onboarding after commit, best-effort (a failure here NEVER breaks
+        // the signup): actor keys (a profile resolvable on the fediverse from second
+        // one) + an automatic follow of the official @socrates profile (announcements).
         self.federated_onboarding(citizen, now).await;
-        // Boas-vindas só depois do commit — conta existe de fato.
+        // Welcome mail only after the commit — the account genuinely exists.
         self.deliver_welcome(&row.email);
         Ok(ConfirmOutcome::Session(Box::new(session)))
     }
 
-    /// Chaves do ator + auto-follow do @socrates. Best-effort com log.
+    /// Actor keys + auto-follow of @socrates. Best-effort with logging.
     async fn federated_onboarding(&self, citizen: CitizenId, now: chrono::DateTime<chrono::Utc>) {
         match tokio::task::spawn_blocking(dsoc_federation::generate_actor_keypair).await {
             Ok(Ok(kp)) => {
@@ -1099,8 +1099,8 @@ impl SignupVerifyService {
             );
             return;
         };
-        // Template editável pelo admin (0.32.0); fallback hardcoded se a
-        // linha sumiu do DB — o e-mail de confirmação nunca deixa de sair.
+        // Template editable by the admin (0.32.0); hardcoded fallback if the row
+        // vanished from the DB — the confirmation e-mail must never fail to go out.
         let mut ctx: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
         ctx.insert("confirm_url", confirm_url.to_owned());
         let (subject, body) = dsoc_db::email_templates::render(&self.db, "signup_verify", &ctx)
@@ -1118,8 +1118,8 @@ impl SignupVerifyService {
             });
         let to_owned = to.to_owned();
         let smtp = smtp.clone();
-        // Non-blocking: a request retorna mesmo se o relay travar. Falha de
-        // envio só é auditada — mesma escolha do password_reset.
+        // Non-blocking: the request returns even if the relay stalls. A send failure
+        // is only audited — the same choice as password_reset.
         tokio::spawn(async move {
             if let Err(err) = send_email(&smtp, &to_owned, &subject, &body).await {
                 tracing::error!(error = ?err, "signup-verify e-mail send failed");
@@ -1127,9 +1127,9 @@ impl SignupVerifyService {
         });
     }
 
-    /// Boas-vindas pós-ativação (0.32.0): dispara depois que `confirm()`
-    /// materializa a conta. Best-effort e não-bloqueante — falha de SMTP
-    /// nunca atrapalha a sessão recém-criada.
+    /// Post-activation welcome (0.32.0): fires after `confirm()` materializes
+    /// the account. Best-effort and non-blocking — an SMTP failure never
+    /// disturbs the freshly created session.
     fn deliver_welcome(&self, to: &str) {
         let Some(smtp) = &self.smtp else {
             tracing::info!(
@@ -1224,7 +1224,7 @@ async fn send_email(
         .from(from)
         .to(to_addr)
         .subject(subject)
-        // 0.32.1: texto puro como fallback + HTML com a marca (html_wrap).
+        // 0.32.1: plain text as fallback + branded HTML (html_wrap).
         .multipart(lettre::message::MultiPart::alternative_plain_html(
             body.to_owned(),
             dsoc_db::email_templates::html_wrap(body),
@@ -1286,8 +1286,8 @@ fn map_sqlx(error: sqlx::Error) -> Error {
     }
 }
 
-/// Espelha `crate::service::map_register_sqlx`: unique-violation em email/cpf
-/// no confirm vira Conflict com mensagem específica ("email_taken" / "cpf_taken").
+/// Mirrors `crate::service::map_register_sqlx`: a unique violation on email/cpf
+/// at confirm becomes a Conflict with a specific message ("email_taken" / "cpf_taken").
 fn map_register_sqlx(error: sqlx::Error) -> Error {
     if let sqlx::Error::Database(db) = &error {
         if db.is_unique_violation() {
@@ -1343,7 +1343,7 @@ mod tests {
         assert_eq!(slugify_name("José da Silva"), "jose_da_silva");
         assert_eq!(slugify_name("  Maria  Antônia  "), "maria_antonia");
         assert_eq!(slugify_name("Ção Núñez"), "cao_nunez");
-        // Só símbolos → vazio (caller cai no handle automático).
+        // Symbols only → empty (the caller falls back to the automatic handle).
         assert_eq!(slugify_name("!!! ###"), "");
     }
 

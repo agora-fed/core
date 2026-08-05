@@ -16,7 +16,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-MAX_PT=2960   # measured 2026-08-05 (rust 2165 + sql 795); Tier 0, components, spaces, clients at ZERO — only goes DOWN
+MAX_PT=2814   # measured 2026-08-05 (rust 2019 + sql 795) — only goes DOWN
 
 # Portuguese markers: diacritics English never uses, plus frequent stopwords
 # that survive accent-free writing ("nao", "pra", "que", ...).
