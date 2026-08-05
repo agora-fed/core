@@ -52,7 +52,9 @@ pub use mapping::{
 };
 pub use objects::{ConsensusCluster, Create, Note, Proposal, Scorecard, Sla, SupportTally};
 pub use signatures::{
-    build_signing_string, PublicKey, SignatureAlgorithm, SignatureHeader, SignatureVerifier,
+    build_signing_string, check_date_skew, require_post_coverage, verify_body_digest,
+    InboundSignatureError, PublicKey, SignatureAlgorithm, SignatureHeader, SignatureVerifier,
+    MAX_DATE_SKEW_SECS,
 };
 pub use text::{extract_hashtags, extract_mentions, Hashtag, Mention, ResolvedMention};
 pub use vocab::{Context, ACCOUNTABILITY_NS, ACTIVITYSTREAMS_NS, SOFTWARE_NAME};

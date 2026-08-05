@@ -410,7 +410,9 @@ async fn actor_handler(
 ///
 /// Flow:
 /// 1. Resolve `{handle}` to a public citizen (404 otherwise).
-/// 2. Parse the `Signature` header.
+/// 2. Parse the `Signature` header, then bind it to this request: require it to cover
+///    `(request-target) host date digest`, verify `Digest` against the raw body, and
+///    reject a `Date` outside the skew window (issue #10).
 /// 3. Fetch the SIGNER's Actor (the `keyId`'s document) to get the signing publicKey.
 /// 4. Build the canonical signing string from request headers and verify.
 /// 5. Insert-before-act into the inbox idempotency log; duplicates short-circuit with 202.
@@ -454,6 +456,34 @@ async fn inbox_post(
             return StatusCode::BAD_REQUEST.into_response();
         }
     };
+
+    // --- 1b. Bind the signature to THIS request (issue #10) --------------------------------
+    // Runs before the actor fetch on purpose: a request that fails here never causes us to
+    // make an outbound HTTP call, so a forged Signature header cannot be used to aim this
+    // server at an arbitrary host.
+    //
+    // The signature covers HEADERS, not the body. Without these three checks a single
+    // captured request is a universal forgery: replayable against any path (no
+    // `(request-target)`), any instance (no `host`), with any body (no `digest`), forever
+    // (no `date` bound).
+    if let Err(err) = dsoc_federation::require_post_coverage(&sig.headers) {
+        tracing::warn!(error = %err, key = %sig.key_id, "inbox signature coverage insufficient");
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let digest_header = headers.get("digest").and_then(|v| v.to_str().ok());
+    if let Err(err) = dsoc_federation::verify_body_digest(digest_header, &body) {
+        tracing::warn!(error = %err, key = %sig.key_id, "inbox body digest rejected");
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let date_header = headers.get("date").and_then(|v| v.to_str().ok());
+    if let Err(err) = dsoc_federation::check_date_skew(
+        date_header,
+        chrono::Utc::now(),
+        dsoc_federation::MAX_DATE_SKEW_SECS,
+    ) {
+        tracing::warn!(error = %err, key = %sig.key_id, "inbox Date outside the skew window");
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
 
     // --- 2. Fetch the signer's Actor doc to get their publicKey ----------------------------
     let signer_actor_url = sig

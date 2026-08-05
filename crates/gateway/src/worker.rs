@@ -68,6 +68,16 @@ const DEFAULT_SIGNUP_CLEANUP_DAYS: i64 = 7;
 /// portal's patience. Override with `SOCRATES_SWEEP_MS`.
 const DEFAULT_SOCRATES_SWEEP_MS: u64 = 6 * 60 * 60 * 1000;
 
+/// Retention of the inbound-activity idempotency logs, in days (issue #10).
+///
+/// These logs exist to make redelivery a no-op, so they only need to outlive the
+/// longest retry horizon a peer might use — days, not forever. Without a bound they
+/// grow with every activity the instance has ever received. Thirty days is generous
+/// against any implementation's backoff schedule while keeping the tables bounded;
+/// replay of anything older is already refused by the `Date` skew window, which is
+/// measured in hours. Override with `FEDERATION_INBOX_RETENTION_DAYS`.
+const DEFAULT_INBOX_SEEN_RETENTION_DAYS: i64 = 30;
+
 /// Read a millisecond interval from the environment, falling back to `default`.
 fn env_ms(key: &str, default: u64) -> u64 {
     std::env::var(key)
@@ -452,6 +462,9 @@ pub fn spawn(state: AppState) {
     // 1 tick per hour — cheap, indexed. Never blocks the other loops.
     tokio::spawn(auto_delete_notes_loop(state.clone()));
 
+    // Bound the inbound-activity idempotency logs (issue #10) — they had no TTL.
+    tokio::spawn(inbox_seen_retention_loop(state.clone()));
+
     // Proposal delivery retry: resends the e-mails (author/office) that did NOT
     // go out because SMTP failed on the 1st attempt — the send is fire-and-forget and the
     // event cursor advances even on failure, so without this the e-mail vanishes. Idempotent
@@ -697,6 +710,45 @@ async fn socrates_sweep_loop(state: AppState) {
             ),
             Err(err) => {
                 tracing::warn!(error = %err, "socrates sweep falhou; retenta no próximo tick");
+            }
+        }
+    }
+}
+
+/// Trims the two inbound-activity idempotency logs to
+/// [`DEFAULT_INBOX_SEEN_RETENTION_DAYS`] (issue #10).
+///
+/// `federation_inbox_seen` (Person inbox, 0401) and `forum_inbox_seen` (Group inbox,
+/// 0678) both record every activity id ever accepted and neither had a bound, so they
+/// grew without limit for the life of the instance. Deleting a row only makes a
+/// long-past activity acceptable again — and that is separately refused by the `Date`
+/// skew window — so trimming costs no safety.
+///
+/// Runs hourly, deletes by the `seen_at` index, and never fails the process.
+async fn inbox_seen_retention_loop(state: AppState) {
+    let days = std::env::var("FEDERATION_INBOX_RETENTION_DAYS")
+        .ok()
+        .and_then(|v| v.parse::<i64>().ok())
+        .filter(|&v| v > 0)
+        .unwrap_or(DEFAULT_INBOX_SEEN_RETENTION_DAYS);
+    let mut ticker = interval(Duration::from_secs(60 * 60)); // 1h
+    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        ticker.tick().await;
+        for table in ["federation_inbox_seen", "forum_inbox_seen"] {
+            // The table name is from the fixed literal array above, never from input.
+            let sql =
+                format!("DELETE FROM {table} WHERE seen_at < now() - make_interval(days => $1)");
+            match sqlx::query(&sql).bind(days).execute(&state.db).await {
+                Ok(r) if r.rows_affected() > 0 => {
+                    tracing::info!(
+                        table,
+                        pruned = r.rows_affected(),
+                        "inbox_seen retention tick"
+                    );
+                }
+                Ok(_) => {}
+                Err(err) => tracing::warn!(error = ?err, table, "inbox_seen retention failed"),
             }
         }
     }

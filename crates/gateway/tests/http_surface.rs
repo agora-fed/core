@@ -3961,3 +3961,262 @@ async fn group_inbox_rejects_malformed_signature_and_unknown_handle() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
+
+// ---------------------------------------------------------------------------
+// SECURITY — the inbound signature must be bound to THIS request (issue #10)
+//
+// #6 made the Group inbox require a signature. A signature covers HEADERS, not
+// the body, so on its own it still allows a captured request to be replayed
+// against another path, another host, or with a different body. These tests
+// pin the four bindings that close that.
+//
+// Discriminator used throughout: a request that PASSES this gate goes on to
+// fetch the signer's actor document, which fails in the test environment with
+// 502 BAD_GATEWAY. So 401 here proves the rejection happened at the #10 gate,
+// before any outbound call — and a 502 would prove the gate did NOT fire.
+// ---------------------------------------------------------------------------
+
+/// `Digest: SHA-256=<base64>` for a body, the header a real peer sends.
+fn digest_header_for(body: &str) -> String {
+    use base64::Engine as _;
+    use sha2::Digest as _;
+    format!(
+        "SHA-256={}",
+        base64::engine::general_purpose::STANDARD.encode(sha2::Sha256::digest(body.as_bytes()))
+    )
+}
+
+/// A syntactically valid `Signature` header covering `covered`. The signature
+/// bytes are bogus on purpose: every test here must be refused BEFORE the
+/// cryptographic check, so the bytes are never reached.
+fn signature_header_covering(covered: &str) -> String {
+    format!(
+        "keyId=\"https://evil.example/users/x#main-key\",algorithm=\"rsa-sha256\",\
+         headers=\"{covered}\",signature=\"AAAA\""
+    )
+}
+
+fn http_date_now() -> String {
+    Utc::now().format("%a, %d %b %Y %H:%M:%S GMT").to_string()
+}
+
+/// Seeds an org + federated forum and returns the pieces the cases below share.
+async fn inbox_fixture(st: &dsoc_app::AppState) -> (Uuid, String, String) {
+    let org = uuid::uuid!("11111111-1111-1111-1111-111111111111");
+    sqlx::query(
+        "INSERT INTO org (id, slug, name, created_at) VALUES ($1, $2, 'Org', $3)
+                 ON CONFLICT (id) DO NOTHING",
+    )
+    .bind(org)
+    .bind(format!("org-{}", org.simple()))
+    .bind(Utc::now())
+    .execute(&st.db)
+    .await
+    .expect("seed org");
+    let (forum, slug) = seed_federated_forum(&st.db, org).await;
+    let body = serde_json::json!({
+        "id": "https://evil.example/activities/hardening",
+        "type": "Follow",
+        "actor": "https://evil.example/users/x",
+    })
+    .to_string();
+    (forum, slug, body)
+}
+
+/// THE ATTACK: a captured request, validly signed by its origin, whose BODY is
+/// swapped before replay. The header signature still verifies — only the Digest
+/// check stands in the way. `Delete` is used as the swapped body precisely
+/// because it is destructive.
+#[tokio::test]
+async fn inbox_rejects_a_body_swapped_after_signing() {
+    let (app, st) = app().await;
+    let (forum, slug, signed_body) = inbox_fixture(&st).await;
+
+    // A follower the swapped activity would try to destroy.
+    let victim = "https://remote.example/users/victim-10";
+    sqlx::query(
+        "INSERT INTO forum_follower (forum_id, remote_actor_url, remote_inbox_url, accepted_at)
+         VALUES ($1, $2, 'https://remote.example/inbox', now())",
+    )
+    .bind(forum)
+    .bind(victim)
+    .execute(&st.db)
+    .await
+    .expect("seed follower");
+
+    let swapped_body = serde_json::json!({
+        "id": "https://evil.example/activities/hardening",
+        "type": "Undo",
+        "actor": victim,
+        "object": { "type": "Follow", "actor": victim },
+    })
+    .to_string();
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/actors/{slug}/inbox"))
+                .header(header::HOST, "democracia.social.br")
+                .header(header::DATE, http_date_now())
+                // Digest of what was SIGNED; body is what was SENT.
+                .header("digest", digest_header_for(&signed_body))
+                .header(
+                    "signature",
+                    signature_header_covering("(request-target) host date digest"),
+                )
+                .body(Body::from(swapped_body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::UNAUTHORIZED,
+        "a body swapped after signing must be refused at the digest gate"
+    );
+
+    let still_there: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM forum_follower WHERE forum_id = $1 AND remote_actor_url = $2)",
+    )
+    .bind(forum)
+    .bind(victim)
+    .fetch_one(&st.db)
+    .await
+    .unwrap();
+    assert!(
+        still_there,
+        "SECURITY REGRESSION: a body-swapped Undo{{Follow}} deleted a forum_follower row"
+    );
+}
+
+/// A missing `Digest` header is refused — otherwise the body is simply unbound.
+#[tokio::test]
+async fn inbox_rejects_a_missing_digest() {
+    let (app, st) = app().await;
+    let (_, slug, body) = inbox_fixture(&st).await;
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/actors/{slug}/inbox"))
+                .header(header::HOST, "democracia.social.br")
+                .header(header::DATE, http_date_now())
+                .header(
+                    "signature",
+                    signature_header_covering("(request-target) host date digest"),
+                )
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// A `Date` outside the skew window is refused, so a capture stops being
+/// replayable once the window passes.
+#[tokio::test]
+async fn inbox_rejects_a_stale_date() {
+    let (app, st) = app().await;
+    let (_, slug, body) = inbox_fixture(&st).await;
+
+    let stale = (Utc::now() - chrono::Duration::hours(26))
+        .format("%a, %d %b %Y %H:%M:%S GMT")
+        .to_string();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/actors/{slug}/inbox"))
+                .header(header::HOST, "democracia.social.br")
+                .header(header::DATE, stale)
+                .header("digest", digest_header_for(&body))
+                .header(
+                    "signature",
+                    signature_header_covering("(request-target) host date digest"),
+                )
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// Each required covered header is load-bearing: dropping any ONE of the four
+/// must be refused, even when every actual header is present and correct.
+#[tokio::test]
+async fn inbox_rejects_signatures_that_undercover_the_request() {
+    let (app, st) = app().await;
+    let (_, slug, body) = inbox_fixture(&st).await;
+
+    // Also covers the parser default: an absent `headers` parameter means
+    // `["date"]`, which is the weakest possible coverage.
+    let insufficient = [
+        "host date digest",             // no (request-target) → any path
+        "(request-target) date digest", // no host → any instance
+        "(request-target) host digest", // no date → forever
+        "(request-target) host date",   // no digest → any body
+        "date",                         // the parser's bare default
+    ];
+
+    for covered in insufficient {
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/actors/{slug}/inbox"))
+                    .header(header::HOST, "democracia.social.br")
+                    .header(header::DATE, http_date_now())
+                    .header("digest", digest_header_for(&body))
+                    .header("signature", signature_header_covering(covered))
+                    .body(Body::from(body.clone()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::UNAUTHORIZED,
+            "coverage {covered:?} must be refused"
+        );
+    }
+}
+
+/// The gate must fire BEFORE the signer's actor document is fetched, so a
+/// forged Signature header cannot aim this server's outbound HTTP at a host of
+/// the attacker's choosing. Proof: full, correct coverage with a good digest
+/// and a fresh date reaches the fetch and fails 502 — a DIFFERENT status from
+/// the 401 the cases above produce. If this ever returns 401, the ordering
+/// changed; if the cases above ever return 502, the gate stopped firing.
+#[tokio::test]
+async fn inbox_gate_runs_before_any_outbound_actor_fetch() {
+    let (app, st) = app().await;
+    let (_, slug, body) = inbox_fixture(&st).await;
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/actors/{slug}/inbox"))
+                .header(header::HOST, "democracia.social.br")
+                .header(header::DATE, http_date_now())
+                .header("digest", digest_header_for(&body))
+                .header(
+                    "signature",
+                    signature_header_covering("(request-target) host date digest"),
+                )
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_ne!(
+        resp.status(),
+        StatusCode::UNAUTHORIZED,
+        "a fully-bound request must pass the #10 gate and reach the signature check"
+    );
+}

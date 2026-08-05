@@ -189,6 +189,159 @@ pub fn build_signing_string(
     Ok(lines.join("\n"))
 }
 
+/// Headers an inbound POST signature MUST cover (issue #10).
+///
+/// A signature is only as strong as what it covers. Without `(request-target)` the same
+/// signature replays against any path; without `host`, against any instance; without
+/// `digest`, with any body. `SignatureHeader::parse` defaults to `["date"]` when the
+/// parameter is absent, so a bare `date` signature would otherwise be accepted — one
+/// captured request would then be a universal forgery. This is the set Mastodon signs.
+pub const REQUIRED_POST_COVERAGE: [&str; 4] = ["(request-target)", "host", "date", "digest"];
+
+/// Clock-skew tolerance for the `Date` of an inbound signed request, in seconds.
+///
+/// One hour, applied symmetrically. Tight enough that a captured request stops being
+/// replayable within the day; loose enough to tolerate the unsynchronised clocks that
+/// are common across the fediverse. Replay INSIDE the window is separately contained by
+/// the insert-before-act idempotency log, so this bound is defence in depth, not the
+/// primary control — which is why it does not need to be aggressive enough to break
+/// interoperability with peers whose clocks drift by minutes.
+pub const MAX_DATE_SKEW_SECS: i64 = 3600;
+
+/// Why an inbound signed request was rejected before its signature was even checked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InboundSignatureError {
+    /// The signature does not cover a header that it must.
+    UncoveredHeader(&'static str),
+    /// The `Digest` header is absent.
+    MissingDigest,
+    /// The `Digest` header carries no `SHA-256=<base64>` component we can check.
+    UnsupportedDigest,
+    /// The `Digest` does not match `SHA-256(body)` — the body was substituted.
+    DigestMismatch,
+    /// The `Date` header is absent or not a valid HTTP date.
+    UnreadableDate,
+    /// The `Date` is outside the accepted skew window; carries the observed skew.
+    DateOutOfWindow(i64),
+}
+
+impl std::fmt::Display for InboundSignatureError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UncoveredHeader(name) => write!(f, "signature does not cover {name}"),
+            Self::MissingDigest => write!(f, "missing Digest header"),
+            Self::UnsupportedDigest => write!(f, "Digest header has no SHA-256 component"),
+            Self::DigestMismatch => write!(f, "Digest does not match the body"),
+            Self::UnreadableDate => write!(f, "missing or unparseable Date header"),
+            Self::DateOutOfWindow(skew) => write!(f, "Date is {skew}s outside the skew window"),
+        }
+    }
+}
+
+impl std::error::Error for InboundSignatureError {}
+
+/// Require that `covered` includes every header in [`REQUIRED_POST_COVERAGE`].
+///
+/// # Errors
+/// Returns [`InboundSignatureError::UncoveredHeader`] naming the first missing header.
+pub fn require_post_coverage(covered: &[String]) -> Result<(), InboundSignatureError> {
+    for required in REQUIRED_POST_COVERAGE {
+        if !covered.iter().any(|h| h.eq_ignore_ascii_case(required)) {
+            return Err(InboundSignatureError::UncoveredHeader(required));
+        }
+    }
+    Ok(())
+}
+
+/// Verify a `Digest` request header against the raw body.
+///
+/// Accepts the multi-value form (`SHA-512=…,SHA-256=…`) and checks the SHA-256 component,
+/// ignoring any digest algorithm we do not implement. Comparison is on the DECODED bytes so
+/// that padding and alphabet variations between implementations do not cause false rejects.
+///
+/// # Errors
+/// Returns [`InboundSignatureError`] when the header is absent, carries no SHA-256 component,
+/// or does not match the body.
+pub fn verify_body_digest(
+    digest_header: Option<&str>,
+    body: &[u8],
+) -> Result<(), InboundSignatureError> {
+    use base64::Engine as _;
+    use sha2::Digest as _;
+
+    let header = digest_header.ok_or(InboundSignatureError::MissingDigest)?;
+    let expected = sha2::Sha256::digest(body);
+
+    let mut saw_sha256 = false;
+    for part in header.split(',') {
+        let Some((alg, value)) = part.trim().split_once('=') else {
+            continue;
+        };
+        if !alg.trim().eq_ignore_ascii_case("sha-256") {
+            continue;
+        }
+        saw_sha256 = true;
+        // The value itself is base64 and may contain '=' padding, which `split_once`
+        // left intact on the right-hand side. Both alphabets are tried because peers
+        // differ; a decode failure is simply "not a match", never a panic.
+        let raw = value.trim();
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(raw)
+            .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(raw));
+        if decoded.map(|d| d == expected.as_slice()).unwrap_or(false) {
+            return Ok(());
+        }
+    }
+
+    if saw_sha256 {
+        Err(InboundSignatureError::DigestMismatch)
+    } else {
+        Err(InboundSignatureError::UnsupportedDigest)
+    }
+}
+
+/// Check that an HTTP `Date` header lies within `max_skew_secs` of `now`.
+///
+/// Accepts the IMF-fixdate form every fediverse peer emits
+/// (`Thu, 25 Jun 2026 12:00:00 GMT`) as well as full RFC 2822 with a numeric offset.
+///
+/// # Errors
+/// Returns [`InboundSignatureError::UnreadableDate`] when absent or unparseable, and
+/// [`InboundSignatureError::DateOutOfWindow`] when it is too far from `now`.
+pub fn check_date_skew(
+    date_header: Option<&str>,
+    now: chrono::DateTime<chrono::Utc>,
+    max_skew_secs: i64,
+) -> Result<(), InboundSignatureError> {
+    let raw = date_header
+        .map(str::trim)
+        .ok_or(InboundSignatureError::UnreadableDate)?;
+
+    let parsed = chrono::DateTime::parse_from_rfc2822(raw)
+        .map(|d| d.with_timezone(&chrono::Utc))
+        .or_else(|_| {
+            chrono::NaiveDateTime::parse_from_str(raw, "%a, %d %b %Y %H:%M:%S GMT")
+                .map(|n| n.and_utc())
+        })
+        .or_else(|_| {
+            // Last resort: ignore the leading weekday. Both parsers above VALIDATE it
+            // against the date, so a peer that miscomputes "Tue" for a Thursday is
+            // rejected outright. The weekday is redundant with the date and carries no
+            // security information, so refusing delivery over it would cost
+            // interoperability and buy nothing.
+            let after_comma = raw.split_once(", ").map_or(raw, |(_, rest)| rest);
+            chrono::NaiveDateTime::parse_from_str(after_comma, "%d %b %Y %H:%M:%S GMT")
+                .map(|n| n.and_utc())
+        })
+        .map_err(|_| InboundSignatureError::UnreadableDate)?;
+
+    let skew = (now - parsed).num_seconds();
+    if skew.abs() > max_skew_secs {
+        return Err(InboundSignatureError::DateOutOfWindow(skew));
+    }
+    Ok(())
+}
+
 /// Error returned by a signature verifier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VerifyError {
@@ -236,7 +389,7 @@ mod tests {
             ("Host".to_owned(), "[2001:db8::1]".to_owned()),
             (
                 "Date".to_owned(),
-                "Tue, 25 Jun 2026 12:00:00 GMT".to_owned(),
+                "Thu, 25 Jun 2026 12:00:00 GMT".to_owned(),
             ),
         ]
     }
@@ -254,7 +407,7 @@ mod tests {
             s,
             "(request-target): get /.well-known/webfinger\n\
              host: [2001:db8::1]\n\
-             date: Tue, 25 Jun 2026 12:00:00 GMT"
+             date: Thu, 25 Jun 2026 12:00:00 GMT"
         );
     }
 
@@ -329,6 +482,260 @@ mod tests {
                 Err(VerifyError::Mismatch)
             }
         }
+    }
+
+    // ── Inbound hardening (issue #10) ───────────────────────────────────────
+
+    fn digest_of(body: &[u8]) -> String {
+        use base64::Engine as _;
+        use sha2::Digest as _;
+        format!(
+            "SHA-256={}",
+            base64::engine::general_purpose::STANDARD.encode(sha2::Sha256::digest(body))
+        )
+    }
+
+    fn covered(names: &[&str]) -> Vec<String> {
+        names.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn coverage_accepts_the_mastodon_header_set() {
+        assert!(
+            require_post_coverage(&covered(&["(request-target)", "host", "date", "digest"]))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn coverage_accepts_extra_headers_beyond_the_required_set() {
+        assert!(require_post_coverage(&covered(&[
+            "(request-target)",
+            "host",
+            "date",
+            "digest",
+            "content-type",
+            "user-agent",
+        ]))
+        .is_ok());
+    }
+
+    #[test]
+    fn coverage_is_case_insensitive() {
+        assert!(
+            require_post_coverage(&covered(&["(REQUEST-TARGET)", "Host", "DATE", "Digest"]))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn coverage_rejects_the_bare_date_default() {
+        // `SignatureHeader::parse` defaults to this when `headers` is absent — the
+        // exact shape that made one captured signature reusable anywhere.
+        assert_eq!(
+            require_post_coverage(&covered(&["date"])).unwrap_err(),
+            InboundSignatureError::UncoveredHeader("(request-target)")
+        );
+    }
+
+    #[test]
+    fn coverage_rejects_each_missing_required_header() {
+        let all = ["(request-target)", "host", "date", "digest"];
+        for missing in all {
+            let rest: Vec<&str> = all.iter().copied().filter(|h| *h != missing).collect();
+            assert_eq!(
+                require_post_coverage(&covered(&rest)).unwrap_err(),
+                InboundSignatureError::UncoveredHeader(missing),
+                "dropping {missing} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn digest_accepts_the_matching_body() {
+        let body = br#"{"type":"Follow"}"#;
+        assert!(verify_body_digest(Some(&digest_of(body)), body).is_ok());
+    }
+
+    #[test]
+    fn digest_rejects_a_substituted_body() {
+        // THE ATTACK: a captured, validly-signed request whose body is swapped.
+        // The signature still verifies (it covers headers, not bytes) — only the
+        // digest check stands between the attacker and a forged activity.
+        let signed_body = br#"{"id":"https://evil.example/1","type":"Follow"}"#;
+        let swapped_body = br#"{"id":"https://evil.example/2","type":"Delete"}"#;
+        assert_eq!(
+            verify_body_digest(Some(&digest_of(signed_body)), swapped_body).unwrap_err(),
+            InboundSignatureError::DigestMismatch
+        );
+    }
+
+    #[test]
+    fn digest_rejects_a_single_flipped_byte() {
+        let body = b"exactly these bytes";
+        let tampered = b"exactly these byteS";
+        assert_eq!(
+            verify_body_digest(Some(&digest_of(body)), tampered).unwrap_err(),
+            InboundSignatureError::DigestMismatch
+        );
+    }
+
+    #[test]
+    fn digest_rejects_an_absent_header() {
+        assert_eq!(
+            verify_body_digest(None, b"body").unwrap_err(),
+            InboundSignatureError::MissingDigest
+        );
+    }
+
+    #[test]
+    fn digest_reports_unsupported_when_no_sha256_component_is_present() {
+        assert_eq!(
+            verify_body_digest(Some("SHA-512=abc123=="), b"body").unwrap_err(),
+            InboundSignatureError::UnsupportedDigest
+        );
+    }
+
+    #[test]
+    fn digest_finds_the_sha256_component_among_several() {
+        let body = b"multi-digest body";
+        let header = format!("SHA-512=ignored==,{}", digest_of(body));
+        assert!(verify_body_digest(Some(&header), body).is_ok());
+    }
+
+    #[test]
+    fn digest_tolerates_url_safe_base64() {
+        use base64::Engine as _;
+        use sha2::Digest as _;
+        // A body whose SHA-256 contains bytes that encode to '+' or '/' in the
+        // standard alphabet, so the two alphabets genuinely differ.
+        for n in 0..64u8 {
+            let body = vec![n; 8];
+            let std_b64 =
+                base64::engine::general_purpose::STANDARD.encode(sha2::Sha256::digest(&body));
+            if !std_b64.contains('+') && !std_b64.contains('/') {
+                continue;
+            }
+            let url_b64 =
+                base64::engine::general_purpose::URL_SAFE.encode(sha2::Sha256::digest(&body));
+            assert!(
+                verify_body_digest(Some(&format!("SHA-256={url_b64}")), &body).is_ok(),
+                "url-safe digest must be accepted"
+            );
+            return;
+        }
+        panic!("no body produced a distinguishing base64 encoding");
+    }
+
+    #[test]
+    fn digest_does_not_panic_on_garbage() {
+        for garbage in [
+            "",
+            "=",
+            "SHA-256=",
+            "SHA-256=!!!not base64!!!",
+            "no-equals-sign",
+        ] {
+            assert!(verify_body_digest(Some(garbage), b"body").is_err());
+        }
+    }
+
+    fn at(s: &str) -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::parse_from_rfc3339(s)
+            .unwrap()
+            .with_timezone(&chrono::Utc)
+    }
+
+    #[test]
+    fn date_accepts_imf_fixdate_inside_the_window() {
+        assert!(check_date_skew(
+            Some("Thu, 25 Jun 2026 12:00:00 GMT"),
+            at("2026-06-25T12:00:30Z"),
+            MAX_DATE_SKEW_SECS
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn date_accepts_rfc2822_with_a_numeric_offset() {
+        assert!(check_date_skew(
+            Some("Thu, 25 Jun 2026 09:00:00 -0300"),
+            at("2026-06-25T12:00:00Z"),
+            MAX_DATE_SKEW_SECS
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn date_rejects_a_stale_capture() {
+        // A request captured yesterday and replayed today.
+        let err = check_date_skew(
+            Some("Wed, 24 Jun 2026 12:00:00 GMT"),
+            at("2026-06-25T12:00:00Z"),
+            MAX_DATE_SKEW_SECS,
+        )
+        .unwrap_err();
+        assert_eq!(err, InboundSignatureError::DateOutOfWindow(86_400));
+    }
+
+    #[test]
+    fn date_rejects_the_future_as_well_as_the_past() {
+        let err = check_date_skew(
+            Some("Thu, 25 Jun 2026 14:00:00 GMT"),
+            at("2026-06-25T12:00:00Z"),
+            MAX_DATE_SKEW_SECS,
+        )
+        .unwrap_err();
+        assert_eq!(err, InboundSignatureError::DateOutOfWindow(-7_200));
+    }
+
+    #[test]
+    fn date_window_boundary_is_inclusive() {
+        // Exactly at the limit is accepted; one second beyond is not.
+        assert!(check_date_skew(
+            Some("Thu, 25 Jun 2026 11:00:00 GMT"),
+            at("2026-06-25T12:00:00Z"),
+            MAX_DATE_SKEW_SECS
+        )
+        .is_ok());
+        assert!(check_date_skew(
+            Some("Thu, 25 Jun 2026 10:59:59 GMT"),
+            at("2026-06-25T12:00:00Z"),
+            MAX_DATE_SKEW_SECS
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn date_rejects_absent_or_unparseable_values() {
+        assert_eq!(
+            check_date_skew(None, at("2026-06-25T12:00:00Z"), MAX_DATE_SKEW_SECS).unwrap_err(),
+            InboundSignatureError::UnreadableDate
+        );
+        for bad in ["", "yesterday", "2026-06-25T12:00:00Z", "Tue, 99 Xxx 2026"] {
+            assert_eq!(
+                check_date_skew(Some(bad), at("2026-06-25T12:00:00Z"), MAX_DATE_SKEW_SECS)
+                    .unwrap_err(),
+                InboundSignatureError::UnreadableDate,
+                "{bad:?} must not parse"
+            );
+        }
+    }
+
+    #[test]
+    fn inbound_errors_render_distinct_messages() {
+        // These strings reach the logs an operator reads during an incident.
+        let rendered: Vec<String> = vec![
+            InboundSignatureError::UncoveredHeader("digest").to_string(),
+            InboundSignatureError::MissingDigest.to_string(),
+            InboundSignatureError::UnsupportedDigest.to_string(),
+            InboundSignatureError::DigestMismatch.to_string(),
+            InboundSignatureError::UnreadableDate.to_string(),
+            InboundSignatureError::DateOutOfWindow(42).to_string(),
+        ];
+        let unique: std::collections::HashSet<&String> = rendered.iter().collect();
+        assert_eq!(unique.len(), rendered.len(), "messages must be distinct");
+        assert!(rendered[5].contains("42"));
     }
 
     #[test]
