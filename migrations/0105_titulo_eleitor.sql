@@ -1,13 +1,13 @@
--- Migration 0105 — título de eleitor no cidadão (verificação política).
+-- Migration 0105 — the citizen's electoral registry (political verification).
 --
--- Cria a coluna `titulo_eleitor` em `citizen` que atesta ser cidadã(o)
--- brasileira(o) apta(o) a votar (título válido no TSE). Junto com
--- `titulo_status` — algorítmico (dígitos verificadores) ou verified
--- (cross-check com fonte oficial futura, e.g. Serpro/TSE dados abertos).
+-- Creates the `titulo_eleitor` column on `citizen`, attesting the person is a
+-- Brazilian citizen eligible to vote (a registry valid at the electoral authority). Together with
+-- `titulo_status` — algorithmic (check digits) or verified
+-- (a cross-check against a future official source, e.g. TSE open data).
 --
--- Regra: só cidadã(o) com `titulo_status = 'validated'` ou 'verified' pode
--- votar em pauta urgente (Fatia D) — separa participação civil (qualquer
--- cidadã(o)) de decisão vinculante (cidadã(o) verificada(o) apta a votar
+-- Rule: only a citizen with `titulo_status = 'validated'` or 'verified' may
+-- vote on an urgent agenda item (slice D) — it separates civic participation (any
+-- citizen) from binding decision (a verified citizen eligible to vote
 -- no Brasil real).
 --
 -- Idempotente: rerun-safe.
@@ -20,8 +20,8 @@ ALTER TABLE citizen
         CHECK (titulo_status IS NULL OR titulo_status IN
                ('unverified','validated','verified'));
 
--- UNIQUE parcial: mesmo título não pode aparecer em duas contas (bloqueio
--- básico contra sock-puppet). NULL não colide entre si (WHERE cláusula).
+-- Partial UNIQUE: the same registry cannot appear on two accounts (a basic
+-- block against sock puppets). NULLs do not collide with each other (the WHERE clause).
 CREATE UNIQUE INDEX IF NOT EXISTS citizen_titulo_eleitor_unique
     ON citizen (titulo_eleitor)
     WHERE titulo_eleitor IS NOT NULL;

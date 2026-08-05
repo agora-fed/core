@@ -1,17 +1,17 @@
--- 0510_server_announcements.sql — anúncios da instância inteira.
+-- 0510_server_announcements.sql — announcements for the whole instance.
 --
--- Banner amarelo (ou variante) exibido pra qualquer visitante — antes do
--- header ou como toast persistente. Usado pra downtime programado,
--- mudanças de regras, notícias operacionais. Admin cria/edita, cidadão só lê.
+-- A yellow banner (or a variant) shown to any visitor — above the
+-- header or as a persistent toast. Used for scheduled downtime,
+-- rule changes, operational news. The admin creates/edits, the citizen only reads.
 --
--- Padrão Mastodon:
---   * texto Markdown-lite (sanitizado antes do render).
---   * janela de exibição opcional (starts_at .. ends_at). NULL = aberta.
---   * publicado_em: quando saiu do rascunho. Não publicado não aparece.
+-- The Mastodon pattern:
+--   * Markdown-lite text (sanitized before rendering).
+--   * optional display window (starts_at .. ends_at). NULL = open.
+--   * published_at: when it left draft. An unpublished one never appears.
 
 CREATE TABLE server_announcement (
     id           uuid PRIMARY KEY,
-    -- Texto do anúncio (Markdown-lite; front sanitiza).
+    -- The announcement's text (Markdown-lite; the front end sanitizes).
     body         text NOT NULL,
     -- 'info' | 'warning' | 'critical'. UI muda a cor conforme.
     severity     text NOT NULL DEFAULT 'info' CHECK (severity IN ('info', 'warning', 'critical')),
@@ -31,7 +31,7 @@ COMMENT ON TABLE server_announcement IS
 
 ALTER TABLE server_announcement OWNER TO dsoc;
 
--- Dismissals — cada cidadão fecha um anúncio localmente e ele some pra ele.
+-- Dismissals — each citizen closes an announcement locally and it disappears for them.
 CREATE TABLE server_announcement_dismissal (
     id                   uuid PRIMARY KEY,
     announcement_id      uuid NOT NULL REFERENCES server_announcement(id) ON DELETE CASCADE,

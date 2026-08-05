@@ -1,18 +1,18 @@
--- Migration 0525 — base de contatos / audiência (0.35.0).
+-- Migration 0525 — contact base / audience (0.35.0).
 --
--- "Queria ter uma base boa primeiro": antes de campanha, AUDIÊNCIA. Esta
--- tabela é a base única de pessoas em potencial — captadas no site (form
+-- "I wanted a good base first": before a campaign, an AUDIENCE. This
+-- table is the single base of potential people — captured on the site (a form
 -- "receba novidades", consent LGPD) ou importadas de listas existentes
--- (com base legal declarada). O digest mensal (#12) e qualquer envio
+-- (with a declared legal basis). The monthly digest (#12) and any send
 -- futuro consomem DAQUI, sempre honrando unsubscribed_at.
 --
 -- LGPD:
--- - legal_basis registra POR QUE podemos falar com a pessoa:
---   'consent' (ela pediu no site — consented_at marca quando) ou
+-- - legal_basis records WHY we may talk to the person:
+--   'consent' (they asked on the site — consented_at records when) or
 --   'legitimate_interest' (import justificado — notes deve dizer a origem).
--- - unsubscribe_token permite descadastro de 1 clique sem login; o
+-- - unsubscribe_token enables one-click opt-out without a login; the
 --   descadastro NUNCA apaga a linha (proof de opt-out > re-import acidental).
--- - E-mail é único: recadastro/reimport só atualiza, nunca duplica.
+-- - The e-mail is unique: re-signup/re-import only updates, never duplicates.
 
 BEGIN;
 
@@ -22,16 +22,16 @@ CREATE TABLE audience_contact (
     name              text,
     uf                text,
     municipio         text,
-    -- Segmento livre pra recorte de envio: cidadao | politico | imprensa |
-    -- parceiro | outro (sem CHECK — o vocabulário vai evoluir).
+    -- Free-form segment for send targeting: cidadao | politico | imprensa |
+    -- parceiro | outro (no CHECK — the vocabulary will evolve).
     segment           text NOT NULL DEFAULT 'cidadao',
-    -- De onde veio: 'site_form' | 'import:<slug-da-lista>' | 'manual'.
+    -- Where it came from: 'site_form' | 'import:<list-slug>' | 'manual'.
     source            text NOT NULL,
     legal_basis       text NOT NULL
                       CHECK (legal_basis IN ('consent', 'legitimate_interest')),
     consented_at      timestamptz,
     unsubscribed_at   timestamptz,
-    -- Token do link de descadastro de 1 clique (sem login).
+    -- Token of the one-click opt-out link (no login).
     unsubscribe_token text NOT NULL DEFAULT encode(gen_random_bytes(16), 'hex'),
     notes             text,
     created_at        timestamptz NOT NULL DEFAULT now(),

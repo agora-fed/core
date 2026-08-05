@@ -1,18 +1,18 @@
 -- Migration 0527 — grupos de campanha (Fase 2.3).
 --
--- Um "grupo de campanha" é o canal proativo campanha→eleitor que faltava: hoje
--- o político só REAGE a demandas com SLA (painel-mandato). Aqui ele CRIA um
--- espaço próprio — o eleitor entra (join), a campanha publica atualizações, e
--- a base de apoiadores fica visível e mobilizável.
+-- A "campaign group" is the proactive campaign→voter channel that was missing: today
+-- the official only REACTS to demands under an SLA (the mandate panel). Here they CREATE
+-- their own space — the voter joins, the campaign publishes updates, and
+-- the supporter base becomes visible and mobilizable.
 --
--- Dono = um mandato (o mesmo vínculo do gate is_politico / painel / campanha).
--- Não reusa `assembly` (0220): aquilo é corpo participativo da org, SEM dono —
--- semânticas diferentes. Tabelas dedicadas, enxutas.
+-- Owner = a mandate (the same binding as the is_politico gate / panel / campaign).
+-- It does not reuse `assembly` (0220): that is a participatory body of the org, with NO owner —
+-- different semantics. Dedicated, lean tables.
 
 BEGIN;
 
 -- campaign_group — um grupo por mandato (UNIQUE mandate_id). owner_citizen_id
--- guarda quem criou (o político logado no momento).
+-- records who created it (the official logged in at the time).
 CREATE TABLE campaign_group (
     id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     org_id            uuid NOT NULL REFERENCES org(id),
@@ -21,7 +21,7 @@ CREATE TABLE campaign_group (
     name              text NOT NULL,
     description       text,
     created_at        timestamptz NOT NULL DEFAULT now(),
-    -- Um grupo por mandato: o político tem UM espaço de campanha.
+    -- One group per mandate: the official has ONE campaign space.
     UNIQUE (mandate_id)
 );
 CREATE INDEX campaign_group_org_idx ON campaign_group (org_id, id);
@@ -37,7 +37,7 @@ CREATE TABLE campaign_group_member (
 CREATE INDEX campaign_group_member_group_idx ON campaign_group_member (group_id, id);
 CREATE INDEX campaign_group_member_citizen_idx ON campaign_group_member (citizen_id);
 
--- campaign_group_post — atualizações publicadas pela campanha (só o dono posta no MVP).
+-- campaign_group_post — updates published by the campaign (only the owner posts in the MVP).
 CREATE TABLE campaign_group_post (
     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     group_id    uuid NOT NULL REFERENCES campaign_group(id) ON DELETE CASCADE,
@@ -53,7 +53,7 @@ COMMENT ON TABLE campaign_group_member IS
 COMMENT ON TABLE campaign_group_post IS
     '0.39.0: atualizações publicadas pela campanha no grupo.';
 
--- O pod do gateway conecta como `dsoc` (não postgres) — sem isto, permission denied.
+-- The gateway pod connects as `dsoc` (not postgres) — without this, permission denied.
 ALTER TABLE campaign_group OWNER TO dsoc;
 ALTER TABLE campaign_group_member OWNER TO dsoc;
 ALTER TABLE campaign_group_post OWNER TO dsoc;

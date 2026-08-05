@@ -1,16 +1,16 @@
 -- Migration 0107 — rate-limit de /auth/login por IP (P5.1).
 --
--- Sem contador de tentativas hoje, um atacante pode força-brutar senhas
--- via /auth/login à vontade. Tabela minimalista: registra cada tentativa
--- (sucesso ou falha) com IP e timestamp; o serviço bloqueia se
--- COUNT(*) por IP na última hora ≥ AUTH_LOGIN_RATE_MAX_PER_HOUR (default 10).
+-- With no attempt counter today, an attacker can brute-force passwords
+-- via /auth/login freely. A minimalist table: it records every attempt
+-- (success or failure) with the IP and a timestamp; the service blocks when
+-- COUNT(*) per IP in the last hour ≥ AUTH_LOGIN_RATE_MAX_PER_HOUR (default 10).
 --
--- Contamos TOTAL (sucesso + falha) intencionalmente: um cidadão comum
--- fazendo login normalmente 3-4x/dia nunca chega perto do teto; alguém
--- estourando 10/h é sinal de bot ou credential stuffing.
+-- We count the TOTAL (success + failure) intentionally: an ordinary citizen
+-- logging in normally 3-4x/day never comes close to the cap; someone
+-- exceeding 10/h is a bot or credential-stuffing signal.
 --
--- Cleanup: o worker `signup_cleanup_loop` já periódico também sweep esta
--- tabela (mesmo cutoff_days), pra ela não crescer indefinidamente.
+-- Cleanup: the already-periodic `signup_cleanup_loop` worker also sweeps this
+-- table (the same cutoff_days), so it does not grow indefinitely.
 
 BEGIN;
 
@@ -18,11 +18,11 @@ CREATE TABLE auth_login_attempt (
     id          bigserial PRIMARY KEY,
     request_ip  text NOT NULL,
     at          timestamptz NOT NULL DEFAULT now(),
-    -- Marcamos o outcome pra dashboards futuros — 'ok' | 'fail'.
+    -- We record the outcome for future dashboards — 'ok' | 'fail'.
     outcome     text NOT NULL CHECK (outcome IN ('ok','fail'))
 );
 
--- Consulta de rate: WHERE request_ip=$1 AND at > $2. Índice composto acelera.
+-- Rate query: WHERE request_ip=$1 AND at > $2. The composite index speeds it up.
 CREATE INDEX auth_login_attempt_ip_at_idx
     ON auth_login_attempt (request_ip, at DESC);
 

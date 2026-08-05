@@ -1,18 +1,18 @@
--- 0673_party_directory_territorial_unique — um diretório por partido por território.
+-- 0673_party_directory_territorial_unique — one directory per party per territory.
 --
--- MOTIVAÇÃO (incidente 2026-07-31): dois "Diretório Municipal PT-Ubatuba" idênticos
--- criados com 49s de intervalo em prod. A 0204 valida a FORMA federativa (esfera ↔
--- uf/municipio) mas nada impedia dois diretórios do mesmo partido no MESMO território —
+-- MOTIVATION (incident 2026-07-31): two identical "Diretório Municipal PT-Ubatuba"
+-- created 49s apart in production. 0204 validates the federative SHAPE (sphere ↔
+-- uf/municipio) but nothing prevented two directories of the same party in the SAME territory —
 -- qualquer duplo clique, retry de rede ou corrida entre abas criava outro.
 --
--- NULLS NOT DISTINCT (PG15+) é essencial: federal tem uf/municipio NULL e estadual tem
--- municipio NULL; com o default (NULLS DISTINCT) essas esferas continuariam duplicáveis.
--- Resultado: no máximo 1 federal, 1 estadual por UF e 1 municipal por (UF, município)
--- por (org, partido). O nome segue livre — território é a identidade, não o rótulo.
+-- NULLS NOT DISTINCT (PG15+) is essential: federal has uf/municipio NULL and state has
+-- municipio NULL; with the default (NULLS DISTINCT) those spheres would stay duplicable.
+-- Result: at most 1 federal, 1 state per UF and 1 municipal per (UF, municipality)
+-- per (org, party). The name stays free — the territory is the identity, not the label.
 --
--- Os handlers de criação (dsoc-mandates::parties e gateway::admin_parties) traduzem a
--- violação em 409 `directory_exists`. Pré-requisito: prod já deduplicada (o duplicado
--- de Ubatuba foi removido manualmente antes desta migração — ver CHANGELOG).
+-- The creation handlers (dsoc-mandates::parties and gateway::admin_parties) translate the
+-- violation into a 409 `directory_exists`. Prerequisite: production already deduplicated (the Ubatuba
+-- duplicate was removed manually before this migration — see CHANGELOG).
 CREATE UNIQUE INDEX party_directory_territorio_key
     ON party_directory (org_id, party_sigla, esfera, uf, municipio)
     NULLS NOT DISTINCT;

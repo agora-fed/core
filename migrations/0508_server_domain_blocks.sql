@@ -1,20 +1,20 @@
--- 0508_server_domain_blocks.sql — bloqueios de domínio a nível de instância.
+-- 0508_server_domain_blocks.sql — instance-level domain blocks.
 --
--- Diferente de `domain_block` (por-cidadão, migration 0506), esta tabela é
--- política da instância inteira. Uma linha aqui afeta TODAS as contas do
--- servidor: inbound activities do domínio são rejeitadas, outbound entregas
--- pra ele são suprimidas, e posts que já chegaram somem do feed público.
+-- Unlike `domain_block` (per citizen, migration 0506), this table is
+-- policy for the whole instance. One row here affects EVERY account on the
+-- server: inbound activities from the domain are rejected, outbound deliveries
+-- to it are suppressed, and posts that already arrived vanish from the public feed.
 --
--- Duas severidades no vocabulário Mastodon:
---   * silence  — posts do domínio ficam invisíveis pro feed público local
---                (mas quem JÁ segue continua vendo); o discovery e trends
+-- Two severities in Mastodon's vocabulary:
+--   * silence  — the domain's posts become invisible to the local public feed
+--                (but existing followers keep seeing them); discovery and trends
 --                ignoram.
 --   * suspend  — corte total. Bloqueia inbox, drop outbound, some do feed
---                pra todos os cidadãos independente de já seguir.
+--                for every citizen regardless of whether they already follow.
 
 CREATE TABLE server_domain_block (
     id           uuid PRIMARY KEY,
-    -- Host normalizado em lowercase, sem esquema nem porta. Ex.: 'pravda.example'.
+    -- Host normalized to lowercase, no scheme and no port. E.g. 'pravda.example'.
     domain       text NOT NULL UNIQUE,
     severity     text NOT NULL CHECK (severity IN ('silence', 'suspend')),
     reason       text,

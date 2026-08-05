@@ -1,31 +1,31 @@
 -- Migration 0111 — Web Push subscriptions (RFC 8291), owned por dsoc-notify.
 --
--- notify_device_token (0110) foi feita pra "1 token opaco por device (APNs/FCM)".
--- Web Push RFC 8291 é mais rico: cada cliente tem endpoint (URL do push server
+-- notify_device_token (0110) was built for "1 opaque token per device (APNs/FCM)".
+-- Web Push RFC 8291 is richer: each client has an endpoint (the push server's URL
 -- do navegador) + p256dh + auth (ambos chaves ECDH). Modelar como tabela nova
--- é mais claro do que tentar espremer 3 valores num "token" opaco.
+-- is clearer than trying to squeeze 3 values into one opaque "token".
 --
--- UNIQUE (citizen_id, endpoint): re-subscribe (mesmo browser, expiração do
--- token do push server → auto renovação) atualiza p256dh/auth ao invés de
--- duplicar. Cascade de citizen mata subscription se conta for excluída.
+-- UNIQUE (citizen_id, endpoint): a re-subscribe (same browser, expiry of the
+-- push server's token → auto renewal) updates p256dh/auth instead of
+-- duplicating. The citizen cascade kills the subscription if the account is deleted.
 
 BEGIN;
 
 CREATE TABLE notify_web_push_subscription (
     id           uuid PRIMARY KEY,
     citizen_id   uuid NOT NULL REFERENCES citizen(id) ON DELETE CASCADE,
-    -- URL do push service (fcm.googleapis.com/… pro Chrome, mozilla push pro Firefox etc.).
+    -- URL of the push service (fcm.googleapis.com/… for Chrome, mozilla push for Firefox etc.).
     endpoint     text NOT NULL,
     -- base64url do ECDH public key do UA (RFC 8291 §4.1). ~87 chars.
     p256dh       text NOT NULL,
     -- base64url do 16-byte shared secret (auth token). ~22 chars.
     auth         text NOT NULL,
-    -- User-Agent no momento da inscrição — ajuda a mostrar "seu Chrome no laptop"
-    -- na lista de devices em Configurações. Sem PII sensível.
+    -- User-Agent at subscription time — it helps show "your Chrome on the laptop"
+    -- in the device list under Settings. No sensitive PII.
     user_agent   text,
     created_at   timestamptz NOT NULL,
-    -- Marca subs que já falharam com 410 Gone (endpoint expirou). Deletamos
-    -- na próxima limpeza; enquanto isso não tentamos enviar de novo.
+    -- Marks subs that already failed with 410 Gone (the endpoint expired). We delete them
+    -- in the next cleanup; meanwhile we do not try to send again.
     dead_at      timestamptz,
 
     UNIQUE (citizen_id, endpoint)
