@@ -1,17 +1,17 @@
 -- 0666_mandate_commitment.sql — Mandato coletivo: compromisso consultivo declarado (D8.1).
 --
 -- Tese (accountability ≠ poder): um mandato coletivo (Bancada Ativista/SP, Gabinetona) se
--- COMPROMETE PUBLICAMENTE a ouvir a base antes de votar sobre um tema. O compromisso é
--- VOLUNTÁRIO e CONSULTIVO — mandato é indelegável por lei, então o software entrega apenas a
--- TRANSPARÊNCIA do compromisso, NUNCA vinculação jurídica. A UI nunca diz "vinculante".
+-- PUBLICLY COMMITS to listening to its base before voting on a topic. The commitment is
+-- VOLUNTARY and CONSULTATIVE — a mandate is non-delegable by law, so the software delivers only
+-- the TRANSPARENCY of the commitment, NEVER legal binding. The UI never says "binding".
 --
--- Fluxo: (1) o operador declara um compromisso (tema + descrição); (2) opcionalmente abre uma
--- CONSULTA à base (reusa `consultations_consultation` + `_question`, ADR-0014 — respostas/
--- agregação vêm de graça da página /consulta); (3) registra publicamente se SEGUIU ou NÃO o
--- resultado. O placar deixa de ser "acusação" e vira "instrução".
+-- Flow: (1) the operator declares a commitment (topic + description); (2) optionally opens a
+-- CONSULTATION with the base (reusing `consultations_consultation` + `_question`, ADR-0014 — answers/
+-- aggregation come for free from the /consulta page); (3) publicly records whether it FOLLOWED the
+-- result or not. The scorecard stops being "accusation" and becomes "instruction".
 --
 -- FKs: `mandate_id` → tabela de identidade central (permitida por REGISTRY.md). `consultation_id`
--- → `consultations_consultation` (crate consultations) — FK intra-plataforma legítima, declarada
+-- → `consultations_consultation` (the consultations crate) — a legitimate intra-platform FK, declared
 -- em scripts/fk-allow.txt (mesmo caso do broadcast→consulta, 0656).
 --
 -- Idempotente: rerun-safe.
@@ -23,20 +23,20 @@ CREATE TABLE IF NOT EXISTS mandate_commitment (
     mandate_id      uuid NOT NULL REFERENCES mandate(id),
     theme           text NOT NULL,
     description     text NOT NULL,
-    -- Só existe o tipo consultivo. O CHECK trava qualquer promessa de vinculação jurídica no
-    -- próprio schema — nem por bug de código um compromisso "vinculante" é gravável.
+    -- Only the consultative type exists. The CHECK locks any promise of legal binding in the
+    -- schema itself — not even a code bug can store a "binding" commitment.
     kind            text NOT NULL DEFAULT 'consultivo' CHECK (kind = 'consultivo'),
-    -- Consulta ligada à base (reusa o crate consultations). NULL enquanto não abre a consulta.
+    -- The consultation linked to the base (reusing the consultations crate). NULL until one is opened.
     consultation_id uuid REFERENCES consultations_consultation(id),
-    -- Resultado declarado do compromisso: o mandato SEGUIU a base, NÃO seguiu, ou ainda pendente.
+    -- The commitment's declared result: the mandate FOLLOWED the base, did NOT, or it is still pending.
     outcome         text CHECK (outcome IN ('seguiu', 'nao_seguiu', 'pendente')),
     outcome_note    text,
-    -- Compromissos são públicos por padrão (a transparência é o produto).
+    -- Commitments are public by default (transparency is the product).
     is_public       boolean NOT NULL DEFAULT true,
     created_at      timestamptz NOT NULL DEFAULT now()
 );
 
--- Listagem pública por mandato (perfil do político), mais recentes primeiro.
+-- Public listing per mandate (the official's profile), most recent first.
 CREATE INDEX IF NOT EXISTS mandate_commitment_mandate_idx
     ON mandate_commitment (mandate_id, created_at DESC);
 

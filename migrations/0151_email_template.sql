@@ -1,30 +1,30 @@
--- Migration 0151 — templates de e-mail editáveis pela UI (0.25.0-fediverso).
+-- Migration 0151 — e-mail templates editable from the UI (0.25.0-fediverse).
 --
 -- Substitui strings hardcoded em Rust (proposal_delivery, signup_verify,
--- password_reset, mandate_invite) por linhas editáveis. Admin edita título +
--- corpo pela UI; render substitui `{{var}}` server-side com valores do
+-- password_reset, mandate_invite) with editable rows. The admin edits the subject +
+-- body from the UI; rendering substitutes `{{var}}` server-side with values from the
 -- contexto.
 --
--- - `key` é o identificador estável (nunca traduzido) usado no código:
+-- - `key` is the stable identifier (never translated) used in the code:
 --   'proposal_confirm_author', 'signup_verify_cidadao' etc.
 -- - `variables` documenta quais placeholders o template aceita — a UI
---   mostra "Variáveis disponíveis" pra o admin não esquecer.
--- - `updated_by` = citizen que editou (pra audit — quem mexeu quando).
--- - `default_subject/body` são a versão hardcoded original; permite "Voltar
---   ao padrão" na UI sem consultar o repo.
+--   shows "Available variables" so the admin does not forget.
+-- - `updated_by` = the citizen who edited it (for audit — who touched what, when).
+-- - `default_subject/body` are the original hardcoded version; they enable "Reset
+--   to default" in the UI without consulting the repo.
 --
--- Idempotente: re-run atualiza defaults sem apagar edições do admin.
+-- Idempotent: a re-run updates the defaults without wiping the admin's edits.
 
 BEGIN;
 
 CREATE TABLE email_template (
     key              text PRIMARY KEY,
-    -- Descrição humana que aparece na lista da UI ("E-mail de confirmação
-    -- de cadastro", "E-mail pro gabinete recebendo proposta"…).
+    -- Human description shown in the UI's list ("Signup confirmation
+    -- e-mail", "E-mail to the office receiving a proposal"…).
     label            text NOT NULL,
     subject          text NOT NULL,
     body             text NOT NULL,
-    -- Fallback: se o admin apagar tudo (`subject=''`), render volta pro default.
+    -- Fallback: if the admin wipes everything (`subject=''`), rendering falls back to the default.
     default_subject  text NOT NULL,
     default_body     text NOT NULL,
     -- Array de placeholders aceitos, ex.: {'author_name', 'proposal_title', 'proposal_url'}.
@@ -39,8 +39,8 @@ COMMENT ON TABLE email_template IS
 
 ALTER TABLE email_template OWNER TO dsoc;
 
--- Seed: as 4 templates que já saem hoje. Text/subject copiados 1:1 do que
--- as crates estão gerando pra o admin não perceber diferença antes de mexer.
+-- Seed: the 4 templates that already go out today. Text/subject copied 1:1 from what
+-- the crates are generating, so the admin notices no difference before editing.
 
 INSERT INTO email_template (key, label, subject, body, default_subject, default_body, variables, updated_at)
 VALUES
@@ -89,6 +89,6 @@ ON CONFLICT (key) DO UPDATE SET
     default_subject  = EXCLUDED.default_subject,
     default_body     = EXCLUDED.default_body,
     variables        = EXCLUDED.variables;
-    -- NÃO sobrescrevemos subject/body — respeita edições do admin.
+    -- We do NOT overwrite subject/body — it respects the admin's edits.
 
 COMMIT;

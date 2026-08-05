@@ -1,30 +1,30 @@
--- 0665_forum_karma_drop_ponderacao.sql — F1 do placar por pontos + karma (ÁGORA, ADR-0019).
+-- 0665_forum_karma_drop_ponderacao.sql — F1 of the points scoreboard + karma (AGORA, ADR-0019).
 --
--- Diretriz do Marcos (2026-07-28): novo placar de deliberação estilo StackOverflow/Odoo.
--- Esta fatia (F1) faz só schema + limpeza de dados; a fórmula de pontos e o accrual de karma
--- vêm na F2 (backend). Aqui:
---   1. APAGA todo dado com stance 'ponderacao' (voto de tópico, comentário e voto-em-comentário) —
---      decisão do Marcos (ponderação eliminada por completo).
+-- Marcos' directive (2026-07-28): a new StackOverflow/Odoo-style deliberation scoreboard.
+-- This slice (F1) does schema + data cleanup only; the points formula and the karma accrual
+-- come in F2 (backend). Here:
+--   1. DELETES every datum with the 'ponderacao' stance (topic vote, comment and comment vote) —
+--      Marcos' decision (the neutral option removed entirely).
 --   2. Reduz o CHECK de stance a ('favor','contra') nas 3 tabelas.
---   3. Adiciona `citizen.karma` (reputação estilo SO; alimentada na F2).
+--   3. Adds `citizen.karma` (SO-style reputation; populated in F2).
 --
--- `ponderacao_count` (forum_topic / forum_topic_comment) fica como VESTIGIAL (sempre 0 agora) e é
--- dropada na F2, junto com a reescrita do recount que a alimentava. Idempotente: rerun-safe.
+-- `ponderacao_count` (forum_topic / forum_topic_comment) stays VESTIGIAL (always 0 now) and is
+-- dropped in F2, along with rewriting the recount that fed it. Idempotent: rerun-safe.
 
 BEGIN;
 
--- 1. Apaga dados de ponderação (ordem respeitando FKs).
+-- 1. Delete the neutral-stance data (order respecting the FKs).
 DELETE FROM forum_comment_vote WHERE stance = 'ponderacao';
 DELETE FROM forum_comment_vote
  WHERE comment_id IN (SELECT id FROM forum_topic_comment WHERE stance = 'ponderacao');
 DELETE FROM forum_topic_comment WHERE stance = 'ponderacao';
 DELETE FROM forum_topic_vote    WHERE stance = 'ponderacao';
 
--- Zera os contadores vestigiais (a F2 recomputa tudo com a fórmula nova).
+-- Zero the vestigial counters (F2 recomputes everything with the new formula).
 UPDATE forum_topic         SET ponderacao_count = 0 WHERE ponderacao_count <> 0;
 UPDATE forum_topic_comment SET ponderacao_count = 0 WHERE ponderacao_count <> 0;
 
--- 2. CHECK de stance → só favor/contra.
+-- 2. Stance CHECK → favor/contra only.
 ALTER TABLE forum_topic_vote    DROP CONSTRAINT IF EXISTS forum_topic_vote_stance_check;
 ALTER TABLE forum_topic_vote    ADD  CONSTRAINT forum_topic_vote_stance_check
      CHECK (stance = ANY (ARRAY['favor'::text, 'contra'::text]));
@@ -37,7 +37,7 @@ ALTER TABLE forum_comment_vote  DROP CONSTRAINT IF EXISTS forum_comment_vote_sta
 ALTER TABLE forum_comment_vote  ADD  CONSTRAINT forum_comment_vote_stance_check
      CHECK (stance = ANY (ARRAY['favor'::text, 'contra'::text]));
 
--- 3. Karma do cidadão (reputação estilo SO; F2 preenche via votos em comentários).
+-- 3. The citizen's karma (SO-style reputation; F2 fills it via comment votes).
 ALTER TABLE citizen ADD COLUMN IF NOT EXISTS karma integer NOT NULL DEFAULT 0;
 
 COMMENT ON COLUMN citizen.karma IS

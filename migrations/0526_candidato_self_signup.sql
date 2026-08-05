@@ -1,23 +1,23 @@
--- Migration 0526 — cadastro de candidato(a) sem mandato (auto-declarado).
+-- Migration 0526 — signup of a candidate without a mandate (self-declared).
 --
--- Hoje os dois caminhos de político (mandate_invite e register_politician)
--- exigem uma row de `mandate` pré-existente com public_email conferível —
--- quem ainda não tem mandato fica fora. ADR-0005 já decide a arquitetura:
--- "voter → candidate → official" é a MESMA identidade de Ator evoluindo.
--- Esta migration abre os três encaixes que o fluxo novo usa:
+-- Today both official paths (mandate_invite and register_politician)
+-- require a pre-existing `mandate` row with a checkable public_email —
+-- whoever has no mandate yet is left out. ADR-0005 already decides the architecture:
+-- "voter → candidate → official" is the SAME Actor identity evolving.
+-- This migration opens the three sockets the new flow uses:
 --
---   1. `mandate.source = 'self'` — mandato criado pelo próprio candidato no
---      cadastro (is_candidate=true, nunca setado por seed até aqui).
+--   1. `mandate.source = 'self'` — a mandate created by the candidate themselves at
+--      signup (is_candidate=true, never set by a seed until now).
 --   2. `auth_pending_signup.role = 'candidato'` + `candidate_meta` jsonb —
 --      o request guarda nome de urna/cargo/UF/partido; o confirm materializa
 --      mandate + binding + candidacy numa tx (mesmo pattern do politico).
---   3. `candidacy.listed` — decisão de produto 2026-07-24: autodeclarado NÃO
---      entra no comparador público de /eleicoes até verificação (atestação
+--   3. `candidacy.listed` — product decision 2026-07-24: a self-declared one does NOT
+--      enter the public /eleicoes comparator until verification (attestation
 --      de partido/mandato, match TSE ou admin). Import TSE continua listado
 --      (DEFAULT true); o self-signup insere `listed = false`.
 --
 -- O binding do candidato nasce `verification_level = 'email'` (autodeclarado)
--- — nunca 'directory' como os fluxos com prova de e-mail oficial.
+-- — never 'directory' like the flows with proof of an official e-mail.
 
 BEGIN;
 
@@ -41,7 +41,7 @@ ALTER TABLE auth_pending_signup
     ADD CONSTRAINT auth_pending_signup_role_check
     CHECK (role IN ('cidadao', 'politico', 'candidato'));
 
--- Consistência papel/payload (substitui o CHECK anônimo da 0106):
+-- role/payload consistency (replaces 0106's anonymous CHECK):
 -- politico ⇒ mandate_id; candidato ⇒ candidate_meta.
 ALTER TABLE auth_pending_signup
     DROP CONSTRAINT IF EXISTS auth_pending_signup_check;
@@ -56,7 +56,7 @@ COMMENT ON COLUMN auth_pending_signup.candidate_meta IS
     '0.36.0: role=candidato — {display_name, office, sphere, uf, municipio, party_sigla, number}. Validado no request; o confirm só materializa.';
 
 -- 3. candidacy.listed — vitrine do comparador. TSE/backfill ficam listados
--- (default true); autodeclarado entra false até verificação.
+-- (default true); a self-declared one starts false until verification.
 ALTER TABLE candidacy
     ADD COLUMN listed boolean NOT NULL DEFAULT true;
 

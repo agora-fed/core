@@ -1,22 +1,22 @@
--- 0512_fediverso_completo.sql — emojis custom, moderação de hashtag, auto-delete.
+-- 0512_fediverso_completo.sql — custom emojis, hashtag moderation, auto-delete.
 --
--- Três coisas que fecham o pacote "Mastodon completo":
---   1. custom_emoji: shortcodes que viram <img> no render. Upload PNG.
+-- Three things that complete the "full Mastodon" package:
+--   1. custom_emoji: shortcodes that become <img> at render time. PNG upload.
 --   2. hashtag_moderation: admin banir hashtag (some do trending + feed
---      público) ou promover pra sempre aparecer no trending.
+--      public feed) or promoting one so it always appears in trending.
 --   3. citizen.auto_delete_notes_older_than_days: worker apaga notas
---      próprias com idade > N dias.
+--      own posts older than N days.
 
 CREATE TABLE custom_emoji (
     id           uuid PRIMARY KEY,
-    -- Shortcode sem `:` (ex.: 'party_dbr'). Case-sensitive, único.
+    -- Shortcode without `:` (e.g. 'party_dbr'). Case-sensitive, unique.
     shortcode    text NOT NULL UNIQUE
                  CHECK (shortcode ~ '^[A-Za-z0-9_-]+$'
                         AND char_length(shortcode) BETWEEN 2 AND 32),
     -- URL relativa /media/emoji/{uuid}.png. Front sempre monta como
-    -- absolute com o próprio host.
+    -- absolute with our own host.
     url          text NOT NULL,
-    -- Se falso, some do picker + do render (mantém histórico).
+    -- When false, it disappears from the picker + the render (history is kept).
     enabled      boolean NOT NULL DEFAULT true,
     created_at   timestamptz NOT NULL DEFAULT now(),
     created_by   uuid REFERENCES citizen(id)
@@ -26,13 +26,13 @@ COMMENT ON TABLE custom_emoji IS
 ALTER TABLE custom_emoji OWNER TO dsoc;
 
 -- ─────────────────────────────────────────────────────────────
--- Moderação de hashtag
+-- Hashtag moderation
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE hashtag_moderation (
-    -- Tag normalizada (lowercase, sem #).
+    -- Normalized tag (lowercase, no #).
     tag           text PRIMARY KEY CHECK (tag = lower(tag)),
-    -- 'banned' esconde do trending e do feed público.
-    -- 'promoted' força aparecer no trending (mesmo sem volume).
+    -- 'banned' hides it from trending and from the public feed.
+    -- 'promoted' forces it into trending (even without volume).
     state         text NOT NULL CHECK (state IN ('banned', 'promoted')),
     reason        text,
     created_at    timestamptz NOT NULL DEFAULT now(),
@@ -44,7 +44,7 @@ COMMENT ON TABLE hashtag_moderation IS
 ALTER TABLE hashtag_moderation OWNER TO dsoc;
 
 -- ─────────────────────────────────────────────────────────────
--- Exclusão automatizada de publicações
+-- Automated deletion of posts
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE citizen
     ADD COLUMN IF NOT EXISTS auto_delete_notes_older_than_days integer

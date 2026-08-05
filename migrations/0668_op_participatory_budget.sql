@@ -1,19 +1,19 @@
--- 0666_op_participatory_budget.sql — Orçamento participativo (piloto de MANDATO, D8.3).
+-- 0666_op_participatory_budget.sql — Participatory budgeting (a MANDATE pilot, D8.3).
 --
--- O salto de "medir raiva" para "exercer poder": a base decide onde vai uma fatia REAL de verba.
--- Piloto viável = verba de EMENDA de um mandato aliado (um vereador/deputado), NÃO a prefeitura —
--- evita o ciclo institucional longo. Referência: Orçamento Participativo de Porto Alegre.
--- Copy honesta em toda superfície: "piloto — verba de emenda do mandato".
+-- The leap from "measuring anger" to "exercising power": the base decides where a REAL slice of funding goes.
+-- A viable pilot = the AMENDMENT funds of an allied mandate (a council member/deputy), NOT the city hall —
+-- it avoids the long institutional cycle. Reference: Porto Alegre's Participatory Budget.
+-- Honest copy on every surface: "pilot — the mandate's amendment funds".
 --
--- O que separa OP de "mais uma enquete" é a PRESTAÇÃO DE CONTAS: `op_item.execution_status`
--- fecha o loop (previsto → em_andamento → concluído / não executado) depois da votação.
+-- What separates PB from "one more poll" is the ACCOUNTABILITY: `op_item.execution_status`
+-- closes the loop (planned → in progress → completed / not executed) after the vote.
 --
--- Ciclo de uma rodada (`op_round.phase`):
+-- Cycle of a round (`op_round.phase`):
 --   propostas → votacao → resultado → execucao
 --
 -- Escopo territorial opcional (uf / municipio_ibge) espelha `citizen.municipio_ibge`/`uf` — a UI
--- pode restringir quem vota ao território do mandato. O gate do operador vem de
--- `mandate_identity_binding` (mesmo critério de campanha.rs / me_mandate_crm.rs).
+-- may restrict who votes to the mandate's territory. The operator's gate comes from
+-- `mandate_identity_binding` (the same criterion as campanha.rs / me_mandate_crm.rs).
 --
 -- OWNER: ALTER TABLE op_round   OWNER TO dsoc;
 -- OWNER: ALTER TABLE op_item    OWNER TO dsoc;
@@ -23,7 +23,7 @@
 
 BEGIN;
 
--- Uma rodada de orçamento participativo aberta por um mandato, com um teto de verba real.
+-- A participatory-budget round opened by a mandate, with a real funding cap.
 CREATE TABLE IF NOT EXISTS op_round (
     id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     mandate_id     uuid NOT NULL REFERENCES mandate(id),
@@ -37,8 +37,8 @@ CREATE TABLE IF NOT EXISTS op_round (
 );
 CREATE INDEX IF NOT EXISTS op_round_mandate_idx ON op_round (mandate_id, created_at DESC);
 
--- Um item/proposta submetido a uma rodada. `estimated_cents` é o custo estimado (entra no
--- cálculo do "cabe no orçamento"). `execution_status` é a prestação de contas pós-votação.
+-- An item/proposal submitted to a round. `estimated_cents` is the estimated cost (it enters the
+-- "fits the budget" computation). `execution_status` is the post-vote accountability.
 CREATE TABLE IF NOT EXISTS op_item (
     id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     round_id          uuid NOT NULL REFERENCES op_round(id) ON DELETE CASCADE,
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS op_item (
 );
 CREATE INDEX IF NOT EXISTS op_item_round_idx ON op_item (round_id);
 
--- Um voto: 1 por cidadão POR RODADA (a PK garante a unicidade). Trocar de item = upsert.
+-- One vote: 1 per citizen PER ROUND (the PK guarantees uniqueness). Switching item = an upsert.
 CREATE TABLE IF NOT EXISTS op_vote (
     round_id   uuid NOT NULL REFERENCES op_round(id) ON DELETE CASCADE,
     item_id    uuid NOT NULL REFERENCES op_item(id) ON DELETE CASCADE,

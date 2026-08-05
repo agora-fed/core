@@ -1,26 +1,26 @@
--- Migration 0524 — catálogo completo de templates de e-mail (0.32.0).
+-- Migration 0524 — the complete e-mail template catalog (0.32.0).
 --
 -- A 0151 criou a tabela e seedou 4 templates; este migration completa o
--- catálogo: todo e-mail que a plataforma envia (ou passa a enviar nesta
--- versão) tem uma linha editável pelo admin em /admin/email-templates.
+-- catalog: every e-mail the platform sends (or starts sending in this
+-- version) has a row the admin can edit at /admin/email-templates.
 --
 -- Novos e-mails introduzidos na 0.32.0:
--- - welcome                    → boas-vindas após a conta ser ativada
--- - follow_new                 → alguém te seguiu (gated por email_prefs.follow)
--- - sla_started_mandate        → D0 pro gabinete quando o SLA começa (com
---                                link responder-sem-conta). Também grava o
---                                recibo nº 1 — sem ele a escada D+1/D+2 do
+-- - welcome                    → welcome after the account is activated
+-- - follow_new                 → someone followed you (gated by email_prefs.follow)
+-- - sla_started_mandate        → D0 to the office when the SLA starts (with the
+--                                answer-without-an-account link). It also records
+--                                receipt #1 — without it the worker's D+1/D+2
 --                                "AR digital" nunca disparava.
 -- - proposal_threshold_author  → sua proposta cruzou o gatilho
 -- - sla_response_author        → o mandato respondeu
--- - sla_expired_author         → silêncio público registrado
+-- - sla_expired_author         → public silence recorded
 --
--- Já existiam hardcoded no código e agora viram template:
--- - mandate_invite             → convite pra assumir mandato (dsoc-auth)
+-- Already hardcoded in the code and now becoming templates:
+-- - mandate_invite             → invitation to claim a mandate (dsoc-auth)
 -- - sla_reminder_mandate       → lembretes D+1/D+2 ao gabinete (worker)
 --
--- Idempotente: re-run atualiza defaults sem apagar edições do admin
--- (mesmo padrão da 0151).
+-- Idempotent: a re-run updates the defaults without wiping the admin's edits
+-- (the same pattern as 0151).
 
 BEGIN;
 
@@ -111,6 +111,6 @@ ON CONFLICT (key) DO UPDATE SET
     default_subject  = EXCLUDED.default_subject,
     default_body     = EXCLUDED.default_body,
     variables        = EXCLUDED.variables;
-    -- NÃO sobrescrevemos subject/body — respeita edições do admin.
+    -- We do NOT overwrite subject/body — it respects the admin's edits.
 
 COMMIT;

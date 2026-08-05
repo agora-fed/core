@@ -1,16 +1,16 @@
--- Migration 0530 — events_log à prova de adulteração (0.42.0).
+-- Migration 0530 — a tamper-proof events_log (0.42.0).
 --
--- O events_log era "append-only por convenção" (comentário na 0001), sem
+-- events_log was "append-only by convention" (a comment in 0001), with no
 -- enforcement — um comprometimento de app/admin podia reescrever ou apagar o
--- histórico, exatamente o que o contrato social diz impedir. Aqui:
---   1. DELETE bloqueado (nada nunca apaga eventos — confirmado no código).
---   2. UPDATE só pode mudar `processed_at` (o worker marca entregue); qualquer
---      alteração nos campos imutáveis é rejeitada.
---   3. `row_hash` = sha256 do conteúdo imutável, setado no INSERT — permite
---      DETECTAR modificação silenciosa (recomputar e comparar) mesmo se alguém
---      burlar os triggers via superusuário.
+-- history — exactly what the social contract says must be prevented. Here:
+--   1. DELETE blocked (nothing ever deletes events — confirmed in the code).
+--   2. UPDATE may only change `processed_at` (the worker marks delivery); any
+--      change to the immutable fields is rejected.
+--   3. `row_hash` = sha256 of the immutable content, set on INSERT — it allows
+--      DETECTING a silent modification (recompute and compare) even if someone
+--      bypasses the triggers as a superuser.
 --
--- O hash-chain/Merkle completo (detecção de reordenação/remoção encadeada) é a
+-- The full hash chain/Merkle tree (detecting chained reordering/removal) is
 -- "aposta do cartório do silêncio" — Fase 5, feature dedicada.
 
 BEGIN;
@@ -22,7 +22,7 @@ UPDATE events_log SET row_hash = sha256(convert_to(
     id::text || '|' || org_id::text || '|' || topic || '|' ||
     event_type || '|' || payload::text || '|' || occurred_at::text, 'UTF8'));
 
--- BEFORE INSERT: carimba o hash de conteúdo.
+-- BEFORE INSERT: stamps the content hash.
 CREATE OR REPLACE FUNCTION events_log_set_hash() RETURNS trigger AS $$
 BEGIN
     NEW.row_hash := sha256(convert_to(
@@ -36,7 +36,7 @@ CREATE TRIGGER events_log_hash_bi
     BEFORE INSERT ON events_log
     FOR EACH ROW EXECUTE FUNCTION events_log_set_hash();
 
--- BEFORE UPDATE: só `processed_at` pode mudar.
+-- BEFORE UPDATE: only `processed_at` may change.
 CREATE OR REPLACE FUNCTION events_log_block_tamper_update() RETURNS trigger AS $$
 BEGIN
     IF NEW.id          IS DISTINCT FROM OLD.id

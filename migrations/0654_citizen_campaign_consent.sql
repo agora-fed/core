@@ -1,16 +1,16 @@
--- 0654_citizen_campaign_consent.sql — consentimento de campanha do cidadão (F2, #59).
+-- 0654_citizen_campaign_consent.sql — the citizen's campaign consent (F2, #59).
 --
--- LGPD art. 11 (opinião política/filiação = dados sensíveis): consentimento ESPECÍFICO e
--- destacado, **default OFF**. 4 níveis de capilaridade — o cidadão autoriza que sua base seja
--- usada para comunicação de campanha por:
---   all_parties  : qualquer diretório de qualquer partido
---   party        : todos os diretórios de UM partido (party_sigla)
---   municipality : todos os partidos de UM município (uf + municipio)
---   directory    : um diretório de um município (party_sigla + uf + municipio)
+-- LGPD art. 11 (political opinion/affiliation = sensitive data): SPECIFIC and prominent
+-- consent, **default OFF**. 4 levels of reach — the citizen authorizes their record to be
+-- used for campaign communication by:
+--   all_parties  : any directory of any party
+--   party        : every directory of ONE party (party_sigla)
+--   municipality : every party of ONE municipality (uf + municipio)
+--   directory    : one directory of one municipality (party_sigla + uf + municipio)
 --
--- Cada linha é um grant; múltiplos grants somam capilaridade. Revogável (revoked_at). A
--- resolução "quem um diretório alcança" é da fase F3 (broadcast), que cruza estes grants com o
--- domicílio do cidadão (0652). Nunca exporta lista crua — envio mediado.
+-- Each row is a grant; multiple grants add up. Revocable (revoked_at). Resolving
+-- "whom a directory reaches" belongs to phase F3 (broadcast), which crosses these grants with the
+-- citizen's residence (0652). It never exports a raw list — sending is mediated.
 --
 -- Idempotente: rerun-safe.
 
@@ -36,12 +36,12 @@ CREATE TABLE IF NOT EXISTS citizen_campaign_consent (
     )
 );
 
--- "meus consentimentos ativos" (tela do cidadão).
+-- "my active consents" (the citizen's screen).
 CREATE INDEX IF NOT EXISTS citizen_campaign_consent_citizen_idx
     ON citizen_campaign_consent (citizen_id)
     WHERE revoked_at IS NULL;
 
--- resolução de alcance por (scope, party, uf, municipio) — usada na F3.
+-- reach resolution by (scope, party, uf, municipio) — used in F3.
 CREATE INDEX IF NOT EXISTS citizen_campaign_consent_reach_idx
     ON citizen_campaign_consent (scope, party_sigla, uf, municipio)
     WHERE revoked_at IS NULL;

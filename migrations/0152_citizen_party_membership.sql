@@ -1,21 +1,21 @@
--- Migration 0152 — filiação partidária opcional do cidadão comum.
+-- Migration 0152 — optional party affiliation of an ordinary citizen.
 --
--- Contexto: até aqui a plataforma diferenciava só:
---   - mandate.party  → partido do político no mandato
---   - party_administrator → cidadão que administra um partido
--- Faltava o caso mais comum: cidadã(o) comum simplesmente diz "sou do PT",
--- sem virar admin, sem ter mandato. Sinaliza pra o restante da UI ("meu
--- partido") + serve pra scorecard/filtros por partido no admin.
+-- Context: until now the platform distinguished only:
+--   - mandate.party  → the official's party in their mandate
+--   - party_administrator → a citizen who administers a party
+-- The most common case was missing: an ordinary citizen simply saying "I am PT",
+-- without becoming an admin, without holding a mandate. It signals to the rest of the UI ("my
+-- party") + serves scorecard/party filters in the admin.
 --
--- Nullable — a filiação é opcional. FK soft (só valida se preencher): assim
--- adicionar/remover partidos oficialmente não quebra dados históricos.
+-- Nullable — the affiliation is optional. A soft FK (validated only when filled): that way
+-- officially adding/removing parties never breaks historical data.
 
 BEGIN;
 
--- Sem FK: party PK é (org_id, sigla), e forçar isso na citizen exigiria
--- carregar o org_id da citizen no INSERT/UPDATE (a UI faz join). A validação
--- prática vem do dropdown do front (lê /parties) e da consistência ORG-level
--- que a plataforma já mantém.
+-- No FK: the party PK is (org_id, sigla), and enforcing that on citizen would require
+-- carrying the citizen's org_id into the INSERT/UPDATE (the UI does a join). Practical
+-- validation comes from the front-end dropdown (which reads /parties) and the ORG-level
+-- consistency the platform already maintains.
 ALTER TABLE citizen
     ADD COLUMN IF NOT EXISTS party_sigla text;
 
