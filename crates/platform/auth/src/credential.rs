@@ -1,11 +1,11 @@
 //! Sovereign credential identity: e-mail + senha (Argon2id) + **CPF**. Auth is verified by CPF
 //! (not an external IdP). See ADR-0008.
 //!
-//! **ADR-0015:** o CPF (documento de identidade brasileiro) é código Brasil-específico e foi
-//! movido para trás da fronteira de localização em [`dsoc_l10n_br::document`]. Reexportamos aqui
-//! [`Cpf`], [`CpfStatus`], [`CpfVerifier`] e [`AlgorithmicCpfVerifier`] para preservar os caminhos
-//! `crate::credential::*` usados pelo resto do crate. A senha (Argon2id) é agnóstica de país e
-//! continua morando aqui.
+//! **ADR-0015:** the CPF (the Brazilian identity document) is Brazil-specific code and was
+//! moved behind the localization boundary in [`dsoc_l10n_br::document`]. We re-export
+//! [`Cpf`], [`CpfStatus`], [`CpfVerifier`] and [`AlgorithmicCpfVerifier`] here to preserve the
+//! `crate::credential::*` paths used by the rest of the crate. The password (Argon2id) is
+//! country-agnostic and still lives here.
 
 use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
@@ -13,8 +13,8 @@ use argon2::Argon2;
 
 use crate::Error;
 
-// CPF — documento de identidade brasileiro (l10n_br, ADR-0015). A lógica (dígitos verificadores,
-// status, verificador plugável) vive em `dsoc_l10n_br::document`; aqui só reexportamos.
+// CPF — the Brazilian identity document (l10n_br, ADR-0015). The logic (check digits,
+// status, pluggable verifier) lives in `dsoc_l10n_br::document`; here we only re-export.
 pub use dsoc_l10n_br::document::{AlgorithmicCpfVerifier, Cpf, CpfStatus, CpfVerifier};
 
 /// Hash a password with Argon2id (PHC string). Never store the plaintext.
@@ -68,7 +68,7 @@ mod tests {
 
     #[test]
     fn cpf_reexport_still_parses() {
-        // Prova de que o reexport de l10n_br mantém o caminho `crate::credential::Cpf`.
+        // Proof that the l10n_br re-export keeps the `crate::credential::Cpf` path working.
         let cpf = Cpf::parse("529.982.247-25").expect("valid");
         assert_eq!(cpf.as_str(), "52998224725");
     }

@@ -186,12 +186,12 @@ impl ListParams {
     }
 }
 
-// --- autorização (hotfix 2026-07-26) ------------------------------------------------
-// Toda a superfície nasceu SEM gate (achado da revisão ADR-0011): anônimo criava regra
-// e resolvia apelação. Gate mínimo até o RequirePermission do roadmap R0/R2: o
-// middleware de sessão do gateway injeta x-dsoc-citizen-id/x-dsoc-org-id; mutações e
-// leituras de decisão exigem admin (binding owner/admin), apelar exige cidadão logado.
-// A leitura cross-crate de admin_role_binding é débito registrado no roadmap.
+// --- authorization (hotfix 2026-07-26) ----------------------------------------------
+// The whole surface shipped WITHOUT a gate (found in the ADR-0011 review): an anonymous
+// caller could create rules and resolve appeals. Minimal gate until the roadmap's R0/R2
+// RequirePermission: the gateway's session middleware injects x-dsoc-citizen-id/x-dsoc-org-id;
+// mutations and decision reads require an admin (owner/admin binding), appealing requires a
+// logged-in citizen. The cross-crate read of admin_role_binding is debt recorded in the roadmap.
 
 fn caller_citizen(headers: &HeaderMap) -> Option<Uuid> {
     headers

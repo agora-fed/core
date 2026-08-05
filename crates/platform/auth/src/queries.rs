@@ -274,8 +274,8 @@ pub(crate) async fn insert_credential_citizen<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// True se o `handle` (nick do fediverso) está livre no org (nenhum citizen o usa).
-/// Usado na validação do cadastro e no confirm (race entre register e confirm).
+/// True when the `handle` (fediverse nick) is free in the org (no citizen uses it).
+/// Used at signup validation and at confirm (the register↔confirm race).
 pub(crate) async fn handle_available<'e, E: PgExecutor<'e>>(
     ex: E,
     org: Uuid,
@@ -293,14 +293,14 @@ pub(crate) async fn handle_available<'e, E: PgExecutor<'e>>(
     Ok(!taken)
 }
 
-/// True se o código IBGE existe e pertence à UF informada. Valida o domicílio
-/// declarado no cadastro do cidadão (referência `municipio_ibge`, migration 0651).
+/// True when the IBGE code exists and belongs to the given UF. Validates the
+/// residence declared at citizen signup (`municipio_ibge` reference, migration 0651).
 ///
-// TODO(ADR-0015): esta leitura de IBGE é a mesma de
-// `dsoc_l10n_br::BrTerritorialProvider::municipality_in_subdivision`. Consolidar atrás do trait
-// `dsoc_core::TerritorialProvider` quando o fluxo de cadastro receber a localização injetada.
-// Mantida aqui por ora como `query_scalar!` (checagem em tempo de compilação, cache `.sqlx`),
-// sem mudar comportamento.
+// TODO(ADR-0015): this IBGE read is the same as
+// `dsoc_l10n_br::BrTerritorialProvider::municipality_in_subdivision`. Consolidate behind the
+// `dsoc_core::TerritorialProvider` trait once the signup flow receives the injected localization.
+// Kept here for now as a `query_scalar!` (compile-time checking, `.sqlx` cache),
+// with no behavioural change.
 pub(crate) async fn municipio_belongs_to_uf<'e, E: PgExecutor<'e>>(
     ex: E,
     codigo_ibge: i32,
@@ -352,7 +352,7 @@ pub(crate) async fn insert_credential<'e, E: PgExecutor<'e>>(
 /// Read the `public_email` of a mandate within an org. Returns `None` if the mandate does
 /// not exist. Used by [`crate::service::ZitadelAuth::register_politician`] to gate the
 /// self-registration flow: a citizen may only self-onboard as a politician when they can
-/// prove control of the `public_email` on file with the Câmara/Senado/TSE.
+/// prove control of the `public_email` on file with the legislature/electoral authority.
 pub(crate) async fn find_mandate_public_email<'e, E: PgExecutor<'e>>(
     ex: E,
     org: Uuid,
@@ -368,11 +368,11 @@ pub(crate) async fn find_mandate_public_email<'e, E: PgExecutor<'e>>(
     Ok(row)
 }
 
-/// Define o @handle SÓ se ainda for NULL (onboarding: todo cidadão nasce com
-/// presença federada; a pessoa pode trocar depois nas configurações).
+/// Set the @handle ONLY when it is still NULL (onboarding: every citizen is born
+/// with a federated presence; the person can change it later in settings).
 ///
 /// # Errors
-/// Propaga o `sqlx::Error` (colisão de unique inclusa — o caller decide retry).
+/// Propagates the `sqlx::Error` (unique collision included — the caller decides on a retry).
 pub async fn set_handle_if_null(
     executor: impl sqlx::PgExecutor<'_>,
     citizen_id: Uuid,
@@ -389,8 +389,8 @@ pub async fn set_handle_if_null(
     Ok(res.rows_affected())
 }
 
-/// Cria um follow LOCAL (outbound, aceito na hora — sem handshake) se ainda não
-/// existir. Onboarding: toda conta nova segue o perfil oficial da plataforma.
+/// Create a LOCAL follow (outbound, accepted immediately — no handshake) when one
+/// does not exist. Onboarding: every new account follows the platform's official profile.
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -465,7 +465,7 @@ pub(crate) async fn insert_mandate_identity_binding<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Cria a row de `mandate` de um(a) candidato(a) auto-declarado(a) (0526).
+/// Create the `mandate` row of a self-declared candidate (0526).
 /// `source='self'` + `is_candidate=true`; `source_external_id` = uuid do
 /// citizen (chave natural, garante 1 mandato self por conta).
 #[allow(clippy::too_many_arguments)]
@@ -505,7 +505,7 @@ pub(crate) async fn insert_mandate_self_candidate<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Eleição-alvo do cadastro de candidato: round 1 do ano/esfera na org.
+/// Target election of a candidate signup: round 1 of the year/sphere in the org.
 pub(crate) async fn find_election_id<'e, E: PgExecutor<'e>>(
     ex: E,
     org: Uuid,
@@ -525,8 +525,8 @@ pub(crate) async fn find_election_id<'e, E: PgExecutor<'e>>(
     .await
 }
 
-/// Candidatura auto-declarada (0526): `listed=false` — fora do comparador
-/// público até verificação (atestação de partido/mandato, match TSE ou admin).
+/// Self-declared candidacy (0526): `listed=false` — outside the public
+/// comparator until verification (party/mandate attestation, TSE match or admin).
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn insert_candidacy_self<'e, E: PgExecutor<'e>>(
     ex: E,
@@ -1572,12 +1572,12 @@ pub(crate) async fn password_reset_mark_used<'e, E: PgExecutor<'e>>(
 }
 
 // -----------------------------------------------------------------------------
-// Pending signup (migration 0106) — verificação de e-mail antes de criar conta
+// Pending signup (migration 0106) — e-mail verification before the account exists
 // -----------------------------------------------------------------------------
 
-/// A pending signup redimível pelo token. Traz de volta tudo que o request
-/// gravou pra que o confirm materialize citizen+credential+session numa única
-/// tx sem re-perguntar nada ao usuário.
+/// A pending signup redeemable by token. Brings back everything the request
+/// wrote so confirm can materialize citizen+credential+session in a single tx
+/// without asking the user anything again.
 #[derive(Debug, Clone)]
 pub(crate) struct PendingSignupRow {
     pub id: Uuid,
@@ -1588,18 +1588,18 @@ pub(crate) struct PendingSignupRow {
     pub role: String,
     pub mandate_id: Option<Uuid>,
     pub candidate_meta: Option<serde_json::Value>,
-    /// Domicílio informado no cadastro (só cidadão); aplicado no confirm (0653).
+    /// Residence given at signup (citizens only); applied at confirm (0653).
     pub residencia_uf: Option<String>,
     pub residencia_municipio_ibge: Option<i32>,
-    /// Dados pessoais obrigatórios (0664); aplicados ao citizen no confirm.
+    /// Mandatory personal data (0664); applied to the citizen at confirm.
     pub full_name: Option<String>,
     pub gender: Option<String>,
     pub birth_date: Option<chrono::NaiveDate>,
     pub handle: Option<String>,
 }
 
-/// Insere um pending_signup. Caller pré-computou o SHA-256 do token (só o
-/// hash entra no banco) e já normalizou email/cpf/role.
+/// Insert a pending_signup. The caller pre-computed the token's SHA-256 (only the
+/// hash reaches the database) and already normalized email/cpf/role.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn pending_signup_insert<'e, E: PgExecutor<'e>>(
     ex: E,
@@ -1656,8 +1656,8 @@ pub(crate) async fn pending_signup_insert<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Marca como usada qualquer pending live pra `(org_id, email)`. Chamada
-/// antes de inserir uma nova — o link mais recente sempre vence. Same UX que
+/// Mark any live pending for `(org_id, email)` as used. Called before inserting
+/// a new one — the most recent link always wins. Same UX as
 /// o password_reset.
 pub(crate) async fn pending_signup_invalidate_live_for_email<'e, E: PgExecutor<'e>>(
     ex: E,
@@ -1680,8 +1680,8 @@ pub(crate) async fn pending_signup_invalidate_live_for_email<'e, E: PgExecutor<'
     Ok(r.rows_affected())
 }
 
-/// Look up pending redimível por token_hash + guarda de expiração. Retorna
-/// `None` pra token desconhecido / expirado / já usado (o confirm nunca diz
+/// Look up a redeemable pending by token_hash + expiry guard. Returns
+/// `None` for an unknown / expired / already-used token (confirm never says
 /// ao chamador qual caso ocorreu).
 pub(crate) async fn pending_signup_find_live<'e, E: PgExecutor<'e>>(
     ex: E,
@@ -1706,9 +1706,9 @@ pub(crate) async fn pending_signup_find_live<'e, E: PgExecutor<'e>>(
 }
 
 /// Conta pending_signups criadas por um `request_ip` desde `since`. Usada
-/// pelo rate-limit do cadastro: bots com CPFs válidos poderiam floodar
-/// pending_signups; limitamos 3/hora por IP como defesa em profundidade
-/// (o SMTP relay já rejeitaria envios em massa, mas melhor não chegar lá).
+/// by the signup rate limit: bots with valid documents could flood
+/// pending_signups; we cap 3/hour per IP as defence in depth
+/// (the SMTP relay would already reject bulk sends, but better not to get there).
 /// `request_ip = NULL` (X-Forwarded-For ausente) escapa por design — nunca
 /// contamos o mesmo bucket "sem-IP".
 pub(crate) async fn pending_signup_count_by_ip_since<'e, E: PgExecutor<'e>>(
@@ -1728,9 +1728,9 @@ pub(crate) async fn pending_signup_count_by_ip_since<'e, E: PgExecutor<'e>>(
 }
 
 /// Acha a pending live mais recente por `(org_id, email)`, se houver. Usada
-/// pelo resend endpoint: reaproveita password_hash+cpf+role+mandate_id do
-/// pending que ainda está vivo (senão o usuário teria que digitar tudo de
-/// novo). Mesma UX que password_reset com "novo link mata o anterior".
+/// by the resend endpoint: reuses password_hash+cpf+role+mandate_id from the
+/// pending that is still alive (otherwise the user would have to type everything
+/// again). Same UX as password_reset's "a new link kills the previous one".
 pub(crate) async fn pending_signup_find_live_for_email<'e, E: PgExecutor<'e>>(
     ex: E,
     org_id: Uuid,
@@ -1758,8 +1758,8 @@ pub(crate) async fn pending_signup_find_live_for_email<'e, E: PgExecutor<'e>>(
     Ok(row)
 }
 
-/// Deleta pendings antigos vencidos há mais de `cutoff_days` — cleanup
-/// worker (P3.3). Idempotente.
+/// Delete old pendings that expired more than `cutoff_days` ago — cleanup
+/// worker (P3.3). Idempotent.
 pub(crate) async fn pending_signup_cleanup_expired<'e, E: PgExecutor<'e>>(
     ex: E,
     cutoff: DateTime<Utc>,
@@ -1773,8 +1773,8 @@ pub(crate) async fn pending_signup_cleanup_expired<'e, E: PgExecutor<'e>>(
     Ok(r.rows_affected())
 }
 
-/// Registra uma tentativa de login (rate limit + auditoria, P5.1). Insert
-/// simples — a política de bloqueio é do serviço.
+/// Record a login attempt (rate limit + audit, P5.1). A plain insert —
+/// the lockout policy belongs to the service.
 pub(crate) async fn login_attempt_record<'e, E: PgExecutor<'e>>(
     ex: E,
     request_ip: &str,
@@ -1790,8 +1790,8 @@ pub(crate) async fn login_attempt_record<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Conta tentativas de login de um IP desde `since`. `sucesso + falha` — a
-/// política é limitar QUALQUER volume anormal, não só falhas.
+/// Count an IP's login attempts since `since`. `success + failure` — the
+/// policy is to cap ANY abnormal volume, not just failures.
 pub(crate) async fn login_attempt_count_by_ip_since<'e, E: PgExecutor<'e>>(
     ex: E,
     request_ip: &str,
@@ -1808,7 +1808,7 @@ pub(crate) async fn login_attempt_count_by_ip_since<'e, E: PgExecutor<'e>>(
     Ok(count)
 }
 
-/// Limpa tentativas antigas — invocada pelo mesmo worker do
+/// Purge old attempts — invoked by the same worker as
 /// pending_signup_cleanup.
 pub(crate) async fn login_attempt_cleanup<'e, E: PgExecutor<'e>>(
     ex: E,
@@ -1820,9 +1820,9 @@ pub(crate) async fn login_attempt_cleanup<'e, E: PgExecutor<'e>>(
     Ok(r.rows_affected())
 }
 
-/// Marca a pending como usada (single-use). Chamada dentro da tx do confirm
-/// junto com o insert do citizen/credential; se a tx roll-back, a linha
-/// continua redimível.
+/// Mark the pending as used (single-use). Called inside the confirm tx
+/// alongside the citizen/credential insert; if the tx rolls back, the row
+/// stays redeemable.
 pub(crate) async fn pending_signup_mark_used<'e, E: PgExecutor<'e>>(
     ex: E,
     id: Uuid,

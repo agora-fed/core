@@ -219,7 +219,7 @@ impl ZitadelAuth {
     /// chosen `mandate_id`. Enforces `body.email == mandate.public_email` (case-insensitive) —
     /// the *only* proof of mandate control we can automatically verify at registration time. The
     /// same tx then (a) creates the citizen + credential, (b) sets `citizen.is_public=true`
-    /// (mandates são públicos por transparência), and (c) records a
+    /// (mandates are public for transparency), and (c) records a
     /// `mandate_identity_binding` at level `directory`. On e-mail mismatch, returns
     /// [`Error::Conflict`] with a Portuguese message; the caller sees "credentials don't match"
     /// without any signal about whether the mandate exists (mitigates enumeration of officials).
@@ -262,7 +262,7 @@ impl ZitadelAuth {
         let mut tx = self.db.begin().await.map_err(map_register_sqlx)?;
         let citizen = CitizenId::new();
         // Politicians land at `directory` verification level right away — the e-mail match is
-        // the directory proof (the address is on the public registry maintained by the Câmara/
+        // the directory proof (the address is on the public registry maintained by the
         // Senado/TSE). Higher levels (strong) still require CPF verification.
         queries::insert_credential_citizen(
             &mut *tx,
@@ -330,9 +330,9 @@ impl ZitadelAuth {
         if !crate::credential::verify_password(password, &cred.password_hash) {
             return Err(Error::Unauthorized);
         }
-        // 0.26.11: contas suspensas pela moderação (citizen.suspended_at) não
-        // podem logar. Silenced continua logando; a UI é que esconde as notas
-        // do feed público.
+        // 0.26.11: accounts suspended by moderation (citizen.suspended_at) cannot
+        // log in. Silenced accounts still log in; it is the UI that hides their notes
+        // from the public feed.
         let suspended: bool =
             sqlx::query_scalar(r"SELECT suspended_at IS NOT NULL FROM citizen WHERE id = $1")
                 .bind(cred.citizen_id)
@@ -342,10 +342,10 @@ impl ZitadelAuth {
         if suspended {
             return Err(Error::Unauthorized);
         }
-        // 0.28.2: contas em revisão (citizen.pending_review, migration 0514)
-        // não logam até um admin aprovar em /admin/revisoes. Diferente do
-        // suspended, a mensagem é explícita — a pessoa acertou a senha e
-        // precisa saber o que está acontecendo com a própria conta.
+        // 0.28.2: accounts under review (citizen.pending_review, migration 0514)
+        // cannot log in until an admin approves them in /admin/revisoes. Unlike
+        // suspension, the message is explicit — the person got the password right
+        // and needs to know what is happening with their own account.
         let pending: bool = sqlx::query_scalar(r"SELECT pending_review FROM citizen WHERE id = $1")
             .bind(cred.citizen_id)
             .fetch_one(&self.db)

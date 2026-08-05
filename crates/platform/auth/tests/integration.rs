@@ -442,15 +442,15 @@ async fn invalid_cpf_is_rejected() {
 }
 
 // -----------------------------------------------------------------------------
-// signup_verify (0.25.0-fediverso-verify): request grava pending; confirm
-// materializa citizen+credential+session numa única tx.
+// signup_verify (0.25.0-fediverse-verify): request writes the pending row; confirm
+// materializes citizen+credential+session in a single tx.
 // -----------------------------------------------------------------------------
 
-/// Extrai o token plaintext do pending row lendo a chamada mais recente ao
-/// serviço. Como o token é hasheado em repouso, o teste não pode
-/// "roubar" o plaintext do banco — em vez disso, injeta um token conhecido
-/// via SQL bruto no `auth_pending_signup`, cortando o `request` do fluxo e
-/// exercendo apenas o `confirm` (que é a parte crítica: materialização
+/// Extract the plaintext token from the pending row by reading the most recent call
+/// to the service. Since the token is hashed at rest, the test cannot
+/// "steal" the plaintext from the database — instead it injects a known token
+/// via raw SQL into `auth_pending_signup`, cutting `request` out of the flow and
+/// exercising only `confirm` (the critical part: transactional materialization).
 /// transacional).
 #[tokio::test]
 async fn signup_verify_confirm_materializes_citizen_and_session() {
@@ -469,9 +469,9 @@ async fn signup_verify_confirm_materializes_citizen_and_session() {
         3600,
     );
 
-    // Gera um token e insere um pending manualmente (equivalente a request_cidadao,
-    // mas sem tocar em SMTP).
-    // 32 bytes ~ o mesmo tamanho de token do serviço em prod.
+    // Mint a token and insert a pending row by hand (equivalent to request_cidadao,
+    // but without touching SMTP).
+    // 32 bytes ~ the same token size the service uses in production.
     let token: String = URL_SAFE_NO_PAD.encode([7u8; 32]);
     let hash: Vec<u8> = {
         let mut h = Sha256::new();
@@ -515,8 +515,8 @@ async fn signup_verify_confirm_materializes_citizen_and_session() {
             .unwrap();
     assert!(used_at.is_some(), "pending marcada como usada dentro da tx");
 
-    // Credential/citizen materializados com o hash exato do pending (nunca
-    // rehashed no confirm) e o e-mail normalizado.
+    // Credential/citizen materialized with the pending row's exact hash (never
+    // rehashed at confirm) and the normalized e-mail.
     let (cred_email, cred_hash, cred_cpf): (String, String, String) = sqlx::query_as(
         "SELECT email, password_hash, cpf FROM auth_credential WHERE citizen_id = $1",
     )
@@ -528,7 +528,7 @@ async fn signup_verify_confirm_materializes_citizen_and_session() {
     assert_eq!(cred_hash, password_hash);
     assert_eq!(cred_cpf, "52998224725");
 
-    // Session emitida com o public_handle esperado (formato @cidadao-<curto>).
+    // Session issued with the expected public_handle (format @cidadao-<short>).
     assert!(!session.public_handle.is_empty());
     let live: Option<Uuid> =
         sqlx::query_scalar("SELECT id FROM auth_session WHERE id = $1 AND expires_at > $2")
@@ -564,7 +564,7 @@ async fn signup_verify_confirm_rejects_expired_token() {
         h.update(token.as_bytes());
         h.finalize().to_vec()
     };
-    // Já vencido no momento da consulta (expires_at = 1h ANTES do relógio fixado).
+    // Already expired at query time (expires_at = 1h BEFORE the pinned clock).
     let expires_at = now() - chrono::Duration::hours(1);
     sqlx::query(
         r"INSERT INTO auth_pending_signup
@@ -588,9 +588,9 @@ async fn signup_verify_confirm_rejects_expired_token() {
     assert!(matches!(err, dsoc_core::Error::Unauthorized));
 }
 
-/// 0.36.0 (migration 0526): confirm de `role='candidato'` materializa a
-/// tríade — mandate `source='self'`/`is_candidate=true`, binding nível
-/// `'email'` e candidacy `listed=false` amarrada à eleição do ano/esfera.
+/// 0.36.0 (migration 0526): confirm of `role='candidato'` materializes the
+/// triad — mandate `source='self'`/`is_candidate=true`, an `'email'`-level
+/// binding and a `listed=false` candidacy tied to the year/sphere election.
 #[tokio::test]
 async fn signup_verify_confirm_materializes_candidato() {
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -608,7 +608,7 @@ async fn signup_verify_confirm_materializes_candidato() {
         3600,
     );
 
-    // Eleição municipal 2026 — alvo da candidacy do confirm.
+    // 2026 municipal election — the target of confirm's candidacy.
     let election_id = Uuid::now_v7();
     sqlx::query(
         r"INSERT INTO election (id, org_id, year, round, sphere, election_day)
@@ -662,7 +662,7 @@ async fn signup_verify_confirm_materializes_candidato() {
         panic!("confirm de candidato emite sessão em instância aberta");
     };
 
-    // Mandate self criado com os metadados da candidatura.
+    // Self mandate created with the candidacy metadata.
     let (mandate_id, office, display_name, is_candidate, party, uf, sphere): (
         Uuid,
         String,
@@ -686,8 +686,8 @@ async fn signup_verify_confirm_materializes_candidato() {
     assert_eq!(uf.as_deref(), Some("RS"));
     assert_eq!(sphere, "municipal");
 
-    // Binding nível 'email' (autodeclarado) — destrava o gate is_politico,
-    // mas NÃO o selo de verificado.
+    // 'email'-level binding (self-declared) — unlocks the is_politico gate,
+    // but NOT the verified badge.
     let level: String = sqlx::query_scalar(
         r"SELECT verification_level FROM mandate_identity_binding
            WHERE mandate_id = $1 AND citizen_id = $2",
@@ -699,7 +699,7 @@ async fn signup_verify_confirm_materializes_candidato() {
     .expect("binding criado");
     assert_eq!(level, "email");
 
-    // Candidacy fora do comparador até verificação.
+    // Candidacy outside the comparator until verification.
     let (cand_listed, cand_status, cand_name): (bool, Option<String>, String) = sqlx::query_as(
         r"SELECT listed, status, candidate_name FROM candidacy WHERE mandate_id = $1",
     )
@@ -711,7 +711,7 @@ async fn signup_verify_confirm_materializes_candidato() {
     assert_eq!(cand_status.as_deref(), Some("autodeclarada"));
     assert_eq!(cand_name, "Fulana da Silva");
 
-    // Transparência não-opt-out: candidato é público como político.
+    // Non-opt-out transparency: a candidate is public like a politician.
     let is_public: bool = sqlx::query_scalar("SELECT is_public FROM citizen WHERE id = $1")
         .bind(session.citizen.as_uuid())
         .fetch_one(&db)

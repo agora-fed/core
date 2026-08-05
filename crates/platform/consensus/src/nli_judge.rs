@@ -3,7 +3,7 @@
 //!
 //! Motivation (measured 2026-07-10): a 384-dim sentence embedder compresses
 //! each text INDEPENDENTLY, so surface overlap dominates context — "A grande
-//! obra do mestre Picasso" vs "A pica de aço do mestre de obras" measure
+//! Portuguese near-homophone pairs measure
 //! cosine 0.068 (UNDER the merge threshold), and the two senses of "banco"
 //! measure 0.078, while a legitimate paraphrase can measure 0.116. No
 //! per-text representation fixes that; the pair must be read JOINTLY with

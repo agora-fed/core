@@ -209,7 +209,7 @@ impl PasswordResetService {
             );
             return;
         };
-        // Template editável pelo admin (0.32.0); fallback = texto original.
+        // Template editable by the admin (0.32.0); fallback = the original text.
         let mut ctx: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
         ctx.insert("reset_url", reset_url.to_owned());
         let (subject, body) = dsoc_db::email_templates::render(&self.db, "password_reset", &ctx)
@@ -288,7 +288,7 @@ async fn send_email(
         .from(from)
         .to(to_addr)
         .subject(subject)
-        // 0.32.1: texto puro como fallback + HTML com a marca (html_wrap).
+        // 0.32.1: plain text as fallback + branded HTML (html_wrap).
         .multipart(lettre::message::MultiPart::alternative_plain_html(
             body.to_owned(),
             dsoc_db::email_templates::html_wrap(body),

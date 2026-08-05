@@ -117,33 +117,33 @@ pub struct RegisterRequest {
     pub password: String,
     /// Brazilian CPF (any punctuation; validated by check digits).
     pub cpf: String,
-    /// Nome completo — confrontado com a base autorizada (R-KYC). Opcional por
-    /// compat: quando presente com data+sexo, o cadastro é verificado e bloqueia
+    /// Full name — matched against the authorized base (R-KYC). Optional for
+    /// compat: when present with birth date + sex, the signup is verified and blocks
     /// em REJEITA. O front novo sempre envia.
     #[serde(default)]
     pub nome_completo: Option<String>,
-    /// Data de nascimento `YYYY-MM-DD`, pra verificação.
+    /// Date of birth `YYYY-MM-DD`, for verification.
     #[serde(default)]
     pub nascimento: Option<String>,
-    /// Sexo `M`/`F`, pra verificação. OPCIONAL no cadastro (B4): quando ausente,
-    /// o ProfileGate coleta depois. Não desabilita a R-KYC (que roda com nome+data).
+    /// Sex `M`/`F`, for verification. OPTIONAL at signup (B4): when absent,
+    /// ProfileGate collects it later. It does not disable R-KYC (which runs on name+birth).
     #[serde(default)]
     pub sexo: Option<String>,
-    /// Título de eleitor (OPCIONAL). Sem ele, o cidadão não terá poder de voto
-    /// válido no sistema (comunicado na UI).
+    /// Electoral registry (OPTIONAL). Without it, the citizen has no valid voting
+    /// power in the system (surfaced in the UI).
     #[serde(default)]
     pub titulo_eleitor: Option<String>,
-    /// UF de domicílio (sigla 2 letras). OBRIGATÓRIA no cadastro do cidadão —
-    /// é o eixo territorial (escopo estadual). Validada contra `municipio_ibge`.
+    /// Residence UF (2-letter code). MANDATORY at citizen signup —
+    /// it is the territorial axis (state scope). Validated against `municipio_ibge`.
     #[serde(default)]
     pub uf: Option<String>,
-    /// Município de domicílio (código IBGE de 7 dígitos). OBRIGATÓRIO no cadastro
-    /// do cidadão — escopo municipal. Deve existir e pertencer à `uf` informada.
+    /// Residence municipality (7-digit IBGE code). MANDATORY at citizen
+    /// signup — municipal scope. Must exist and belong to the given `uf`.
     #[serde(default)]
     pub municipio_ibge: Option<i32>,
-    /// Nick do fediverso (handle escolhido). OPCIONAL no cadastro (B4): quando
-    /// ausente, o back deriva do nome (editável depois em Configurações). Quando
-    /// informado: 3–30 chars, `[a-z0-9_]`, começa por letra; único por org.
+    /// Fediverse nick (chosen handle). OPTIONAL at signup (B4): when absent,
+    /// the backend derives it from the name (editable later in Settings). When
+    /// given: 3–30 chars, `[a-z0-9_]`, starts with a letter; unique per org.
     #[serde(default)]
     pub handle: Option<String>,
 }
@@ -152,8 +152,8 @@ pub struct RegisterRequest {
 /// a chosen `mandate_id`. The mandate's `public_email` MUST equal `email` — that is the
 /// only credential we can automatically verify without an external OOB channel; anything
 /// weaker would let a random citizen self-declare as any politician. When the check passes
-/// the flow (a) creates the citizen and credential, (b) sets `is_public=true` (transparência
-/// obrigatória para mandatos), and (c) writes an `mandate_identity_binding` at level
+/// the flow (a) creates the citizen and credential, (b) sets `is_public=true` (transparency
+/// is mandatory for mandates), and (c) writes an `mandate_identity_binding` at level
 /// `directory`, atomically. Runs against `POST /auth/register/politician` (F1.3/F1.4).
 #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct RegisterPoliticianRequest {
@@ -170,7 +170,7 @@ pub struct RegisterPoliticianRequest {
 }
 
 /// Cadastro de candidato(a) SEM mandato (auto-declarado, migration 0526).
-/// O confirm materializa mandate `source='self'` + binding nível `email` +
+/// Confirm materializes a mandate with `source='self'` + an `email`-level binding +
 /// candidacy `listed=false`. Runs against `POST /auth/register/candidate`.
 #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct RegisterCandidateRequest {
@@ -182,18 +182,18 @@ pub struct RegisterCandidateRequest {
     pub password: String,
     /// Brazilian CPF (any punctuation; validated by check digits).
     pub cpf: String,
-    /// Nome de urna (público).
+    /// Ballot name (public).
     pub display_name: String,
     /// Cargo pretendido: presidente | governador | senador | deputado_federal
     /// | deputado_estadual | prefeito | vice_prefeito | vereador.
     pub office: String,
-    /// UF (obrigatória exceto presidente).
+    /// UF (mandatory except for president).
     pub uf: Option<String>,
-    /// Município (obrigatório pra cargos municipais).
+    /// Municipality (mandatory for municipal offices).
     pub municipio: Option<String>,
-    /// Sigla do partido da filiação atual.
+    /// Party sigla of the current affiliation.
     pub party_sigla: String,
-    /// Número de urna, se já definido.
+    /// Ballot number, when already assigned.
     pub number: Option<String>,
 }
 

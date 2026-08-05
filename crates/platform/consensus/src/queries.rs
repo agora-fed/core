@@ -287,11 +287,11 @@ pub async fn count_clusters(
     Ok(row.count)
 }
 
-/// Backlog do re-embed (fatia 2a, 0.28.4): propostas embedadas antes do
-/// 0518 — `text_sample` vazio marca tanto a era do stub FNV quanto o
-/// intervalo 0.27.x sem amostra. Depois do re-embed a amostra fica
-/// não-vazia (texto validado é não-vazio), então a row SAI do backlog —
-/// critério idempotente por construção.
+/// Re-embed backlog (slice 2a, 0.28.4): proposals embedded before
+/// 0518 — an empty `text_sample` marks both the FNV-stub era and the
+/// 0.27.x window without a sample. After the re-embed the sample is
+/// non-empty (validated text is non-empty), so the row LEAVES the backlog —
+/// a criterion idempotent by construction.
 pub async fn stale_embedding_proposals(
     executor: impl sqlx::PgExecutor<'_>,
     limit: i64,
@@ -308,8 +308,8 @@ pub async fn stale_embedding_proposals(
     .await
 }
 
-/// Regrava vetor + assinatura de direção + amostra de uma proposta já
-/// embedada. `false` = proposta sem embedding (nada a fazer).
+/// Rewrite the vector + direction signature + sample of an already-embedded
+/// proposal. `false` = proposal without an embedding (nothing to do).
 pub async fn update_embedding(
     executor: impl sqlx::PgExecutor<'_>,
     proposal_id: Uuid,
@@ -333,7 +333,7 @@ pub async fn update_embedding(
     Ok(res.rows_affected() > 0)
 }
 
-/// Cluster onde a proposta vive (edge UNIQUE por proposta).
+/// The cluster a proposal lives in (edge UNIQUE per proposal).
 pub async fn cluster_of_proposal(
     executor: impl sqlx::PgExecutor<'_>,
     proposal_id: Uuid,
@@ -348,8 +348,8 @@ pub async fn cluster_of_proposal(
     .await
 }
 
-/// Remove o edge de membership de uma proposta apagada; devolve o cluster
-/// afetado (se havia) pra o caller recomputar ou dissolver.
+/// Remove the membership edge of a deleted proposal; returns the affected
+/// cluster (if any) so the caller can recompute or dissolve it.
 pub async fn delete_member(
     executor: impl sqlx::PgExecutor<'_>,
     proposal_id: Uuid,
@@ -364,7 +364,7 @@ pub async fn delete_member(
     .await
 }
 
-/// Remove a embedding órfã (proposta apagada — purge de demo/LGPD art. 18).
+/// Remove the orphaned embedding (deleted proposal — demo purge / LGPD art. 18).
 pub async fn delete_embedding(
     executor: impl sqlx::PgExecutor<'_>,
     proposal_id: Uuid,
@@ -378,8 +378,8 @@ pub async fn delete_embedding(
     Ok(())
 }
 
-/// Dissolve o cluster se ficou sem membros (senão o recompute do centroide
-/// tentaria gravar `avg()` de zero rows = NULL numa coluna NOT NULL).
+/// Dissolve the cluster when it is left with no members (otherwise recomputing the
+/// centroid would try to write `avg()` over zero rows = NULL into a NOT NULL column).
 /// `true` = cluster removido.
 pub async fn delete_cluster_if_empty(
     executor: impl sqlx::PgExecutor<'_>,

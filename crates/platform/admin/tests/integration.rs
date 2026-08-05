@@ -117,9 +117,9 @@ async fn seed_citizen(db: &Db, org: OrgId) -> CitizenId {
     CitizenId::from_uuid(id)
 }
 
-/// Seed an `owner` binding for `citizen` in `org` — o mesmo root of trust via SQL que
-/// `scripts/bootstrap-admin.sh` provê em produção. Mutações exigem isso desde o fix de
-/// segurança de 2026-07-26 (só nível Directory não autoriza mais).
+/// Seed an `owner` binding for `citizen` in `org` — the same SQL root of trust that
+/// `scripts/bootstrap-admin.sh` provides in production. Mutations have required it since
+/// the 2026-07-26 security fix (Directory level alone no longer authorizes).
 async fn seed_admin(db: &Db, org: OrgId, citizen: CitizenId) {
     sqlx::query!(
         "INSERT INTO admin_role_binding (id, org_id, citizen_id, role, created_at) \
@@ -285,9 +285,9 @@ async fn unauthorized_mutation_is_forbidden() {
     assert_eq!(missing.code(), "not_found");
 }
 
-/// R0.3 (#40): `permissions_for` agrega papéis bindados + o papel Base implícito,
-/// e resolve chaves `modulo.acao`. Semeia papéis pro org de teste (a 0600 só semeou
-/// orgs que já existiam quando rodou), binda um Moderador e confere.
+/// R0.3 (#40): `permissions_for` aggregates bound roles + the implicit Base role,
+/// and resolves `module.action` keys. Seeds roles for the test org (0600 only seeded
+/// orgs that already existed when it ran), binds a Moderator and checks.
 #[tokio::test]
 async fn permissions_for_aggregates_roles_and_base() {
     let db = connect().await;
@@ -295,7 +295,7 @@ async fn permissions_for_aggregates_roles_and_base() {
     let moderador = seed_citizen(&db, org).await;
     let anon = seed_citizen(&db, org).await; // sem binding — só Base implícito.
 
-    // Base (pos 0, vazio) + Moderador (content.moderate) pro org de teste.
+    // Base (pos 0, empty) + Moderator (content.moderate) for the test org.
     let base_id = Uuid::now_v7();
     let mod_id = Uuid::now_v7();
     sqlx::query!(
@@ -334,7 +334,7 @@ async fn permissions_for_aggregates_roles_and_base() {
         VerificationLevel::Email,
     );
 
-    // O moderador resolve content.moderate/reports.manage, mas não roles.manage.
+    // The moderator resolves content.moderate/reports.manage, but not roles.manage.
     let p = svc
         .permissions_for(org, moderador)
         .await
@@ -344,14 +344,14 @@ async fn permissions_for_aggregates_roles_and_base() {
     assert!(!p.can("roles.manage"));
     assert!(!p.is_administrator());
 
-    // Sem binding: só o Base (vazio) — não pode nada.
+    // No binding: only Base (empty) — can do nothing.
     let p2 = svc.permissions_for(org, anon).await.expect("perms anon");
     assert!(!p2.can("content.moderate"));
     assert!(p2.is_empty());
 }
 
-/// Regressão do fix de 2026-07-26: um cidadão nível Directory SEM binding admin
-/// não pode mais mutar (antes, `bind_role` deixava ele se autopromover a owner).
+/// Regression of the 2026-07-26 fix: a Directory-level citizen WITHOUT an admin
+/// binding can no longer mutate (before, `bind_role` let them self-promote to owner).
 #[tokio::test]
 async fn directory_without_admin_binding_is_forbidden() {
     let db = connect().await;
@@ -364,7 +364,7 @@ async fn directory_without_admin_binding_is_forbidden() {
         VerificationLevel::Directory,
     );
 
-    // Autopromoção bloqueada.
+    // Self-promotion blocked.
     let err = svc
         .bind_role(org, actor, member, AdminRole::Owner)
         .await

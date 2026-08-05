@@ -26,7 +26,7 @@ pub mod keys {
     pub const USERS_MANAGE: &str = "users.manage";
     pub const USERS_ACCESS: &str = "users.access";
     pub const REPORTS_MANAGE: &str = "reports.manage";
-    /// Apagar/ocultar conteúdo de qualquer módulo como moderação (fórum, nota, proposta).
+    /// Delete/hide content of any module as moderation (forum, note, proposal).
     pub const CONTENT_MODERATE: &str = "content.moderate";
     pub const FORUMS_MODERATE: &str = "forums.moderate";
     pub const FEDERATION_MANAGE: &str = "federation.manage";
@@ -34,7 +34,7 @@ pub mod keys {
     pub const EMAIL_TEMPLATES_MANAGE: &str = "email_templates.manage";
     pub const WEBHOOKS_MANAGE: &str = "webhooks.manage";
     pub const INVITES_MANAGE: &str = "invites.manage";
-    /// Manage party directories and party administrators (ÁGORA campaign layer, ADR-0014, #58).
+    /// Manage party directories and party administrators (AGORA campaign layer, ADR-0014, #58).
     pub const PARTY_MANAGE: &str = "party.manage";
     pub const DIRECTORY_MANAGE: &str = "directory.manage";
 }

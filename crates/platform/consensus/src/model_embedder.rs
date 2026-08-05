@@ -220,7 +220,7 @@ mod tests {
         ];
         // KNOWN LIMITATIONS (measured 2026-07-10 on e5-small; logged, not
         // gated — both tracked for the V2 model upgrade, larger model + intent
-        // guard): domain acronyms miss the merge (UBS ≙ posto de saúde ≈ 0.111,
+        // guard): domain acronyms miss the merge (UBS ≙ health post ≈ 0.111,
         // just above threshold); "same street, different intervention" can
         // false-merge (ciclovia vs recapear a mesma avenida ≈ 0.078).
         let acronym = d(

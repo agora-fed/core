@@ -1,8 +1,8 @@
 //! # Admin-driven mandate invite — a bypass for the F1.4 auto-proof.
 //!
 //! F1.4 lets a parlamentar self-onboard IFF `body.email == mandate.public_email`. That fails
-//! whenever the public_email on file at the Câmara/Senado/TSE is wrong, institutional, or
-//! missing — a large chunk of the directory. This flow is the human bypass: a plataforma/
+//! whenever the public_email on file at the legislature/electoral authority is wrong,
+//! institutional, or missing — a large chunk of the directory. This flow is the human bypass:
 //! partido admin sends an invite to *any* address; the recipient clicks a one-time link and
 //! creates the account + `directory` binding without ever having to match the stale registry.
 //!
@@ -360,7 +360,7 @@ impl MandateInviteService {
         )
         .await
         .map_err(map_register_sqlx)?;
-        // Politicians are always public (transparência).
+        // Politicians are always public (transparency).
         queries::force_citizen_public(&mut *tx, citizen.as_uuid())
             .await
             .map_err(map_sqlx)?;
@@ -461,15 +461,15 @@ impl MandateInviteService {
             summary.party.as_deref().unwrap_or("—"),
             summary.uf.as_deref().unwrap_or("—")
         );
-        // Template editável pelo admin (0.32.0, key `mandate_invite`);
-        // fallback = versão curta do texto original.
-        // Nomes do TSE vêm em CAIXA ALTA; suavizamos pra Title Case no e-mail.
+        // Template editable by the admin (0.32.0, key `mandate_invite`);
+        // fallback = the short version of the original text.
+        // Official-registry names arrive in ALL CAPS; we soften them to Title Case in the e-mail.
         let display_name = title_case(&summary.display_name);
-        // Idem pro município no cargo ("Vereador(a) — SÃO PAULO/SP" -> "… São Paulo/SP"),
-        // mantendo a sigla da UF em maiúscula.
+        // Same for the municipality in the office ("Vereador(a) — SÃO PAULO/SP" -> "… São Paulo/SP"),
+        // keeping the UF code uppercase.
         let office = format_office(&summary.office);
-        // Página pública do mandato — o template usa `[{{mandate_name}}]({{profile_url}})`
-        // pra o nome virar link (renderizado por `body_to_html`).
+        // Public page of the mandate — the template uses `[{{mandate_name}}]({{profile_url}})`
+        // so the name becomes a link (rendered by `body_to_html`).
         let profile_url = format!("{}/politicos/?id={}", self.public_web_base, mandate_id);
         let mut ctx: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
         ctx.insert("mandate_name", display_name.clone());
@@ -616,7 +616,7 @@ async fn send_email(
         .from(from)
         .to(to_addr)
         .subject(subject)
-        // 0.32.1: texto puro como fallback + HTML com a marca (html_wrap).
+        // 0.32.1: plain text as fallback + branded HTML (html_wrap).
         .multipart(lettre::message::MultiPart::alternative_plain_html(
             dsoc_db::email_templates::body_to_plain(body),
             dsoc_db::email_templates::html_wrap(body),
@@ -625,8 +625,8 @@ async fn send_email(
     Ok(())
 }
 
-/// Nomes do TSE vêm em CAIXA ALTA. Converte pra Title Case mantendo conectores
-/// ("de", "da", "dos"…) minúsculos quando não são a primeira palavra.
+/// Official-registry names arrive in ALL CAPS. Convert to Title Case, keeping connectors
+/// ("de", "da", "dos"…) lowercase when they are not the first word.
 fn title_case(name: &str) -> String {
     const LOWER: &[&str] = &[
         "de", "da", "do", "das", "dos", "e", "di", "du", "van", "von",
@@ -649,9 +649,9 @@ fn title_case(name: &str) -> String {
         .join(" ")
 }
 
-/// "Vereador(a) — SÃO PAULO/SP" -> "Vereador(a) — São Paulo/SP" (município em Title
-/// Case, sigla da UF preservada). Cargos sem município ("Deputado(a) Estadual — MA")
-/// ficam intactos.
+/// "Vereador(a) — SÃO PAULO/SP" -> "Vereador(a) — São Paulo/SP" (municipality in Title
+/// Case, UF code preserved). Offices without a municipality ("Deputado(a) Estadual — MA")
+/// are left intact.
 fn format_office(office: &str) -> String {
     if let Some((cargo, loc)) = office.split_once(" — ") {
         if let Some((mun, uf)) = loc.rsplit_once('/') {
@@ -739,7 +739,7 @@ mod tests {
             format_office("Vereador(a) — SÃO PAULO/SP"),
             "Vereador(a) — São Paulo/SP"
         );
-        // Sem município (estadual/federal) fica intacto.
+        // Without a municipality (state/federal) it stays intact.
         assert_eq!(
             format_office("Deputado(a) Estadual — MA"),
             "Deputado(a) Estadual — MA"

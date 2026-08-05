@@ -75,7 +75,7 @@ const AXIS_LEXICON: &[(&str, &str, char)] = &[
 ///
 /// Each entry declares its match mode explicitly: `Exact` full-token words
 /// ("contra" must never match "contraTAR"), `Prefix` verb stems ("proib" →
-/// proibir/proíba/proibição). "barrar" was dropped entirely — its stem
+/// `proibir`/`proíba`/`proibição`). The verb `barrar` was dropped entirely — its stem
 /// collides with "barragem"/"barraca", common civic nouns.
 const NEGATORS: &[(&str, Match)] = &[
     ("nao", Match::Exact),
@@ -90,7 +90,7 @@ const NEGATORS: &[(&str, Match)] = &[
 /// as axis stems or negators, because a shorter stem falsely captures them
 /// (measured/reported: "elevador"≠elevar, "cortesia"/"cortejo"/"cortina"≠
 /// cortar, "vendedor"/"vendaval"≠vender, "fechadura"≠fechar, "acabamento"≠
-/// acabar-com). Language is dynamic; this list is the lexicon admitting it.
+/// `acabar-com`). Language is dynamic; this list is the lexicon admitting it.
 const EXCLUSIONS: &[&str] = &[
     "elevad",
     "cortes",
@@ -358,8 +358,8 @@ mod tests {
         ));
     }
 
-    // ── Regressions for reported prefix collisions ("linguagem é dinâmica —
-    //    não dá para parametrizar palavras soltas"): each of these once
+    // ── Regressions for reported prefix collisions (language is dynamic —
+    //    loose words cannot simply be parameterized): each of these once
     //    produced a false axis/negator signal. ───────────────────────────────
 
     #[test]
@@ -384,7 +384,7 @@ mod tests {
     #[test]
     fn noun_collisions_emit_no_axis_signal() {
         // elevador≠elevar, cortina/cortesia≠cortar, vendedor≠vender,
-        // fechadura≠fechar, acabamento≠acabar-com.
+        // `fechadura`≠`fechar`, `acabamento`≠`acabar-com`.
         assert!(!conflict(
             "Consertar o elevador e a fechadura do posto de saúde",
             "Reduzir a fila de espera do posto de saúde",

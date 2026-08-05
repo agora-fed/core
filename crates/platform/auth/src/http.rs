@@ -47,7 +47,7 @@ pub fn routes(state: AppState) -> Router<()> {
         .route("/auth/me", get(me))
         .with_state(svc);
     let profile_routes = Router::new()
-        // Login movido pra profile_routes (AppState) pra ler request_ip +
+        // Login moved to profile_routes (AppState) so it can read request_ip +
         // gravar auth_login_attempt como parte do rate limit (P5.1).
         .route("/auth/login", post(login))
         .route("/me", get(get_me_profile).patch(patch_me_profile))
@@ -59,9 +59,9 @@ pub fn routes(state: AppState) -> Router<()> {
             axum::routing::delete(delete_me_session),
         )
         .route("/profiles/{handle}", get(get_public_profile))
-        // Cadastro com verificação de e-mail (0.25.0): register/register-politician
-        // agora começam um pending signup e disparam um link de confirmação; a
-        // conta só é materializada em /auth/register/confirm.
+        // Signup with e-mail verification (0.25.0): register/register-politician
+        // now start a pending signup and fire a confirmation link; the account
+        // is only materialized at /auth/register/confirm.
         .route("/auth/register", post(register))
         .route("/auth/register/politician", post(register_politician))
         .route("/auth/register/candidate", post(register_candidate))
@@ -89,10 +89,10 @@ pub fn routes(state: AppState) -> Router<()> {
     auth_routes.merge(profile_routes)
 }
 
-/// Constrói o `MandateInviteService` completo (com o auth backend) a partir
-/// do `AppState`. Público porque o gateway usa no envio em lote da campanha
-/// de convites (0.34.0) — o service é o MESMO do fluxo individual, com todas
-/// as guardas (Forbidden pra não-admin, token hasheado, TTL).
+/// Build the full `MandateInviteService` (with the auth backend) from
+/// `AppState`. Public because the gateway uses it in the invitation campaign's
+/// batch send (0.34.0) — the service is the SAME as the individual flow, with
+/// every guard (Forbidden for non-admins, hashed token, TTL).
 pub fn mandate_invite_service(state: &AppState) -> MandateInviteService {
     MandateInviteService::from_state(state, build_service(state))
 }
@@ -116,8 +116,8 @@ fn validator_from_env() -> TokenValidator {
             TokenValidator::new(Arc::new(JwksKeySource::new(jwks_url, issuer, audience)))
         }
         _ => {
-            // ADR-0012: Zitadel abandonado — cred sovereign é o único path ativo. O rejeitador
-            // é o comportamento esperado se alguém tentar `POST /auth/session` (path morto).
+            // ADR-0012: Zitadel abandoned — the sovereign credential is the only live path. The
+            // rejector is the expected behaviour if anyone tries `POST /auth/session` (a dead path).
             tracing::info!(
                 "AUTH_OIDC_* unset — OIDC path dormant (ADR-0012). Cred sovereign (email+senha+CPF) é o único auth ativo."
             );
@@ -175,8 +175,8 @@ struct MeQuery {
     org_id: Uuid,
 }
 
-/// Extract "IP de origem" do X-Forwarded-For (o gateway roda atrás do Caddy).
-/// Mesma leitura que o `password_reset_request` faz — deduplicado aqui.
+/// Extract the origin IP from X-Forwarded-For (the gateway runs behind Caddy).
+/// The same read `password_reset_request` performs — deduplicated here.
 fn caller_ip(headers: &HeaderMap) -> Option<String> {
     headers
         .get("x-forwarded-for")
@@ -187,8 +187,8 @@ fn caller_ip(headers: &HeaderMap) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Corpo de resposta pros dois `/auth/register` — 202 Accepted, sem sessão ainda.
-/// O front usa `status` pra saber que precisa mostrar a tela "verifique seu e-mail".
+/// Response body for both `/auth/register` calls — 202 Accepted, no session yet.
+/// The front end uses `status` to know it must show the "check your e-mail" screen.
 #[derive(Debug, serde::Serialize)]
 struct SignupPendingDto {
     status: &'static str,
@@ -196,8 +196,8 @@ struct SignupPendingDto {
 }
 
 /// `POST /auth/register` — inicia o cadastro. Grava um pending_signup e
-/// dispara e-mail com link `/confirmar-conta?token=…`. **Não cria a conta**
-/// nem retorna sessão — o front navega pra tela de "verifique seu e-mail".
+/// fires an e-mail with the `/confirmar-conta?token=…` link. **Does not create the
+/// account** nor return a session — the front end navigates to "check your e-mail".
 async fn register(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -238,9 +238,9 @@ async fn register(
     }
 }
 
-/// `POST /auth/register/politician` — inicia o cadastro F1.3/F1.4. Antes de
-/// gravar o pending, valida `body.email == mandate.public_email`. Mesmo shape
-/// de resposta do `/auth/register`.
+/// `POST /auth/register/politician` — start the F1.3/F1.4 signup. Before
+/// writing the pending row, it validates `body.email == mandate.public_email`. Same
+/// response shape as `/auth/register`.
 async fn register_politician(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -274,7 +274,7 @@ async fn register_politician(
 
 /// `POST /auth/register/candidate` — cadastro de candidato(a) SEM mandato
 /// (0526). Valida os metadados da candidatura, grava a pending e envia o
-/// link de verificação. Mesmo shape de resposta do `/auth/register`.
+/// verification link. Same response shape as `/auth/register`.
 async fn register_candidate(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -321,16 +321,16 @@ struct RegisterConfirmBody {
 }
 
 /// Corpo de `POST /auth/register/resend`. Mesmo shape do password-reset
-/// request — org_id + email, sem senha (a gente reusa a da pending).
+/// request — org_id + email, no password (we reuse the pending one).
 #[derive(Debug, Deserialize)]
 struct RegisterResendBody {
     org_id: Uuid,
     email: String,
 }
 
-/// `POST /auth/register/resend` — reenvia o link de verificação. **Sempre**
-/// responde 200 OK: se não houver pending viva pra esse e-mail, o front
-/// vê sucesso mesmo assim (enumeration-safe — o mesmo padrão do reset).
+/// `POST /auth/register/resend` — resend the verification link. It **always**
+/// answers 200 OK: when no live pending exists for that e-mail, the front end
+/// still sees success (enumeration-safe — the password-reset pattern).
 async fn register_resend(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -347,10 +347,10 @@ async fn register_resend(
     (StatusCode::OK, Json(ApiResponse::<()>::ok(()))).into_response()
 }
 
-/// `POST /auth/register/confirm` — redime o token de verificação e materializa
-/// citizen + credential + sessão numa tx. Retorna o mesmo `SessionDto` do
-/// login pra que o front redirecione direto pra o painel/bem-vinda como se
-/// fosse um cadastro que "só demorou um passo".
+/// `POST /auth/register/confirm` — redeem the verification token and materialize
+/// citizen + credential + session in one tx. Returns the same `SessionDto` as
+/// login so the front end can redirect straight to the panel/welcome as if it
+/// were a signup that "just took one extra step".
 async fn register_confirm(
     State(state): State<AppState>,
     Json(body): Json<RegisterConfirmBody>,
@@ -366,7 +366,7 @@ async fn register_confirm(
             )
                 .into_response()
         }
-        // Instância com revisão manual ligada: conta criada, sem sessão.
+        // Instance with manual review on: account created, no session.
         // O front mostra "aguardando aprovação" no lugar do redirect.
         Ok(ConfirmOutcome::PendingReview { email }) => (
             StatusCode::ACCEPTED,
@@ -380,23 +380,23 @@ async fn register_confirm(
     }
 }
 
-/// Máximo de tentativas de login por IP na janela de 1h (P5.1). Override
-/// via `AUTH_LOGIN_RATE_MAX_PER_HOUR`. Uma pessoa comum faz 3-5 logins/dia;
-/// 10/h já é sinal de bot/força-bruta.
+/// Maximum login attempts per IP in a 1h window (P5.1). Override
+/// via `AUTH_LOGIN_RATE_MAX_PER_HOUR`. An ordinary person logs in 3-5 times/day;
+/// 10/h is already a bot/brute-force signal.
 const DEFAULT_LOGIN_RATE_MAX_PER_HOUR: i64 = 10;
 
 /// `POST /auth/login` — authenticate with e-mail + senha. Rate-limitado por
-/// IP: 10 tentativas/hora (sucesso + falha), configurável via env. Toda
-/// tentativa é auditada em `auth_login_attempt`.
+/// IP: 10 attempts/hour (success + failure), configurable via env. Every
+/// attempt is audited in `auth_login_attempt`.
 async fn login(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(req): Json<LoginRequest>,
 ) -> Response {
     let ip = caller_ip(&headers);
-    // Rate check. Quem não vem com XFF passa; a política de "no XFF = trust"
-    // é uma decisão consciente (o front está sempre atrás do Caddy que
-    // preenche o header — se veio None, provavelmente é um teste local).
+    // Rate check. A caller without XFF passes; the "no XFF = trust" policy
+    // is a conscious decision (the front end always sits behind Caddy, which
+    // fills the header — a None here is probably a local test).
     if let Some(ip_str) = ip.as_deref() {
         let since = state.clock.now() - chrono::Duration::hours(1);
         match crate::queries::login_attempt_count_by_ip_since(&state.db, ip_str, since).await {
@@ -414,9 +414,9 @@ async fn login(
             }
             Err(err) => {
                 tracing::error!(error = ?err, "login rate check DB failure");
-                // Não é catastrófico — segue pro login. Falha aberta em cima
-                // de storage down é aceitável (o login vai falhar de qualquer
-                // jeito se DB não responder).
+                // Not catastrophic — proceed to login. Failing open on top of
+                // storage-down is acceptable (login will fail anyway if the DB
+                // does not answer).
             }
         }
     }
@@ -424,7 +424,7 @@ async fn login(
     let svc = zitadel_from_state(&state);
     let org = OrgId::from_uuid(req.org_id);
     let result = svc.login(org, &req.email, &req.password).await;
-    // Grava a tentativa antes de responder (mesmo em erro) — audit + rate.
+    // Record the attempt before answering (even on error) — audit + rate.
     if let Some(ip_str) = ip.as_deref() {
         let outcome = if result.is_ok() { "ok" } else { "fail" };
         if let Err(err) = crate::queries::login_attempt_record(&state.db, ip_str, outcome).await {
@@ -560,7 +560,7 @@ fn message_for(error: &Error) -> &'static str {
 fn error_response(error: &Error) -> Response {
     // Log internal detail server-side only; the body carries a stable code + safe message.
     // Debug (`?error`) walks the `#[source]` chain — Display esconde a causa raiz (por design,
-    // pra não vazar na resposta), o que atrapalha o diagnóstico nos logs.
+    // to avoid leaking it in the response), which hampers diagnosis in the logs.
     if matches!(error, Error::Storage(_) | Error::Dependency { .. }) {
         tracing::error!(code = error.code(), detail = ?error, "auth request failed");
     }

@@ -336,9 +336,9 @@ impl ClusterService {
         }
     }
 
-    /// Backlog do re-embed (fatia 2a): propostas embedadas antes do 0518 —
-    /// vetor da era stub e/ou sem amostra NLI. O composition root busca o
-    /// texto (tabela de outro crate) e chama [`Self::re_embed`].
+    /// Re-embed backlog (slice 2a): proposals embedded before 0518 —
+    /// a stub-era vector and/or no NLI sample. The composition root fetches the
+    /// text (another crate's table) and calls [`Self::re_embed`].
     ///
     /// # Errors
     /// [`Error::Storage`] on a persistence failure.
@@ -349,17 +349,17 @@ impl ClusterService {
         Ok(ids.into_iter().map(ProposalId::from_uuid).collect())
     }
 
-    /// Fatia 2a do re-cluster (0.28.4): regrava o embedding de uma proposta
-    /// da era do stub com o modelo real, a assinatura de direção (stance.rs)
-    /// e a amostra NLI, e recomputa o centroide do cluster onde ela vive.
-    /// NÃO move a proposta de cluster — reavaliar membership (com skip de
-    /// clusters que já dispararam SLA) é a fatia 2b, porque mover emite
-    /// eventos e mexe no gatilho de threshold. Idempotente: a amostra
-    /// preenchida tira a row do backlog de [`Self::stale_backlog`].
+    /// Re-cluster slice 2a (0.28.4): rewrites a stub-era proposal's embedding
+    /// with the real model, the direction signature (stance.rs)
+    /// and the NLI sample, and recomputes the centroid of its cluster.
+    /// It does NOT move the proposal between clusters — re-evaluating membership
+    /// (skipping clusters that already fired an SLA) is slice 2b, because moving emits
+    /// events and touches the threshold trigger. Idempotent: a filled sample
+    /// removes the row from [`Self::stale_backlog`].
     ///
     /// # Errors
-    /// [`Error::Validation`] pra texto vazio; [`Error::Storage`] em falha
-    /// de persistência.
+    /// [`Error::Validation`] for empty text; [`Error::Storage`] on a persistence
+    /// failure.
     pub async fn re_embed(&self, proposal: ProposalId, text: &str) -> Result<Option<ClusterId>> {
         domain::validate_text(text)?;
         let embedding = self.embedder.embed(text);
@@ -378,7 +378,7 @@ impl ClusterService {
         .await
         .map_err(map_sqlx)?;
         if !updated {
-            // Proposta sem embedding (nunca ingerida) — nada a re-embedar.
+            // Proposal without an embedding (never ingested) — nothing to re-embed.
             return Ok(None);
         }
         let cluster = queries::cluster_of_proposal(&mut *tx, proposal.as_uuid())
@@ -393,12 +393,12 @@ impl ClusterService {
         Ok(cluster.map(ClusterId::from_uuid))
     }
 
-    /// Purga a embedding de uma proposta que não existe mais (apagada por
-    /// purge de demo ou LGPD art. 18): remove o edge de membership e a
-    /// embedding, e recomputa o centroide do cluster — ou dissolve o
-    /// cluster se ficou vazio. Chamado pelo composition root quando o
-    /// fetch do texto retorna NotFound durante o re-embed (fatia 2a);
-    /// sem isso a órfã fica em retry eterno no backlog.
+    /// Purge the embedding of a proposal that no longer exists (deleted by a
+    /// demo purge or LGPD art. 18): removes the membership edge and the
+    /// embedding, and recomputes the cluster's centroid — or dissolves the
+    /// cluster when it is left empty. Called by the composition root when the
+    /// text fetch returns NotFound during a re-embed (slice 2a);
+    /// without it the orphan retries forever in the backlog.
     ///
     /// # Errors
     /// [`Error::Storage`] on a persistence failure.
