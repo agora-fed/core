@@ -1,17 +1,17 @@
-//! Integration tests for `forums` directed dispatch (B1 — fusão Propor ≡ Fórum)
+//! Integration tests for `forums` directed dispatch (B1 — the Propose ≡ Forum merge)
 //! against a real PostgreSQL (TESTING.md: no mocked database).
 //!
-//! O coração testado é o **encaminhamento direcionado com integridade Tier 0**:
-//! - tópico direcionado a mandato ALCANÇÁVEL → gera recibo ao e-mail real;
-//! - tópico direcionado a mandato com placeholder `@parlamento.democracia.social.br`
-//!   → **NÃO** gera recibo (nunca gritamos no vazio; o silêncio seria nosso);
-//! - tópico SEM alvo → cai no contato curado da seção (comportamento atual);
-//! - multi-alvo (1 alcançável + 1 placeholder) → exatamente 1 recibo, ao alcançável.
+//! The heart under test is **directed dispatch with Tier 0 integrity**:
+//! - a topic directed at a REACHABLE mandate → produces a receipt to the real e-mail;
+//! - a topic directed at a mandate with the `@parlamento.democracia.social.br` placeholder
+//!   → produces **NO** receipt (we never shout into the void; the silence would be ours);
+//! - a topic with NO target → falls back to the section's curated contact (current behaviour);
+//! - multi-target (1 reachable + 1 placeholder) → exactly 1 receipt, to the reachable one.
 //!
-//! Requer `DATABASE_URL` apontando pra um banco com a cadeia de migrations
-//! aplicada (inclusive a 0666). Sem `DATABASE_URL`, cada teste faz SKIP (o gate
-//! `cargo test -p dsoc-forums` segue verde), então rode com um DB descartável
-//! migrado quando quiser exercer de fato o caminho.
+//! Requires `DATABASE_URL` pointing at a database with the migration chain applied
+//! (0666 included). Without `DATABASE_URL` every test SKIPs (so the
+//! `cargo test -p dsoc-forums` gate stays green) — run it against a disposable,
+//! migrated DB when you want the path genuinely exercised.
 
 // Test code: a failed `expect`/`panic` is a test failure, which is the desired behaviour.
 #![allow(clippy::expect_used, clippy::panic)]
@@ -314,8 +314,8 @@ async fn seed_civic_source(db: &PgPool, uf: &str, municipio: &str, base_url: Opt
     .expect("seed civic_source");
 }
 
-/// `plena` deriva do sinal REAL: ≥1 vereador com e-mail alcançável — mesmo SEM
-/// linha `civic_source` (o `probe_status` desatualizado não mais rebaixa a câmara).
+/// `plena` derives from the REAL signal: ≥1 council member with a reachable e-mail —
+/// even WITHOUT a `civic_source` row (a stale `probe_status` no longer downgrades the council).
 #[tokio::test]
 async fn municipal_transparency_plena_when_reachable_gabinete() {
     let Some(db) = pool_or_skip("transp_plena").await else {
@@ -325,7 +325,7 @@ async fn municipal_transparency_plena_when_reachable_gabinete() {
     let municipio = unique_municipio();
     seed_municipal_mandate(&db, org, "SP", &municipio, "vereador@camara.sp.gov.br").await;
 
-    // uf em minúsculas prova o casamento case-insensitive (upper() dos dois lados).
+    // A lowercase uf proves the case-insensitive match (upper() on both sides).
     let (status, url) = dsoc_forums::queries::municipal_transparency(&db, "sp", &municipio)
         .await
         .expect("query transparency")
@@ -334,8 +334,8 @@ async fn municipal_transparency_plena_when_reachable_gabinete() {
     assert_eq!(url, None, "sem civic_source ⇒ sem site oficial");
 }
 
-/// Placeholder da plataforma NÃO conta como gabinete conectado: com site oficial
-/// catalogado mas só e-mail placeholder ⇒ `parcial` (corrige o falso-`plena`).
+/// The platform placeholder does NOT count as a connected office: with a catalogued
+/// official site but only a placeholder e-mail ⇒ `parcial` (fixes the false `plena`).
 #[tokio::test]
 async fn municipal_transparency_parcial_when_only_placeholder_gabinete() {
     let Some(db) = pool_or_skip("transp_parcial").await else {
@@ -361,7 +361,7 @@ async fn municipal_transparency_parcial_when_only_placeholder_gabinete() {
     assert_eq!(url.as_deref(), Some("https://camara.example.gov.br"));
 }
 
-/// Sem gabinete conectado e sem site oficial catalogado ⇒ `ausente`.
+/// Neither a connected office nor a catalogued official site ⇒ `ausente`.
 #[tokio::test]
 async fn municipal_transparency_ausente_when_nothing() {
     let Some(db) = pool_or_skip("transp_ausente").await else {

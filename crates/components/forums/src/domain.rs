@@ -1,34 +1,34 @@
-//! Domínio puro dos fóruns: validação de tópico, templates territoriais e a
-//! **política de patamares** — sem sqlx, sem axum (TESTING.md: cobertura barata aqui).
+//! Pure forum domain: topic validation, territorial templates and the
+//! **threshold policy** — no sqlx, no axum (TESTING.md: cheap coverage lives here).
 
 use dsoc_core::{Error, Result};
 use uuid::Uuid;
 
-/// Profundidade máxima do caminho (`sp/santos/saude` = 3 segmentos).
+/// Maximum path depth (`sp/santos/saude` = 3 segments).
 pub const MAX_DEPTH: usize = 3;
-/// Teto de alvos (gabinetes) por tópico direcionado (B1) — espelha o limite das
-/// propostas multi-destinatário (0537): direcionar é dirigir a UM grupo coeso,
-/// não fazer spam institucional.
+/// Cap of targets (offices) per directed topic (B1) — mirrors the multi-recipient
+/// proposal limit (0537): directing means addressing ONE cohesive group, not
+/// institutional spam.
 pub const MAX_TOPIC_TARGETS: usize = 10;
-/// Limite defensivo do título.
+/// Defensive title limit.
 pub const MAX_TITLE_LEN: usize = 200;
 /// Limite defensivo do corpo.
 pub const MAX_BODY_LEN: usize = 40_000;
-/// Limite defensivo do comentário.
+/// Defensive comment limit.
 pub const MAX_COMMENT_LEN: usize = 10_000;
 
-/// Uma seção padrão de fórum territorial (estado/município), materializada sob demanda.
+/// A default section of a territorial forum (state/municipality), materialized on demand.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TerritorialSection {
     /// Segmento de caminho (`saude`).
     pub slug: &'static str,
-    /// Nome de exibição (`Saúde`).
+    /// Display name (`Saúde`).
     pub name: &'static str,
 }
 
-/// As 7 seções padrão — iguais para estado e município, mudando só os dois
+/// The 7 default sections — identical for state and municipality, only the two
 /// institucionais: estado = Assembleia Legislativa + Governo do Estado;
-/// município = Câmara Municipal + Prefeitura (decisão do plano v3).
+/// municipality = City Council + Mayor's Office (decision of plan v3).
 #[must_use]
 pub fn territorial_sections(esfera_municipal: bool) -> [TerritorialSection; 7] {
     let (leg, gov) = if esfera_municipal {
@@ -80,10 +80,10 @@ pub fn territorial_sections(esfera_municipal: bool) -> [TerritorialSection; 7] {
     ]
 }
 
-/// Valida um caminho `/f/...`: 1..=MAX_DEPTH segmentos `[a-z0-9-]`, sem vazio.
+/// Validate a `/f/...` path: 1..=MAX_DEPTH segments of `[a-z0-9-]`, none empty.
 ///
 /// # Errors
-/// [`Error::Validation`] para caminho malformado.
+/// [`Error::Validation`] for a malformed path.
 pub fn validate_path(path: &str) -> Result<Vec<&str>> {
     let segments: Vec<&str> = path.trim_matches('/').split('/').collect();
     if segments.is_empty() || segments.len() > MAX_DEPTH {
@@ -107,21 +107,21 @@ pub fn validate_path(path: &str) -> Result<Vec<&str>> {
     Ok(segments)
 }
 
-/// Um tópico validado (título/corpo com limites; criação exige cidadão verificado —
-/// o CPF já é obrigatório e validado no cadastro, então o gate é o nível Email).
+/// A validated topic (title/body within limits; creation requires a verified citizen —
+/// the identity document is already mandatory and validated at signup, so the gate is Email level).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewTopic {
-    /// Título do tópico.
+    /// Topic title.
     pub title: String,
-    /// Corpo do tópico.
+    /// Topic body.
     pub body: String,
 }
 
 impl NewTopic {
-    /// Valida e normaliza título/corpo.
+    /// Validate and normalize title/body.
     ///
     /// # Errors
-    /// [`Error::Validation`] para título/corpo vazio ou acima do limite.
+    /// [`Error::Validation`] for an empty title/body or one above the limit.
     pub fn validate(title: &str, body: &str) -> Result<Self> {
         let title = title.trim();
         let body = body.trim();
@@ -142,18 +142,18 @@ impl NewTopic {
     }
 }
 
-/// A posição de um cidadão num tópico (0544; ponderação eliminada em ADR-0019): a favor
-/// ou contra — uma por cidadão, mutável. Alimenta o placar por pontos (ADR-0019).
+/// A citizen's stance on a topic (0544; the neutral option was removed in ADR-0019): in favour
+/// or against — one per citizen, mutable. Feeds the points scoreboard (ADR-0019).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stance {
-    /// A favor da proposta do tópico.
+    /// In favour of the topic's proposal.
     Favor,
     /// Contra.
     Contra,
 }
 
 impl Stance {
-    /// O texto estável gravado em `forum_topic_vote.stance` (casa com a CHECK).
+    /// The stable text stored in `forum_topic_vote.stance` (matches the CHECK).
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -162,10 +162,10 @@ impl Stance {
         }
     }
 
-    /// Interpreta uma posição vinda de fora (request).
+    /// Parse a stance coming from outside (a request).
     ///
     /// # Errors
-    /// [`Error::Validation`] para valor fora do conjunto fechado.
+    /// [`Error::Validation`] for a value outside the closed set.
     pub fn parse_input(s: &str) -> Result<Self> {
         match s.trim() {
             "favor" => Ok(Self::Favor),
@@ -177,10 +177,10 @@ impl Stance {
     }
 }
 
-/// Valida um comentário.
+/// Validate a comment.
 ///
 /// # Errors
-/// [`Error::Validation`] para corpo vazio ou acima do limite.
+/// [`Error::Validation`] for an empty body or one above the limit.
 pub fn validate_comment(body: &str) -> Result<String> {
     let body = body.trim();
     if body.is_empty() || body.chars().count() > MAX_COMMENT_LEN {
@@ -191,11 +191,11 @@ pub fn validate_comment(body: &str) -> Result<String> {
     Ok(body.to_owned())
 }
 
-/// Normaliza a lista de alvos (mandate_ids) de um tópico direcionado (B1):
-/// preserva a ORDEM da primeira ocorrência, remove duplicatas e trunca em
-/// [`MAX_TOPIC_TARGETS`]. Pura e total — a validação de EXISTÊNCIA dos mandatos
-/// fica na camada de serviço (precisa de I/O). Lista vazia = tópico sem alvo
-/// (encaminha ao contato curado da seção).
+/// Normalize the target list (mandate_ids) of a directed topic (B1): preserves
+/// the ORDER of first occurrence, drops duplicates and truncates at
+/// [`MAX_TOPIC_TARGETS`]. Pure and total — validating that the mandates EXIST
+/// belongs to the service layer (it needs I/O). An empty list = topic with no
+/// target (dispatches to the section's curated contact).
 #[must_use]
 pub fn sanitize_targets(ids: &[Uuid]) -> Vec<Uuid> {
     let mut seen = std::collections::HashSet::new();
@@ -211,12 +211,12 @@ pub fn sanitize_targets(ids: &[Uuid]) -> Vec<Uuid> {
     out
 }
 
-/// **Política de patamares** (o coração): dado o total de interações CONTÁVEIS,
-/// a lista de patamares do fórum e o índice do próximo patamar ainda não disparado,
-/// devolve os patamares que DEVEM disparar agora (um envio por patamar, em ordem)
-/// e o novo índice. Interações federadas nunca entram em `interactions`.
+/// **Threshold policy** (the heart): given the total of COUNTABLE interactions,
+/// the forum's threshold list and the index of the next threshold not yet fired,
+/// returns the thresholds that MUST fire now (one dispatch per threshold, in order)
+/// and the new index. Federated interactions never enter `interactions`.
 ///
-/// Pura e total: replays/duplicatas não re-disparam (o índice só avança).
+/// Pure and total: replays/duplicates never re-fire (the index only moves forward).
 #[must_use]
 pub fn thresholds_to_fire(
     interactions: i64,
@@ -232,28 +232,28 @@ pub fn thresholds_to_fire(
     (fire, idx)
 }
 
-/// **Afirmação-ponte** (D8.2 do plano de crítica — síntese estilo Polis/vTaiwan):
-/// mede o quanto um argumento é endossado ATRAVESSANDO a divisão favor×contra do
-/// tópico. A entrada é o número de ENDOSSOS ao argumento (voto `favor` no
-/// comentário) vindos de cada lado do tópico:
-/// - `favor_side` = endossantes cuja posição NO TÓPICO é `favor`;
-/// - `contra_side` = endossantes cuja posição NO TÓPICO é `contra`.
+/// **Bridging claim** (D8.2 of the critique plan — Polis/vTaiwan-style synthesis):
+/// measures how much an argument is endorsed ACROSS the topic's for×against
+/// divide. The input is the number of ENDORSEMENTS of the argument (a `favor`
+/// vote on the comment) coming from each side of the topic:
+/// - `favor_side` = endorsers whose stance ON THE TOPIC is `favor`;
+/// - `contra_side` = endorsers whose stance ON THE TOPIC is `contra`.
 ///
-/// Devolve a **média harmônica** dos dois lados:
+/// Returns the **harmonic mean** of the two sides:
 ///
 /// ```text
-/// bridge = 2·f·c / (f + c)   (0 quando qualquer lado é 0)
+/// bridge = 2·f·c / (f + c)   (0 whenever either side is 0)
 /// ```
 ///
-/// Por que média harmônica (e não a soma favor+contra do placar de torcida):
-/// - vale **0** se só um lado endossa — não é ponte, é torcida;
-/// - é **dominada pelo lado mais fraco** (o "elo fraco"): uma ponte vale o que o
-///   lado que MENOS a apoia lhe dá, então recrutar só a própria facção não sobe
-///   o score — é preciso convencer o outro lado;
-/// - cresce com o volume E com o equilíbrio (máxima quando `f = c`), premiando o
-///   argumento que UNE quem discorda, não o que grita mais alto.
+/// Why the harmonic mean (and not the for+against sum of the cheering scoreboard):
+/// - it is **0** when only one side endorses — that is cheering, not a bridge;
+/// - it is **dominated by the weaker side** (the "weak link"): a bridge is worth what
+///   the side that supports it LEAST gives it, so recruiting only your own faction
+///   does not raise the score — you must convince the other side;
+/// - it grows with volume AND with balance (maximal when `f = c`), rewarding the
+///   argument that UNITES those who disagree, not the one that shouts loudest.
 ///
-/// Pura e total: sem I/O, trivialmente testável (a fórmula mora aqui, não no SQL).
+/// Pure and total: no I/O, trivially testable (the formula lives here, not in SQL).
 #[must_use]
 #[allow(clippy::cast_precision_loss)] // contagens de votos são pequenas — sem perda relevante
 pub fn bridge_score(favor_side: i64, contra_side: i64) -> f64 {
@@ -265,15 +265,15 @@ pub fn bridge_score(favor_side: i64, contra_side: i64) -> f64 {
     2.0 * f * c / (f + c)
 }
 
-/// Um argumento é **ponte** quando recebe endosso de AMBOS os lados do tópico
-/// (`favor_side ≥ 1` E `contra_side ≥ 1`). Só pontes entram na seção de consenso.
+/// An argument is a **bridge** when it is endorsed by BOTH sides of the topic
+/// (`favor_side ≥ 1` AND `contra_side ≥ 1`). Only bridges enter the consensus section.
 #[must_use]
 pub const fn is_bridge(favor_side: i64, contra_side: i64) -> bool {
     favor_side > 0 && contra_side > 0
 }
 
-/// Slugifica um nome de município/entidade para segmento de caminho
-/// (`"São Paulo"` → `"sao-paulo"`). Mesma regra do seed SQL.
+/// Slugify a municipality/entity name into a path segment
+/// (`"São Paulo"` → `"sao-paulo"`). Same rule as the SQL seed.
 #[must_use]
 pub fn slugify(name: &str) -> String {
     let mut out = String::with_capacity(name.len());
@@ -318,7 +318,7 @@ mod tests {
         assert_eq!(mun[0].slug, "camara-municipal");
         assert_eq!(uf[1].slug, "governo");
         assert_eq!(mun[1].slug, "prefeitura");
-        // As 5 temáticas são idênticas.
+        // The 5 thematic sections are identical.
         assert_eq!(&uf[2..], &mun[2..]);
         assert_eq!(uf.len(), 7);
     }
@@ -353,7 +353,7 @@ mod tests {
             assert_eq!(Stance::parse_input(txt).unwrap(), s);
         }
         assert_eq!(Stance::parse_input(" favor ").unwrap(), Stance::Favor);
-        // Ponderação foi eliminada (ADR-0019) — agora é valor inválido.
+        // The neutral option was removed (ADR-0019) — it is now an invalid value.
         assert!(Stance::parse_input("ponderacao").is_err());
         assert!(Stance::parse_input("pro").is_err());
         assert!(Stance::parse_input("").is_err());
@@ -371,11 +371,11 @@ mod tests {
         let a = Uuid::from_u128(1);
         let b = Uuid::from_u128(2);
         let c = Uuid::from_u128(3);
-        // Vazio → vazio (tópico sem alvo).
+        // Empty → empty (topic with no target).
         assert_eq!(sanitize_targets(&[]), Vec::<Uuid>::new());
-        // Dedupe preservando a ordem da PRIMEIRA ocorrência.
+        // Dedupe preserving the order of FIRST occurrence.
         assert_eq!(sanitize_targets(&[a, b, a, c, b]), vec![a, b, c]);
-        // Trunca em MAX_TOPIC_TARGETS (ids únicos).
+        // Truncate at MAX_TOPIC_TARGETS (unique ids).
         let many: Vec<Uuid> = (0..(MAX_TOPIC_TARGETS as u128 + 5))
             .map(Uuid::from_u128)
             .collect();
@@ -384,14 +384,14 @@ mod tests {
         assert_eq!(out[0], Uuid::from_u128(0));
     }
 
-    // --- a política de patamares ---
+    // --- the threshold policy ---
 
     #[test]
     fn thresholds_fire_in_order_once_each() {
         let t = [1000, 10_000, 100_000];
         assert_eq!(thresholds_to_fire(999, &t, 0), (vec![], 0));
         assert_eq!(thresholds_to_fire(1000, &t, 0), (vec![1000], 1));
-        // Replay com o índice avançado: nada re-dispara.
+        // Replay with the index already advanced: nothing re-fires.
         assert_eq!(thresholds_to_fire(1500, &t, 1), (vec![], 1));
         // Salto direto por dois patamares: ambos disparam, em ordem.
         assert_eq!(thresholds_to_fire(20_000, &t, 0), (vec![1000, 10_000], 2));
@@ -404,15 +404,15 @@ mod tests {
         assert_eq!(thresholds_to_fire(999_999, &[], 0), (vec![], 0));
     }
 
-    // --- afirmação-ponte (D8.2) ---
+    // --- bridging claim (D8.2) ---
 
     #[test]
     fn bridge_score_zero_when_one_side_absent() {
-        // Só um lado endossa → não é ponte, é torcida.
+        // Only one side endorses → not a bridge, just cheering.
         assert_eq!(bridge_score(5, 0), 0.0);
         assert_eq!(bridge_score(0, 5), 0.0);
         assert_eq!(bridge_score(0, 0), 0.0);
-        // Contagens negativas (defensivo) também zeram.
+        // Negative counts (defensive) also collapse to zero.
         assert_eq!(bridge_score(-3, 4), 0.0);
         assert!(!is_bridge(5, 0));
         assert!(!is_bridge(0, 5));
@@ -421,30 +421,30 @@ mod tests {
 
     #[test]
     fn bridge_score_is_dominated_by_the_weaker_side() {
-        // Elo fraco: recrutar só o próprio lado quase não move o score.
-        // f=10, c=1 → 2·10·1/11 ≈ 1.818 (perto de 2·c, não de f).
+        // Weak link: recruiting only your own side barely moves the score.
+        // f=10, c=1 → 2·10·1/11 ≈ 1.818 (close to 2·c, not to f).
         let lopsided = bridge_score(10, 1);
         assert!((lopsided - 1.818_181).abs() < 1e-4);
-        // Empatar mais o lado fraco vale MUITO mais que inflar o lado forte:
+        // Balancing the weak side is worth MUCH more than inflating the strong one:
         // dobrar o forte (10→20) mal muda; dobrar o fraco (1→2) quase dobra.
         assert!(bridge_score(20, 1) < bridge_score(10, 2));
     }
 
     #[test]
     fn bridge_score_rewards_balance_and_volume() {
-        // Máxima no equilíbrio: para uma soma fixa (f+c=10), 5/5 > 9/1.
+        // Maximal at balance: for a fixed sum (f+c=10), 5/5 > 9/1.
         assert!(bridge_score(5, 5) > bridge_score(9, 1));
-        // Equilibrado, cresce com o volume: 5/5 > 2/2 > 1/1.
+        // Balanced, grows with volume: 5/5 > 2/2 > 1/1.
         assert!(bridge_score(5, 5) > bridge_score(2, 2));
         assert!(bridge_score(2, 2) > bridge_score(1, 1));
-        // Quando f = c, a média harmônica é exatamente c (elo fraco = ambos).
+        // When f = c, the harmonic mean is exactly c (weak link = both).
         assert_eq!(bridge_score(4, 4), 4.0);
         assert_eq!(bridge_score(1, 1), 1.0);
     }
 
     #[test]
     fn bridge_score_is_symmetric() {
-        // Ponte não tem "lado de honra": favor↔contra dá o mesmo score.
+        // A bridge has no "favoured side": swapping favor↔contra yields the same score.
         assert_eq!(bridge_score(3, 7), bridge_score(7, 3));
         assert_eq!(bridge_score(2, 9), bridge_score(9, 2));
     }

@@ -16,22 +16,29 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-MAX_PT=3663   # measured 2026-08-05 (rust 2855 + sql 808); Tier 0 crates are at ZERO — only goes DOWN
+MAX_PT=3138   # measured 2026-08-05 (rust 2343 + sql 795); Tier 0 + components/forums at ZERO — only goes DOWN
 
 # Portuguese markers: diacritics English never uses, plus frequent stopwords
 # that survive accent-free writing ("nao", "pra", "que", ...).
 PT_RE='[çãõáéíóúâêôàÇÃÕÁÉÍÓÚÂÊÔÀ]|\b([Nn]ão|nao|pra|pro|[Qq]ue|[Pp]ara|[Cc]om|[Uu]ma|[Dd]os|[Dd]as|[Pp]elo|[Pp]ela|[Qq]uando|[Oo]nde|[Pp]orque|[Tt]ambém|[Jj]á|[Ss]ó|[Ss]er|[Tt]em|[Ff]az|[Uu]sa|[Cc]ria|[Ee]ntão|[Aa]inda|[Cc]ada|[Ss]em|[Mm]as|[Ss]obre|[Dd]epois|[Aa]ntes)\b'
 
+# Proper nouns and identifiers quoted as DATA are not prose: `Saúde` as a
+# section name or "São Paulo" in an example is a value, not documentation
+# language. Strip inline-code spans and quoted strings before judging.
+strip_data() { sed -E 's/`[^`]*`//g; s/"[^"]*"//g'; }
+
 count_rust() {
   git ls-files '*.rs' \
     | grep -v '^crates/platform/l10n-br/' \
     | xargs grep -hE '^\s*//' 2>/dev/null \
+    | strip_data \
     | grep -cE "$PT_RE" || true
 }
 
 count_sql() {
   git ls-files 'migrations/*.sql' \
     | xargs grep -hE '^\s*--' 2>/dev/null \
+    | strip_data \
     | grep -cE "$PT_RE" || true
 }
 

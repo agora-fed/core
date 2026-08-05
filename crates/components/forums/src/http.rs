@@ -1,6 +1,6 @@
-//! Superfície axum dos fóruns. Mutação exige caller autenticado e verificado
-//! (nível Email — o CPF já é validado no cadastro); leitura é pública. Envelope
-//! [`ApiResponse`] e mapa de erros idênticos aos demais crates (ADR-0007).
+//! Axum surface of the forums. Mutation requires an authenticated, verified
+//! caller (Email level — the identity document is already validated at signup); reads are public.
+//! [`ApiResponse`] envelope and error map identical to the other crates (ADR-0007).
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -19,10 +19,10 @@ use crate::domain::{NewTopic, Stance};
 use crate::queries::{CommentRow, DispatchRow, ForumRow, TopicRow};
 use crate::service::{ChildEntry, ForumService};
 
-/// Organização única da instância (mesma convenção do gateway single-org).
+/// The instance's single organization (same convention as the single-org gateway).
 const DEFAULT_ORG_UUID: Uuid = uuid::uuid!("11111111-1111-1111-1111-111111111111");
 
-/// Visão pública de um fórum.
+/// Public view of a forum.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ForumDto {
     /// Id.
@@ -31,9 +31,9 @@ pub struct ForumDto {
     pub full_path: String,
     /// Segmento.
     pub slug: String,
-    /// Nome de exibição.
+    /// Display name.
     pub name: String,
-    /// Descrição.
+    /// Description.
     pub description: String,
     /// `institucional` | `governanca` | `comunitario`.
     pub kind: String,
@@ -41,31 +41,31 @@ pub struct ForumDto {
     pub esfera: Option<String>,
     /// UF, se territorial.
     pub uf: Option<String>,
-    /// Município, se territorial.
+    /// Municipality, when territorial.
     pub municipio: Option<String>,
-    /// Há e-mail institucional vinculado (o endereço em si não é exposto).
+    /// Whether an institutional e-mail is linked (the address itself is never exposed).
     pub has_contact_email: bool,
-    /// Logo do fórum (0543).
+    /// Forum logo (0543).
     pub avatar_url: Option<String>,
-    /// Capa do fórum (0543).
+    /// Forum banner (0543).
     pub banner_url: Option<String>,
     /// Patamares de envio configurados.
     pub thresholds: Vec<i32>,
 }
 
-/// Transparência da câmara municipal (catálogo `civic_source`, 0662/0669).
-/// Só acompanha fóruns de esfera municipal; usa a AUSÊNCIA de dados abertos como
-/// cobrança pública, e aponta o site oficial da câmara quando ele existe.
+/// Transparency of the city council (`civic_source` catalog, 0662/0669).
+/// Only applies to municipal-sphere forums; uses the ABSENCE of open data as a
+/// public demand, and points at the council's official site when one exists.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct TransparencyDto {
-    /// `plena` (dados abertos, gabinetes conectados) | `parcial` (tem site, sem
+    /// `plena` (open data, offices connected) | `parcial` (has a site, no
     /// dados abertos) | `ausente` (nenhum portal localizado).
     pub status: String,
-    /// Site oficial da câmara, quando conhecido (`base_url`). `None` no `ausente`.
+    /// Official council site, when known (`base_url`). `None` when `ausente`.
     pub official_url: Option<String>,
 }
 
-/// Um filho na árvore (materializado ou seção virtual do template).
+/// A child in the tree (materialized, or a virtual section from the template).
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ForumChildDto {
     /// Segmento.
@@ -74,164 +74,164 @@ pub struct ForumChildDto {
     pub full_path: String,
     /// Nome.
     pub name: String,
-    /// Seção padrão ainda sem tópicos (materializa no primeiro uso).
+    /// Default section with no topics yet (materialized on first use).
     pub virtual_section: bool,
 }
 
-/// Resposta da árvore de um nível.
+/// Tree response for one level.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ForumTreeDto {
-    /// O fórum pedido (ausente na raiz).
+    /// The requested forum (absent at the root).
     pub forum: Option<ForumDto>,
     /// Filhos (reais + virtuais).
     pub children: Vec<ForumChildDto>,
 }
 
-/// Visão pública de um tópico.
+/// Public view of a topic.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct TopicDto {
     /// Id.
     pub id: Uuid,
-    /// Fórum dono.
+    /// Owning forum.
     pub forum_id: Uuid,
-    /// Título.
+    /// Title.
     pub title: String,
     /// Corpo.
     pub body: String,
-    /// Handle público opaco do autor (`u-<hex>`).
+    /// Opaque public handle of the author (`u-<hex>`).
     pub author_public_handle: String,
-    /// Interações CONTÁVEIS (votos + comentários locais) — disparam patamares.
+    /// COUNTABLE interactions (votes + local comments) — these fire thresholds.
     pub interactions: i64,
-    /// Interações FEDERADAS (nunca disparam).
+    /// FEDERATED interactions (these never fire).
     pub federated_interactions: i64,
     /// Saldo favor - contra.
     pub score: i64,
-    /// Posições a favor (fusão debates→fóruns, 0544).
+    /// Stances in favour (debates→forums merge, 0544).
     pub favor: i64,
-    /// Posições contra.
+    /// Stances against.
     pub contra: i64,
-    /// Ponderações.
+    /// Neutral stances (legacy).
     pub ponderacao: i64,
-    /// Comentários aprovados.
+    /// Approved comments.
     pub comment_count: i64,
-    /// Criação.
+    /// Creation timestamp.
     pub created_at: DateTime<Utc>,
 }
 
-/// Um comentário (local ou federado).
+/// A comment (local or federated).
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ForumCommentDto {
     /// Id.
     pub id: Uuid,
     /// Autor local (handle opaco) OU handle remoto.
     pub author: String,
-    /// Karma (reputação SO) do autor local (ADR-0019). `None` = federado/sem autor.
+    /// Karma (StackOverflow-style reputation) of the local author (ADR-0019). `None` = federated/no author.
     pub author_karma: Option<i32>,
     /// Veio do fediverso?
     pub federated: bool,
-    /// Posição declarada com o argumento (`favor`|`contra`|`ponderacao`|null).
+    /// Stance declared alongside the argument (`favor`|`contra`|`ponderacao`|null).
     pub stance: Option<String>,
     /// Votos a favor deste argumento (0545).
     pub favor: i64,
     /// Votos contra.
     pub contra: i64,
-    /// Ponderações.
+    /// Neutral stances (legacy).
     pub ponderacao: i64,
     /// Corpo.
     pub body: String,
-    /// Criação.
+    /// Creation timestamp.
     pub created_at: DateTime<Utc>,
 }
 
-/// Recibo público de envio institucional por patamar.
+/// Public receipt of an institutional dispatch, per threshold.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct DispatchDto {
     /// Patamar cruzado.
     pub threshold: i32,
-    /// Quando o e-mail saiu do relay (None = na fila).
+    /// When the e-mail left the relay (None = still queued).
     pub sent_at: Option<DateTime<Utc>>,
     /// Momento do cruzamento.
     pub crossed_at: DateTime<Utc>,
 }
 
-/// Detalhe: tópico + comentários + recibos.
+/// Detail: topic + comments + receipts.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct TopicDetailDto {
-    /// O tópico.
+    /// The topic.
     pub topic: TopicDto,
-    /// Comentários aprovados (locais + federados).
+    /// Approved comments (local + federated).
     pub comments: Vec<ForumCommentDto>,
     /// Recibos de envio institucional.
     pub dispatches: Vec<DispatchDto>,
-    /// Patamar de encaminhamento PROPORCIONAL efetivo deste fórum (D3): o score
-    /// que o placar precisa cruzar para acionar o gabinete, proporcional ao
-    /// eleitorado do território (piso 10). A UI usa isto no lugar do 10 fixo.
+    /// This forum's effective PROPORTIONAL dispatch threshold (D3): the score
+    /// the scoreboard must cross to summon the office, proportional to the
+    /// territory's electorate (floor 10). The UI uses this instead of a fixed 10.
     pub escalation_threshold: i64,
-    /// Privacidade graduada (D5/D6): `true` quando o fórum é de um município
-    /// pequeno — nesse caso a atribuição individual de posição foi omitida dos
-    /// comentários (autor pseudonimizado, `stance`/karma nulos); só o agregado
-    /// do tópico (favor/contra/score) é público. A UI deve sinalizar isso.
+    /// Graduated privacy (D5/D6): `true` when the forum belongs to a small
+    /// municipality — in that case individual stance attribution was omitted from
+    /// the comments (author pseudonymized, `stance`/karma null); only the topic
+    /// aggregate (favor/contra/score) is public. The UI must signal this.
     pub aggregate_only: bool,
-    /// A QUEM o placar encaminha ao cruzar o patamar: nomes dos mandatos-alvo
-    /// alcançáveis (B1, "Dep. Fulana · Sen. Beltrano") ou o nome da seção com
-    /// contato institucional curado ("Ministério dos Transportes"). `None` =
-    /// nenhum canal alcançável ainda — a UI mostra "encaminhamento pendente".
+    /// WHOM the scoreboard dispatches to once the threshold is crossed: names of
+    /// the reachable target mandates (B1, "Dep. Fulana · Sen. Beltrano") or the
+    /// section name with a curated institutional contact (a ministry, say).
+    /// Transportes"). `None` = no reachable channel yet — the UI shows a pending state.
     pub escalation_destination: Option<String>,
 }
 
-/// Uma **afirmação-ponte** (D8.2): um argumento endossado ATRAVESSANDO a divisão
-/// favor×contra do tópico — o que UNE quem discorda, não o placar de torcida.
+/// A **bridging claim** (D8.2): an argument endorsed ACROSS the topic's
+/// for×against divide — what UNITES those who disagree, not the cheering scoreboard.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct BridgeCommentDto {
-    /// O argumento (mesmo shape dos comentários; autor pseudonimizado em município pequeno).
+    /// The argument (same shape as comments; author pseudonymized in a small municipality).
     pub comment: ForumCommentDto,
-    /// Endossos vindos de quem votou `favor` no tópico.
+    /// Endorsements from citizens who voted `favor` on the topic.
     pub favor_side: i64,
-    /// Endossos vindos de quem votou `contra` no tópico.
+    /// Endorsements from citizens who voted `contra` on the topic.
     pub contra_side: i64,
-    /// Bridge score = média harmônica dos dois lados (quanto maior, mais une).
+    /// Bridge score = harmonic mean of both sides (higher = unites more).
     pub bridge_score: f64,
 }
 
-/// Seção de **consenso** de um tópico (D8.2): as afirmações-ponte do topo,
-/// ordenadas por bridge score. Camada ADITIVA sobre o placar favor×contra.
+/// **Consensus** section of a topic (D8.2): the top bridging claims, ordered by
+/// bridge score. An ADDITIVE layer on top of the for×against scoreboard.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct TopicConsensusDto {
-    /// Id do tópico.
+    /// Topic id.
     pub topic_id: Uuid,
-    /// Afirmações-ponte ordenadas por bridge score (desc); vazio = ainda não há ponte.
+    /// Bridging claims ordered by bridge score (desc); empty = no bridge yet.
     pub bridges: Vec<BridgeCommentDto>,
     /// Privacidade agregada ativa (D5/D6): autor pseudonimizado nos argumentos.
     pub aggregate_only: bool,
 }
 
-/// Criação de tópico.
+/// Topic creation.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateTopicRequest {
-    /// Caminho do fórum (`sp/santos/saude`).
+    /// Forum path (`sp/santos/saude`).
     pub path: String,
-    /// Título.
+    /// Title.
     pub title: String,
     /// Corpo.
     pub body: String,
-    /// Alvos OPCIONAIS (B1): mandate_ids para direcionar a demanda a gabinete(s)
-    /// específico(s). Ausente/vazio = tópico sem alvo (encaminha ao contato
-    /// curado da seção). Duplicatas são ignoradas; o total é limitado no serviço.
+    /// OPTIONAL targets (B1): mandate_ids directing the demand at specific
+    /// office(s). Absent/empty = topic with no target (dispatches to the
+    /// section's curated contact). Duplicates are ignored; the total is capped in the service.
     #[serde(default)]
     pub targets: Vec<Uuid>,
 }
 
-/// Posição do cidadão (fusão debates→fóruns).
+/// The citizen's stance (debates→forums merge).
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct VoteRequest {
     /// `favor` | `contra` | `ponderacao`.
     pub stance: Option<String>,
-    /// Compat com clientes antigos: +1 → favor, -1 → contra.
+    /// Compat with older clients: +1 → favor, -1 → contra.
     pub value: Option<i16>,
 }
 
 impl VoteRequest {
-    /// Resolve a posição pedida (stance preferido; `value` legado mapeado).
+    /// Resolve the requested stance (stance preferred; legacy `value` mapped).
     fn stance(&self) -> Result<Stance, Error> {
         if let Some(s) = &self.stance {
             return Stance::parse_input(s);
@@ -246,7 +246,7 @@ impl VoteRequest {
     }
 }
 
-/// Comentário local (argumento) — com posição opcional que também registra o voto.
+/// Local comment (argument) — with an optional stance that also records the vote.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CommentRequest {
     /// Corpo.
@@ -305,15 +305,15 @@ fn topic_dto(r: TopicRow) -> TopicDto {
     }
 }
 
-/// `protect` (D5/D6): em município pequeno, a atribuição individual de posição
-/// é omitida — autor vira pseudônimo genérico e `stance`/karma somem, para não
-/// montar mapa de retaliação (quem apoiou/votou o quê). O CORPO do argumento
-/// (fala pública) e os contadores agregados do argumento seguem visíveis; o que
-/// se protege é o vínculo pessoa↔posição, não o debate.
+/// `protect` (D5/D6): in a small municipality, individual stance attribution is
+/// omitted — the author becomes a generic pseudonym and `stance`/karma vanish, so
+/// no retaliation map (who supported/voted what) can be assembled. The argument's
+/// BODY (public speech) and its aggregate counters stay visible; what is protected
+/// is the person↔stance link, not the debate itself.
 fn comment_dto(r: CommentRow, protect: bool) -> ForumCommentDto {
     let author = if protect {
-        // Pseudônimo não-identificável e estável-por-tópico não é possível sem
-        // estado extra; usamos um rótulo genérico (minimum viable).
+        // A non-identifiable, per-topic-stable pseudonym is impossible without extra
+        // state; we use a generic label (minimum viable).
         "participante".to_owned()
     } else {
         match (&r.author_id, &r.remote_handle) {
@@ -353,7 +353,7 @@ fn child_dto(c: ChildEntry) -> ForumChildDto {
     }
 }
 
-/// Router do crate — montado pelo gateway sob `/api/v1`.
+/// The crate's router — mounted by the gateway under `/api/v1`.
 pub fn routes(state: dsoc_app::AppState) -> Router<()> {
     Router::new()
         .route("/f/tree", get(tree))
@@ -367,34 +367,34 @@ pub fn routes(state: dsoc_app::AppState) -> Router<()> {
         .with_state(state)
 }
 
-/// Um item do feed de últimas postagens (home /f).
+/// One item of the latest-posts feed (the /f home).
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct RecentTopicDto {
-    /// Id do tópico.
+    /// Topic id.
     pub id: Uuid,
-    /// Título.
+    /// Title.
     pub title: String,
     /// Saldo favor - contra.
     pub score: i64,
-    /// Posições a favor.
+    /// Stances in favour.
     pub favor: i64,
-    /// Posições contra.
+    /// Stances against.
     pub contra: i64,
-    /// Ponderações.
+    /// Neutral stances (legacy).
     pub ponderacao: i64,
-    /// Interações contáveis.
+    /// Countable interactions.
     pub interactions: i64,
-    /// Comentários.
+    /// Comments.
     pub comment_count: i64,
-    /// Criação.
+    /// Creation timestamp.
     pub created_at: DateTime<Utc>,
-    /// Caminho do fórum.
+    /// Forum path.
     pub forum_path: String,
-    /// Nome do fórum.
+    /// Forum name.
     pub forum_name: String,
 }
 
-/// `GET /f/recent?limit=` — últimas postagens de todos os fóruns (feed da home).
+/// `GET /f/recent?limit=` — latest posts across all forums (home feed).
 async fn recent(
     State(state): State<dsoc_app::AppState>,
     Query(p): Query<RecentParams>,
@@ -430,7 +430,7 @@ struct RecentParams {
     limit: Option<i64>,
 }
 
-/// `GET /f/tree?path=&esfera=` — um nível da árvore (raiz quando sem `path`).
+/// `GET /f/tree?path=&esfera=` — one level of the tree (root when `path` is absent).
 async fn tree(State(state): State<dsoc_app::AppState>, Query(p): Query<TreeParams>) -> Response {
     let svc = ForumService::from_state(&state);
     let org = OrgId::from_uuid(DEFAULT_ORG_UUID);
@@ -446,7 +446,7 @@ async fn tree(State(state): State<dsoc_app::AppState>, Query(p): Query<TreeParam
     }
 }
 
-/// `POST /f/topics` — criar tópico (cidadão verificado; CPF já validado no cadastro).
+/// `POST /f/topics` — create a topic (verified citizen; the identity document is validated at signup).
 async fn create_topic(
     State(state): State<dsoc_app::AppState>,
     caller: dsoc_app::CallerId,
@@ -492,8 +492,8 @@ async fn list_topics(
         .await
     {
         Ok((forum, topics)) => {
-            // Banner de transparência: só para fórum municipal, cruzando com o
-            // catálogo civic_source. ADITIVO — degrada para `None` sem quebrar.
+            // Transparency banner: municipal forums only, cross-referenced with
+            // the civic_source catalog. ADDITIVE — degrades to `None` without breaking.
             let transparency =
                 svc.municipal_transparency(&forum)
                     .await
@@ -512,7 +512,7 @@ async fn list_topics(
     }
 }
 
-/// `GET /f/topics/{id}` — detalhe com comentários e recibos.
+/// `GET /f/topics/{id}` — detail with comments and receipts.
 async fn get_topic(State(state): State<dsoc_app::AppState>, Path(id): Path<Uuid>) -> Response {
     let svc = ForumService::from_state(&state);
     match svc.get_topic(id).await {
@@ -541,10 +541,10 @@ struct ConsensusParams {
     limit: Option<usize>,
 }
 
-/// `GET /f/topics/{id}/consensus?limit=` — as afirmações-ponte do topo (D8.2):
-/// argumentos que reúnem apoio dos DOIS lados do tópico, ordenados por bridge
-/// score. Leitura pública (mesma política dos demais GET de fórum). `limit`
-/// default = 5, teto = 20 (aplicado no serviço).
+/// `GET /f/topics/{id}/consensus?limit=` — the top bridging claims (D8.2):
+/// arguments that gather support from BOTH sides of the topic, ordered by bridge
+/// score. Public read (same policy as the other forum GETs). `limit`
+/// defaults to 5, capped at 20 (enforced in the service).
 async fn consensus(
     State(state): State<dsoc_app::AppState>,
     Path(id): Path<Uuid>,
@@ -575,8 +575,8 @@ async fn consensus(
     }
 }
 
-/// `POST /f/topics/{id}/vote` — posição a favor/contra/ponderação (upsert;
-/// SÓ cidadão local, por construção).
+/// `POST /f/topics/{id}/vote` — stance for/against/neutral (upsert;
+/// LOCAL citizens only, by construction).
 async fn vote(
     State(state): State<dsoc_app::AppState>,
     caller: dsoc_app::CallerId,
@@ -601,7 +601,7 @@ async fn vote(
     }
 }
 
-/// `POST /f/topics/{id}/comments` — comentário local.
+/// `POST /f/topics/{id}/comments` — local comment.
 async fn comment(
     State(state): State<dsoc_app::AppState>,
     caller: dsoc_app::CallerId,
@@ -626,17 +626,17 @@ async fn comment(
     }
 }
 
-/// Resposta do voto num argumento: o argumento e o tópico atualizados.
+/// Response to voting on an argument: the updated argument and topic.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct CommentVoteDto {
-    /// O argumento com contadores novos.
+    /// The argument with fresh counters.
     pub comment: ForumCommentDto,
-    /// O tópico com contadores/interações novos.
+    /// The topic with fresh counters/interactions.
     pub topic: TopicDto,
 }
 
-/// `POST /f/comments/{id}/vote` — posição num argumento (estilo StackOverflow;
-/// upsert; SÓ cidadão local, por construção).
+/// `POST /f/comments/{id}/vote` — stance on an argument (StackOverflow style;
+/// upsert; LOCAL citizens only, by construction).
 async fn vote_comment(
     State(state): State<dsoc_app::AppState>,
     caller: dsoc_app::CallerId,
@@ -657,10 +657,10 @@ async fn vote_comment(
     let svc = ForumService::from_state(&state);
     match svc.vote_comment(id, caller.citizen, stance).await {
         Ok((comment, topic)) => {
-            // TODO(D5/D6): caminho secundário de exposição — em município pequeno,
-            // a resposta do voto ainda devolve stance/autor do argumento. A régua
-            // agregada é aplicada na listagem pública (`get_topic`); endurecer aqui
-            // exige resolver o território neste path (fundação documentada).
+            // TODO(D5/D6): secondary exposure path — in a small municipality,
+            // the vote response still returns the argument's stance/author. The aggregate
+            // rule is applied on the public listing (`get_topic`); hardening it here
+            // requires resolving the territory on this path (documented groundwork).
             let dto = CommentVoteDto {
                 comment: comment_dto(comment, false),
                 topic: topic_dto(topic),
@@ -671,7 +671,7 @@ async fn vote_comment(
     }
 }
 
-/// Envelope de erro canônico (não vaza internals).
+/// Canonical error envelope (never leaks internals).
 fn error_response<T: Serialize>(err: &Error) -> Response {
     let status = match err {
         Error::NotFound(_) => StatusCode::NOT_FOUND,

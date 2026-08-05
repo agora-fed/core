@@ -1,16 +1,16 @@
-//! Persistência dos fóruns. Todo statement é `sqlx::query!` compile-time-checked
-//! (PLAN.md princípio 3): sem ORM, keyset pagination, UPDATEs guardados por estado
-//! esperado para idempotência sob at-least-once.
+//! Forum persistence. Every statement is a compile-time-checked `sqlx::query!`
+//! (PLAN.md principle 3): no ORM, keyset pagination, UPDATEs guarded by the
+//! expected state for idempotency under at-least-once delivery.
 
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-/// Uma linha de fórum.
+/// One forum row.
 #[derive(Debug, Clone)]
 pub struct ForumRow {
-    /// Id do fórum.
+    /// Forum id.
     pub id: Uuid,
-    /// Organização dona.
+    /// Owning organization.
     pub org_id: Uuid,
     /// Pai na hierarquia, se houver.
     pub parent_id: Option<Uuid>,
@@ -18,9 +18,9 @@ pub struct ForumRow {
     pub slug: String,
     /// Caminho completo (`sp/santos/saude`).
     pub full_path: String,
-    /// Nome de exibição.
+    /// Display name.
     pub name: String,
-    /// Descrição.
+    /// Description.
     pub description: String,
     /// `institucional` | `governanca` | `comunitario`.
     pub kind: String,
@@ -28,59 +28,59 @@ pub struct ForumRow {
     pub esfera: Option<String>,
     /// UF, se territorial.
     pub uf: Option<String>,
-    /// Município, se territorial.
+    /// Municipality, when territorial.
     pub municipio: Option<String>,
-    /// E-mail responsável (herda do pai quando NULL).
+    /// Responsible e-mail (inherited from the parent when NULL).
     pub contact_email: Option<String>,
-    /// Logo do fórum (0543).
+    /// Forum logo (0543).
     pub avatar_url: Option<String>,
-    /// Capa do fórum (0543).
+    /// Forum banner (0543).
     pub banner_url: Option<String>,
-    /// Patamares de envio (interações contáveis), ordem crescente.
+    /// Dispatch thresholds (countable interactions), ascending.
     pub thresholds: Vec<i32>,
-    /// Criação.
+    /// Creation timestamp.
     pub created_at: DateTime<Utc>,
 }
 
-/// Uma linha de tópico.
+/// One topic row.
 #[derive(Debug, Clone)]
 pub struct TopicRow {
-    /// Id do tópico.
+    /// Topic id.
     pub id: Uuid,
-    /// Fórum dono.
+    /// Owning forum.
     pub forum_id: Uuid,
-    /// Autor (cidadão local — criação é sempre local).
+    /// Author (a local citizen — creation is always local).
     pub author_id: Uuid,
-    /// Título.
+    /// Title.
     pub title: String,
     /// Corpo.
     pub body: String,
-    /// Interações contáveis (votos + comentários locais).
+    /// Countable interactions (votes + local comments).
     pub interaction_count: i64,
-    /// Interações federadas (nunca disparam patamar).
+    /// Federated interactions (these never fire a threshold).
     pub federated_interaction_count: i64,
-    /// Saldo favor - contra (ordenação "em alta").
+    /// Net favor - contra (the "hot" ordering).
     pub score: i64,
-    /// Posições a favor (0544).
+    /// Stances in favour (0544).
     pub favor_count: i64,
-    /// Posições contra (0544).
+    /// Stances against (0544).
     pub contra_count: i64,
-    /// Ponderações (0544).
+    /// Neutral stances (0544).
     pub ponderacao_count: i64,
-    /// Total de comentários aprovados.
+    /// Total approved comments.
     pub comment_count: i64,
-    /// Próximo patamar a disparar (índice em `forum.thresholds`).
+    /// Next threshold to fire (index into `forum.thresholds`).
     pub next_threshold_idx: i32,
-    /// Criação.
+    /// Creation timestamp.
     pub created_at: DateTime<Utc>,
 }
 
-/// Um comentário (local ou federado).
+/// One comment (local or federated).
 #[derive(Debug, Clone)]
 pub struct CommentRow {
     /// Id.
     pub id: Uuid,
-    /// Tópico dono.
+    /// Owning topic.
     pub topic_id: Uuid,
     /// Autor local, se local.
     pub author_id: Option<Uuid>,
@@ -88,33 +88,33 @@ pub struct CommentRow {
     pub remote_handle: Option<String>,
     /// Federado?
     pub federated: bool,
-    /// Posição declarada junto do argumento (NULL = sem posição / federado).
+    /// Stance declared with the argument (NULL = no stance / federated).
     pub stance: Option<String>,
     /// Votos a favor DESTE argumento (0545).
     pub favor_count: i64,
     /// Votos contra.
     pub contra_count: i64,
-    /// Ponderações (vestigial, sempre 0 pós-ADR-0019).
+    /// Neutral stances (vestigial, always 0 after ADR-0019).
     pub ponderacao_count: i64,
-    /// Karma (reputação SO) do autor local, se local (ADR-0019). `None` = federado/sem autor.
+    /// Karma (SO reputation) of the local author, when local (ADR-0019). `None` = federated/no author.
     pub author_karma: Option<i32>,
     /// Corpo.
     pub body: String,
-    /// Criação.
+    /// Creation timestamp.
     pub created_at: DateTime<Utc>,
 }
 
-/// Um argumento-ponte (D8.2): o comentário mais os ENDOSSOS cruzados por lado do
-/// tópico. `favor_side`/`contra_side` = quantos endossantes deste argumento
-/// (voto `favor` no comentário) votaram, respectivamente, `favor`/`contra` NO
-/// TÓPICO. O bridge score é derivado por [`crate::domain::bridge_score`].
+/// A bridging argument (D8.2): the comment plus the cross-side ENDORSEMENTS of
+/// the topic. `favor_side`/`contra_side` = how many endorsers of this argument
+/// (a `favor` vote on the comment) voted, respectively, `favor`/`contra` ON THE
+/// TOPIC. The bridge score is derived by [`crate::domain::bridge_score`].
 #[derive(Debug, Clone)]
 pub struct BridgeCommentRow {
-    /// O comentário/argumento (local, aprovado).
+    /// The comment/argument (local, approved).
     pub comment: CommentRow,
-    /// Endossantes cuja posição no tópico é `favor`.
+    /// Endorsers whose stance on the topic is `favor`.
     pub favor_side: i64,
-    /// Endossantes cuja posição no tópico é `contra`.
+    /// Endorsers whose stance on the topic is `contra`.
     pub contra_side: i64,
 }
 
@@ -127,9 +127,9 @@ pub struct DispatchRow {
     pub threshold: i32,
     /// Destino do envio.
     pub contact_email: String,
-    /// Quando o e-mail saiu (NULL = pendente do worker).
+    /// When the e-mail went out (NULL = pending in the worker).
     pub sent_at: Option<DateTime<Utc>>,
-    /// Criação (momento do cruzamento).
+    /// Creation (the moment of the crossing).
     pub created_at: DateTime<Utc>,
 }
 
@@ -172,7 +172,7 @@ fn map_forum(
     }
 }
 
-/// Busca um fórum pelo caminho completo.
+/// Find a forum by its full path.
 ///
 /// # Errors
 /// Propaga o `sqlx::Error` (incluindo `RowNotFound`).
@@ -211,7 +211,7 @@ pub async fn get_forum_by_path(
     ))
 }
 
-/// Lista os filhos diretos de um fórum (ou raízes por esfera quando `parent_id` é NULL).
+/// List the direct children of a forum (or the roots per sphere when `parent_id` is NULL).
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -264,7 +264,7 @@ pub async fn list_children(
         .collect())
 }
 
-/// Insere um fórum (materialização preguiçosa das seções territoriais).
+/// Insert a forum (lazy materialization of the territorial sections).
 /// Idempotente sob corrida: `ON CONFLICT (org_id, full_path) DO NOTHING`.
 ///
 /// # Errors
@@ -304,7 +304,7 @@ pub async fn insert_forum_idempotent(
     Ok(())
 }
 
-/// Insere um tópico.
+/// Insert a topic.
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -350,7 +350,7 @@ pub async fn insert_topic(
     })
 }
 
-/// Tranca um tópico `FOR UPDATE` (janela TOCTOU dos contadores/patamares).
+/// Lock a topic `FOR UPDATE` (the TOCTOU window of counters/thresholds).
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -385,7 +385,7 @@ pub async fn lock_topic(
     }))
 }
 
-/// Lista tópicos de um fórum: `hot` (score desc) ou recentes (id desc).
+/// List a forum's topics: `hot` (score desc) or most recent (id desc).
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -432,34 +432,34 @@ pub async fn list_topics(
         .collect())
 }
 
-/// Um tópico recente com o fórum de origem (feed da home /f).
+/// A recent topic with its originating forum (the /f home feed).
 #[derive(Debug, Clone)]
 pub struct RecentTopicRow {
-    /// Id do tópico.
+    /// Topic id.
     pub id: Uuid,
-    /// Título.
+    /// Title.
     pub title: String,
     /// Saldo favor - contra.
     pub score: i64,
-    /// Posições a favor.
+    /// Stances in favour.
     pub favor_count: i64,
-    /// Posições contra.
+    /// Stances against.
     pub contra_count: i64,
-    /// Ponderações.
+    /// Neutral stances.
     pub ponderacao_count: i64,
-    /// Interações contáveis.
+    /// Countable interactions.
     pub interaction_count: i64,
-    /// Comentários aprovados.
+    /// Approved comments.
     pub comment_count: i64,
-    /// Criação.
+    /// Creation timestamp.
     pub created_at: DateTime<Utc>,
-    /// Caminho do fórum (`sp/santos/saude`).
+    /// Forum path (`sp/santos/saude`).
     pub forum_path: String,
-    /// Nome do fórum.
+    /// Forum name.
     pub forum_name: String,
 }
 
-/// Últimos tópicos de TODOS os fóruns (feed da home), mais novos primeiro.
+/// Latest topics across ALL forums (home feed), newest first.
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -500,8 +500,8 @@ pub async fn list_recent_topics(
         .collect())
 }
 
-/// Upsert da posição do cidadão (uma linha por par tópico-cidadão; mudar de
-/// posição sobrescreve — a data original do primeiro voto é preservada).
+/// Upsert the citizen's stance (one row per topic-citizen pair; switching
+/// stance overwrites — the original first-vote date is preserved).
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -526,7 +526,7 @@ pub async fn upsert_vote(
     Ok(())
 }
 
-/// Insere um comentário LOCAL (aprovado de nascença).
+/// Insert a LOCAL comment (approved on creation).
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -571,7 +571,7 @@ pub async fn insert_local_comment(
     })
 }
 
-/// Lista comentários APROVADOS de um tópico (mais antigos primeiro, keyset).
+/// List a topic's APPROVED comments (oldest first, keyset).
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -615,7 +615,7 @@ pub async fn list_comments(
         .collect())
 }
 
-/// Busca um comentário aprovado (para votar num argumento).
+/// Find an approved comment (for voting on an argument).
 ///
 /// # Errors
 /// Propaga o `sqlx::Error` (incluindo `RowNotFound`).
@@ -648,15 +648,15 @@ pub async fn get_comment(
     })
 }
 
-/// Lista os ARGUMENTOS-PONTE candidatos de um tópico (D8.2): comentários locais
-/// aprovados que recebem endosso (`forum_comment_vote.stance = 'favor'`) de
-/// cidadãos posicionados em AMBOS os lados do tópico. Cruza cada endossante com
-/// sua posição no tópico (`forum_topic_vote`) e agrega por lado. O `HAVING`
-/// já descarta quem só tem apoio de um lado — a ordenação/corte por bridge score
-/// fica no chamador (a fórmula mora em `domain::bridge_score`, testada).
+/// List a topic's candidate BRIDGING ARGUMENTS (D8.2): approved local comments
+/// endorsed (`forum_comment_vote.stance = 'favor'`) by citizens positioned on
+/// BOTH sides of the topic. Cross-references each endorser with their topic
+/// stance (`forum_topic_vote`) and aggregates per side. The `HAVING` already
+/// discards one-sided support — ordering/cutting by bridge score is the caller's
+/// job (the formula lives in `domain::bridge_score`, tested).
 ///
-/// Nota: só posições `favor`/`contra` no tópico contam; endossantes que votaram
-/// no argumento mas não se posicionaram no tópico não entram na conta de ponte.
+/// Note: only `favor`/`contra` topic stances count; endorsers who voted on the
+/// argument but took no topic stance do not enter the bridge tally.
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -709,7 +709,7 @@ pub async fn list_bridge_comments(
         .collect())
 }
 
-/// Upsert da posição do cidadão num ARGUMENTO (0545) — uma por par, mutável.
+/// Upsert the citizen's stance on an ARGUMENT (0545) — one per pair, mutable.
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -734,7 +734,7 @@ pub async fn upsert_comment_vote(
     Ok(())
 }
 
-/// Recalcula os contadores de um ARGUMENTO a partir dos votos (0545).
+/// Recompute an ARGUMENT's counters from its votes (0545).
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -757,8 +757,8 @@ pub async fn refresh_comment_counters(
     Ok(())
 }
 
-/// Stance do voto atual de `citizen` no comentário `comment_id`, se houver (`None` = não votou).
-/// Usado pra computar o delta de karma quando o voto muda (ADR-0019).
+/// Current stance of `citizen`'s vote on `comment_id`, when any (`None` = did not vote).
+/// Used to compute the karma delta when a vote changes (ADR-0019).
 pub async fn comment_vote_stance(
     executor: impl sqlx::PgExecutor<'_>,
     comment_id: Uuid,
@@ -774,7 +774,7 @@ pub async fn comment_vote_stance(
     Ok(r)
 }
 
-/// Soma `delta` ao karma do cidadão (reputação estilo SO, ADR-0019). Pode ser negativo.
+/// Add `delta` to the citizen's karma (SO-style reputation, ADR-0019). May be negative.
 pub async fn add_citizen_karma(
     executor: impl sqlx::PgExecutor<'_>,
     citizen: Uuid,
@@ -793,7 +793,7 @@ pub async fn add_citizen_karma(
     Ok(())
 }
 
-/// Valor de karma de um voto em comentário por stance (SO: favor=+10, contra=−2).
+/// Karma value of a comment vote by stance (SO: favor=+10, contra=−2).
 #[must_use]
 pub fn karma_value(stance: &str) -> i32 {
     match stance {
@@ -803,10 +803,10 @@ pub fn karma_value(stance: &str) -> i32 {
     }
 }
 
-/// Recalcula os contadores do tópico a partir das tabelas-fonte (sob o row lock):
-/// posições por stance, score = favor - contra; interações contáveis = votos +
-/// comentários locais aprovados + votos em argumentos (todos locais por FK);
-/// federadas = comentários federados aprovados.
+/// Recompute the topic's counters from the source tables (under the row lock):
+/// stances per side, score = favor - contra; countable interactions = votes +
+/// approved local comments + votes on arguments (all local by FK);
+/// federated = approved federated comments.
 /// Retorna (interactions, federated).
 ///
 /// # Errors
@@ -815,9 +815,9 @@ pub async fn refresh_topic_counters(
     executor: impl sqlx::PgExecutor<'_>,
     topic_id: Uuid,
 ) -> Result<(i64, i64, i64), sqlx::Error> {
-    // Placar por PONTOS (ADR-0019, com sinal): base por votante (±2 se comentou, ±1 se só votou) +
-    // amplificação dos votos nos argumentos (favor↑+2/↓−1, contra↑−2/↓+1). favor_count/contra_count
-    // seguem sendo a CONTAGEM de votos por lado (exibição); `score` é o placar com sinal.
+    // POINTS scoreboard (ADR-0019, signed): base per voter (±2 if they commented, ±1 if they only
+    // voted) + amplification from argument votes (favor↑+2/↓−1, contra↑−2/↓+1). favor_count/contra_count
+    // remain the COUNT of votes per side (display); `score` is the signed scoreboard.
     let r = sqlx::query!(
         r#"UPDATE forum_topic t SET
              favor_count = v."favor!",
@@ -874,8 +874,8 @@ pub async fn refresh_topic_counters(
     Ok((r.interaction_count, r.federated_interaction_count, r.score))
 }
 
-/// Avança o índice de patamar, **guardado** pelo valor anterior esperado (1x por
-/// patamar mesmo sob corrida). Retorna linhas afetadas (0 = já avançado).
+/// Advance the threshold index, **guarded** by the expected previous value (once
+/// per threshold even under a race). Returns rows affected (0 = already advanced).
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -897,15 +897,15 @@ pub async fn advance_threshold_idx(
     Ok(res.rows_affected())
 }
 
-/// Registra o recibo de envio de um patamar. `mandate_id` discrimina o
-/// destinatário (B1): `None` = contato curado da seção (comportamento atual);
-/// `Some` = um gabinete alvo — um tópico direcionado a N gabinetes registra N
-/// recibos no mesmo patamar. O UNIQUE `(topic_id, threshold, mandate_id)`
-/// (NULLS NOT DISTINCT, migration 0666) garante 1x por (patamar, destinatário).
+/// Record the dispatch receipt of a threshold. `mandate_id` discriminates the
+/// recipient (B1): `None` = the section's curated contact (current behaviour);
+/// `Some` = one target office — a topic directed at N offices records N receipts
+/// on the same threshold. The UNIQUE `(topic_id, threshold, mandate_id)`
+/// (NULLS NOT DISTINCT, migration 0666) guarantees once per (threshold, recipient).
 ///
-/// Runtime `sqlx::query` (não macro): a coluna `mandate_id` só existe após a
-/// 0666, que o cache `.sqlx`/`dsoc_sqlx` pode ainda não ter — bind em runtime
-/// evita depender do cache pra esta query.
+/// Runtime `sqlx::query` (not the macro): the `mandate_id` column only exists after
+/// 0666, which the `.sqlx`/`dsoc_sqlx` cache may not carry yet — binding at runtime
+/// avoids depending on the cache for this query.
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -934,13 +934,13 @@ pub async fn insert_dispatch(
     Ok(())
 }
 
-/// Insere um ALVO do tópico (B1) — idempotente sob corrida.
+/// Insert a topic TARGET (B1) — idempotent under a race.
 ///
-/// Runtime `sqlx::query` (não macro): `forum_topic_target` é da 0666, ausente do
-/// cache `.sqlx`/`dsoc_sqlx`.
+/// Runtime `sqlx::query` (not the macro): `forum_topic_target` comes from 0666, absent
+/// from the `.sqlx`/`dsoc_sqlx` cache.
 ///
 /// # Errors
-/// Propaga o `sqlx::Error` (inclui violação de FK se o mandato sumiu na corrida).
+/// Propagates the `sqlx::Error` (including an FK violation if the mandate vanished in the race).
 pub async fn insert_topic_target(
     executor: impl sqlx::PgExecutor<'_>,
     topic_id: Uuid,
@@ -960,7 +960,7 @@ pub async fn insert_topic_target(
     Ok(())
 }
 
-/// `true` se o mandato existe (validação de alvo na criação de tópico — B1).
+/// `true` when the mandate exists (target validation on topic creation — B1).
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -975,15 +975,15 @@ pub async fn mandate_exists(
     Ok(row.is_some())
 }
 
-/// Alvos de um tópico (B1): `(mandate_id, reachable_email)`, ordenados por
-/// criação. `reachable_email` já vem `NULL` quando o `public_email` é o
-/// placeholder da plataforma — MESMO filtro do `proposal_delivery` (Tier 0):
-/// nunca entregamos num inbox morto nem carimbamos recibo/SLA por ele.
+/// A topic's targets (B1): `(mandate_id, reachable_email)`, ordered by creation.
+/// `reachable_email` already arrives `NULL` when `public_email` is the platform
+/// placeholder — the SAME filter as `proposal_delivery` (Tier 0): we never deliver
+/// to a dead inbox nor stamp a receipt/SLA for one.
 ///
-/// Vazio = tópico SEM alvo (cai no contato curado da seção). Não-vazio com todos
-/// os e-mails `NULL` = alvos existem mas nenhum é alcançável (fica pendente).
+/// Empty = topic with NO target (falls back to the section's curated contact). Non-empty
+/// with every e-mail `NULL` = targets exist but none is reachable (stays pending).
 ///
-/// Runtime `sqlx::query_as` (não macro): `forum_topic_target` é da 0666.
+/// Runtime `sqlx::query_as` (not the macro): `forum_topic_target` comes from 0666.
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -1006,12 +1006,12 @@ pub async fn topic_targets(
     Ok(rows)
 }
 
-/// Nomes públicos dos alvos de um tópico (B1) + alcançabilidade, pra UI dizer
-/// A QUEM o placar encaminha ("faltam N pontos pra encaminhar a Dep. Fulana").
-/// `reachable=false` = alvo com placeholder (Tier 0) — a UI sinaliza "ainda não
-/// conectado" em vez de prometer entrega que não acontece.
+/// Public names of a topic's targets (B1) + reachability, so the UI can say WHOM
+/// the scoreboard dispatches to ("N points left to reach Dep. Fulana").
+/// `reachable=false` = a target with a placeholder (Tier 0) — the UI signals "not
+/// connected yet" instead of promising a delivery that never happens.
 ///
-/// Runtime `sqlx::query_as` (não macro): `forum_topic_target` é da 0666.
+/// Runtime `sqlx::query_as` (not the macro): `forum_topic_target` comes from 0666.
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -1034,10 +1034,10 @@ pub async fn topic_target_names(
     Ok(rows)
 }
 
-/// Nome da seção que fornece o contato institucional efetivo (mesma cadeia do
-/// [`effective_contact_email`]): o próprio fórum ou o ancestral mais próximo com
-/// `contact_email` curado. `None` = nenhum canal na cadeia (encaminhamento fica
-/// pendente). Alimenta o rótulo do patamar na UI.
+/// Name of the section providing the effective institutional contact (same chain as
+/// [`effective_contact_email`]): the forum itself or the nearest ancestor with a
+/// curated `contact_email`. `None` = no channel in the chain (dispatch stays
+/// pending). Feeds the threshold label in the UI.
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -1062,7 +1062,7 @@ pub async fn effective_contact_name(
     Ok(r.map(|(name,)| name))
 }
 
-/// Lista os recibos de envio de um tópico (transparência pública).
+/// List a topic's dispatch receipts (public transparency).
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -1089,18 +1089,18 @@ pub async fn list_dispatches(
         .collect())
 }
 
-/// Eleitorado do território do fórum (base do patamar proporcional — D3).
+/// Electorate of the forum's territory (the base of the proportional threshold — D3).
 ///
-/// Resolve território → linha da tabela `electorate` (seed TSE, migration 0522),
-/// espelhando a política do gateway para mandatos:
-/// - `municipal` com uf+município → eleitorado daquele município;
-/// - `estadual`/`federal` com uf → total da UF;
-/// - `federal` sem uf (ex.: nacional) → total nacional (`'BR'`);
-/// - fórum SEM esfera (institucional/comunitário) ou sem match → `None`
-///   (o chamador cai no piso).
+/// Resolves territory → a row of the `electorate` table (TSE seed, migration 0522),
+/// mirroring the gateway's policy for mandates:
+/// - `municipal` with uf+municipality → that municipality's electorate;
+/// - `estadual`/`federal` with uf → the UF total;
+/// - `federal` without uf (e.g. national) → the national total (`'BR'`);
+/// - a forum WITHOUT a sphere (institutional/community) or with no match → `None`
+///   (the caller falls back to the floor).
 ///
-/// `municipio` é comparado por igualdade de texto (mesmo critério do gateway);
-/// divergência de grafia simplesmente não casa e cai no piso — fail-safe.
+/// `municipio` is compared by text equality (the gateway's own criterion);
+/// a spelling divergence simply does not match and falls to the floor — fail-safe.
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -1127,7 +1127,7 @@ pub async fn forum_territory_voters(
     Ok(r.and_then(|r| r.voters))
 }
 
-/// E-mail efetivo do fórum: o próprio ou, quando NULL, o do ancestral mais próximo.
+/// The forum's effective e-mail: its own or, when NULL, the nearest ancestor's.
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -1152,16 +1152,16 @@ pub async fn effective_contact_email(
     Ok(r.and_then(|r| r.contact_email))
 }
 
-/// Deriva o status de transparência (`plena` | `parcial` | `ausente`) a partir do
-/// SINAL REAL de alcançabilidade dos gabinetes, não mais de `probe_status` do
-/// catálogo `civic_source` (que ficava desatualizado e mostrava `parcial` errado
-/// em câmaras cujos vereadores já têm e-mail real).
+/// Derive the transparency status (`plena` | `parcial` | `ausente`) from the REAL
+/// reachability signal of the offices, no longer from the `civic_source` catalog's
+/// `probe_status` (which went stale and wrongly showed `parcial` for councils whose
+/// members already have real e-mail).
 ///
-/// - `plena`: existe ≥1 vereador DESTA câmara com e-mail institucional REAL
-///   (alcançável) — gabinetes conectados de verdade. `has_reachable_mandate`.
-/// - `parcial`: não há gabinete conectado, mas a câmara mantém um site oficial
-///   (`base_url` presente no catálogo).
-/// - `ausente`: nem gabinete conectado nem site oficial catalogado.
+/// - `plena`: at least one council member of THIS council has a REAL institutional
+///   e-mail (reachable) — genuinely connected offices. `has_reachable_mandate`.
+/// - `parcial`: no connected office, but the council keeps an official site
+///   (`base_url` present in the catalog).
+/// - `ausente`: neither a connected office nor a catalogued official site.
 #[must_use]
 fn derive_transparency_status(has_reachable_mandate: bool, base_url: Option<&str>) -> String {
     if has_reachable_mandate {
@@ -1173,16 +1173,16 @@ fn derive_transparency_status(has_reachable_mandate: bool, base_url: Option<&str
     "ausente".to_owned()
 }
 
-/// Consulta a transparência da câmara de um município. RUNTIME (`sqlx::query_as`
-/// sem macro): cruza o catálogo cívico independente `civic_source` (0662/0669) —
-/// fora do schema compile-time-checked dos fóruns — com a tabela `mandate`, então
-/// não regeneramos `.sqlx` para esta consulta.
+/// Query a municipality's council transparency. RUNTIME (`sqlx::query_as` without
+/// the macro): it cross-references the independent civic catalog `civic_source`
+/// (0662/0669) — outside the forums' compile-time-checked schema — with the
+/// `mandate` table, so we do not regenerate `.sqlx` for this query.
 ///
-/// Casa por `(uf, municipio)` case-insensitive via `upper()` dos dois lados — a
-/// mesma comparação usada no resto do código. O sinal `plena` vem do EXISTS de um
-/// vereador (`sphere='municipal'` + `house='camara_municipal'`) com e-mail REAL
-/// (não o placeholder `@parlamento.democracia.social.br`); `official_url` continua
-/// vindo de `civic_source.base_url`. Retorna sempre `Some((status, base_url))`.
+/// Matches on `(uf, municipio)` case-insensitively via `upper()` on both sides — the
+/// same comparison used elsewhere. The `plena` signal comes from an EXISTS over a
+/// council member (`sphere='municipal'` + `house='camara_municipal'`) with a REAL
+/// e-mail (not the `@parlamento.democracia.social.br` placeholder); `official_url`
+/// still comes from `civic_source.base_url`. Always returns `Some((status, base_url))`.
 ///
 /// # Errors
 /// Propaga o `sqlx::Error`.
@@ -1191,8 +1191,8 @@ pub async fn municipal_transparency(
     uf: &str,
     municipio: &str,
 ) -> Result<Option<(String, Option<String>)>, sqlx::Error> {
-    // Uma única passagem: o LEFT JOIN LATERAL traz o site oficial (se catalogado)
-    // e o EXISTS traz o sinal real de gabinete conectado — sem consumir o executor
+    // A single pass: the LEFT JOIN LATERAL brings the official site (when catalogued)
+    // and the EXISTS brings the real connected-office signal — without consuming the executor
     // duas vezes.
     let (base_url, has_reachable): (Option<String>, bool) = sqlx::query_as(
         r#"
@@ -1231,7 +1231,7 @@ mod transparency_tests {
 
     #[test]
     fn plena_when_a_reachable_gabinete_exists() {
-        // O sinal `plena` é o gabinete alcançável — independe do site oficial.
+        // The `plena` signal IS the reachable office — independent of the official site.
         assert_eq!(
             derive_transparency_status(true, Some("https://sapl.x.leg.br")),
             "plena"
@@ -1241,7 +1241,7 @@ mod transparency_tests {
 
     #[test]
     fn parcial_when_site_but_no_reachable_gabinete() {
-        // Câmara com site oficial, porém nenhum vereador conectado ainda.
+        // A council with an official site but no connected member yet.
         assert_eq!(
             derive_transparency_status(false, Some("https://camara.x")),
             "parcial"

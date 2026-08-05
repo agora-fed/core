@@ -1,12 +1,12 @@
-//! # dsoc-forums — fóruns institucionais hierárquicos
+//! # dsoc-forums — hierarchical institutional forums
 //!
-//! A tese da plataforma aplicada a fóruns (`/f/<caminho>`): a sociedade delibera,
-//! as interações LOCAIS cruzam patamares configuráveis e cada patamar dispara um
-//! e-mail à instituição responsável, com recibo público. Interações federadas
-//! (fediverso) contam SEPARADO e nunca disparam envio.
+//! The platform's thesis applied to forums (`/f/<path>`): society deliberates,
+//! LOCAL interactions cross configurable thresholds, and each threshold fires an
+//! e-mail to the responsible institution with a public receipt. Federated
+//! (fediverse) interactions count SEPARATELY and never fire a dispatch.
 //!
-//! Estrutura espelha os demais components (proposals/debates): `domain` puro,
-//! `queries` sqlx compile-time, `service` transacional, `http` axum.
+//! The structure mirrors the other components (proposals/debates): pure `domain`,
+//! compile-time `queries` (sqlx), transactional `service`, axum `http`.
 
 pub mod domain;
 pub mod http;
