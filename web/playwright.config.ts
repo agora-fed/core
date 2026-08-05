@@ -7,7 +7,14 @@ export default defineConfig({
   timeout: 30_000,
   expect: { timeout: 8_000 },
   reporter: [['list']],
-  workers: 4,
+  // Production is a SINGLE gateway pod on a small VM. Four browsers fanning
+  // out `networkidle` waits overload it and produce rotating false failures
+  // (gastos/chapter/propor, 2026-08-05) — the assertions are fine, the load
+  // is not. Two workers + one retry keeps the suite honest and stable; the
+  // proper de-flake (explicit waits instead of networkidle) is tracked in the
+  // backlog.
+  workers: 2,
+  retries: 1,
   use: {
     baseURL: process.env.BASE_URL ?? 'https://democracia.social.br',
     trace: 'retain-on-failure',
