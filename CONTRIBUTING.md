@@ -18,6 +18,42 @@
 6. **Justify reversals.** Any change of technical direction states (a) why the old fails, (b) whether
    it can be salvaged, (c) why the new is better — recorded as an ADR.
 
+## Backlog & naming (OCA convention)
+
+The backlog lives in **GitHub issues** ([agora-fed/core/issues](https://github.com/agora-fed/core/issues)).
+Issue titles, commit subjects and PR titles carry an OCA-style tag prefix, and
+every issue gets the matching label:
+
+| Tag | Meaning |
+|-----|---------|
+| `[ADD]`  | New feature |
+| `[IMP]`  | Improvement of an existing feature |
+| `[FIX]`  | Bug fix |
+| `[REF]`  | Refactoring (no behavior change) |
+| `[PERF]` | Performance |
+| `[SEC]`  | Security |
+| `[I18N]` | Internationalization / localization |
+| `[DOC]`  | Documentation |
+| `[REM]`  | Feature/code removal |
+| `[MOV]`  | Code move between modules/crates |
+| `[CI]`   | CI/CD & tooling |
+
+Example: `[IMP] branding: upload logo/media from the admin panel`.
+
+## Definition of done (2026-08-05 rule — non-negotiable)
+
+A feature is DONE only with the full pyramid, in the same delivery:
+
+1. the feature itself;
+2. **backend tests** (unit + HTTP integration: auth gates, validation, roundtrip);
+3. **frontend tests** (vitest contract suites; the CI web job runs them);
+4. **security cases** (401/403, injection, enumeration, data-leak asserts);
+5. **CI/CD** executing all of the above (plus the svelte-check type ratchet);
+6. **post-deploy verification in production through a real browser**
+   (a Playwright spec under `web/tests/ui/` — see docs/GITOPS.md).
+
+95% backend codecov alone does not qualify as tested.
+
 ## Workflow
 
 ```sh
