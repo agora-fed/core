@@ -11,6 +11,7 @@
 // complexity lint is accepted crate-wide here (domain crates keep it denied).
 #![allow(clippy::type_complexity)]
 
+pub mod admin_branding;
 mod admin_consultations;
 pub mod admin_content;
 pub mod admin_ext;
@@ -202,6 +203,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(admin_ext::routes(state.clone()))
         // Super-admin: editar/ocultar/apagar mandato, proposta, partido (0.40, SOCRATES).
         .merge(admin_content::routes(state.clone()))
+        // Runtime branding: admin-editable logo/name/colors (Odoo-style, 0674).
+        .merge(admin_branding::routes(state.clone()))
         // spaces
         .merge(dsoc_processes::routes(state.clone()))
         .merge(dsoc_assemblies::routes(state.clone()))

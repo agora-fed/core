@@ -107,5 +107,45 @@ const jsonLdList = jsonLd ? (Array.isArray(jsonLd) ? jsonLd : [jsonLd]) : [];
     <CommandPalette client:idle />
     <ToastHost client:idle />
     <ProfileGate client:load />
+    <script is:inline>
+      // Runtime branding (org_branding, 0674): the admin-configured identity
+      // overrides the shipped theme on every page load — colors as CSS custom
+      // properties, logo/name/favicon swapped in place. Fail-open: any error
+      // keeps the built-in theme. Values are validated server-side against a
+      // token allowlist (#hex only), so setProperty never receives CSS code.
+      (async () => {
+        try {
+          const res = await fetch('/api/v1/branding', {
+            headers: { accept: 'application/json' },
+          });
+          if (!res.ok) return;
+          const branding = (await res.json())?.data;
+          if (!branding) return;
+          const root = document.documentElement;
+          for (const [token, hex] of Object.entries(branding.colors ?? {})) {
+            if (/^#[0-9a-fA-F]{3,8}$/.test(hex)) {
+              root.style.setProperty(`--${token}`, hex);
+            }
+          }
+          if (branding.logo_url) {
+            document.querySelectorAll('[data-brand-logo]').forEach((el) => {
+              el.setAttribute('src', branding.logo_url);
+            });
+          }
+          if (branding.site_name) {
+            document.querySelectorAll('[data-brand-name]').forEach((el) => {
+              el.textContent = branding.site_name;
+            });
+          }
+          if (branding.favicon_url) {
+            document
+              .querySelectorAll('link[rel="icon"], link[rel="apple-touch-icon"]')
+              .forEach((el) => el.setAttribute('href', branding.favicon_url));
+          }
+        } catch {
+          /* keep the shipped theme */
+        }
+      })();
+    </script>
   </body>
 </html>

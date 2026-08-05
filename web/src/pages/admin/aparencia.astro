@@ -1,0 +1,27 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminBrandingPanel from '../../components/islands/AdminBrandingPanel.svelte';
+---
+
+<AdminLayout
+  title="Aparência (admin)"
+  description="Identidade visual da instalação: nome, logo, cores — sem tocar em código."
+>
+  <header class="head">
+    <h1>Aparência</h1>
+    <p class="muted">
+      Nome do site, logo, favicon e cores da plataforma. As mudanças valem para
+      todo o site na próxima carga de página — nada de rebuild ou deploy.
+    </p>
+  </header>
+  <AdminBrandingPanel client:load />
+</AdminLayout>
+
+<style>
+  .head {
+    margin-bottom: var(--sp-5);
+  }
+  h1 {
+    margin: 0 0 var(--sp-1);
+  }
+</style>

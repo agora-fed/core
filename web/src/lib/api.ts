@@ -3700,3 +3700,18 @@ export const getSocratesSweepRuns = () =>
  *  vez por espelho, então pode levar alguns segundos. */
 export const socratesBackfill = () =>
   apiPost<SocratesBackfillStats>('/api/v1/admin/socrates/backfill', {});
+
+// --- Runtime branding (admin-editable visual identity, migration 0674) -----
+export interface BrandingDto {
+  site_name: string | null;
+  tagline: string | null;
+  logo_url: string | null;
+  favicon_url: string | null;
+  /** Semantic token -> #hex. Allowlisted server-side (accent*, ...). */
+  colors: Record<string, string>;
+}
+export const getBranding = () => apiGet<BrandingDto>('/api/v1/branding');
+export const adminGetBranding = () =>
+  apiGetCredentialed<BrandingDto>('/api/v1/admin/branding');
+export const adminPutBranding = (body: BrandingDto) =>
+  apiPut<BrandingDto>('/api/v1/admin/branding', body);

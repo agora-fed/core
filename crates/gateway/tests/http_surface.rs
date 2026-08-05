@@ -3427,3 +3427,100 @@ async fn admin_create_directory_requires_and_binds_responsavel() {
     assert_eq!(bound_citizen, responsavel);
     assert_eq!(bound_role, "admin");
 }
+
+// ---------------------------------------------------------------------------
+// BRANDING — runtime visual identity (migration 0674)
+// ---------------------------------------------------------------------------
+
+/// Full lifecycle of the admin-editable branding: public defaults, auth gates,
+/// validated upsert, and the public read reflecting the stored state.
+#[tokio::test]
+async fn branding_public_defaults_gates_and_roundtrip() {
+    let (app, st) = app().await;
+
+    // 1. Never configured: the public endpoint degrades to empty defaults.
+    let resp = app.clone().oneshot(get("/api/v1/branding")).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_json(resp).await;
+    assert!(body["data"]["site_name"].is_null());
+    assert_eq!(body["data"]["colors"], serde_json::json!({}));
+
+    // 2. Anonymous PUT is rejected outright.
+    let resp = app
+        .clone()
+        .oneshot(json_req("PUT", "/api/v1/admin/branding", None, "{}"))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+    // 3. A logged-in NON-admin is forbidden.
+    let (org, citizen, cookie) = seed_session(&st.db).await;
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "PUT",
+            "/api/v1/admin/branding",
+            Some(&cookie),
+            "{}",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+    // 4. Admin upserts a valid identity.
+    grant_admin(&st.db, org, citizen).await;
+    let valid = r##"{"site_name":"Pindorama","tagline":"Democracia com consequência",
+        "logo_url":"/media/logo.png",
+        "colors":{"accent":"#22c55e","accent-strong":"#115c2d"}}"##;
+    let resp = app
+        .clone()
+        .oneshot(json_req(
+            "PUT",
+            "/api/v1/admin/branding",
+            Some(&cookie),
+            valid,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_json(resp).await;
+    assert_eq!(body["data"]["site_name"], "Pindorama");
+    assert_eq!(body["data"]["colors"]["accent"], "#22c55e");
+
+    // 5. Validation walls: unknown token, non-hex value, unsafe URL.
+    for bad in [
+        r##"{"colors":{"background":"#000"}}"##,
+        r##"{"colors":{"accent":"url(javascript:alert(1))"}}"##,
+        r##"{"logo_url":"javascript:alert(1)"}"##,
+    ] {
+        let resp = app
+            .clone()
+            .oneshot(json_req(
+                "PUT",
+                "/api/v1/admin/branding",
+                Some(&cookie),
+                bad,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "payload should be rejected: {bad}"
+        );
+    }
+
+    // 6. The public read (same org, via session) reflects the stored state,
+    //    and the admin panel load returns the same payload.
+    for uri in ["/api/v1/branding", "/api/v1/admin/branding"] {
+        let resp = app
+            .clone()
+            .oneshot(get_with_cookie(uri, &cookie))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "GET {uri}");
+        let body = body_json(resp).await;
+        assert_eq!(body["data"]["site_name"], "Pindorama", "GET {uri}");
+        assert_eq!(body["data"]["colors"]["accent-strong"], "#115c2d");
+    }
+}
