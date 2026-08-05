@@ -1,55 +1,55 @@
 //! # SOCRATES espelha Ideias Legislativas do e-Cidadania (migrations 0670/0671/0672).
 //!
-//! No portal e-Cidadania do Senado o cidadão SÓ pode apoiar uma Ideia
-//! Legislativa — não existe votar contra nem argumentar. Aqui o debate é
-//! completo (favor × contra + afirmação-ponte), então o SOCRATES (cidadão-bot
-//! institucional, UUID fixo em 0670) espelha a ideia como tópico do fórum
-//! `senado` pra abrir o debate que o portal não permite.
+//! On the Senate's e-Cidadania portal a citizen can ONLY support a Legislative
+//! Idea — there is no voting against and no arguing. Here the debate is
+//! complete (for × against + bridging claims), so SOCRATES (an institutional
+//! citizen-bot with a fixed UUID in 0670) mirrors the idea as a topic of the
+//! `senado` forum, opening the debate the portal does not allow.
 //!
 //! Dois caminhos alimentam o mesmo espelho:
 //!
-//! 1. **Curadoria admin** (MVP, 0670): o admin cola a URL/ID → o gateway busca
-//!    a ideia no endpoint JSON por id → cria o tópico assinado pelo bot.
-//! 2. **Sweep automático** (v2, 0671): [`sweep_once`] lê a API pública JSON
-//!    `restcolecaomaisideia` (as ideias EM ALTA, já com título e contador de
-//!    apoios) e complementa com os ids linkados na página `principalideia`. As
-//!    NOVAS viram tópico; as já espelhadas são RE-SINCRONIZADAS. Cada rodada
-//!    vira uma linha em `socrates_sweep_run`.
+//! 1. **Admin curation** (MVP, 0670): the admin pastes the URL/ID → the gateway
+//!    fetches the idea from the per-id JSON endpoint → creates the bot-signed topic.
+//! 2. **Automatic sweep** (v2, 0671): [`sweep_once`] reads the public JSON API
+//!    `restcolecaomaisideia` (the TRENDING ideas, already with title and support
+//!    counter) and complements it with the ids linked on the `principalideia` page.
+//!    NEW ones become topics; already-mirrored ones are RE-SYNCED. Each round
+//!    becomes a row in `socrates_sweep_run`.
 //!
-//! A coleção devolve ~5 itens e não pagina: o sweep é ACUMULATIVO por natureza
-//! (roda a cada 6 h no worker e vai juntando o que o Senado promove ao topo),
-//! e o teto `SOCRATES_SWEEP_MAX` impede que uma rodada anômala inunde o fórum.
+//! The collection returns ~5 items and does not paginate: the sweep is CUMULATIVE
+//! by nature (it runs every 6h in the worker, gathering what the Senate promotes
+//! to the top), and the `SOCRATES_SWEEP_MAX` cap stops an anomalous round from flooding the forum.
 //!
 //! ## v3 (0672): a ideia INTEIRA, e viva
 //!
-//! Até a v2 o tópico tinha só o TÍTULO da ideia — o cidadão chegava no fórum
-//! sem a proposta, sem o que debater. E o contador de apoios, embora
-//! re-sincronizado no banco, era INVISÍVEL: o corpo do tópico era escrito UMA
-//! vez na criação e nunca mais reescrito.
+//! Until v2 the topic carried only the idea's TITLE — the citizen arrived at the
+//! forum without the proposal, with nothing to debate. And the support counter,
+//! though re-synced in the database, was INVISIBLE: the topic body was written
+//! ONCE at creation and never rewritten.
 //!
-//! A v3 corrige os dois com o endpoint JSON público POR IDEIA
-//! ([`IDEIA_JSON_URL`]), que devolve a descrição integral (a PAUTA), o contador
-//! de apoios como INTEIRO e a situação institucional da ideia. Ele SUBSTITUI o
-//! scrape de `<title>`/`og:description`, que sobrevive só como fallback pra
-//! quando o JSON falha. E [`refresh_mirrors`] REESCREVE o corpo dos tópicos já
-//! espelhados quando apoios/situação/descrição mudam — é o que mantém os
-//! números vivos. Só o `body` é tocado: score, votos e comentários do tópico
-//! pertencem ao debate daqui, não à fonte.
+//! v3 fixes both with the public PER-IDEA JSON endpoint ([`IDEIA_JSON_URL`]),
+//! which returns the full description (the AGENDA), the support counter as an
+//! INTEGER and the idea's institutional status. It REPLACES the
+//! `<title>`/`og:description` scrape, which survives only as a fallback for when
+//! the JSON fails. And [`refresh_mirrors`] REWRITES the body of already-mirrored
+//! topics when support/status/description change — that is what keeps the numbers
+//! alive. Only the `body` is touched: the topic's score, votes and comments
+//! belong to the debate here, not to the source.
 //!
 //! - `POST /admin/socrates/mirror`   — `{url_or_id}` → espelha (gate owner/admin).
 //! - `GET  /admin/socrates/mirrors`  — lista os espelhos existentes.
-//! - `POST /admin/socrates/sweep`    — dispara uma rodada agora (gate owner/admin).
-//! - `GET  /admin/socrates/runs`     — log das últimas rodadas.
+//! - `POST /admin/socrates/sweep`    — fire a round now (owner/admin gate).
+//! - `GET  /admin/socrates/runs`     — log of the latest rounds.
 //! - `POST /admin/socrates/backfill` — reescreve o corpo de TODOS os espelhos
-//!   (os criados antes da v3 ganham pauta/apoios/situação de uma vez).
+//!   (those created before v3 gain agenda/support/status in one pass).
 //!
-//! Autor-bot: o `create_topic` HTTP dos fóruns exige caller verificado; aqui o
-//! gateway insere via `dsoc_forums::queries::insert_topic` DIRETO (mesma query
-//! do service, contadores default idênticos), dentro de uma transação junto com
-//! a linha `socrates_mirror` — atômico e sem passar pelo gate de sessão.
+//! Bot author: the forums' HTTP `create_topic` requires a verified caller; here the
+//! gateway inserts via `dsoc_forums::queries::insert_topic` DIRECTLY (the same query
+//! the service uses, identical default counters), inside a transaction alongside
+//! the `socrates_mirror` row — atomic and bypassing the session gate.
 //!
-//! Nenhum host vem de input: as três URLs do Senado são constantes deste
-//! módulo, montadas a partir de um id NUMÉRICO validado — sem SSRF possível.
+//! No host comes from input: the three Senate URLs are constants of this
+//! module, built from a validated NUMERIC id — no SSRF possible.
 
 use axum::extract::{Json, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -63,55 +63,55 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-/// Organização única da instância (mesma convenção do gateway single-org).
+/// The instance's single organization (same convention as the single-org gateway).
 const DEFAULT_ORG_UUID: Uuid = uuid::uuid!("11111111-1111-1111-1111-111111111111");
-/// O cidadão-bot SOCRATES (semeado com UUID fixo na migration 0670).
+/// The SOCRATES citizen-bot (seeded with a fixed UUID in migration 0670).
 const SOCRATES_CITIZEN_ID: Uuid = uuid::uuid!("50c7a7e5-0000-4000-8000-000000000001");
-/// Fórum destino dos espelhos (raiz institucional semeada por seed-forums.sql).
+/// Destination forum of the mirrors (institutional root seeded by seed-forums.sql).
 const SENADO_FORUM_PATH: &str = "senado";
 /// User-Agent honesto no fetch ao portal do Senado.
 const FETCH_USER_AGENT: &str = "democracia.social.br SOCRATES (contato: /contato)";
-/// Timeout do fetch (o portal é lento em horário de pico; 10 s cobre).
+/// Fetch timeout (the portal is slow at peak hours; 10s covers it).
 const FETCH_TIMEOUT_SECS: u64 = 10;
-/// Teto de dígitos do id numérico da ideia (hoje são 6; 12 dá folga de décadas).
+/// Digit cap of the numeric idea id (today they are 6; 12 leaves decades of room).
 const MAX_IDEIA_ID_DIGITS: usize = 12;
-/// Teto da listagem de espelhos (painel admin; sem paginação no MVP).
+/// Cap of the mirror listing (admin panel; no pagination in the MVP).
 const LIST_LIMIT: i64 = 200;
-/// Teto da listagem de rodadas do sweep (o painel só mostra o histórico recente).
+/// Cap of the sweep-run listing (the panel only shows recent history).
 const RUNS_LIMIT: i64 = 50;
-/// API pública JSON (sem auth) com as Ideias Legislativas EM ALTA. Devolve ~5
-/// itens e NÃO pagina — por isso o sweep é incremental/acumulativo.
+/// Public JSON API (no auth) with the TRENDING Legislative Ideas. Returns ~5
+/// items and does NOT paginate — hence the incremental/cumulative sweep.
 const COLLECTION_URL: &str = "https://www12.senado.leg.br/ecidadania/restcolecaomaisideia";
-/// API pública JSON (sem auth) de UMA ideia, por id. É a fonte canônica da v3:
-/// devolve `descricao` (a pauta integral), `apoiamentos` como INTEIRO e
-/// `situacaoIdeiaDescricao` — tudo que o HTML estático não dá.
+/// Public JSON API (no auth) for ONE idea, by id. The canonical source in v3:
+/// it returns `descricao` (the full agenda), `apoiamentos` as an INTEGER and
+/// `situacaoIdeiaDescricao` — everything the static HTML does not give.
 const IDEIA_JSON_URL: &str = "https://www12.senado.leg.br/ecidadania/restideialegislativa?id=";
-/// Página HTML de entrada das Ideias Legislativas; complementa a coleção com
-/// ids que ainda não subiram pro topo (só temos o id, o título vem do fetch).
+/// HTML entry page of the Legislative Ideas; complements the collection with
+/// ids that have not yet reached the top (we only get the id; the title comes from the fetch).
 const PRINCIPAL_URL: &str = "https://www12.senado.leg.br/ecidadania/principalideia";
-/// Marcador dos links de ideia dentro do HTML de `principalideia`.
+/// Marker of the idea links inside the `principalideia` HTML.
 const IDEIA_LINK_MARKER: &str = "visualizacaoideia?id=";
-/// Teto default de espelhos NOVOS por rodada (env `SOCRATES_SWEEP_MAX`). Uma
-/// rodada que estoure o teto deixa o resto pra próxima — o fórum nunca inunda.
+/// Default cap of NEW mirrors per round (env `SOCRATES_SWEEP_MAX`). A round
+/// that exceeds the cap leaves the rest for the next one — the forum never floods.
 const DEFAULT_SWEEP_MAX: usize = 10;
 /// `socrates_mirror.origin` de um espelho colado por admin.
 const ORIGIN_MANUAL: &str = "manual";
-/// `socrates_mirror.origin` de um espelho descoberto pelo sweep.
+/// `socrates_mirror.origin` of a mirror discovered by the sweep.
 const ORIGIN_SWEEP: &str = "sweep";
 /// Teto do texto de erro consolidado gravado em `socrates_sweep_run.error`.
 const RUN_ERROR_MAX_CHARS: usize = 500;
-/// Prefixo server-rendered do `<title>` da página da ideia.
+/// Server-rendered prefix of the idea page's `<title>`.
 const TITLE_PREFIX: &str = "Ideia Legislativa - ";
 /// Separador do sufixo institucional do `<title>` (":: Portal e-Cidadania …").
 const TITLE_SUFFIX_SEP: &str = " :: ";
 /// Prefixo do `og:description` server-rendered.
 const OG_PREFIX: &str = "Apoie essa Ideia Legislativa:";
-/// Teto da pauta copiada pro corpo do tópico. O limite dos fóruns é 40 000
-/// caracteres pro corpo INTEIRO; cortar a descrição bem abaixo disso garante
-/// que a moldura (link, atribuição, chamada ao debate) sempre cabe.
+/// Cap of the agenda copied into the topic body. The forums' limit is 40,000
+/// characters for the ENTIRE body; cutting the description well below that
+/// guarantees the frame (link, attribution, call to debate) always fits.
 const MAX_DESCRICAO_CHARS: usize = 20_000;
-/// Teto de espelhos re-sincronizados por rodada de sweep. Cada refresh custa um
-/// fetch; o backfill (sob demanda do admin) é quem roda sem teto.
+/// Cap of mirrors re-synced per sweep round. Each refresh costs one
+/// fetch; the backfill (on admin demand) is the one that runs uncapped.
 const SWEEP_REFRESH_MAX: i64 = 25;
 
 pub fn routes(state: AppState) -> Router<()> {
@@ -125,7 +125,7 @@ pub fn routes(state: AppState) -> Router<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Gate owner/admin (mesmo padrão de profile_nudge/admin_forums)
+// Owner/admin gate (same pattern as profile_nudge/admin_forums)
 // ---------------------------------------------------------------------------
 
 fn caller_citizen(headers: &HeaderMap) -> Option<Uuid> {
@@ -147,7 +147,7 @@ fn storage_error() -> Response {
     )
 }
 
-/// Gate owner/admin. Retorna Err(resposta pronta) quando não passa.
+/// Owner/admin gate. Returns Err(a ready response) when it does not pass.
 async fn require_admin(db: &PgPool, headers: &HeaderMap) -> Result<Uuid, Response> {
     let Some(citizen) = caller_citizen(headers) else {
         return Err(fail(
@@ -180,25 +180,25 @@ async fn require_admin(db: &PgPool, headers: &HeaderMap) -> Result<Uuid, Respons
 // Parse do input do admin + do HTML server-rendered do e-Cidadania
 // ---------------------------------------------------------------------------
 
-/// Extrai o id NUMÉRICO da ideia: aceita o id puro ("165188") ou uma URL do
-/// e-Cidadania contendo `id=NNNNNN` na query string. `None` = entrada inválida.
+/// Extract the NUMERIC idea id: accepts the bare id ("165188") or an
+/// e-Cidadania URL carrying `id=NNNNNN` in the query string. `None` = invalid input.
 ///
-/// A URL colada NUNCA é buscada — o fetch usa sempre a URL canônica montada a
-/// partir do id extraído (sem SSRF por URL arbitrária).
+/// The pasted URL is NEVER fetched — the fetch always uses the canonical URL built
+/// from the extracted id (no SSRF via an arbitrary URL).
 fn parse_ideia_id(input: &str) -> Option<String> {
     let input = input.trim();
     if input.is_empty() {
         return None;
     }
-    // Id puro: só dígitos.
+    // Bare id: digits only.
     if input.chars().all(|c| c.is_ascii_digit()) {
         return (input.len() <= MAX_IDEIA_ID_DIGITS).then(|| input.to_owned());
     }
-    // URL: primeiro parâmetro `id=` da query string (`?id=` ou `&id=`).
+    // URL: the first `id=` parameter of the query string (`?id=` or `&id=`).
     let query = input.split_once('?').map(|(_, q)| q)?;
     for pair in query.split('&') {
         if let Some(v) = pair.strip_prefix("id=") {
-            // Corta em qualquer sujeira pós-numérica (ex.: fragmento "#apoios").
+            // Cut at any post-numeric noise (e.g. the "#apoios" fragment).
             let digits: String = v.chars().take_while(char::is_ascii_digit).collect();
             if !digits.is_empty() && digits.len() <= MAX_IDEIA_ID_DIGITS {
                 return Some(digits);
@@ -208,13 +208,13 @@ fn parse_ideia_id(input: &str) -> Option<String> {
     None
 }
 
-/// URL canônica da ideia no portal do Senado.
+/// Canonical URL of the idea on the Senate portal.
 fn canonical_url(ideia_id: &str) -> String {
     format!("https://www12.senado.leg.br/ecidadania/visualizacaoideia?id={ideia_id}")
 }
 
-/// Decodifica as entidades HTML que aparecem em títulos reais do portal.
-/// (`&amp;` por último pra não re-expandir `&amp;quot;`.)
+/// Decode the HTML entities that appear in real portal titles.
+/// (`&amp;` last so it never re-expands `&amp;quot;`.)
 fn decode_entities(s: &str) -> String {
     s.replace("&quot;", "\"")
         .replace("&#34;", "\"")
@@ -227,9 +227,9 @@ fn decode_entities(s: &str) -> String {
         .replace("&amp;", "&")
 }
 
-/// Limpa o conteúdo do `<title>`: remove o prefixo "Ideia Legislativa - " e o
-/// sufixo institucional a partir do ÚLTIMO " :: " (":: Portal e-Cidadania -
-/// Senado Federal"). `None` quando sobra vazio.
+/// Clean the `<title>` content: strip the "Ideia Legislativa - " prefix and the
+/// institutional suffix from the LAST " :: " onwards (":: Portal e-Cidadania -
+/// Senado Federal"). `None` when nothing is left.
 fn clean_title_tag(raw: &str) -> Option<String> {
     let decoded = decode_entities(raw);
     let mut t = decoded.trim().to_owned();
@@ -244,7 +244,7 @@ fn clean_title_tag(raw: &str) -> Option<String> {
 }
 
 /// Limpa o `og:description` ('Apoie essa Ideia Legislativa: "<TÍTULO>"'):
-/// remove o prefixo e as aspas envolventes. `None` quando sobra vazio.
+/// strips the prefix and the surrounding quotes. `None` when nothing is left.
 fn clean_og_description(raw: &str) -> Option<String> {
     let decoded = decode_entities(raw);
     let mut t = decoded.trim();
@@ -257,7 +257,7 @@ fn clean_og_description(raw: &str) -> Option<String> {
     (!t.is_empty()).then(|| t.to_owned())
 }
 
-/// Conteúdo bruto do `<title>…</title>` (case-insensitive no nome da tag).
+/// Raw content of `<title>…</title>` (case-insensitive on the tag name).
 fn title_tag(html: &str) -> Option<&str> {
     let lower = html.to_lowercase();
     let open = lower.find("<title")?;
@@ -266,11 +266,11 @@ fn title_tag(html: &str) -> Option<&str> {
     html.get(open_end + 1..close)
 }
 
-/// Conteúdo do atributo `content` da meta `og:description`, com `content`
-/// aceito ANTES ou DEPOIS de `property` (a ordem varia entre renderizações).
+/// Content of the `og:description` meta's `content` attribute, accepting `content`
+/// BEFORE or AFTER `property` (the order varies between renderings).
 fn og_description(html: &str) -> Option<&str> {
     let marker = html.find("og:description")?;
-    // Delimita a tag `<meta …>` que contém o marcador.
+    // Delimit the `<meta …>` tag containing the marker.
     let tag_start = html[..marker].rfind('<')?;
     let tag_end = marker + html[marker..].find('>')?;
     let tag = html.get(tag_start..tag_end)?;
@@ -285,12 +285,12 @@ fn og_description(html: &str) -> Option<&str> {
     inner.get(..end)
 }
 
-/// Título da ideia a partir do HTML server-rendered: `<title>` primeiro,
-/// `og:description` como fallback. `None` = página fora do formato conhecido.
+/// Idea title from the server-rendered HTML: `<title>` first,
+/// `og:description` as fallback. `None` = a page outside the known format.
 fn extract_title(html: &str) -> Option<String> {
     if let Some(t) = title_tag(html).and_then(clean_title_tag) {
-        // O <title> genérico do portal (sem " - <TÍTULO>") vira só o nome do
-        // site após a limpeza; rejeita e tenta o og:description.
+        // The portal's generic <title> (without " - <TITLE>") collapses to just the
+        // site name after cleaning; reject it and try og:description.
         if t != "Portal e-Cidadania - Senado Federal" {
             return Some(t);
         }
@@ -299,32 +299,32 @@ fn extract_title(html: &str) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
-// Fonte canônica (v3): o endpoint JSON POR IDEIA
+// Canonical source (v3): the PER-IDEA JSON endpoint
 // ---------------------------------------------------------------------------
 
-/// Uma Ideia Legislativa como o `restideialegislativa?id=` devolve.
+/// A Legislative Idea as `restideialegislativa?id=` returns it.
 ///
-/// É a fonte da PAUTA (`descricao`), do contador de apoios já numérico e da
-/// situação institucional. Todos os campos são opcionais de propósito: o portal
-/// é de terceiros e uma ideia com `detalhe` vazio (o caso comum) ou sem
-/// situação não pode derrubar o espelho.
+/// It is the source of the AGENDA (`descricao`), of the already-numeric support
+/// counter and of the institutional status. Every field is optional on purpose: the
+/// portal is third-party and an idea with an empty `detalhe` (the common case) or
+/// without a status must never break the mirror.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct IdeaDetail {
     titulo: Option<String>,
-    /// O texto integral da proposta — o que o cidadão precisa pra debater.
+    /// The proposal's full text — what the citizen needs in order to debate.
     descricao: Option<String>,
-    /// Contador de apoios como INTEIRO (a coleção dá "20.771"; aqui vem 20771).
+    /// Support counter as an INTEGER (the collection gives "20.771"; here it arrives as 20771).
     apoiamentos: Option<i64>,
-    /// Situação institucional ("Convertida em Proposição", "Aguardando envio à CDH").
+    /// Institutional status ("Convertida em Proposição", "Aguardando envio à CDH").
     situacao: Option<String>,
-    /// Complemento da descrição. Costuma vir vazio.
+    /// Complement to the description. Usually arrives empty.
     detalhe: Option<String>,
 }
 
 impl IdeaDetail {
-    /// A pauta pro corpo do tópico: `descricao` e, quando existe, `detalhe`
-    /// como parágrafo extra. `None` quando a ideia não tem texto nenhum — aí a
-    /// seção "## A proposta" some do corpo em vez de virar cabeçalho órfão.
+    /// The agenda for the topic body: `descricao` plus, when present, `detalhe`
+    /// as an extra paragraph. `None` when the idea has no text at all — in which
+    /// case the "## A proposta" section vanishes instead of becoming an orphan heading.
     fn pauta(&self) -> Option<String> {
         match (self.descricao.as_deref(), self.detalhe.as_deref()) {
             (Some(d), Some(extra)) => Some(format!("{d}\n\n{extra}")),
@@ -335,21 +335,21 @@ impl IdeaDetail {
     }
 }
 
-/// URL canônica do JSON da ideia (host constante do módulo + id numérico já
-/// validado — sem SSRF possível).
+/// Canonical URL of the idea's JSON (the module's constant host + an already-validated
+/// validated id — no SSRF possible).
 fn ideia_json_url(ideia_id: &str) -> String {
     format!("{IDEIA_JSON_URL}{ideia_id}")
 }
 
-/// Contador de apoios escrito como texto ("20.771"). O ponto é separador de
-/// MILHAR no pt-BR, nunca decimal — por isso só os dígitos importam.
+/// Support counter written as text ("20.771"). The dot is the THOUSANDS
+/// separator in pt-BR, never a decimal — hence only the digits matter.
 fn parse_apoios_text(raw: &str) -> Option<i64> {
     let digits: String = raw.chars().filter(char::is_ascii_digit).collect();
     digits.parse().ok()
 }
 
-/// Um contador de apoios vindo do portal em qualquer das duas formas: inteiro
-/// puro (endpoint por ideia) ou texto com ponto de milhar (coleção).
+/// A support counter from the portal in either form: a bare integer
+/// (per-idea endpoint) or text with thousand dots (the collection).
 fn parse_apoios_num(value: &serde_json::Value) -> Option<i64> {
     match value {
         serde_json::Value::Number(n) => n.as_i64(),
@@ -359,7 +359,7 @@ fn parse_apoios_num(value: &serde_json::Value) -> Option<i64> {
 }
 
 /// Parseia o JSON de UMA ideia. `None` = resposta fora do formato conhecido
-/// (aí o chamador cai no fallback HTML em vez de espelhar lixo).
+/// (the caller then falls back to HTML instead of mirroring garbage).
 fn parse_idea_detail(json: &str) -> Option<IdeaDetail> {
     let value: serde_json::Value = serde_json::from_str(json).ok()?;
     let obj = value.as_object()?;
@@ -376,13 +376,13 @@ fn parse_idea_detail(json: &str) -> Option<IdeaDetail> {
         situacao: text("situacaoIdeiaDescricao"),
         detalhe: text("detalhe"),
     };
-    // Um objeto sem título NEM descrição não é uma ideia (404 em JSON, erro do
-    // portal, shape novo): melhor cair no fallback do que espelhar vazio.
+    // An object with neither title NOR description is not an idea (a JSON 404, a portal
+    // error, a new shape): better to fall back than to mirror an empty topic.
     (detail.titulo.is_some() || detail.descricao.is_some()).then_some(detail)
 }
 
-/// Busca a ideia no endpoint JSON canônico. `Err` = portal fora do ar,
-/// status ruim ou shape irreconhecível.
+/// Fetch the idea from the canonical JSON endpoint. `Err` = portal down,
+/// bad status or unrecognizable shape.
 async fn fetch_idea_detail(ideia_id: &str) -> Result<IdeaDetail, String> {
     let json = fetch_text(&ideia_json_url(ideia_id)).await?;
     parse_idea_detail(&json).ok_or_else(|| {
@@ -392,7 +392,7 @@ async fn fetch_idea_detail(ideia_id: &str) -> Result<IdeaDetail, String> {
     })
 }
 
-/// Formata um inteiro com separador de milhar pt-BR: 20260 → "20.260".
+/// Format an integer with the pt-BR thousands separator: 20260 → "20.260".
 fn format_milhar_ptbr(n: i64) -> String {
     let digits = n.unsigned_abs().to_string();
     let len = digits.len();
@@ -409,9 +409,9 @@ fn format_milhar_ptbr(n: i64) -> String {
     out
 }
 
-/// O contador como o corpo do tópico deve exibi-lo: o inteiro do endpoint por
-/// ideia manda (formatado em pt-BR); na falta dele, o texto que a coleção já
-/// traz formatado pelo próprio Senado.
+/// The counter as the topic body must show it: the integer from the per-idea
+/// endpoint wins (formatted pt-BR); failing that, the text the collection
+/// already brings formatted by the Senate itself.
 fn apoios_display(num: Option<i64>, texto: Option<&str>) -> Option<String> {
     num.map(format_milhar_ptbr)
         .or_else(|| texto.map(str::to_owned))
@@ -427,12 +427,12 @@ fn clamp_pauta(pauta: &str) -> String {
     t
 }
 
-/// Corpo (markdown) do tópico espelhado: a PAUTA integral, o placar de apoios e
-/// a situação institucional, a chamada ao debate que o portal não permite, e a
-/// atribuição da fonte.
+/// Body (markdown) of the mirrored topic: the full AGENDA, the support tally and
+/// the institutional status, the call to the debate the portal does not allow, and
+/// the source attribution.
 ///
-/// Seção vazia é seção OMITIDA: sem pauta não há cabeçalho "## A proposta"
-/// órfão, e sem apoios nem situação a linha do placar some inteira.
+/// An empty section is an OMITTED section: with no agenda there is no orphan
+/// "## A proposta" heading, and with neither support nor status the tally line vanishes entirely.
 fn topic_body(
     url: &str,
     pauta: Option<&str>,
@@ -446,8 +446,8 @@ fn topic_body(
         out.push_str(&clamp_pauta(pauta));
         out.push_str("\n\n");
     }
-    // As duas metades do placar são independentes: o Senado às vezes dá uma sem
-    // a outra, e meia linha ainda informa.
+    // The two halves of the tally are independent: the Senate sometimes gives one
+    // without the other, and half a line still informs.
     let placar = match (apoios, situacao) {
         (Some(a), Some(s)) => Some(format!(
             "📊 **{a} apoios** no e-Cidadania · **Situação:** {s}"
@@ -479,12 +479,12 @@ fn topic_body(
 }
 
 // ---------------------------------------------------------------------------
-// Descoberta automática: coleção JSON + ids linkados no HTML
+// Automatic discovery: JSON collection + ids linked in the HTML
 // ---------------------------------------------------------------------------
 
-/// Uma ideia candidata a espelho. O `titulo`/`apoiamentos` só existem quando a
-/// candidata veio da coleção JSON; vindo do HTML (ou do painel admin) só há id,
-/// e o título é buscado na página canônica.
+/// An idea that is a mirror candidate. `titulo`/`apoiamentos` only exist when the
+/// candidate came from the JSON collection; from the HTML (or the admin panel) only
+/// the id exists, and the title is fetched from the canonical page.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct IdeaCandidate {
     ideia_id: String,
@@ -495,7 +495,7 @@ struct IdeaCandidate {
 }
 
 impl IdeaCandidate {
-    /// Candidata sem metadados — o caminho do painel admin e do HTML.
+    /// Candidate without metadata — the admin-panel and HTML path.
     fn bare(ideia_id: String) -> Self {
         Self {
             ideia_id,
@@ -505,14 +505,14 @@ impl IdeaCandidate {
         }
     }
 
-    /// Há dado de apoios pra gravar/re-sincronizar?
+    /// Is there support data to store/re-sync?
     fn has_apoios(&self) -> bool {
         self.apoiamentos.is_some() || self.porcentagem_favor.is_some()
     }
 }
 
-/// Texto de um campo JSON que o portal ora manda como string ("20.771"), ora
-/// poderia mandar como número — os dois viram texto, nada é reinterpretado.
+/// Text of a JSON field the portal sometimes sends as a string ("20.771") and
+/// could send as a number — both become text, nothing is reinterpreted.
 fn json_text(value: &serde_json::Value) -> Option<String> {
     let text = match value {
         serde_json::Value::String(s) => s.trim().to_owned(),
@@ -522,9 +522,9 @@ fn json_text(value: &serde_json::Value) -> Option<String> {
     (!text.is_empty()).then_some(text)
 }
 
-/// Parseia o array de `restcolecaomaisideia`. Item fora do formato esperado é
-/// DESCARTADO em silêncio (a rodada segue com o resto) — o portal é de
-/// terceiros e uma mudança de shape não pode derrubar o sweep.
+/// Parse the `restcolecaomaisideia` array. An item outside the expected format is
+/// silently DISCARDED (the round continues with the rest) — the portal is
+/// third-party and a shape change must never break the sweep.
 fn parse_collection(json: &str) -> Vec<IdeaCandidate> {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
         return Vec::new();
@@ -535,8 +535,8 @@ fn parse_collection(json: &str) -> Vec<IdeaCandidate> {
     items
         .iter()
         .filter_map(|item| {
-            // O id é numérico na prática; `parse_ideia_id` valida os dois casos
-            // (número ou string) contra o mesmo teto de dígitos do painel.
+            // The id is numeric in practice; `parse_ideia_id` validates both cases
+            // (number or string) against the same digit cap as the panel.
             let ideia_id = parse_ideia_id(&json_text(item.get("id")?)?)?;
             Some(IdeaCandidate {
                 ideia_id,
@@ -555,8 +555,8 @@ fn parse_collection(json: &str) -> Vec<IdeaCandidate> {
         .collect()
 }
 
-/// Ids das ideias linkadas no HTML de `principalideia` (`visualizacaoideia?id=NNNNNN`),
-/// na ordem de aparição e sem repetição.
+/// Ids of the ideas linked in the `principalideia` HTML (`visualizacaoideia?id=NNNNNN`),
+/// in order of appearance and without repetition.
 fn extract_ideia_ids(html: &str) -> Vec<String> {
     let mut ids: Vec<String> = Vec::new();
     let mut rest = html;
@@ -571,8 +571,8 @@ fn extract_ideia_ids(html: &str) -> Vec<String> {
     ids
 }
 
-/// Junta as duas fontes: a coleção manda (traz título + apoios) e o HTML só
-/// acrescenta os ids que ela não cobriu.
+/// Merge both sources: the collection wins (it brings title + support) and the HTML
+/// only adds the ids it did not cover.
 fn merge_candidates(collection: Vec<IdeaCandidate>, html_ids: Vec<String>) -> Vec<IdeaCandidate> {
     let mut merged = collection;
     for id in html_ids {
@@ -583,7 +583,7 @@ fn merge_candidates(collection: Vec<IdeaCandidate>, html_ids: Vec<String>) -> Ve
     merged
 }
 
-/// Trunca o título ao teto dos fóruns preservando caracteres inteiros.
+/// Truncate the title to the forums' cap, preserving whole characters.
 fn clamp_title(title: &str) -> String {
     let max = dsoc_forums::domain::MAX_TITLE_LEN;
     if title.chars().count() <= max {
@@ -600,14 +600,14 @@ fn clamp_title(title: &str) -> String {
 
 #[derive(Debug, Deserialize)]
 struct MirrorRequest {
-    /// URL da ideia no e-Cidadania OU o id numérico puro.
+    /// e-Cidadania URL of the idea OR the bare numeric id.
     url_or_id: String,
 }
 
 #[derive(Debug, Serialize)]
 struct MirrorCreated {
     topic_id: Uuid,
-    /// Caminho navegável do tópico no front (`/f/topico/<id>`).
+    /// Navigable path of the topic on the front end (`/f/topico/<id>`).
     path: String,
 }
 
@@ -619,43 +619,43 @@ struct MirrorEntry {
     topic_title: String,
     path: String,
     created_at: DateTime<Utc>,
-    /// Contador de apoios no e-Cidadania (formatação do Senado); `null` até o
-    /// primeiro sweep que vir a ideia na coleção.
+    /// Support counter on e-Cidadania (the Senate's formatting); `null` until the
+    /// first sweep that sees the idea in the collection.
     apoiamentos: Option<String>,
     porcentagem_favor: Option<i32>,
     apoios_updated_at: Option<DateTime<Utc>>,
-    /// `manual` (admin colou) ou `sweep` (descoberto pelo worker).
+    /// `manual` (an admin pasted it) or `sweep` (discovered by the worker).
     origin: String,
-    /// Contador de apoios como NÚMERO (v3) — o painel formata em pt-BR.
+    /// Support counter as a NUMBER (v3) — the panel formats it in pt-BR.
     apoiamentos_num: Option<i64>,
-    /// Situação institucional da ideia no Senado.
+    /// Institutional status of the idea in the Senate.
     situacao: Option<String>,
-    /// Quando o corpo do tópico foi reescrito com os dados acima. `null` = o
-    /// tópico ainda está no formato pré-v3 (só título) e precisa de backfill.
+    /// When the topic body was rewritten with the data above. `null` = the
+    /// topic is still in the pre-v3 format (title only) and needs a backfill.
     body_synced_at: Option<DateTime<Utc>>,
 }
 
-/// Resultado de uma rodada de sweep — o que o painel mostra e o que vai pro log.
+/// Result of one sweep round — what the panel shows and what goes to the log.
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct SweepStats {
     /// Ideias distintas vistas nas duas fontes.
     pub found: usize,
-    /// Ideias que viraram tópico novo nesta rodada.
+    /// Ideas that became a new topic in this round.
     pub mirrored: usize,
-    /// Ideias ignoradas: já espelhadas, teto da rodada estourado, ou falha.
+    /// Ideas skipped: already mirrored, round cap exceeded, or a failure.
     pub skipped: usize,
-    /// Espelhos existentes que tiveram o contador de apoios re-sincronizado a
-    /// partir da COLEÇÃO (sem fetch extra — é de lá que vem `porcentagem_favor`).
+    /// Existing mirrors whose support counter was re-synced from the
+    /// COLLECTION (no extra fetch — that is where `porcentagem_favor` comes from).
     pub updated: usize,
-    /// Espelhos cujo CORPO do tópico foi reescrito com pauta/apoios/situação
-    /// frescos do endpoint por ideia (v3) — o que mantém os números visíveis.
+    /// Mirrors whose topic BODY was rewritten with fresh agenda/support/status
+    /// from the per-idea endpoint (v3) — what keeps the numbers visible.
     pub refreshed: usize,
-    /// Erros não-fatais da rodada (fetch de uma fonte, espelho de uma ideia).
+    /// Non-fatal errors of the round (fetching a source, mirroring one idea).
     pub errors: Vec<String>,
 }
 
 impl SweepStats {
-    /// Erros consolidados pro `socrates_sweep_run.error` (`None` = rodada limpa).
+    /// Errors consolidated for `socrates_sweep_run.error` (`None` = a clean round).
     fn error_text(&self) -> Option<String> {
         if self.errors.is_empty() {
             return None;
@@ -679,22 +679,22 @@ struct SweepRunEntry {
     error: Option<String>,
 }
 
-/// Por que uma ideia NÃO virou tópico. O caminho admin traduz cada variante num
-/// status HTTP; o sweep só conta e loga.
+/// Why an idea did NOT become a topic. The admin path maps each variant onto an
+/// HTTP status; the sweep only counts and logs.
 #[derive(Debug)]
 enum MirrorError {
-    /// Já existe espelho — o `Uuid` é o tópico existente (o painel linka nele).
+    /// A mirror already exists — the `Uuid` is the existing topic (the panel links to it).
     AlreadyMirrored(Uuid),
-    /// O portal do Senado não respondeu / respondeu fora do formato.
+    /// The Senate portal did not answer / answered outside the format.
     Upstream(String),
-    /// O fórum `senado` não existe nesta instalação.
+    /// The `senado` forum does not exist in this installation.
     ForumMissing,
-    /// Falha de banco (já logada com contexto no ponto de origem).
+    /// Database failure (already logged with context at the point of origin).
     Storage,
 }
 
-/// 409 com o tópico existente no `data` (o painel linka direto) — o envelope
-/// carrega erro E payload aqui de propósito: o conflito é INFORMATIVO.
+/// 409 with the existing topic in `data` (the panel links straight to it) — the envelope
+/// carries an error AND a payload here on purpose: the conflict is INFORMATIVE.
 fn already_mirrored(ideia_id: &str, topic_id: Uuid) -> Response {
     let body = ApiResponse {
         success: false,
@@ -715,14 +715,14 @@ fn already_mirrored(ideia_id: &str, topic_id: Uuid) -> Response {
 // Handlers
 // ---------------------------------------------------------------------------
 
-/// Espelha UMA ideia: dedup → busca a ideia no JSON canônico → tópico + linha
-/// `socrates_mirror` na MESMA transação. É o núcleo compartilhado pelos dois
-/// caminhos (painel admin e sweep); devolve o id do tópico criado.
+/// Mirror ONE idea: dedup → fetch the idea from the canonical JSON → topic +
+/// `socrates_mirror` row in the SAME transaction. This is the core shared by both
+/// paths (admin panel and sweep); it returns the created topic's id.
 ///
-/// O tópico já nasce COMPLETO — pauta, apoios e situação no corpo. Quando o
-/// JSON canônico falha, o espelho ainda acontece com o que houver (título da
-/// coleção ou scrape do HTML) e fica com `body_synced_at` NULL, o que faz o
-/// refresh/backfill completá-lo na primeira oportunidade.
+/// The topic is born COMPLETE — agenda, support and status in the body. When the
+/// canonical JSON fails, the mirror still happens with whatever exists (the
+/// collection's title or the HTML scrape) and keeps `body_synced_at` NULL, which
+/// makes the refresh/backfill complete it at the first opportunity.
 async fn mirror_candidate(
     state: &AppState,
     candidate: &IdeaCandidate,
@@ -730,7 +730,7 @@ async fn mirror_candidate(
 ) -> Result<Uuid, MirrorError> {
     let ideia_id = &candidate.ideia_id;
 
-    // Dedup ANTES do fetch: ideia já espelhada nunca dispara rede.
+    // Dedup BEFORE the fetch: an already-mirrored idea never touches the network.
     match sqlx::query_scalar::<_, Uuid>("SELECT topic_id FROM socrates_mirror WHERE ideia_id = $1")
         .bind(ideia_id)
         .fetch_optional(&state.db)
@@ -746,10 +746,10 @@ async fn mirror_candidate(
 
     let source_url = canonical_url(ideia_id);
 
-    // Fonte canônica (v3): o JSON por ideia traz título + pauta + apoios +
-    // situação de uma vez. Falha dele NÃO cancela o espelho — o tópico nasce
-    // com o que houver (título da coleção ou scrape do HTML) e o refresh
-    // completa depois, já que `body_synced_at` fica NULL.
+    // Canonical source (v3): the per-idea JSON brings title + agenda + support +
+    // status in one shot. Its failure does NOT cancel the mirror — the topic is born
+    // with whatever exists (the collection's title or the HTML scrape) and the refresh
+    // completes it later, since `body_synced_at` stays NULL.
     let detail = match fetch_idea_detail(ideia_id).await {
         Ok(detail) => Some(detail),
         Err(msg) => {
@@ -765,7 +765,7 @@ async fn mirror_candidate(
     let title = match known_title {
         Some(title) => title,
         None => {
-            // Último recurso: o `<title>`/`og:description` server-rendered.
+            // Last resort: the server-rendered `<title>`/`og:description`.
             let html = fetch_text(&source_url)
                 .await
                 .map_err(MirrorError::Upstream)?;
@@ -782,8 +782,8 @@ async fn mirror_candidate(
 
     let pauta = detail.as_ref().and_then(IdeaDetail::pauta);
     let situacao = detail.as_ref().and_then(|d| d.situacao.clone());
-    // O inteiro do endpoint por ideia manda; na falta dele, o texto da coleção
-    // ("20.771") vira número — as duas fontes alimentam a mesma coluna.
+    // The per-idea endpoint's integer wins; failing that, the collection's text
+    // ("20.771") becomes a number — both sources feed the same column.
     let apoios_num = detail
         .as_ref()
         .and_then(|d| d.apoiamentos)
@@ -802,8 +802,8 @@ async fn mirror_candidate(
         )
     })?;
 
-    // Fórum destino: a raiz `senado` (institucional, semeada — nunca é
-    // materializável on-demand como as seções territoriais).
+    // Destination forum: the `senado` root (institutional, seeded — never
+    // materializable on demand like the territorial sections).
     let forum_id: Option<Uuid> =
         sqlx::query_scalar("SELECT id FROM forum WHERE org_id = $1 AND full_path = $2")
             .bind(DEFAULT_ORG_UUID)
@@ -818,10 +818,10 @@ async fn mirror_candidate(
         return Err(MirrorError::ForumMissing);
     };
 
-    // Tópico + espelho na MESMA transação: ou os dois existem, ou nenhum.
-    // `insert_topic` é a MESMA query do ForumService::create_topic (contadores
-    // default idênticos); inserir direto evita o gate de sessão/verificação do
-    // caminho HTTP — o autor é o cidadão-bot, sem credencial.
+    // Topic + mirror in the SAME transaction: either both exist, or neither.
+    // `insert_topic` is the SAME query as ForumService::create_topic (identical
+    // default counters); inserting directly bypasses the session/verification gate
+    // of the HTTP path — the author is the citizen-bot, which has no credential.
     let now = state.clock.now();
     let mut tx = state.db.begin().await.map_err(|err| {
         tracing::error!(?err, "socrates: begin falhou");
@@ -861,14 +861,14 @@ async fn mirror_candidate(
     .bind(pauta.as_deref())
     .bind(situacao.as_deref())
     .bind(apoios_num)
-    // NULL quando o JSON canônico falhou: o corpo nasceu incompleto e o
-    // refresh/backfill vai reescrevê-lo na primeira oportunidade.
+    // NULL when the canonical JSON failed: the body was born incomplete and the
+    // refresh/backfill will rewrite it at the first opportunity.
     .bind(detail.is_some().then_some(now))
     .execute(&mut *tx)
     .await;
     match inserted {
         // Corrida: outro caminho espelhou entre o dedup e o commit — aborta o
-        // tópico (rollback implícito no drop da tx) e reporta o conflito.
+        // topic (implicit rollback when the tx drops) and reports the conflict.
         Ok(r) if r.rows_affected() == 0 => {
             drop(tx);
             return match sqlx::query_scalar::<_, Uuid>(
@@ -895,8 +895,8 @@ async fn mirror_candidate(
     Ok(topic.id)
 }
 
-/// `POST /admin/socrates/mirror` — espelha uma Ideia Legislativa como tópico
-/// do fórum `senado`, assinado pelo cidadão-bot SOCRATES.
+/// `POST /admin/socrates/mirror` — mirror a Legislative Idea as a topic of the
+/// `senado` forum, signed by the SOCRATES citizen-bot.
 async fn mirror(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -937,7 +937,7 @@ async fn list_mirrors(State(state): State<AppState>, headers: HeaderMap) -> Resp
     if let Err(resp) = require_admin(&state.db, &headers).await {
         return resp;
     }
-    /// A linha crua do JOIN; o DTO só acrescenta o `path` navegável.
+    /// The raw JOIN row; the DTO only adds the navigable `path`.
     #[derive(sqlx::FromRow)]
     struct Row {
         ideia_id: String,
@@ -995,12 +995,12 @@ async fn list_mirrors(State(state): State<AppState>, headers: HeaderMap) -> Resp
 }
 
 /// `POST /admin/socrates/backfill` — re-sincroniza TODOS os espelhos: busca
-/// cada ideia no JSON canônico e reescreve o corpo do tópico com pauta, apoios
-/// e situação. É o que conserta os espelhos criados antes da v3 (corpo só com
-/// título) e os que ficaram com `apoiamentos` NULL por terem vindo do HTML.
+/// each idea in the canonical JSON and rewrites the topic body with agenda, support
+/// and status. This is what fixes mirrors created before v3 (a body with the title
+/// only) and those left with a NULL `apoiamentos` because they came from the HTML.
 ///
-/// Síncrono e sem teto de propósito: são poucos espelhos e o admin quer ver o
-/// resultado. Idempotente — rodar duas vezes não reescreve nada na segunda.
+/// Synchronous and uncapped on purpose: there are few mirrors and the admin wants to
+/// see the result. Idempotent — running it twice rewrites nothing the second time.
 async fn backfill(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if let Err(resp) = require_admin(&state.db, &headers).await {
         return resp;
@@ -1010,7 +1010,7 @@ async fn backfill(State(state): State<AppState>, headers: HeaderMap) -> Response
 }
 
 /// `POST /admin/socrates/sweep` — dispara UMA rodada agora e devolve o
-/// resultado. Síncrono de propósito: o admin quer ver o que aconteceu.
+/// result. Synchronous on purpose: the admin wants to see what happened.
 async fn run_sweep(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if let Err(resp) = require_admin(&state.db, &headers).await {
         return resp;
@@ -1021,7 +1021,7 @@ async fn run_sweep(State(state): State<AppState>, headers: HeaderMap) -> Respons
     }
 }
 
-/// `GET /admin/socrates/runs` — as últimas rodadas do sweep, recentes primeiro.
+/// `GET /admin/socrates/runs` — the latest sweep rounds, most recent first.
 async fn list_runs(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if let Err(resp) = require_admin(&state.db, &headers).await {
         return resp;
@@ -1072,7 +1072,7 @@ async fn list_runs(State(state): State<AppState>, headers: HeaderMap) -> Respons
 }
 
 // ---------------------------------------------------------------------------
-// Sweep automático (v2)
+// Automatic sweep (v2)
 // ---------------------------------------------------------------------------
 
 /// Teto de espelhos NOVOS por rodada (`SOCRATES_SWEEP_MAX`, default 10).
@@ -1080,25 +1080,25 @@ fn sweep_max() -> usize {
     parse_sweep_max(std::env::var("SOCRATES_SWEEP_MAX").ok().as_deref())
 }
 
-/// Lê o teto da rodada. Valor ausente, ilegível ou zero cai no default — um
-/// teto 0 desligaria o sweep silenciosamente, o que nunca é a intenção.
+/// Read the round cap. An absent, unreadable or zero value falls back to the default —
+/// a cap of 0 would silently switch the sweep off, which is never the intent.
 fn parse_sweep_max(raw: Option<&str>) -> usize {
     raw.and_then(|v| v.trim().parse().ok())
         .filter(|&v: &usize| v > 0)
         .unwrap_or(DEFAULT_SWEEP_MAX)
 }
 
-/// UMA rodada do sweep: descobre as ideias em alta, espelha as novas (até o
-/// teto) e re-sincroniza o contador de apoios das já espelhadas. Grava a rodada
-/// em `socrates_sweep_run` — inclusive quando ela falha, pra que "o sweep está
-/// quebrado" seja visível no painel em vez de silencioso.
+/// ONE sweep round: discovers the trending ideas, mirrors the new ones (up to the
+/// cap) and re-syncs the support counter of those already mirrored. Records the round
+/// in `socrates_sweep_run` — including when it fails, so that "the sweep is broken"
+/// is visible in the panel instead of silent.
 ///
-/// `Err` só quando NENHUMA fonte respondeu: aí não há o que espelhar e a
-/// diferença entre "o Senado está fora" e "não há ideia nova" importa.
+/// `Err` only when NO source answered: then there is nothing to mirror and the
+/// difference between "the Senate is down" and "there is no new idea" matters.
 pub async fn sweep_once(state: &AppState) -> Result<SweepStats, String> {
     let run_id = Uuid::now_v7();
     let started_at = state.clock.now();
-    // A linha nasce ANTES da rede: uma rodada travada aparece no painel com
+    // The row is born BEFORE the network call: a stalled round shows up in the panel with
     // `finished_at` nulo em vez de sumir.
     if let Err(err) = sqlx::query(
         "INSERT INTO socrates_sweep_run (id, started_at, found, mirrored, skipped)
@@ -1136,11 +1136,11 @@ pub async fn sweep_once(state: &AppState) -> Result<SweepStats, String> {
     outcome
 }
 
-/// O trabalho da rodada, sem o log (que [`sweep_once`] gerencia).
+/// The round's work, without the logging (which [`sweep_once`] manages).
 async fn sweep_inner(state: &AppState, max_new: usize) -> Result<SweepStats, String> {
     let mut stats = SweepStats::default();
 
-    // As duas fontes são independentes: a queda de uma não cancela a outra.
+    // The two sources are independent: one going down does not cancel the other.
     let collection = match fetch_text(COLLECTION_URL).await {
         Ok(json) => parse_collection(&json),
         Err(msg) => {
@@ -1166,7 +1166,7 @@ async fn sweep_inner(state: &AppState, max_new: usize) -> Result<SweepStats, Str
     let candidates = merge_candidates(collection, html_ids);
     stats.found = candidates.len();
 
-    // Uma consulta pra saber quem já está espelhado — evita N lookups.
+    // One query to learn who is already mirrored — avoids N lookups.
     let ids: Vec<String> = candidates.iter().map(|c| c.ideia_id.clone()).collect();
     let existing: Vec<String> =
         sqlx::query_scalar("SELECT ideia_id FROM socrates_mirror WHERE ideia_id = ANY($1)")
@@ -1182,14 +1182,14 @@ async fn sweep_inner(state: &AppState, max_new: usize) -> Result<SweepStats, Str
     for candidate in &candidates {
         if existing.contains(&candidate.ideia_id) {
             stats.skipped += 1;
-            // Já espelhada: o que muda com o tempo é só o contador de apoios.
+            // Already mirrored: what changes over time is only the support counter.
             if candidate.has_apoios() && refresh_apoios(state, candidate, now).await {
                 stats.updated += 1;
             }
             continue;
         }
         if stats.mirrored >= max_new {
-            // Teto da rodada: o resto entra na próxima (a cada 6 h).
+            // Round cap: the rest goes into the next one (every 6h).
             stats.skipped += 1;
             continue;
         }
@@ -1202,7 +1202,7 @@ async fn sweep_inner(state: &AppState, max_new: usize) -> Result<SweepStats, Str
                     "socrates sweep: ideia espelhada"
                 );
             }
-            // Corrida com o painel admin — não é erro, só não é nova.
+            // A race with the admin panel — not an error, just not new.
             Err(MirrorError::AlreadyMirrored(_)) => stats.skipped += 1,
             Err(err) => {
                 stats.skipped += 1;
@@ -1220,9 +1220,9 @@ async fn sweep_inner(state: &AppState, max_new: usize) -> Result<SweepStats, Str
         }
     }
 
-    // v3: re-sincroniza o CORPO dos espelhos (inclusive os que não apareceram
+    // v3: re-sync the BODY of the mirrors (including those that did not appear
     // nas fontes desta rodada — apoios mudam mesmo em ideia fora do topo).
-    // Os mais desatualizados primeiro, até o teto.
+    // The most stale first, up to the cap.
     let refresh = refresh_mirrors(state, Some(SWEEP_REFRESH_MAX)).await;
     stats.refreshed = refresh.refreshed;
     stats.errors.extend(refresh.errors);
@@ -1261,12 +1261,12 @@ async fn refresh_apoios(state: &AppState, candidate: &IdeaCandidate, now: DateTi
 // Refresh (v3): manter a ideia espelhada VIVA
 // ---------------------------------------------------------------------------
 //
-// O bug que isto conserta: o corpo do tópico era escrito UMA vez, na criação.
-// O sweep atualizava `socrates_mirror.apoiamentos` e o número continuava
-// invisível no fórum. Aqui o corpo é REESCRITO quando a fonte muda — e só o
-// corpo: score, votos e comentários pertencem ao debate daqui.
+// The bug this fixes: the topic body was written ONCE, at creation.
+// The sweep updated `socrates_mirror.apoiamentos` and the number stayed
+// invisible in the forum. Here the body is REWRITTEN when the source changes — and only
+// the body: score, votes and comments belong to the debate here.
 
-/// O que o refresh precisa saber sobre um espelho pra decidir se reescreve.
+/// What the refresh needs to know about a mirror to decide whether to rewrite.
 #[derive(Debug, Clone)]
 struct MirrorRow {
     ideia_id: String,
@@ -1276,12 +1276,12 @@ struct MirrorRow {
     situacao: Option<String>,
     apoiamentos_num: Option<i64>,
     apoiamentos: Option<String>,
-    /// `None` = o tópico ainda tem o corpo pré-v3 (só título): reescreve sempre.
+    /// `None` = the topic still has the pre-v3 body (title only): always rewrite.
     body_synced_at: Option<DateTime<Utc>>,
 }
 
 /// Os espelhos a re-sincronizar, os mais desatualizados primeiro (`NULLS FIRST`
-/// põe na frente exatamente os que nunca tiveram o corpo preenchido).
+/// puts exactly those that never had a filled body at the front).
 /// `limit = None` = todos (o caminho do backfill).
 async fn load_mirror_rows(db: &PgPool, limit: Option<i64>) -> Result<Vec<MirrorRow>, sqlx::Error> {
     type Row = (
@@ -1301,7 +1301,7 @@ async fn load_mirror_rows(db: &PgPool, limit: Option<i64>) -> Result<Vec<MirrorR
           ORDER BY body_synced_at ASC NULLS FIRST
           LIMIT $1",
     )
-    // `NULL` no LIMIT do Postgres significa "sem limite" — é o backfill.
+    // `NULL` in a Postgres LIMIT means "no limit" — that is the backfill.
     .bind(limit)
     .fetch_all(db)
     .await?;
@@ -1331,9 +1331,9 @@ async fn load_mirror_rows(db: &PgPool, limit: Option<i64>) -> Result<Vec<MirrorR
         .collect())
 }
 
-/// Re-sincroniza UM espelho: busca a ideia no JSON canônico e, se algo mudou
-/// (ou se o corpo nunca foi preenchido), reescreve o `body` do tópico e grava
-/// pauta/situação/apoios. `Ok(false)` = nada mudou, nada foi escrito.
+/// Re-sync ONE mirror: fetch the idea from the canonical JSON and, if anything changed
+/// (or the body was never filled), rewrite the topic's `body` and store
+/// agenda/status/support. `Ok(false)` = nothing changed, nothing was written.
 async fn refresh_mirror(
     state: &AppState,
     row: &MirrorRow,
@@ -1346,8 +1346,8 @@ async fn refresh_mirror(
         .apoiamentos
         .or_else(|| row.apoiamentos.as_deref().and_then(parse_apoios_text));
 
-    // Nada mudou E o corpo já foi escrito pela v3: não toca no tópico (evita
-    // reescrever 11 tópicos a cada 6 h sem motivo).
+    // Nothing changed AND the body was already written by v3: do not touch the topic
+    // (avoids rewriting 11 topics every 6h for no reason).
     let unchanged = row.body_synced_at.is_some()
         && pauta.as_deref() == row.descricao.as_deref()
         && situacao.as_deref() == row.situacao.as_deref()
@@ -1368,7 +1368,7 @@ async fn refresh_mirror(
         tracing::error!(?err, "socrates refresh: begin falhou");
         "Erro ao abrir a transação do refresh.".to_owned()
     })?;
-    // SÓ o corpo: `score`, `comment_count` e votos são do debate daqui.
+    // ONLY the body: `score`, `comment_count` and votes belong to the debate here.
     sqlx::query("UPDATE forum_topic SET body = $2 WHERE id = $1")
         .bind(row.topic_id)
         .bind(&body)
@@ -1408,15 +1408,15 @@ async fn refresh_mirror(
 pub struct RefreshStats {
     /// Espelhos considerados nesta passada.
     pub total: usize,
-    /// Espelhos cujo corpo foi reescrito (apoios/situação/pauta mudaram).
+    /// Mirrors whose body was rewritten (support/status/agenda changed).
     pub refreshed: usize,
-    /// Falhas por ideia — a passada segue com as demais.
+    /// Failures per idea — the pass continues with the others.
     pub errors: Vec<String>,
 }
 
-/// Re-sincroniza os espelhos. `limit = None` = todos (backfill); com teto, os
-/// mais desatualizados primeiro (sweep). Uma ideia que falha não derruba a
-/// passada: o erro entra na lista e a próxima segue.
+/// Re-sync the mirrors. `limit = None` = all of them (backfill); with a cap, the
+/// most stale first (sweep). An idea that fails does not break the pass:
+/// the error joins the list and the next one proceeds.
 async fn refresh_mirrors(state: &AppState, limit: Option<i64>) -> RefreshStats {
     let mut stats = RefreshStats::default();
     let rows = match load_mirror_rows(&state.db, limit).await {
@@ -1441,8 +1441,8 @@ async fn refresh_mirrors(state: &AppState, limit: Option<i64>) -> RefreshStats {
     stats
 }
 
-/// GET simples numa URL do portal do Senado (constante deste módulo). Serve
-/// tanto a página da ideia (HTML) quanto a coleção (JSON) — o corpo é texto.
+/// A plain GET on a Senate portal URL (a constant of this module). It serves
+/// both the idea page (HTML) and the collection (JSON) — the body is text.
 async fn fetch_text(url: &str) -> Result<String, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(FETCH_TIMEOUT_SECS))
@@ -1465,8 +1465,8 @@ async fn fetch_text(url: &str) -> Result<String, String> {
 }
 
 // ---------------------------------------------------------------------------
-// Testes de unidade — parse do id e limpeza do título (fixtures inline; o
-// Senado NUNCA é chamado em teste).
+// Unit tests — id parsing and title cleaning (inline fixtures; the Senate is
+// NEVER called in a test).
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -1486,7 +1486,7 @@ mod tests {
                 .as_deref(),
             Some("165188")
         );
-        // Parâmetros extras e fragmento não atrapalham.
+        // Extra parameters and a fragment do not get in the way.
         assert_eq!(
             parse_ideia_id(
                 "https://www12.senado.leg.br/ecidadania/visualizacaoideia?utm=x&id=99#apoios"
@@ -1503,7 +1503,7 @@ mod tests {
         assert!(parse_ideia_id("https://example.com/sem-id").is_none());
         assert!(parse_ideia_id("https://x/?id=").is_none());
         assert!(parse_ideia_id("https://x/?id=abc").is_none());
-        // Estouro do teto de dígitos.
+        // Digit cap exceeded.
         assert!(parse_ideia_id("1234567890123").is_none());
     }
 
@@ -1517,7 +1517,7 @@ mod tests {
             .as_deref(),
             Some("Fim da reeleição no Legislativo")
         );
-        // Sem prefixo/sufixo: passa como está.
+        // No prefix/suffix: passes through unchanged.
         assert_eq!(
             clean_title_tag(" Só o título ").as_deref(),
             Some("Só o título")
@@ -1546,8 +1546,8 @@ mod tests {
             <title>Ideia Legislativa - Piso nacional da enfermagem valendo j&aacute; :: Portal e-Cidadania - Senado Federal</title>
             <meta property="og:description" content="Apoie essa Ideia Legislativa: &quot;Fallback n&atilde;o usado&quot;" />
             </head><body></body></html>"#;
-        // Entidades fora da tabela mínima (&aacute;) passam intactas; o corte
-        // prefixo/sufixo do formato real é o que está sob teste.
+        // Entities outside the minimal table (&aacute;) pass through intact; the
+        // prefix/suffix cut of the real format is what is under test.
         assert_eq!(
             extract_title(html).as_deref(),
             Some("Piso nacional da enfermagem valendo j&aacute;")
@@ -1592,8 +1592,8 @@ mod tests {
         );
     }
 
-    // --- v3: fonte canônica (JSON por ideia), formatação e corpo do tópico ---
-    // Fixture inline com o shape REAL observado ao vivo; o Senado nunca é
+    // --- v3: canonical source (per-idea JSON), formatting and topic body ---
+    // Inline fixture with the REAL shape observed live; the Senate is never
     // chamado em teste.
 
     /// Shape real de `GET /ecidadania/restideialegislativa?id=212832`.
@@ -1621,12 +1621,12 @@ mod tests {
             .as_deref()
             .expect("pauta")
             .starts_with("Em tempos de paz, será vedado o Militar"));
-        // O endpoint por ideia dá INTEIRO puro (a coleção daria "20.260").
+        // The per-idea endpoint gives a bare INTEGER (the collection would give "20.260").
         assert_eq!(d.apoiamentos, Some(20_260));
         assert_eq!(d.situacao.as_deref(), Some("Convertida em Proposição"));
-        // `detalhe` vazio é ausente, não string vazia.
+        // An empty `detalhe` is absent, not an empty string.
         assert!(d.detalhe.is_none());
-        // Sem `detalhe`, a pauta é a descrição pura.
+        // Without `detalhe`, the agenda is the plain description.
         assert_eq!(d.pauta(), d.descricao);
     }
 
@@ -1638,10 +1638,10 @@ mod tests {
         let d = parse_idea_detail(json).expect("ideia parseada");
         assert_eq!(d.descricao.as_deref(), Some("Corpo da \"pauta\""));
         assert!(d.titulo.as_deref().expect("título").contains('&'));
-        // Apoios como texto com ponto de milhar viram o mesmo inteiro.
+        // Support as text with a thousands dot becomes the same integer.
         assert_eq!(d.apoiamentos, Some(1_234));
         assert_eq!(d.situacao.as_deref(), Some("Aguardando envio à CDH"));
-        // Com `detalhe`, a pauta vira descrição + parágrafo extra.
+        // With `detalhe`, the agenda becomes description + an extra paragraph.
         assert_eq!(
             d.pauta().as_deref(),
             Some("Corpo da \"pauta\"\n\nObservação complementar.")
@@ -1652,9 +1652,9 @@ mod tests {
     fn idea_detail_is_none_on_garbage_or_empty_idea() {
         assert!(parse_idea_detail("não é json").is_none());
         assert!(parse_idea_detail("[1,2,3]").is_none());
-        // Objeto sem título NEM descrição não é uma ideia (404 em JSON, p.ex.).
+        // An object with neither title NOR description is not an idea (a JSON 404, say).
         assert!(parse_idea_detail(r#"{"apoiamentos":10,"detalhe":""}"#).is_none());
-        // Só a descrição já basta: o título vem do fallback.
+        // The description alone is enough: the title comes from the fallback.
         assert!(parse_idea_detail(r#"{"descricao":"só a pauta"}"#).is_some());
     }
 
@@ -1674,7 +1674,7 @@ mod tests {
             apoios_display(Some(20_260), Some("valor velho")).as_deref(),
             Some("20.260")
         );
-        // Sem número, o texto que o Senado já formatou serve.
+        // Without a number, the text the Senate already formatted will do.
         assert_eq!(
             apoios_display(None, Some("20.771")).as_deref(),
             Some("20.771")
@@ -1702,22 +1702,22 @@ mod tests {
 
     #[test]
     fn topic_body_omits_empty_sections_without_orphan_headings() {
-        // Sem pauta: nada de cabeçalho "## A proposta" órfão.
+        // No agenda: no orphan "## A proposta" heading.
         let b = topic_body("https://exemplo/id=1", None, Some("9.418"), None);
         assert!(!b.contains("## A proposta"));
         assert!(b.contains("📊 **9.418 apoios** no e-Cidadania"));
         assert!(!b.contains("Situação:"));
 
-        // Descrição só de espaços conta como ausente.
+        // A description of whitespace only counts as absent.
         let b = topic_body("https://exemplo/id=1", Some("   "), None, None);
         assert!(!b.contains("## A proposta"));
-        // Sem apoios NEM situação, a linha do placar some inteira.
+        // With neither support NOR status, the tally line vanishes entirely.
         assert!(!b.contains("📊"));
-        // A moldura (chamada ao debate + atribuição) nunca some.
+        // The frame (call to debate + attribution) never vanishes.
         assert!(b.contains("argumente a favor ou contra"));
         assert!(b.contains("SOCRATES"));
 
-        // Só a situação: meia linha ainda informa.
+        // Status only: half a line still informs.
         let b = topic_body(
             "https://exemplo/id=1",
             None,
@@ -1729,7 +1729,7 @@ mod tests {
 
     #[test]
     fn topic_body_stays_within_the_forum_body_limit() {
-        // Uma pauta absurda não pode reprovar na validação dos fóruns.
+        // An absurd agenda must not fail the forums' validation.
         let pauta = "á".repeat(MAX_DESCRICAO_CHARS * 3);
         let b = topic_body(
             "https://exemplo/id=1",
@@ -1750,8 +1750,8 @@ mod tests {
         );
     }
 
-    // --- Sweep: parse das duas fontes públicas do e-Cidadania ---------------
-    // Fixtures inline com o shape REAL observado ao vivo; o Senado nunca é
+    // --- Sweep: parsing both public e-Cidadania sources ---------------------
+    // Inline fixtures with the REAL shape observed live; the Senate is never
     // chamado em teste.
 
     /// Shape real de `GET /ecidadania/restcolecaomaisideia` (array, ~5 itens).
@@ -1771,7 +1771,7 @@ mod tests {
             items[0].titulo.as_deref(),
             Some("Disponibilização de Gasolina Pura")
         );
-        // O ponto de milhar é do Senado e é preservado literalmente.
+        // The thousands dot is the Senate's and is preserved literally.
         assert_eq!(items[0].apoiamentos.as_deref(), Some("20.771"));
         assert_eq!(items[0].porcentagem_favor, Some(103));
         assert_eq!(items[1].ideia_id, "165188");
@@ -1792,7 +1792,7 @@ mod tests {
         assert_eq!(items[0].ideia_id, "1");
         assert!(items[0].titulo.as_deref().unwrap().contains('&'));
         assert_eq!(items[0].apoiamentos.as_deref(), Some("7"));
-        // Item só com id: candidata válida, título vem do fetch depois.
+        // An item with an id only: a valid candidate, the title comes from a later fetch.
         assert_eq!(items[1].ideia_id, "2");
         assert!(items[1].titulo.is_none());
         assert!(!items[1].has_apoios());
@@ -1826,11 +1826,11 @@ mod tests {
     fn merge_prefers_collection_metadata_and_adds_html_only_ids() {
         let collection = parse_collection(COLLECTION_FIXTURE);
         let merged = merge_candidates(collection, vec!["227319".to_owned(), "999001".to_owned()]);
-        // 227319 já vinha da coleção: não duplica e mantém o título/apoios.
+        // 227319 already came from the collection: no duplicate, and title/support are kept.
         assert_eq!(merged.len(), 3);
         assert_eq!(merged[0].ideia_id, "227319");
         assert_eq!(merged[0].apoiamentos.as_deref(), Some("20.771"));
-        // O id só-HTML entra sem metadados.
+        // The HTML-only id enters without metadata.
         assert_eq!(merged[2], IdeaCandidate::bare("999001".to_owned()));
     }
 
@@ -1856,7 +1856,7 @@ mod tests {
         assert_eq!(parse_sweep_max(Some(" 3 ")), 3);
         assert_eq!(parse_sweep_max(None), DEFAULT_SWEEP_MAX);
         assert_eq!(parse_sweep_max(Some("abc")), DEFAULT_SWEEP_MAX);
-        // Teto 0 desligaria o sweep sem ninguém perceber.
+        // A cap of 0 would switch the sweep off with nobody noticing.
         assert_eq!(parse_sweep_max(Some("0")), DEFAULT_SWEEP_MAX);
     }
 }
