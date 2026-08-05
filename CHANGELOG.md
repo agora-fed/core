@@ -7,6 +7,17 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 
 ## [Unreleased]
 
+## [0.70.1] — 2026-08-05
+
+### Improved
+- **Daily mandate alert now carries the SIDE of the population**: each topic
+  line includes the signed public placar (favor − contra, ADR-0019) and the
+  direction the tags mean — a NEGATIVE placar tells the mandate the citizens
+  marked them to **fight AGAINST** the proposal ("LUTE CONTRA"), a positive
+  one to defend it ("DEFENDA"), zero = in dispute. The e-mail renderer was
+  extracted pure (`render_alert_email`) and unit-tested for all three
+  framings, including mixed-topic digests.
+
 ## [0.70.0] — 2026-08-05
 
 ### Added

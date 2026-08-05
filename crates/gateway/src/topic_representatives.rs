@@ -336,6 +336,60 @@ async fn untag_representative(
 // Daily consolidated alert (worker sweep)
 // ---------------------------------------------------------------------------
 
+/// Render the daily consolidated alert (pure — unit-tested). Each topic line
+/// carries the SIGNED public placar (favor − contra) and the direction the
+/// population is asking for: negative placar = "LUTE CONTRA" (the citizens
+/// tagged this mandate to fight the proposal), positive = "DEFENDA",
+/// zero = still in dispute. User-facing copy stays in the installation's
+/// language (pt-BR).
+fn render_alert_email(
+    display_name: &str,
+    day: chrono::NaiveDate,
+    origin: &str,
+    tag_count: i64,
+    topics: &[(Uuid, String, i64, i64)],
+) -> (String, String) {
+    let stance = |score: i64| -> String {
+        if score < 0 {
+            format!(
+                "placar {score} — a população está majoritariamente CONTRA: \
+                 ela pede que você LUTE CONTRA esta pauta"
+            )
+        } else if score > 0 {
+            format!("placar +{score} — a população APOIA: ela pede que você DEFENDA esta pauta")
+        } else {
+            "placar 0 — pauta em disputa; a população pede sua posição".to_owned()
+        }
+    };
+    let lines: String = topics
+        .iter()
+        .map(|(topic_id, title, c, score)| {
+            format!(
+                "• {title}\n  {c} cidadã(o)s marcaram você · {}\n  {origin}/f/topico/{topic_id}\n",
+                stance(*score)
+            )
+        })
+        .collect();
+    let subject = format!(
+        "[DemocraciaBR] {tag_count} cidadã(o)s marcaram você em causas públicas — {}",
+        day.format("%d/%m/%Y")
+    );
+    let body = format!(
+        "Prezada(o) {display_name},\n\n\
+         Nas últimas 24 horas, {tag_count} cidadã(o)s verificados marcaram o seu mandato\n\
+         como quem deve representá-los nas causas abaixo. Atenção ao PLACAR de cada\n\
+         pauta: ele diz de que lado a população está — marcar você numa pauta de placar\n\
+         negativo é um pedido para BARRÁ-LA, não para levá-la adiante.\n\n\
+         {lines}\n\
+         Este é um resumo automático DIÁRIO e consolidado — no máximo um e-mail por dia.\n\
+         Os números são agregados: a plataforma não expõe cidadãos individualmente.\n\n\
+         Para responder às causas, reivindique seu mandato e passe a receber tudo\n\
+         dentro da plataforma: {origin}/politicos\n\n\
+         — DemocraciaBR (sistema automático, registro público)\n"
+    );
+    (subject, body)
+}
+
 /// Compile yesterday's tags per mandate and send ONE consolidated e-mail to
 /// each mandate's public address. Idempotent: `(mandate, day)` is claimed in
 /// `mandate_alert_delivery` before any send; ticks can run as often as the
@@ -416,14 +470,17 @@ pub async fn daily_alert_sweep(db: &PgPool, public_origin: &str) {
             continue;
         }
 
-        // The topics behind the tags (title + per-topic count), most tagged first.
-        let topics: Vec<(Uuid, String, i64)> = sqlx::query_as(
-            r"SELECT t.topic_id, ft.title, count(*) AS c
+        // The topics behind the tags (title + per-topic count + SIGNED score),
+        // most tagged first. The score (favor − contra, ADR-0019) tells the
+        // mandate WHICH SIDE the population is on: a negative placar means
+        // "fight AGAINST this", not "push it forward".
+        let topics: Vec<(Uuid, String, i64, i64)> = sqlx::query_as(
+            r"SELECT t.topic_id, ft.title, count(*) AS c, ft.score
                 FROM topic_representative_tag t
                 JOIN forum_topic ft ON ft.id = t.topic_id
                WHERE t.mandate_id = $1
                  AND t.created_at >= $2::date AND t.created_at < ($2::date + interval '1 day')
-               GROUP BY t.topic_id, ft.title
+               GROUP BY t.topic_id, ft.title, ft.score
                ORDER BY c DESC
                LIMIT 10",
         )
@@ -433,28 +490,7 @@ pub async fn daily_alert_sweep(db: &PgPool, public_origin: &str) {
         .await
         .unwrap_or_default();
 
-        // User-facing copy stays in the installation's language (pt-BR).
-        let lines: String = topics
-            .iter()
-            .map(|(topic_id, title, c)| {
-                format!("• {title} — {c} cidadã(o)s\n  {origin}/f/topico/{topic_id}\n")
-            })
-            .collect();
-        let subject = format!(
-            "[DemocraciaBR] {tag_count} cidadã(o)s marcaram você em causas públicas — {}",
-            day.format("%d/%m/%Y")
-        );
-        let body = format!(
-            "Prezada(o) {display_name},\n\n\
-             Nas últimas 24 horas, {tag_count} cidadã(o)s verificados marcaram o seu mandato\n\
-             como quem deve representá-los nas causas abaixo, na plataforma DemocraciaBR:\n\n\
-             {lines}\n\
-             Este é um resumo automático DIÁRIO e consolidado — no máximo um e-mail por dia.\n\
-             Os números são agregados: a plataforma não expõe cidadãos individualmente.\n\n\
-             Para responder às causas, reivindique seu mandato e passe a receber tudo\n\
-             dentro da plataforma: {origin}/politicos\n\n\
-             — DemocraciaBR (sistema automático, registro público)\n"
-        );
+        let (subject, body) = render_alert_email(&display_name, day, origin, tag_count, &topics);
 
         let sent = match &smtp {
             Some(cfg) => match send_email(cfg, &public_email, &subject, &body).await {
@@ -490,5 +526,68 @@ pub async fn daily_alert_sweep(db: &PgPool, public_origin: &str) {
             .execute(db)
             .await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn day() -> chrono::NaiveDate {
+        chrono::NaiveDate::from_ymd_opt(2026, 8, 5).unwrap()
+    }
+
+    #[test]
+    fn negative_placar_frames_the_alert_as_fight_against() {
+        let topic = Uuid::nil();
+        let (subject, body) = render_alert_email(
+            "Dep. Teste",
+            day(),
+            "https://example.org",
+            42,
+            &[(topic, "Isenção de IR para militares".into(), 42, -128)],
+        );
+        assert!(subject.contains("42 cidadã(o)s"));
+        assert!(body.contains("placar -128"), "body={body}");
+        assert!(
+            body.contains("LUTE CONTRA"),
+            "negative score must ask to fight it"
+        );
+        assert!(body.contains("majoritariamente CONTRA"));
+        assert!(!body.contains("DEFENDA esta pauta"));
+    }
+
+    #[test]
+    fn positive_placar_frames_the_alert_as_defend() {
+        let (_, body) = render_alert_email(
+            "Dep. Teste",
+            day(),
+            "https://example.org",
+            7,
+            &[(Uuid::nil(), "Passe livre estudantil".into(), 7, 315)],
+        );
+        assert!(body.contains("placar +315"), "body={body}");
+        assert!(body.contains("DEFENDA esta pauta"));
+        assert!(!body.contains("LUTE CONTRA"));
+    }
+
+    #[test]
+    fn zero_placar_is_in_dispute_and_mixed_topics_keep_their_own_framing() {
+        let (_, body) = render_alert_email(
+            "Dep. Teste",
+            day(),
+            "https://example.org",
+            10,
+            &[
+                (Uuid::nil(), "Pauta empatada".into(), 4, 0),
+                (Uuid::nil(), "Pauta apoiada".into(), 3, 9),
+                (Uuid::nil(), "Pauta rejeitada".into(), 3, -9),
+            ],
+        );
+        assert!(body.contains("pauta em disputa"));
+        assert!(body.contains("DEFENDA esta pauta"));
+        assert!(body.contains("LUTE CONTRA"));
+        // The intro always explains the placar semantics to the mandate.
+        assert!(body.contains("pedido para BARRÁ-LA"));
     }
 }
