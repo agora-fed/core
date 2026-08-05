@@ -47,13 +47,6 @@ pub fn routes(state: AppState) -> Router<()> {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn caller_citizen(headers: &HeaderMap) -> Option<Uuid> {
-    headers
-        .get("x-dsoc-citizen-id")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse().ok())
-}
-
 fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
     (status, Json(ApiResponse::<()>::fail(code, msg))).into_response()
 }
@@ -70,43 +63,13 @@ fn storage_error() -> Response {
     )
 }
 
-/// The caller's org (a header set by inject_identity). Falls back to the DEFAULT when absent.
-fn caller_org(headers: &HeaderMap) -> Uuid {
-    headers
-        .get("x-dsoc-org-id")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(DEFAULT_ORG_UUID)
-}
-
 /// Owner/admin gate (SOCRATES). Returns Err(a ready response) when it does not pass.
+/// Org-scoped admin gate — delegates to the single implementation in
+/// [`crate::authz_ext::require_org_admin`] (issue #8).
 async fn require_admin(db: &PgPool, headers: &HeaderMap) -> Result<Uuid, Response> {
-    let Some(citizen) = caller_citizen(headers) else {
-        return Err(fail(
-            StatusCode::UNAUTHORIZED,
-            "unauthorized",
-            "Autenticação necessária.",
-        ));
-    };
-    let is_admin: bool = sqlx::query_scalar(
-        r"SELECT EXISTS(
-            SELECT 1 FROM admin_role_binding
-             WHERE org_id = $1 AND citizen_id = $2 AND role IN ('owner','admin'))",
-    )
-    .bind(caller_org(headers))
-    .bind(citizen)
-    .fetch_one(db)
-    .await
-    .unwrap_or(false);
-    if is_admin {
-        Ok(citizen)
-    } else {
-        Err(fail(
-            StatusCode::FORBIDDEN,
-            "forbidden",
-            "Requer administrador.",
-        ))
-    }
+    crate::authz_ext::require_org_admin(db, headers)
+        .await
+        .map(|a| a.citizen)
 }
 
 #[derive(Debug, Deserialize)]

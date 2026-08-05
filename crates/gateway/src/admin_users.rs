@@ -41,48 +41,15 @@ pub fn routes(state: AppState) -> Router<()> {
 // Guard
 // ---------------------------------------------------------------------------
 
-async fn require_admin(headers: &HeaderMap, db: &PgPool) -> std::result::Result<Uuid, Response> {
-    let citizen_id: Uuid = headers
-        .get("x-dsoc-citizen-id")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(unauthorized_resp)?;
-    let is_admin = sqlx::query_scalar::<_, bool>(
-        r"SELECT EXISTS (
-             SELECT 1 FROM admin_role_binding
-              WHERE citizen_id = $1 AND role IN ('owner','admin')
-           )",
-    )
-    .bind(citizen_id)
-    .fetch_one(db)
-    .await
-    .unwrap_or(false);
-    if !is_admin {
-        return Err(forbidden_resp());
-    }
-    Ok(citizen_id)
+/// Org-scoped admin gate — delegates to the single implementation in
+/// [`crate::authz_ext::require_org_admin`] (issue #8). This module used to carry
+/// its own copy that omitted `org_id`, so an owner of ANY org passed it.
+async fn require_admin(headers: &HeaderMap, db: &PgPool) -> Result<Uuid, Response> {
+    crate::authz_ext::require_org_admin(db, headers)
+        .await
+        .map(|a| a.citizen)
 }
 
-fn unauthorized_resp() -> Response {
-    (
-        StatusCode::UNAUTHORIZED,
-        Json(ApiResponse::<()>::fail(
-            "unauthorized",
-            "Autenticação necessária.",
-        )),
-    )
-        .into_response()
-}
-fn forbidden_resp() -> Response {
-    (
-        StatusCode::FORBIDDEN,
-        Json(ApiResponse::<()>::fail(
-            "forbidden",
-            "Acesso restrito a admins.",
-        )),
-    )
-        .into_response()
-}
 fn storage_resp(err: impl std::fmt::Debug) -> Response {
     tracing::error!(?err, "admin_users storage error");
     (
@@ -163,9 +130,12 @@ async fn list(
     headers: HeaderMap,
     Query(params): Query<ListParams>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &state.db).await {
-        return r;
-    }
+    // The roles column is scoped to the admin's own org (issue #8) — it used to
+    // aggregate every org's bindings, so the list showed strangers as owners.
+    let admin_org = match crate::authz_ext::require_org_admin(&state.db, &headers).await {
+        Ok(a) => a.org,
+        Err(r) => return r,
+    };
     let limit = params.limit.clamp(1, 200);
     let offset = params.offset.max(0);
     let q_like = params
@@ -191,6 +161,7 @@ async fn list(
                      WHEN bool_or(role = 'auditor') THEN 'auditor'
                    END AS role
               FROM admin_role_binding
+             WHERE org_id = $8
              GROUP BY citizen_id
           ),
           party_admin AS (
@@ -294,6 +265,7 @@ async fn list(
     .bind(civic_type)
     .bind(limit)
     .bind(offset)
+    .bind(admin_org)
     .fetch_all(&state.db)
     .await
     {
@@ -379,11 +351,11 @@ async fn update(
 #[derive(Debug, Deserialize)]
 struct PlatformRoleBody {
     /// `owner`|`admin`|`auditor`|`none` (remove).
+    ///
+    /// There is deliberately NO `org_id` here (issue #8). The target org comes from
+    /// the authenticated caller; accepting one from the body let an admin of org A
+    /// grant themselves `owner` of org B, which is the whole cross-tenant escalation.
     role: String,
-    /// Org the role applies to. When absent we use the first org in the
-    /// table (a single-org install is the most common case today).
-    #[serde(default)]
-    org_id: Option<Uuid>,
 }
 
 // ---------------------------------------------------------------------------
@@ -479,32 +451,41 @@ async fn set_platform_role(
     Path(citizen_id): Path<Uuid>,
     Json(body): Json<PlatformRoleBody>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &state.db).await {
-        return r;
-    }
-    // Org resolved from the body or from the citizen row.
-    let org_id = match body.org_id {
-        Some(o) => o,
-        None => {
-            match sqlx::query_scalar::<_, Uuid>("SELECT org_id FROM citizen WHERE id = $1")
-                .bind(citizen_id)
-                .fetch_optional(&state.db)
-                .await
-            {
-                Ok(Some(o)) => o,
-                _ => {
-                    return (
-                        StatusCode::NOT_FOUND,
-                        Json(ApiResponse::<()>::fail(
-                            "not_found",
-                            "Cidadão não encontrado.",
-                        )),
-                    )
-                        .into_response();
-                }
-            }
-        }
+    // The org is the one the caller PROVED admin in — never the body, never the
+    // target's own org row (issue #8). `crates/app/src/caller.rs` states the
+    // invariant; this handler used to be the counter-example to it.
+    let admin = match crate::authz_ext::require_org_admin(&state.db, &headers).await {
+        Ok(a) => a,
+        Err(r) => return r,
     };
+    let org_id = admin.org;
+
+    // A citizen outside the caller's org is not theirs to promote. Without this the
+    // gate would still hold (the caller IS an admin somewhere) while the write landed
+    // on a stranger — so the check is on the TARGET, not only on the caller.
+    let target_in_org: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM citizen WHERE id = $1 AND org_id = $2)")
+            .bind(citizen_id)
+            .bind(org_id)
+            .fetch_one(&state.db)
+            .await
+            .unwrap_or(false);
+    if !target_in_org {
+        tracing::warn!(
+            actor = %admin.citizen,
+            org = %org_id,
+            target = %citizen_id,
+            "refused a platform-role grant to a citizen outside the caller's org"
+        );
+        return (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::<()>::fail(
+                "not_found",
+                "Cidadão não encontrado.",
+            )),
+        )
+            .into_response();
+    }
     if body.role == "none" {
         if let Err(err) =
             sqlx::query("DELETE FROM admin_role_binding WHERE citizen_id = $1 AND org_id = $2")

@@ -43,6 +43,7 @@ jobs:
           ./scripts/check-lints-optin.sh
           ./scripts/scan-secrets.sh
           ./scripts/check-english-docs.sh
+          ./scripts/check-authz-org-scope.sh
 
   test:
     runs-on: ubuntu-latest

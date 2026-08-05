@@ -25,31 +25,12 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-/// The installation's default org (Pindorama) when the header is absent.
-const DEFAULT_ORG_UUID: Uuid = uuid::uuid!("11111111-1111-1111-1111-111111111111");
-
 pub(crate) fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/admin/consultations", get(list))
         .route("/admin/consultations/{id}", get(detail))
         .route("/admin/consultations/{id}/close", post(close))
         .with_state(state)
-}
-
-fn caller_citizen(headers: &HeaderMap) -> Option<Uuid> {
-    headers
-        .get("x-dsoc-citizen-id")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse().ok())
-}
-
-/// The caller's org (a header injected by the session auth), falling back to the default org.
-fn caller_org(headers: &HeaderMap) -> Uuid {
-    headers
-        .get("x-dsoc-org-id")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(DEFAULT_ORG_UUID)
 }
 
 fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
@@ -64,33 +45,12 @@ fn storage_error() -> Response {
 }
 
 /// Requires a platform admin (owner/admin) in the caller's org. Returns the resolved org.
+/// Org-scoped admin gate — delegates to the single implementation in
+/// [`crate::authz_ext::require_org_admin`] (issue #8).
 async fn require_admin(db: &PgPool, headers: &HeaderMap) -> Result<Uuid, Response> {
-    let Some(citizen) = caller_citizen(headers) else {
-        return Err(fail(
-            StatusCode::UNAUTHORIZED,
-            "unauthorized",
-            "Autenticação necessária.",
-        ));
-    };
-    let org = caller_org(headers);
-    let is_admin: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM admin_role_binding \
-         WHERE org_id=$1 AND citizen_id=$2 AND role IN ('owner','admin'))",
-    )
-    .bind(org)
-    .bind(citizen)
-    .fetch_one(db)
-    .await
-    .unwrap_or(false);
-    if is_admin {
-        Ok(org)
-    } else {
-        Err(fail(
-            StatusCode::FORBIDDEN,
-            "forbidden",
-            "Requer administrador.",
-        ))
-    }
+    crate::authz_ext::require_org_admin(db, headers)
+        .await
+        .map(|a| a.org)
 }
 
 // --- Lista: paginada + filtrada ------------------------------------------------------------------

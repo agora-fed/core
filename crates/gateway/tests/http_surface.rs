@@ -3963,6 +3963,166 @@ async fn group_inbox_rejects_malformed_signature_and_unknown_handle() {
 }
 
 // ---------------------------------------------------------------------------
+// SECURITY — admin authority stops at the org boundary (issue #8)
+//
+// The gate used to be `EXISTS(... WHERE citizen_id=$1 ...)` with no org filter,
+// copied into sixteen modules. An admin of ANY org therefore passed the admin
+// gate of EVERY org, and the multi-tenant model was a naming convention.
+//
+// The scenario below is that exact escalation: a citizen whose SESSION is in
+// org A, holding an admin binding only in org B. Before the fix the org-less
+// EXISTS found the org-B binding and let them in.
+// ---------------------------------------------------------------------------
+
+/// Every admin read must refuse a caller whose admin binding is in ANOTHER org.
+#[tokio::test]
+async fn admin_of_another_org_is_refused_across_the_admin_surface() {
+    let (app, st) = app().await;
+    let org_a = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+    let org_b = Uuid::now_v7();
+
+    // Session in org A…
+    let (_, citizen, cookie) = seed_session_in_org(&st.db, org_a).await;
+    // …but the admin binding lives in org B.
+    sqlx::query("INSERT INTO org (id, slug, name, created_at) VALUES ($1, $2, 'Org B', $3)")
+        .bind(org_b)
+        .bind(format!("org-{}", org_b.simple()))
+        .bind(Utc::now())
+        .execute(&st.db)
+        .await
+        .expect("seed org B");
+    grant_admin(&st.db, org_b, citizen).await;
+
+    for path in [
+        "/api/v1/admin/users",
+        "/api/v1/admin/users-rich",
+        "/api/v1/admin/reports",
+        "/api/v1/admin/webhooks",
+        "/api/v1/admin/announcements",
+        "/api/v1/admin/email-templates",
+    ] {
+        let resp = app
+            .clone()
+            .oneshot(get_with_cookie(path, &cookie))
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::FORBIDDEN,
+            "SECURITY REGRESSION: an admin of another org reached {path}"
+        );
+    }
+}
+
+/// The same caller, granted in their OWN org, passes — proving the test above
+/// measures the org boundary and not merely a broken admin surface.
+#[tokio::test]
+async fn admin_of_the_callers_own_org_still_passes() {
+    let (app, st) = app().await;
+    let org_a = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+    let (_, citizen, cookie) = seed_session_in_org(&st.db, org_a).await;
+    grant_admin(&st.db, org_a, citizen).await;
+
+    for path in ["/api/v1/admin/users", "/api/v1/admin/webhooks"] {
+        let resp = app
+            .clone()
+            .oneshot(get_with_cookie(path, &cookie))
+            .await
+            .unwrap();
+        assert!(
+            resp.status().is_success(),
+            "an admin of their own org must pass {path}, got {}",
+            resp.status()
+        );
+    }
+}
+
+/// A platform-role grant may not reach a citizen of another org. Before the fix
+/// the target org came from the request BODY, so an admin of org A wrote an
+/// `admin_role_binding` row in org B — self-promotion across the boundary.
+#[tokio::test]
+async fn platform_role_grant_cannot_cross_the_org_boundary() {
+    let (app, st) = app().await;
+    let org_a = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+    let org_b = Uuid::now_v7();
+    let (_, admin, cookie) = seed_session_in_org(&st.db, org_a).await;
+    grant_admin(&st.db, org_a, admin).await;
+
+    // A victim living entirely in org B.
+    let (_, victim, _) = seed_session_in_org(&st.db, org_b).await;
+
+    // The body still carries an `org_id` — a client may send anything. It must be
+    // ignored, and the grant refused because the TARGET is not in the caller's org.
+    let body = serde_json::json!({ "role": "owner", "org_id": org_b.to_string() }).to_string();
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/api/v1/admin/users/{victim}/platform-role"))
+                .header(header::COOKIE, &cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    // NOT `assert_ne!(OK)`: a wrong method or path would satisfy that vacuously —
+    // which is exactly how the first version of this test passed while measuring
+    // nothing. 404 is the intended answer: the target does not exist HERE.
+    assert_eq!(
+        resp.status(),
+        StatusCode::NOT_FOUND,
+        "SECURITY REGRESSION: a cross-org platform-role grant was not refused"
+    );
+
+    let leaked: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM admin_role_binding WHERE citizen_id = $1 AND org_id = $2)",
+    )
+    .bind(victim)
+    .bind(org_b)
+    .fetch_one(&st.db)
+    .await
+    .unwrap();
+    assert!(
+        !leaked,
+        "SECURITY REGRESSION: an admin_role_binding row was written in another org"
+    );
+}
+
+/// `whoami` must report the role the caller holds IN THEIR OWN ORG. Reporting a
+/// role held elsewhere makes the front end render admin controls the API refuses.
+#[tokio::test]
+async fn whoami_does_not_report_a_role_held_in_another_org() {
+    let (app, st) = app().await;
+    let org_a = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+    let org_b = Uuid::now_v7();
+    let (_, citizen, cookie) = seed_session_in_org(&st.db, org_a).await;
+    sqlx::query("INSERT INTO org (id, slug, name, created_at) VALUES ($1, $2, 'Org B', $3)")
+        .bind(org_b)
+        .bind(format!("org-{}", org_b.simple()))
+        .bind(Utc::now())
+        .execute(&st.db)
+        .await
+        .expect("seed org B");
+    grant_admin(&st.db, org_b, citizen).await;
+
+    let resp = app
+        .oneshot(get_with_cookie("/api/v1/me/whoami", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20)
+        .await
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_ne!(
+        v["data"]["is_admin"], true,
+        "SECURITY REGRESSION: whoami reported admin from a binding in another org"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Retention of the inbound-activity idempotency logs (issue #10).
 //
 // These ran as a background loop that only LOGS its errors, so the first

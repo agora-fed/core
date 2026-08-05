@@ -73,12 +73,21 @@ async fn me_admin_status(State(state): State<AppState>, headers: HeaderMap) -> R
         )
             .into_response();
     };
+    // Scoped to the caller's own org (issue #8): this probe drives whether the front
+    // end renders admin controls, so an unscoped answer invites the user into screens
+    // the API will refuse.
+    let org_id = headers
+        .get("x-dsoc-org-id")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<Uuid>().ok())
+        .unwrap_or(crate::authz_ext::DEFAULT_ORG_UUID);
     let is_admin = sqlx::query_scalar::<_, bool>(
         r"SELECT EXISTS (
              SELECT 1 FROM admin_role_binding
-              WHERE citizen_id = $1 AND role IN ('owner','admin')
+              WHERE org_id = $1 AND citizen_id = $2 AND role IN ('owner','admin')
            )",
     )
+    .bind(org_id)
     .bind(citizen_id)
     .fetch_one(&state.db)
     .await
@@ -102,44 +111,13 @@ struct TemplateRow {
     updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-async fn require_admin(headers: &HeaderMap, db: &PgPool) -> std::result::Result<Uuid, Response> {
-    let citizen_id: Uuid = headers
-        .get("x-dsoc-citizen-id")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| {
-            (
-                StatusCode::UNAUTHORIZED,
-                Json(ApiResponse::<()>::fail(
-                    "unauthorized",
-                    "Autenticação necessária.",
-                )),
-            )
-                .into_response()
-        })?;
-    // admin_role_binding has role IN ('owner','admin','auditor') — owner/admin may
-    // edit; auditor is read-only (not implemented here yet).
-    let is_admin: Option<bool> = sqlx::query_scalar(
-        r"SELECT EXISTS (
-             SELECT 1 FROM admin_role_binding
-              WHERE citizen_id = $1 AND role IN ('owner','admin')
-           )",
-    )
-    .bind(citizen_id)
-    .fetch_optional(db)
-    .await
-    .unwrap_or(None);
-    if !matches!(is_admin, Some(true)) {
-        return Err((
-            StatusCode::FORBIDDEN,
-            Json(ApiResponse::<()>::fail(
-                "forbidden",
-                "Acesso restrito a admins.",
-            )),
-        )
-            .into_response());
-    }
-    Ok(citizen_id)
+/// Org-scoped admin gate — delegates to the single implementation in
+/// [`crate::authz_ext::require_org_admin`] (issue #8). This module used to carry
+/// its own copy that omitted `org_id`, so an owner of ANY org passed it.
+async fn require_admin(headers: &HeaderMap, db: &PgPool) -> Result<Uuid, Response> {
+    crate::authz_ext::require_org_admin(db, headers)
+        .await
+        .map(|a| a.citizen)
 }
 
 async fn list(State(state): State<AppState>, headers: HeaderMap) -> Response {

@@ -28,12 +28,6 @@ pub(crate) fn routes(state: AppState) -> Router<()> {
         .with_state(state)
 }
 
-fn caller_citizen(headers: &HeaderMap) -> Option<Uuid> {
-    headers
-        .get("x-dsoc-citizen-id")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse().ok())
-}
 fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
     (status, axum::Json(ApiResponse::<()>::fail(code, msg))).into_response()
 }
@@ -44,30 +38,13 @@ fn storage_error() -> Response {
         "Erro interno.",
     )
 }
+/// Org-scoped admin gate — delegates to the single implementation in
+/// [`crate::authz_ext::require_org_admin`] (issue #8). This module used to carry
+/// its own copy that omitted `org_id`, so an owner of ANY org passed it.
 async fn require_admin(db: &PgPool, headers: &HeaderMap) -> Result<(), Response> {
-    let Some(citizen) = caller_citizen(headers) else {
-        return Err(fail(
-            StatusCode::UNAUTHORIZED,
-            "unauthorized",
-            "Autenticação necessária.",
-        ));
-    };
-    let is_admin: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM admin_role_binding WHERE citizen_id=$1 AND role IN ('owner','admin'))",
-    )
-    .bind(citizen)
-    .fetch_one(db)
-    .await
-    .unwrap_or(false);
-    if is_admin {
-        Ok(())
-    } else {
-        Err(fail(
-            StatusCode::FORBIDDEN,
-            "forbidden",
-            "Requer administrador.",
-        ))
-    }
+    crate::authz_ext::require_org_admin(db, headers)
+        .await
+        .map(|_| ())
 }
 
 /// A FIXED SQL fragment (safe, never user-supplied) for the office filter.

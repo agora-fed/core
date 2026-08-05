@@ -113,13 +113,16 @@ async fn whoami(State(state): State<AppState>, headers: HeaderMap) -> Response {
         Err(_) => None,
     };
 
-    // Platform role (owner > admin > auditor).
+    // Platform role (owner > admin > auditor) IN THE CALLER'S OWN ORG (issue #8).
+    // Without the org filter this reported a role held in ANY org, so an owner of
+    // org B rendered as an admin of org A — a lie the front end then acted on.
     let platform_role: Option<String> = sqlx::query_scalar(
         r"SELECT role FROM admin_role_binding
-           WHERE citizen_id = $1
+           WHERE org_id = $1 AND citizen_id = $2
            ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END
            LIMIT 1",
     )
+    .bind(org_id)
     .bind(citizen_id)
     .fetch_optional(&state.db)
     .await

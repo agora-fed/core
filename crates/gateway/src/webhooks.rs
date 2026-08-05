@@ -37,49 +37,15 @@ pub fn routes(state: AppState) -> Router<()> {
         .with_state(state)
 }
 
-fn caller_citizen(headers: &HeaderMap) -> Option<Uuid> {
-    headers
-        .get("x-dsoc-citizen-id")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse().ok())
-}
-
+/// Org-scoped admin gate — delegates to the single implementation in
+/// [`crate::authz_ext::require_org_admin`] (issue #8). This module used to carry
+/// its own copy that omitted `org_id`, so an owner of ANY org passed it.
 async fn require_admin(headers: &HeaderMap, db: &PgPool) -> Result<Uuid, Response> {
-    let citizen = caller_citizen(headers).ok_or_else(unauthorized_resp)?;
-    let is_admin = sqlx::query_scalar::<_, bool>(
-        r"SELECT EXISTS (SELECT 1 FROM admin_role_binding
-                        WHERE citizen_id = $1 AND role IN ('owner','admin'))",
-    )
-    .bind(citizen)
-    .fetch_one(db)
-    .await
-    .unwrap_or(false);
-    if !is_admin {
-        return Err(forbidden_resp());
-    }
-    Ok(citizen)
+    crate::authz_ext::require_org_admin(db, headers)
+        .await
+        .map(|a| a.citizen)
 }
 
-fn unauthorized_resp() -> Response {
-    (
-        StatusCode::UNAUTHORIZED,
-        Json(ApiResponse::<()>::fail(
-            "unauthorized",
-            "Autenticação necessária.",
-        )),
-    )
-        .into_response()
-}
-fn forbidden_resp() -> Response {
-    (
-        StatusCode::FORBIDDEN,
-        Json(ApiResponse::<()>::fail(
-            "forbidden",
-            "Acesso restrito a admins.",
-        )),
-    )
-        .into_response()
-}
 fn storage_err(err: impl std::fmt::Debug) -> Response {
     tracing::error!(?err, "webhooks storage");
     (
