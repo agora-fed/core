@@ -7,6 +7,16 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 
 ## [Unreleased]
 
+## [0.70.2] — 2026-08-05
+
+### Improved
+- **Bare URLs in forum markdown are now clickable** (issue #30): the SOCRATES
+  "Ideia original" attribution (a bare e-Cidadania URL) renders as a real
+  link. Autolink rule is https-only, XSS-safe by construction (text escaped
+  before rules; hostile quotes cannot break the href), never double-links
+  explicit `[text](url)` or code spans, and leaves trailing punctuation
+  outside the anchor. 7 unit cases + a post-deploy Playwright check.
+
 ## [0.70.1] — 2026-08-05
 
 ### Improved

@@ -17,8 +17,31 @@ function escapeHtml(s: string): string {
     .replaceAll("'", '&#39;');
 }
 
+/**
+ * Autolink bare `https://` URLs (issue #30 — the SOCRATES "Ideia original"
+ * attribution is a bare URL). Runs AFTER the other inline rules and SKIPS
+ * segments already inside `<a>…</a>` or `<code>…</code>` so nothing is
+ * double-linked. Policy: https only (stricter than the explicit-markdown
+ * rule); trailing punctuation/escaped quotes stay outside the link. XSS-safe
+ * by construction: the text was HTML-escaped before any rule, so the URL can
+ * never break out of the href attribute.
+ */
+function autolink(html: string): string {
+  return html
+    .split(/(<a [^>]*>.*?<\/a>|<code>.*?<\/code>)/g)
+    .map((segment, i) => {
+      if (i % 2 === 1) return segment; // already-rendered link/code span
+      return segment.replace(/(^|[\s(])(https:\/\/[^\s<]+)/g, (_m, pre, url) => {
+        const clean = url.replace(/(?:[.,;:!?)\]]|&quot;|&#39;)+$/, '');
+        const rest = url.slice(clean.length);
+        return `${pre}<a href="${clean}" target="_blank" rel="noopener nofollow">${clean}</a>${rest}`;
+      });
+    })
+    .join('');
+}
+
 function inline(s: string): string {
-  return (
+  return autolink(
     s
       // código inline primeiro (protege o conteúdo das demais regras)
       .replace(/`([^`]+)`/g, '<code>$1</code>')
@@ -28,7 +51,7 @@ function inline(s: string): string {
         '<a href="$2" target="_blank" rel="noopener nofollow">$1</a>',
       )
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/(^|\W)\*([^*\n]+)\*(?=\W|$)/g, '$1<em>$2</em>')
+      .replace(/(^|\W)\*([^*\n]+)\*(?=\W|$)/g, '$1<em>$2</em>'),
   );
 }
 
