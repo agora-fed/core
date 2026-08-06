@@ -27,29 +27,75 @@ use crate::module_catalog;
 
 const FLAG_TTL: Duration = Duration::from_secs(30);
 
-/// Cache (org, flag_key) → (read_at, Option<enabled>). `None` = no row (uses the manifest default).
+/// What the flag lookup found — THREE distinct states (issue #18).
+///
+/// These used to collapse into one `Option<bool>` via `.ok().flatten()`, which made
+/// "the database is unreachable" indistinguishable from "there is no row". Since a
+/// missing row means "use the manifest default", and 20 of the 26 manifests default
+/// to ON, a momentary DB error silently RE-ENABLED a module an admin had turned off —
+/// and the result was cached, so the fail-open outlived the blip by 30s.
+///
+/// The type exists so the error case cannot be ignored at the match site.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FlagState {
+    /// A row exists and says this.
+    Row(bool),
+    /// No row for this (org, key) — the manifest default applies.
+    Absent,
+    /// The lookup itself failed. Deny, and never cache.
+    Unavailable,
+}
+
+/// Cache (org, flag_key) → (read_at, state). Only CONCLUSIVE reads land here;
+/// [`FlagState::Unavailable`] is deliberately never cached, so recovery is immediate
+/// rather than delayed by the TTL.
 static FLAG_CACHE: std::sync::LazyLock<
-    tokio::sync::RwLock<HashMap<(Uuid, String), (Instant, Option<bool>)>>,
+    tokio::sync::RwLock<HashMap<(Uuid, String), (Instant, FlagState)>>,
 > = std::sync::LazyLock::new(|| tokio::sync::RwLock::new(HashMap::new()));
 
-/// Read `enabled` of a `module.<id>` for an org, with a TTL cache. `None` when there is no row.
-async fn flag_enabled(state: &AppState, org: Uuid, key: &str) -> Option<bool> {
+/// Read `enabled` of a `module.<id>` for an org, with a TTL cache over conclusive reads.
+async fn flag_state(state: &AppState, org: Uuid, key: &str) -> FlagState {
     let ck = (org, key.to_owned());
     if let Some((at, val)) = FLAG_CACHE.read().await.get(&ck) {
         if at.elapsed() < FLAG_TTL {
             return *val;
         }
     }
-    let val: Option<bool> =
-        sqlx::query_scalar("SELECT enabled FROM admin_feature_flag WHERE org_id = $1 AND key = $2")
-            .bind(org)
-            .bind(key)
-            .fetch_optional(&state.db)
-            .await
-            .ok()
-            .flatten();
+    let found = sqlx::query_scalar::<_, bool>(
+        "SELECT enabled FROM admin_feature_flag WHERE org_id = $1 AND key = $2",
+    )
+    .bind(org)
+    .bind(key)
+    .fetch_optional(&state.db)
+    .await;
+    let val = match found {
+        Ok(Some(enabled)) => FlagState::Row(enabled),
+        Ok(None) => FlagState::Absent,
+        Err(err) => {
+            tracing::warn!(error = ?err, org = %org, key, "module flag lookup failed — denying");
+            return FlagState::Unavailable;
+        }
+    };
     FLAG_CACHE.write().await.insert(ck, (Instant::now(), val));
     val
+}
+
+/// Resolve a lookup result into "is this module active?".
+///
+/// Pure on purpose: this is the decision the gate turns on, and it is the part worth
+/// pinning in tests without a database.
+fn effective_active(found: FlagState, m: &ModuleManifest) -> bool {
+    if m.core {
+        return true;
+    }
+    match found {
+        FlagState::Row(enabled) => enabled,
+        FlagState::Absent => m.default_enabled,
+        // FAIL CLOSED. An authorization primitive that opens under load is worse
+        // than one that closes: a denied request is visible and retryable, a
+        // wrongly-granted one is neither.
+        FlagState::Unavailable => false,
+    }
 }
 
 /// Effective state of a module in an org.
@@ -57,10 +103,7 @@ async fn module_active(state: &AppState, org: Uuid, m: &ModuleManifest) -> bool 
     if m.core {
         return true;
     }
-    match flag_enabled(state, org, m.flag_key).await {
-        Some(enabled) => enabled,
-        None => m.default_enabled,
-    }
+    effective_active(flag_state(state, org, m.flag_key).await, m)
 }
 
 /// Gate for a handler: `Ok(())` when the module is active in the org, otherwise a ready 404 (a module off =
@@ -100,6 +143,77 @@ pub fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/orgs/{org}/modules", get(list_modules))
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn manifest(core: bool, default_enabled: bool) -> ModuleManifest {
+        ModuleManifest {
+            id: "t",
+            title: "T",
+            core,
+            flag_key: "module.t",
+            default_enabled,
+            gateable: true,
+            depends_on: &[],
+            permissions: &[],
+            nav: &[],
+        }
+    }
+
+    #[test]
+    fn a_row_wins_over_the_manifest_default() {
+        // An admin's explicit choice beats the ship default, in both directions.
+        assert!(!effective_active(
+            FlagState::Row(false),
+            &manifest(false, true)
+        ));
+        assert!(effective_active(
+            FlagState::Row(true),
+            &manifest(false, false)
+        ));
+    }
+
+    #[test]
+    fn no_row_falls_back_to_the_manifest_default() {
+        assert!(effective_active(FlagState::Absent, &manifest(false, true)));
+        assert!(!effective_active(
+            FlagState::Absent,
+            &manifest(false, false)
+        ));
+    }
+
+    #[test]
+    fn a_failed_lookup_denies_even_when_the_default_is_on() {
+        // THE BUG: `Unavailable` used to be indistinguishable from `Absent`, so a DB
+        // blip resolved to the manifest default — ON for 20 of the 26 modules.
+        assert!(
+            !effective_active(FlagState::Unavailable, &manifest(false, true)),
+            "a DB error must not re-enable a module"
+        );
+        assert!(!effective_active(
+            FlagState::Unavailable,
+            &manifest(false, false)
+        ));
+    }
+
+    #[test]
+    fn core_modules_stay_on_through_a_failed_lookup() {
+        // Failing closed must not take down `auth` — core is not gateable at all,
+        // so its answer cannot depend on a flag read.
+        for found in [
+            FlagState::Unavailable,
+            FlagState::Absent,
+            FlagState::Row(false),
+        ] {
+            assert!(
+                effective_active(found, &manifest(true, false)),
+                "core module must stay active for {found:?}"
+            );
+        }
+    }
 }
 
 async fn list_modules(State(state): State<AppState>, Path(org): Path<Uuid>) -> Response {

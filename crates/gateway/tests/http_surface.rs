@@ -3963,6 +3963,69 @@ async fn group_inbox_rejects_malformed_signature_and_unknown_handle() {
 }
 
 // ---------------------------------------------------------------------------
+// SECURITY — the module gate fails CLOSED on a database error (issue #18)
+//
+// `flag_enabled` used to collapse "no row" and "DB error" into one `None` via
+// `.ok().flatten()`, and `None` means "use the manifest default" — ON for 20 of
+// the 26 modules. So a database blip silently RE-ENABLED a module an admin had
+// switched off, and the answer was cached, outliving the blip by 30s.
+//
+// The unit tests in module_gate.rs pin the decision table. These two drive a
+// REAL failing query through the real code path, because the bug lived in the
+// error handling, not in the decision.
+// ---------------------------------------------------------------------------
+
+/// A state whose pool points nowhere: any query returns Err, which is precisely
+/// the condition the old code mistook for "no row".
+fn state_with_unreachable_db(good: &dsoc_app::AppState) -> dsoc_app::AppState {
+    let mut broken = good.clone();
+    broken.db = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(std::time::Duration::from_millis(250))
+        .connect_lazy("postgres://nobody:nobody@127.0.0.1:1/nonexistent")
+        .expect("lazy pool");
+    broken
+}
+
+#[tokio::test]
+async fn module_gate_denies_when_the_database_is_unreachable() {
+    let (_, st) = app().await;
+    let broken = state_with_unreachable_db(&st);
+    // A fresh org so the process-global flag cache cannot answer for us.
+    let org = Uuid::now_v7();
+
+    // `forums` is non-core with `default_enabled: true` — exactly the shape that
+    // used to be switched back ON by a failing lookup.
+    let verdict = dsoc_gateway::module_gate::require_module(&broken, org, "forums").await;
+    assert!(
+        verdict.is_err(),
+        "SECURITY REGRESSION: a DB error re-enabled a module (fail-open)"
+    );
+}
+
+#[tokio::test]
+async fn module_gate_does_not_cache_a_failed_lookup() {
+    let (_, st) = app().await;
+    let org = Uuid::now_v7();
+
+    // First, fail.
+    let broken = state_with_unreachable_db(&st);
+    assert!(
+        dsoc_gateway::module_gate::require_module(&broken, org, "forums")
+            .await
+            .is_err()
+    );
+
+    // Then recover immediately on a healthy pool. If the error had been cached,
+    // this would stay denied for the 30s TTL — a blip becoming an outage.
+    let verdict = dsoc_gateway::module_gate::require_module(&st, org, "forums").await;
+    assert!(
+        verdict.is_ok(),
+        "a failed lookup must not be cached — recovery has to be immediate"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // SECURITY — admin authority stops at the org boundary (issue #8)
 //
 // The gate used to be `EXISTS(... WHERE citizen_id=$1 ...)` with no org filter,
