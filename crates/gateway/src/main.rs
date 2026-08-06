@@ -61,6 +61,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = SocketAddr::from((Ipv6Addr::UNSPECIFIED, port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!(%addr, "dsoc-gateway listening (IPv6-first); 21 crates mounted under /api/v1");
-    axum::serve(listener, dsoc_gateway::api_router(state)).await?;
+    // `with_connect_info` is what lets the auth middleware see the REAL peer address.
+    // Without it the only origin signal is `X-Forwarded-For`, which a client controls
+    // outright when it reaches this port directly (issue #17).
+    axum::serve(
+        listener,
+        dsoc_gateway::api_router(state).into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }

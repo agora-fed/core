@@ -175,17 +175,32 @@ struct MeQuery {
     org_id: Uuid,
 }
 
-/// Extract the origin IP from X-Forwarded-For (the gateway runs behind Caddy).
-/// The same read `password_reset_request` performs — deduplicated here.
+/// The rate-limiting origin, as determined by the GATEWAY (issue #17).
+///
+/// This used to read `X-Forwarded-For` and take the LEFT-most element — the part a
+/// client writes. Verified against production on 2026-08-06: a request sent straight
+/// to the gateway's public port with a forged `X-Forwarded-For` had that value
+/// recorded verbatim as its origin, so every limiter keyed on it could be handed a
+/// fresh bucket on each attempt and the login limit was decorative.
+///
+/// The gateway now decides the origin from the CONNECTION and passes it in a header it
+/// strips from clients first. Here we only read that.
+///
+/// Absence is NOT an exemption: an unattributable request falls into one shared bucket
+/// rather than escaping the limiter, because "no origin" was previously the easiest
+/// origin of all to arrange.
 fn caller_ip(headers: &HeaderMap) -> Option<String> {
     headers
-        .get("x-forwarded-for")
+        .get("x-dsoc-client-ip")
         .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.split(',').next())
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_owned)
+        .or_else(|| Some(UNATTRIBUTED_ORIGIN.to_owned()))
 }
+
+/// The bucket every request without a determinable origin shares.
+const UNATTRIBUTED_ORIGIN: &str = "unattributed";
 
 /// Response body for both `/auth/register` calls — 202 Accepted, no session yet.
 /// The front end uses `status` to know it must show the "check your e-mail" screen.

@@ -115,6 +115,17 @@ async fn grant_admin(db: &Db, org: Uuid, citizen: Uuid) {
     .expect("grant admin");
 }
 
+/// Attach a peer address, the way a real connection would. `X-Forwarded-For` is no
+/// longer believed from an untrusted peer (issue #17), so a test that wants to be seen
+/// as coming from a given origin must present it as the CONNECTION — which is also a
+/// more faithful simulation than a header ever was.
+fn with_peer(mut req: Request<Body>, ip: &str) -> Request<Body> {
+    let addr: std::net::SocketAddr = format!("{ip}:40000").parse().expect("peer addr");
+    req.extensions_mut()
+        .insert(axum::extract::ConnectInfo(addr));
+    req
+}
+
 fn get(uri: &str) -> Request<Body> {
     Request::builder().uri(uri).body(Body::empty()).unwrap()
 }
@@ -135,7 +146,15 @@ fn json_req(method: &str, uri: &str, cookie: Option<&str>, body: &str) -> Reques
     if let Some(c) = cookie {
         b = b.header(header::COOKIE, c);
     }
-    b.body(Body::from(body.to_owned())).unwrap()
+    // A DISTINCT simulated connection per request, because that is what distinct
+    // clients are. Without it every test shares one rate-limit bucket (the gateway
+    // stopped exempting requests it cannot attribute — issue #17) and unrelated tests
+    // start failing each other with 429. A test that needs REPEATED requests from one
+    // origin says so with `with_peer`.
+    with_peer(b.body(Body::from(body.to_owned())).unwrap(), &{
+        let n = Uuid::now_v7().as_u128();
+        format!("[2001:db8::{:x}:{:x}]", (n >> 16) & 0xffff, n & 0xffff)
+    })
 }
 
 async fn body_json(resp: axum::response::Response) -> serde_json::Value {
@@ -606,14 +625,16 @@ async fn contact_rate_limits_per_ip() {
     let (app, _) = app().await;
     let body = r#"{"sector":"contato","name":"Nome","email":"a@b.co","subject":"assunto","message":"mensagem com tamanho ok"}"#;
     for _ in 0..5 {
-        let mut req = json_req("POST", "/api/v1/contact", None, body);
-        req.headers_mut()
-            .insert("x-forwarded-for", "198.51.100.77".parse().unwrap());
+        let req = with_peer(
+            json_req("POST", "/api/v1/contact", None, body),
+            "198.51.100.77",
+        );
         let _ = app.clone().oneshot(req).await.unwrap();
     }
-    let mut req = json_req("POST", "/api/v1/contact", None, body);
-    req.headers_mut()
-        .insert("x-forwarded-for", "198.51.100.77".parse().unwrap());
+    let req = with_peer(
+        json_req("POST", "/api/v1/contact", None, body),
+        "198.51.100.77",
+    );
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
 }
@@ -757,9 +778,10 @@ async fn ip_deny_rule_gates_login_scope() {
     let login =
         format!(r#"{{"org_id":"{org}","email":"ninguem@example.org","password":"whatever"}}"#);
     // An IP inside the deny range: the gate's 403, before any credential check.
-    let mut req = json_req("POST", "/api/v1/auth/login", None, &login);
-    req.headers_mut()
-        .insert("x-forwarded-for", "198.51.100.9".parse().unwrap());
+    let req = with_peer(
+        json_req("POST", "/api/v1/auth/login", None, &login),
+        "198.51.100.9",
+    );
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     // IP outside the deny: passes the gate and lands on the normal 401 for bad credentials.
@@ -768,9 +790,10 @@ async fn ip_deny_rule_gates_login_scope() {
     let b = Uuid::now_v7();
     let b = b.as_bytes();
     let outside_ip = format!("10.{}.{}.{}", b[13], b[14], b[15]);
-    let mut req = json_req("POST", "/api/v1/auth/login", None, &login);
-    req.headers_mut()
-        .insert("x-forwarded-for", outside_ip.parse().unwrap());
+    let req = with_peer(
+        json_req("POST", "/api/v1/auth/login", None, &login),
+        &outside_ip,
+    );
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     // Cleanup: the rule is global — remove it so it never leaks into other tests.
@@ -1314,15 +1337,11 @@ async fn login_rate_limits_by_ip() {
     let ip = format!("10.{}.{}.{}", b[13], b[14], b[15]);
     // 10 attempts (default) from the same IP; the 11th must see 429.
     for _ in 0..10 {
-        let mut req = json_req("POST", "/api/v1/auth/login", None, &body);
-        req.headers_mut()
-            .insert("x-forwarded-for", ip.parse().unwrap());
+        let req = with_peer(json_req("POST", "/api/v1/auth/login", None, &body), &ip);
         let resp = app.clone().oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
-    let mut req = json_req("POST", "/api/v1/auth/login", None, &body);
-    req.headers_mut()
-        .insert("x-forwarded-for", ip.parse().unwrap());
+    let req = with_peer(json_req("POST", "/api/v1/auth/login", None, &body), &ip);
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
 }
@@ -1817,7 +1836,10 @@ async fn campanha_publica_only_when_published() {
     // Org default fixa — find_public_by_handle resolve contra ela.
     let default_org = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
     let (org, citizen, cookie) = seed_session_in_org(&st.db, default_org).await;
-    let handle = format!("cand{}", &citizen.simple().to_string()[..8]);
+    // UUIDv7 leads with the timestamp, so the FIRST hex digits repeat across runs and
+    // collide on `citizen_org_handle_unique`. The trailing half is the random part.
+    let hex = citizen.simple().to_string();
+    let handle = format!("cand{}", &hex[hex.len() - 10..]);
     sqlx::query("UPDATE citizen SET handle = $2, is_public = TRUE, display_name = 'Cand. Teste' WHERE id = $1")
         .bind(citizen)
         .bind(&handle)

@@ -445,13 +445,19 @@ pub async fn gates_middleware(State(state): State<AppState>, req: Request, next:
     next.run(req).await
 }
 
-/// The same X-Forwarded-For read as the rest of the gateway (behind Caddy).
-/// No header ⇒ no IP check — an identical posture to the rate limits.
+/// The origin the GATEWAY determined, never `X-Forwarded-For` (issue #17).
+///
+/// Reading XFF directly was a live bypass: this port is bound on the public IPv6 with
+/// no ingress in front, so a request that skips Caddy carries whatever XFF its sender
+/// typed — verified against production 2026-08-06. Absence is not an exemption; it
+/// falls into one shared bucket.
+///
+/// A deny rule keyed on a spoofable value is worse than no rule: a banned origin
+/// simply names itself something else.
 fn client_ip(headers: &HeaderMap) -> Option<IpAddr> {
     headers
-        .get("x-forwarded-for")
+        .get(crate::CLIENT_IP_HEADER)
         .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.split(',').next())
         .and_then(|s| s.trim().parse().ok())
 }
 

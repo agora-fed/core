@@ -102,6 +102,7 @@ use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::{routing::get, Json, Router};
 use dsoc_app::AppState;
+use std::net::SocketAddr;
 use tower_http::services::ServeDir;
 use uuid::Uuid;
 
@@ -120,7 +121,44 @@ async fn openapi() -> Json<serde_json::Value> {
 /// caller's identity, then inject the standard downstream headers
 /// (`x-dsoc-citizen-id` / `x-dsoc-org-id`, plus `x-citizen-id` for admin).
 /// Anonymous requests pass through with no headers added.
+/// Header carrying the origin the gateway itself determined. Handlers rate-limit on
+/// THIS, never on `X-Forwarded-For` (issue #17).
+pub const CLIENT_IP_HEADER: &str = "x-dsoc-client-ip";
+
+/// The client origin we are willing to rate-limit on.
+///
+/// `X-Forwarded-For` is only believed when the connection came from LOOPBACK — that
+/// is the Caddy ingress on this host, the one hop entitled to speak for someone else.
+/// This port is also bound on the public IPv6 (hostNetwork, no ingress), and a request
+/// arriving there carries whatever XFF the sender typed: verified against production
+/// on 2026-08-06, a forged `X-Forwarded-For` was recorded verbatim as the origin, so
+/// every limiter keyed on it could be reset at will, one bucket per request.
+///
+/// From any other peer the connection address is the truth and XFF is ignored.
+fn trusted_client_ip(headers: &axum::http::HeaderMap, peer: Option<SocketAddr>) -> Option<String> {
+    let from_loopback = peer.is_some_and(|p| p.ip().is_loopback());
+    if from_loopback {
+        // Caddy APPENDS the peer it saw, so the right-most element is the one it
+        // vouched for; anything to its left was supplied by the client.
+        if let Some(xff) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
+            if let Some(last) = xff.split(',').next_back().map(str::trim) {
+                if !last.is_empty() {
+                    return Some(last.to_owned());
+                }
+            }
+        }
+    }
+    peer.map(|p| p.ip().to_string())
+}
+
 async fn inject_identity(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
+    // Read the peer from the extensions rather than as an extractor: `ConnectInfo` is
+    // absent in the test harness (`oneshot` has no connection), and an extractor would
+    // turn every test request into a 500 instead of simply having no peer.
+    let peer = req
+        .extensions()
+        .get::<axum::extract::ConnectInfo<SocketAddr>>()
+        .map(|c| c.0);
     // SECURITY (2026-07-24): these headers ARE the authenticated-caller signal further down
     // (CallerId in crates/app/src/caller.rs and require_admin read them). A client may NEVER
     // supply them — otherwise anyone impersonates any citizen (admins included). Strip
@@ -132,6 +170,14 @@ async fn inject_identity(State(state): State<AppState>, mut req: Request, next: 
         headers.remove("x-dsoc-citizen-id");
         headers.remove("x-dsoc-org-id");
         headers.remove("x-citizen-id");
+        // Same reasoning for the origin: a client must not be able to name itself.
+        headers.remove(CLIENT_IP_HEADER);
+    }
+    // Determine the origin ONCE, from the connection, and hand it downstream.
+    if let Some(ip) = trusted_client_ip(req.headers(), peer) {
+        if let Ok(v) = axum::http::HeaderValue::from_str(&ip) {
+            req.headers_mut().insert(CLIENT_IP_HEADER, v);
+        }
     }
     // First: cookie session (the site's own flow); resolved async below.
     let mut resolved: Option<(Uuid, Uuid)> = None;
@@ -333,16 +379,20 @@ pub fn api_router(state: AppState) -> Router {
         // inject_identity, so it already sees x-dsoc-citizen-id and can key by
         // citizen (anonymous falls back to IP). Counts mutating methods only.
         .layer(middleware::from_fn(rate_limit::rate_limit_middleware))
-        .layer(middleware::from_fn_with_state(
-            state.clone(),
-            inject_identity,
-        ))
         // Registration rules (0.28.2): email_domain_block + ip_rule take effect
-        // on register/login — administered at /admin/email-domains
-        // e /admin/ip-rules.
+        // on register/login — administered at /admin/email-domains and /admin/ip-rules.
+        //
+        // Ordered INSIDE inject_identity on purpose (issue #17): a layer added later is
+        // the OUTER one in axum, so this used to run BEFORE the origin was determined
+        // and read `X-Forwarded-For` itself — meaning a denied origin escaped its ban by
+        // naming itself something else. It now sees the header the gateway set.
         .layer(middleware::from_fn_with_state(
             state.clone(),
             signup_gates::gates_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            inject_identity,
         ))
         // Dynamic threshold (0.30.1): a proposal's trigger is a fraction of the
         // territory's electoral roll, with a floor/ceiling — the author does not choose it.
@@ -488,5 +538,66 @@ mod tests {
     #[test]
     fn health_router_builds() {
         let _app: Router<()> = Router::new().route("/health", get(health));
+    }
+}
+
+#[cfg(test)]
+mod trusted_origin_tests {
+    use super::trusted_client_ip;
+    use axum::http::{HeaderMap, HeaderValue};
+    use std::net::SocketAddr;
+
+    fn xff(v: &str) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert("x-forwarded-for", HeaderValue::from_str(v).unwrap());
+        h
+    }
+
+    #[test]
+    fn a_forged_header_from_a_public_peer_is_ignored() {
+        // THE BYPASS: this exact shape was accepted in production on 2026-08-06 and
+        // handed the sender a fresh rate-limit bucket per request.
+        let peer: SocketAddr = "[2804:214:800d::1]:51234".parse().unwrap();
+        assert_eq!(
+            trusted_client_ip(&xff("198.51.100.197"), Some(peer)).as_deref(),
+            Some("2804:214:800d::1"),
+            "a public peer does not get to name itself"
+        );
+    }
+
+    #[test]
+    fn the_ingress_on_loopback_is_believed() {
+        let caddy: SocketAddr = "[::1]:40000".parse().unwrap();
+        assert_eq!(
+            trusted_client_ip(&xff("203.0.113.9"), Some(caddy)).as_deref(),
+            Some("203.0.113.9")
+        );
+    }
+
+    #[test]
+    fn from_the_ingress_the_rightmost_element_wins() {
+        // Caddy APPENDS the peer it saw. Anything to the left came from the client, so
+        // taking the left-most — which is what the old code did — reads the forgery.
+        let caddy: SocketAddr = "127.0.0.1:40000".parse().unwrap();
+        assert_eq!(
+            trusted_client_ip(&xff("198.51.100.1, 203.0.113.9"), Some(caddy)).as_deref(),
+            Some("203.0.113.9")
+        );
+    }
+
+    #[test]
+    fn no_header_from_the_ingress_falls_back_to_the_peer() {
+        let caddy: SocketAddr = "[::1]:40000".parse().unwrap();
+        assert_eq!(
+            trusted_client_ip(&HeaderMap::new(), Some(caddy)).as_deref(),
+            Some("::1")
+        );
+    }
+
+    #[test]
+    fn without_a_peer_no_origin_is_claimed() {
+        // The test harness has no connection; the handler then uses its shared bucket
+        // rather than treating the request as exempt.
+        assert_eq!(trusted_client_ip(&xff("198.51.100.1"), None), None);
     }
 }

@@ -65,14 +65,20 @@ fn sector_label(sector: &str) -> Option<&'static str> {
     }
 }
 
+/// The origin the GATEWAY determined, never `X-Forwarded-For` (issue #17).
+///
+/// Reading XFF directly was a live bypass: this port is bound on the public IPv6 with
+/// no ingress in front, so a request that skips Caddy carries whatever XFF its sender
+/// typed — verified against production 2026-08-06. Absence is not an exemption; it
+/// falls into one shared bucket.
 fn caller_ip(headers: &HeaderMap) -> Option<String> {
     headers
-        .get("x-forwarded-for")
+        .get(crate::CLIENT_IP_HEADER)
         .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.split(',').next())
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_owned)
+        .or_else(|| Some("unattributed".to_owned()))
 }
 
 static RATE: LazyLock<Mutex<HashMap<String, Vec<Instant>>>> =
