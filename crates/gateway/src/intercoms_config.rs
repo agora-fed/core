@@ -143,11 +143,15 @@ async fn set_config(
         );
     };
     let url = body.url.trim();
-    if !(url.starts_with("http://") || url.starts_with("https://")) {
+    // Same guard the sender applies, run here so a bad entry is refused in the form
+    // rather than discovered when an OTP fails to arrive (issue #9). The reason is
+    // logged, not returned — the response must not report what is reachable.
+    if let Err(err) = crate::outbound::validate_url(url, &crate::intercoms::sms_policy()) {
+        tracing::warn!(error = %err, "SMSGateway URL refused by the SSRF guard");
         return fail(
             StatusCode::BAD_REQUEST,
             "invalid_url",
-            "URL do SMSGateway deve começar com http(s)://.",
+            "URL do SMSGateway recusada: use um endereço público via https://.",
         );
     }
     let json = serde_json::json!({

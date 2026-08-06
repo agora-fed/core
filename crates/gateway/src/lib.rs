@@ -67,6 +67,7 @@ pub mod note_media;
 pub mod notification_receipts;
 pub mod notifications;
 pub mod og_cards;
+pub mod outbound;
 pub mod parlamentar_activity;
 pub mod party_dashboard;
 pub mod phone;

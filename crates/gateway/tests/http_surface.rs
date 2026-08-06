@@ -3973,6 +3973,110 @@ async fn group_inbox_rejects_malformed_signature_and_unknown_handle() {
 }
 
 // ---------------------------------------------------------------------------
+// SECURITY — the SSRF guard on every server-side fetch (issue #9)
+//
+// The federation inbox takes an actor URL straight out of an UNAUTHENTICATED
+// `Signature` header. Before the guard, `starts_with("https://")` was the only
+// thing between that string and a request into the pod's network.
+//
+// These drive the real handler and the real client. The address tables live in
+// unit tests next to the code; what is proven here is that the surfaces are
+// actually WIRED to the guard.
+// ---------------------------------------------------------------------------
+
+use dsoc_gateway::outbound::{guarded_get, OutboundError, OutboundPolicy};
+
+/// Every internal destination is refused, whether written as a literal address or
+/// reached through a public-looking NAME that resolves inward.
+#[tokio::test]
+async fn guarded_fetch_refuses_internal_destinations() {
+    let p = OutboundPolicy::default();
+    for url in [
+        "https://127.0.0.1/actor",
+        "https://[::1]/actor",
+        "https://10.0.0.1/actor",
+        "https://192.168.1.1/actor",
+        "https://169.254.169.254/latest/meta-data/", // cloud metadata
+        "https://localhost/actor",                   // a NAME resolving to loopback
+    ] {
+        let err = guarded_get(url, &[], &p).await.unwrap_err();
+        assert!(
+            matches!(err, OutboundError::BlockedAddress(_)),
+            "{url} must be refused as a blocked address, got {err:?}"
+        );
+    }
+}
+
+/// Plain HTTP is refused unless a surface opts in, so a downgrade cannot be used to
+/// strip TLS from a fetch the platform makes on someone's behalf.
+#[tokio::test]
+async fn guarded_fetch_refuses_plain_http_by_default() {
+    let p = OutboundPolicy::default();
+    let err = guarded_get("http://example.com/actor", &[], &p)
+        .await
+        .unwrap_err();
+    assert_eq!(err, OutboundError::SchemeNotAllowed("http".to_owned()));
+}
+
+// NOT covered by an automated test, and deliberately said out loud:
+//
+// * the BODY CAP — every address a local test server can bind is one the address
+//   guard refuses first, so an integration test would pass through the address
+//   check while claiming to test the cap. That is exactly what the first version of
+//   this file did. The cap is pinned instead by unit tests over synthetic chunks in
+//   `outbound.rs`, including a peer that lies in `Content-Length`.
+// * REDIRECT REFUSAL — `reqwest::redirect::Policy::none()` is set when the client is
+//   built and reqwest exposes no way to read the policy back, so this rests on
+//   construction and review rather than on a test.
+
+/// The inbox path itself: a `keyId` pointing at an internal address must not make the
+/// gateway dial it. The signature is bogus, so a refusal is expected either way — what
+/// this pins is that the failure is NOT a successful internal fetch.
+#[tokio::test]
+async fn inbox_key_id_cannot_reach_an_internal_address() {
+    let (app, st) = app().await;
+    let (_, slug, body) = inbox_fixture(&st).await;
+
+    let digest = digest_header_for(&body);
+    let date = http_date_now();
+    let sig = "keyId=\"https://169.254.169.254/latest/meta-data/#main-key\",\
+               algorithm=\"rsa-sha256\",headers=\"(request-target) host date digest\",\
+               signature=\"AAAA\"";
+
+    let started = std::time::Instant::now();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/actors/{slug}/inbox"))
+                .header(header::HOST, "democracia.social.br")
+                .header(header::DATE, date)
+                .header("digest", digest)
+                .header("signature", sig)
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let elapsed = started.elapsed();
+
+    assert!(
+        !resp.status().is_success(),
+        "an internal keyId must never produce a successful inbox delivery"
+    );
+    // The status alone proves nothing: the request fails either way in a sandbox
+    // with no metadata service, so this assertion held even with the guard REMOVED.
+    // What distinguishes a guarded fetch is that NO DIAL HAPPENS — refusal is
+    // immediate, where an unguarded attempt sits on the 10s connect timeout.
+    // Measured on the removal experiment: 10.1s unguarded vs 4.0s guarded.
+    assert!(
+        elapsed < std::time::Duration::from_secs(8),
+        "the guard must refuse before dialling; took {elapsed:?}, which means a \
+         connection to the internal address was attempted"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // SECURITY — the module gate fails CLOSED on a database error (issue #18)
 //
 // `flag_enabled` used to collapse "no row" and "DB error" into one `None` via

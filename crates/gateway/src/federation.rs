@@ -3460,14 +3460,13 @@ pub(crate) async fn resolve_remote_mentions(
 /// Fetch a remote ActivityPub Actor document (Mastodon, Pleroma, etc.). Returns the parsed
 /// JSON; the caller picks the fields it needs (publicKey, inbox, etc.).
 pub(crate) async fn fetch_remote_actor(url: &str) -> Result<Value, FederationError> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(REMOTE_FETCH_TIMEOUT_SECS))
-        .user_agent("DemocraciaBR/0.4 (+https://democracia.social.br)")
-        .build()
-        .map_err(|e| FederationError::Http(e.to_string()))?;
-    let mut req = client
-        .get(url)
-        .header(reqwest::header::ACCEPT, ACTIVITY_JSON);
+    // Through the SSRF guard (issue #9): this URL arrives from UNAUTHENTICATED input
+    // — the `keyId` of an inbox `Signature` header and the `actor` of a Group
+    // activity both land here. Before the guard, a `starts_with("https://")` check
+    // was all that stood between a stranger's string and a request into the pod's
+    // network; the guard adds address validation with pinned resolution, refuses
+    // redirects and caps the body.
+    let mut headers: Vec<(String, String)> = vec![("Accept".to_owned(), ACTIVITY_JSON.to_owned())];
     // SIGNED fetch with the instance actor's key (0539): instances in secure mode
     // (AUTHORIZED_FETCH, e.g. wetdry.world) return 401 for an unsigned GET.
     // A key not yet primed (boot) or a signing failure → proceed unsigned,
@@ -3475,29 +3474,23 @@ pub(crate) async fn fetch_remote_actor(url: &str) -> Result<Value, FederationErr
     if let Some(key) = INSTANCE_KEY.get() {
         match sign_get_headers(url, key) {
             Ok((host, date, signature)) => {
-                req = req
-                    .header(reqwest::header::HOST, host)
-                    .header("Date", date)
-                    .header("Signature", signature);
+                headers.push(("Host".to_owned(), host));
+                headers.push(("Date".to_owned(), date));
+                headers.push(("Signature".to_owned(), signature));
             }
             Err(err) => {
-                tracing::warn!(error = %err, url, "signed fetch: falha ao assinar; indo sem assinatura");
+                tracing::warn!(error = %err, url, "signed fetch: signing failed; proceeding unsigned");
             }
         }
     }
-    let resp = req
-        .send()
+    let policy = crate::outbound::OutboundPolicy {
+        timeout: Duration::from_secs(REMOTE_FETCH_TIMEOUT_SECS),
+        ..Default::default()
+    };
+    let body = crate::outbound::guarded_get(url, &headers, &policy)
         .await
         .map_err(|e| FederationError::Http(e.to_string()))?;
-    if !resp.status().is_success() {
-        return Err(FederationError::Http(format!(
-            "remote returned {}",
-            resp.status()
-        )));
-    }
-    resp.json::<Value>()
-        .await
-        .map_err(|e| FederationError::Http(format!("json: {e}")))
+    serde_json::from_slice::<Value>(&body).map_err(|e| FederationError::Http(format!("json: {e}")))
 }
 
 /// Build the headers of a signed GET — `(request-target) host date` covered, the same

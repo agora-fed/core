@@ -141,8 +141,15 @@ async fn create(
         Err(r) => return r,
     };
     let url = body.url.trim();
-    if !(url.starts_with("https://") || url.starts_with("http://")) {
-        return bad("url deve começar com http(s)://");
+    // Validated by the SSRF guard at CREATION as well as at delivery (issue #9):
+    // refusing the row up front tells the admin why, instead of accepting a webhook
+    // that will silently never fire. `starts_with("http")` was the whole check
+    // before — `https://10.0.0.1/` satisfied it.
+    if let Err(err) = crate::outbound::validate_url(url, &webhook_policy()) {
+        tracing::warn!(url, error = %err, "webhook URL refused by the SSRF guard");
+        // The reason stays in the log, not in the response: echoing "refusing to
+        // dial 10.0.0.1" back would turn the form into a network scanner.
+        return bad("URL de webhook recusada: use um endereço público via https://.");
     }
     let events: Vec<String> = body
         .events
@@ -180,6 +187,16 @@ async fn create(
             .into_response(),
         Err(err) => storage_err(err),
     }
+}
+
+/// Webhook destinations: HTTPS only unless the operator sets
+/// `WEBHOOK_ALLOW_HTTP=true`, optionally narrowed to `WEBHOOK_ALLOWLIST`.
+fn webhook_policy() -> crate::outbound::OutboundPolicy {
+    crate::outbound::OutboundPolicy {
+        allow_http: std::env::var("WEBHOOK_ALLOW_HTTP").as_deref() == Ok("true"),
+        ..Default::default()
+    }
+    .with_allowlist_from_env("WEBHOOK_ALLOWLIST")
 }
 
 #[derive(Debug, Deserialize)]
@@ -247,11 +264,6 @@ pub fn dispatch_event(db: PgPool, event: &'static str, payload: serde_json::Valu
             Ok(b) => b,
             Err(_) => return,
         };
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
-            .user_agent("DemocraciaBR-Webhook/1.0")
-            .build();
-        let Ok(client) = client else { return };
         for (id, url, secret) in hooks {
             let sig = {
                 let mut mac = match HmacSha256::new_from_slice(secret.as_bytes()) {
@@ -262,22 +274,24 @@ pub fn dispatch_event(db: PgPool, event: &'static str, payload: serde_json::Valu
                 let bytes = mac.finalize().into_bytes();
                 URL_SAFE_NO_PAD.encode(bytes)
             };
-            let client = client.clone();
             let db = db.clone();
             let body_bytes = body_bytes.clone();
             tokio::spawn(async move {
-                let resp = client
-                    .post(&url)
-                    .header("content-type", "application/json")
-                    .header("x-democraciabr-event", event)
-                    .header("x-democraciabr-signature", format!("sha256={sig}"))
-                    .body(body_bytes)
-                    .send()
-                    .await;
-                let status = resp
-                    .as_ref()
-                    .map(|r| r.status().as_u16() as i32)
-                    .unwrap_or(0);
+                let headers = vec![
+                    ("content-type".to_owned(), "application/json".to_owned()),
+                    ("x-democraciabr-event".to_owned(), event.to_owned()),
+                    (
+                        "x-democraciabr-signature".to_owned(),
+                        format!("sha256={sig}"),
+                    ),
+                ];
+                // Re-validated at DELIVERY, not only at creation: the row outlives the
+                // admin form, and DNS for a host that was public when it was saved can
+                // point anywhere by the time the event fires.
+                let resp =
+                    crate::outbound::guarded_post(&url, &headers, body_bytes, &webhook_policy())
+                        .await;
+                let status = resp.as_ref().map(|(s, _)| i32::from(*s)).unwrap_or(0);
                 let _ = sqlx::query(
                     r"UPDATE webhook
                          SET last_status = $2, last_delivery_at = now()
@@ -288,7 +302,7 @@ pub fn dispatch_event(db: PgPool, event: &'static str, payload: serde_json::Valu
                 .execute(&db)
                 .await;
                 if let Err(err) = resp {
-                    tracing::warn!(?err, ?url, "webhook delivery failed");
+                    tracing::warn!(error = %err, url, "webhook delivery failed");
                 }
             });
         }

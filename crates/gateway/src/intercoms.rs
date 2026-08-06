@@ -166,25 +166,41 @@ impl SmsGatewayProvider {
     }
 }
 
+/// SMS provider destinations. Many self-hosted SMSGateway instances run on plain
+/// HTTP inside an operator's own network, so `INTERCOMS_ALLOW_HTTP=true` exists —
+/// but it is OFF by default and pairs with `INTERCOMS_ALLOWLIST`, because turning it
+/// on is what re-opens the path this guard closes.
+pub(crate) fn sms_policy() -> crate::outbound::OutboundPolicy {
+    crate::outbound::OutboundPolicy {
+        allow_http: std::env::var("INTERCOMS_ALLOW_HTTP").as_deref() == Ok("true"),
+        ..Default::default()
+    }
+    .with_allowlist_from_env("INTERCOMS_ALLOWLIST")
+}
+
 #[async_trait]
 impl MessageSender for SmsGatewayProvider {
     async fn send(&self, msg: &OutboundMessage) -> Result<(), BoxError> {
         if msg.channel != Channel::Sms {
             return Err("SmsGatewayProvider só envia SMS".into());
         }
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
-            .build()?;
-        let mut req = client.post(&self.cfg.url).json(&serde_json::json!({
+        // Through the SSRF guard (issue #9). This path carries citizens' phone OTPs,
+        // and the provider URL is operator-supplied config: a mistyped or hostile
+        // entry must not become a POST of a live OTP into the pod's own network.
+        let body = serde_json::to_vec(&serde_json::json!({
             "message": msg.body,
             "phoneNumbers": [msg.to],
-        }));
+        }))?;
+        let mut headers = vec![("content-type".to_owned(), "application/json".to_owned())];
         if let (Some(u), Some(p)) = (self.cfg.user.as_ref(), self.cfg.pass.as_ref()) {
-            req = req.basic_auth(u, Some(p));
+            use base64::Engine as _;
+            let raw = base64::engine::general_purpose::STANDARD.encode(format!("{u}:{p}"));
+            headers.push(("authorization".to_owned(), format!("Basic {raw}")));
         }
-        let resp = req.send().await?;
-        if !resp.status().is_success() {
-            return Err(format!("SMSGateway respondeu HTTP {}", resp.status()).into());
+        let (status, _) =
+            crate::outbound::guarded_post(&self.cfg.url, &headers, body, &sms_policy()).await?;
+        if !(200..300).contains(&status) {
+            return Err(format!("SMSGateway respondeu HTTP {status}").into());
         }
         Ok(())
     }

@@ -44,6 +44,7 @@ jobs:
           ./scripts/scan-secrets.sh
           ./scripts/check-english-docs.sh
           ./scripts/check-authz-org-scope.sh
+          ./scripts/check-outbound-guard.sh
 
   test:
     runs-on: ubuntu-latest
