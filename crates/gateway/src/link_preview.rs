@@ -369,6 +369,25 @@ pub async fn card_for(db: &sqlx::PgPool, object_uri: &str) -> Option<PreviewCard
     .unwrap_or(None)
 }
 
+/// Is this a link back to our own instance?
+///
+/// Found in production: our own hostname resolves to `127.0.1.1` inside the pod, so a
+/// self-link is refused by the SSRF guard — correctly, but it fills the log with
+/// alarming "refusing to dial" lines for something entirely benign. A card for our own
+/// page is redundant anyway: the reader is already here, and we hold that data locally.
+#[must_use]
+pub fn is_self_link(url: &str, public_origin: &str) -> bool {
+    let host_of = |u: &str| {
+        reqwest::Url::parse(u)
+            .ok()
+            .and_then(|p| p.host_str().map(str::to_ascii_lowercase))
+    };
+    match (host_of(url), host_of(public_origin)) {
+        (Some(a), Some(b)) => a == b,
+        _ => false,
+    }
+}
+
 /// Kick off a preview resolution in the background for a freshly-stored note.
 ///
 /// Spawned rather than awaited: posting must not wait on a third party's server, and
@@ -377,6 +396,11 @@ pub fn spawn_for_note(db: &sqlx::PgPool, object_uri: &str, content: &str) {
     let Some(url) = extract_first_url(content) else {
         return;
     };
+    if let Ok(origin) = std::env::var("PUBLIC_ORIGIN") {
+        if is_self_link(&url, &origin) {
+            return;
+        }
+    }
     let db = db.clone();
     let object_uri = object_uri.to_owned();
     tokio::spawn(async move {
@@ -417,6 +441,9 @@ pub async fn backfill(db: &sqlx::PgPool, limit: i64) -> u64 {
         // The outbox stores the ACTIVITY id; the feed keys cards by the OBJECT id.
         let uri = object_uri.replace("/activities/note-", "/objects/");
         if let Some(url) = extract_first_url(&content) {
+            if std::env::var("PUBLIC_ORIGIN").is_ok_and(|o| is_self_link(&url, &o)) {
+                continue;
+            }
             resolve_and_attach(db, &uri, &url).await;
             done += 1;
         }
@@ -514,6 +541,26 @@ mod tests {
             meta_content(html, "og:title").as_deref(),
             Some(r#"Lula & Bolsonaro: o "debate""#)
         );
+    }
+
+    #[test]
+    fn a_link_to_our_own_instance_is_not_fetched() {
+        let origin = "https://democracia.social.br";
+        assert!(is_self_link(
+            "https://democracia.social.br/perfil/?u=x",
+            origin
+        ));
+        assert!(is_self_link(
+            "https://DEMOCRACIA.SOCIAL.BR/propostas/1",
+            origin
+        ));
+        assert!(!is_self_link("https://youtu.be/abc", origin));
+        // A lookalike host is NOT us.
+        assert!(!is_self_link(
+            "https://democracia.social.br.evil.com/x",
+            origin
+        ));
+        assert!(!is_self_link("nao-e-url", origin));
     }
 
     #[test]
