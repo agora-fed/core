@@ -41,6 +41,13 @@ use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+/// Whether the `id_token` signature is actually verified against gov.br's JWKS.
+///
+/// `false`, and the callback refuses while it is. Flipping this to `true` without
+/// implementing the JWKS check (issue #7) re-opens an authentication path that
+/// accepts any syntactically valid JWT with an attacker-chosen `sub`.
+const ID_TOKEN_IS_VERIFIED: bool = false;
+
 /// Routes mounted at the gateway ROOT (outside `/api/v1`) — gov.br requires
 /// that `redirect_uri` be exactly `<origin>/auth/govbr/callback`.
 pub fn root_routes(state: AppState) -> Router<()> {
@@ -194,9 +201,25 @@ async fn callback(
         }
     };
 
-    // 2. Decode the id_token — in this first slice, without cryptographic verification
-    // against the JWKS (left for the next slice). gov.br is the only signer +
-    // TLS already guarantees transport integrity. The nonce still has to match.
+    // DISABLED (issue #7). The `id_token` below is DECODED, never cryptographically
+    // VERIFIED against gov.br's JWKS — the signature is not checked at all. The
+    // original note argued that TLS plus "gov.br is the only signer" made that
+    // acceptable; it does not. Anything that reaches this handler with a
+    // syntactically valid JWT gets a session, and `sub` is attacker-chosen.
+    //
+    // The flow was already inert in practice (no GOVBR_CLIENT_ID in production ⇒
+    // 503 before this point), which made the hole LATENT: setting two environment
+    // variables would have silently enabled an authentication path that trusts an
+    // unverified token. The product decision (2026-08-06) is that gov.br is not
+    // being pursued, so rather than leave that armed, the callback refuses here.
+    //
+    // To revive gov.br: implement JWKS verification (issue #7) and delete this
+    // block — NOT the other way round.
+    if !ID_TOKEN_IS_VERIFIED {
+        tracing::error!("gov.br callback refused: id_token verification is unimplemented (#7)");
+        return Redirect::to("/entrar?govbr_erro=indisponivel").into_response();
+    }
+
     let claims = match decode_id_token(&token_resp.id_token) {
         Ok(c) => c,
         Err(err) => {
