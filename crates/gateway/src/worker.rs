@@ -465,6 +465,9 @@ pub fn spawn(state: AppState) {
     // Bound the inbound-activity idempotency logs (issue #10) — they had no TTL.
     tokio::spawn(inbox_seen_retention_loop(state.clone()));
 
+    // Resolve preview cards for notes stored before the feature existed (0680).
+    tokio::spawn(link_preview_backfill_loop(state.clone()));
+
     // Proposal delivery retry: resends the e-mails (author/office) that did NOT
     // go out because SMTP failed on the 1st attempt — the send is fire-and-forget and the
     // event cursor advances even on failure, so without this the e-mail vanishes. Idempotent
@@ -780,6 +783,25 @@ pub async fn prune_inbox_seen(
         .execute(db)
         .await
         .map(|r| r.rows_affected())
+}
+
+/// Resolves link preview cards for notes that predate the feature (0680).
+///
+/// A small batch every 10 minutes rather than one big pass: each item is an outbound
+/// fetch to a third party, and the backlog is finite — it drains and then every tick
+/// is one cheap indexed SELECT that finds nothing.
+async fn link_preview_backfill_loop(state: AppState) {
+    /// Notes per tick. Small enough that the backfill never competes with live traffic.
+    const BATCH: i64 = 20;
+    let mut ticker = interval(Duration::from_secs(10 * 60));
+    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        ticker.tick().await;
+        let done = crate::link_preview::backfill(&state.db, BATCH).await;
+        if done > 0 {
+            tracing::info!(resolved = done, "link preview backfill tick");
+        }
+    }
 }
 
 /// Walks every account with the `auto_delete_notes_older_than_days` preference

@@ -384,6 +384,46 @@ pub fn spawn_for_note(db: &sqlx::PgPool, object_uri: &str, content: &str) {
     });
 }
 
+/// Resolve cards for notes that predate this feature, a bounded batch at a time.
+///
+/// Without this, every note already in the database stays card-less forever: the
+/// resolution only fires when a note is STORED, and those were stored before the
+/// feature existed. The reported case — a YouTube link posted before today — is
+/// exactly this.
+///
+/// Reads both sides (local outbox payload and remote timeline HTML), skips anything
+/// that already has a card row, and stops at `limit`. Returns how many it attempted.
+pub async fn backfill(db: &sqlx::PgPool, limit: i64) -> u64 {
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        r"SELECT object_uri, content FROM (
+              SELECT (o.activity_id) AS object_uri,
+                     COALESCE(o.payload #>> '{object,content}', '') AS content
+                FROM federation_outbox_entry o
+              UNION ALL
+              SELECT t.object_uri, t.content_html
+                FROM federation_timeline_entry t
+          ) n
+          WHERE n.content ILIKE '%http%'
+            AND NOT EXISTS (SELECT 1 FROM note_link_preview p WHERE p.object_uri = n.object_uri)
+          LIMIT $1",
+    )
+    .bind(limit)
+    .fetch_all(db)
+    .await
+    .unwrap_or_default();
+
+    let mut done = 0u64;
+    for (object_uri, content) in rows {
+        // The outbox stores the ACTIVITY id; the feed keys cards by the OBJECT id.
+        let uri = object_uri.replace("/activities/note-", "/objects/");
+        if let Some(url) = extract_first_url(&content) {
+            resolve_and_attach(db, &uri, &url).await;
+            done += 1;
+        }
+    }
+    done
+}
+
 /// Unused today, kept so the id type stays visible to callers that build notes.
 #[allow(dead_code)]
 fn _type_anchor(_id: Uuid) {}
