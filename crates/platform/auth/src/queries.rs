@@ -404,8 +404,8 @@ pub async fn insert_local_follow_if_absent(
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"INSERT INTO federation_follow
-               (id, citizen_id, direction, remote_actor_url, remote_inbox_url, accepted_at, created_at)
-           SELECT $1, $2, 'outbound', $3, $4, $5, $5
+               (id, org_id, citizen_id, direction, remote_actor_url, remote_inbox_url, accepted_at, created_at)
+           SELECT $1, (SELECT org_id FROM citizen WHERE id = $2), $2, 'outbound', $3, $4, $5, $5
            WHERE NOT EXISTS (
                SELECT 1 FROM federation_follow
                WHERE citizen_id = $2 AND direction = 'outbound' AND remote_actor_url = $3
@@ -766,9 +766,9 @@ pub(crate) async fn insert_inbound_follow<'e, E: PgExecutor<'e>>(
     let r = sqlx::query!(
         r#"
         INSERT INTO federation_follow
-            (id, citizen_id, direction, remote_actor_url, remote_inbox_url,
+            (id, org_id, citizen_id, direction, remote_actor_url, remote_inbox_url,
              follow_activity_id, accepted_at, created_at)
-        VALUES ($1, $2, 'inbound', $3, $4, $5, NULL, $6)
+        VALUES ($1, (SELECT org_id FROM citizen WHERE id = $2), $2, 'inbound', $3, $4, $5, NULL, $6)
         ON CONFLICT (citizen_id, direction, remote_actor_url) DO UPDATE
             SET remote_inbox_url    = EXCLUDED.remote_inbox_url,
                 follow_activity_id  = EXCLUDED.follow_activity_id
@@ -873,9 +873,9 @@ pub(crate) async fn insert_outbox_entry<'e, E: PgExecutor<'e>>(
     sqlx::query(
         r"
         INSERT INTO federation_outbox_entry
-            (id, citizen_id, activity_id, kind, visibility, payload, created_at,
+            (id, org_id, citizen_id, activity_id, kind, visibility, payload, created_at,
              in_reply_to_uri, sensitive, spoiler_text)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        VALUES ($1, (SELECT org_id FROM citizen WHERE id = $2), $2, $3, $4, $5, $6, $7, $8, $9, $10)
         ",
     )
     .bind(id)
@@ -905,8 +905,8 @@ pub(crate) async fn insert_note_hashtag<'e, E: PgExecutor<'e>>(
     sqlx::query(
         r"
         INSERT INTO note_hashtag
-            (id, object_uri, tag_normalized, tag_original, created_at)
-        VALUES ($1, $2, $3, $4, $5)
+            (id, org_id, object_uri, tag_normalized, tag_original, created_at)
+        VALUES ($1, (SELECT id FROM org ORDER BY created_at LIMIT 1), $2, $3, $4, $5)
         ON CONFLICT (object_uri, tag_normalized) DO NOTHING
         ",
     )
@@ -1237,9 +1237,9 @@ pub(crate) async fn upsert_outbound_follow<'e, E: PgExecutor<'e>>(
     let row = sqlx::query!(
         r#"
         INSERT INTO federation_follow
-            (id, citizen_id, direction, remote_actor_url, remote_inbox_url,
+            (id, org_id, citizen_id, direction, remote_actor_url, remote_inbox_url,
              follow_activity_id, accepted_at, created_at)
-        VALUES ($1, $2, 'outbound', $3, $4, $5, NULL, $6)
+        VALUES ($1, (SELECT org_id FROM citizen WHERE id = $2), $2, 'outbound', $3, $4, $5, NULL, $6)
         ON CONFLICT (citizen_id, direction, remote_actor_url) DO UPDATE
             SET remote_inbox_url   = EXCLUDED.remote_inbox_url,
                 follow_activity_id = EXCLUDED.follow_activity_id

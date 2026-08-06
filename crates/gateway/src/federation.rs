@@ -3963,9 +3963,9 @@ async fn do_follow_remote(
     // Persiste outbound pending.
     let _ = sqlx::query(
         r"INSERT INTO federation_follow
-            (id, citizen_id, direction, remote_actor_url, remote_inbox_url,
+            (id, org_id, citizen_id, direction, remote_actor_url, remote_inbox_url,
              activity_id, created_at)
-          VALUES ($1, $2, 'outbound', $3, $4, $5, now())
+          VALUES ($1, (SELECT org_id FROM citizen WHERE id = $2), $2, 'outbound', $3, $4, $5, now())
           ON CONFLICT (citizen_id, direction, remote_actor_url) DO NOTHING",
     )
     .bind(uuid::Uuid::now_v7())

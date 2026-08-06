@@ -355,10 +355,10 @@ pub async fn upsert_timeline_entry(
     sqlx::query(
         r"
         INSERT INTO federation_timeline_entry
-            (id, object_uri, actor_url, actor_handle, actor_display_name, actor_avatar_url,
+            (id, org_id, object_uri, actor_url, actor_handle, actor_display_name, actor_avatar_url,
              content_html, published_at, received_at,
              in_reply_to_uri, sensitive, spoiler_text)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        VALUES ($1, (SELECT id FROM org ORDER BY created_at LIMIT 1), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         ON CONFLICT (object_uri) DO NOTHING
         ",
     )
@@ -487,8 +487,8 @@ pub async fn upsert_hashtag(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r"
-        INSERT INTO note_hashtag (id, object_uri, tag_normalized, tag_original, created_at)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO note_hashtag (id, org_id, object_uri, tag_normalized, tag_original, created_at)
+        VALUES ($1, (SELECT id FROM org ORDER BY created_at LIMIT 1), $2, $3, $4, $5)
         ON CONFLICT (object_uri, tag_normalized) DO NOTHING
         ",
     )

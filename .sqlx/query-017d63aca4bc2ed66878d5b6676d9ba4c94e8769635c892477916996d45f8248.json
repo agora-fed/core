@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO federation_follow\n               (id, org_id, citizen_id, direction, remote_actor_url, remote_inbox_url, accepted_at, created_at)\n           SELECT $1, (SELECT org_id FROM citizen WHERE id = $2), $2, 'outbound', $3, $4, $5, $5\n           WHERE NOT EXISTS (\n               SELECT 1 FROM federation_follow\n               WHERE citizen_id = $2 AND direction = 'outbound' AND remote_actor_url = $3\n           )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "017d63aca4bc2ed66878d5b6676d9ba4c94e8769635c892477916996d45f8248"
+}

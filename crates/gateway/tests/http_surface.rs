@@ -4303,6 +4303,95 @@ async fn module_gate_does_not_cache_a_failed_lookup() {
 }
 
 // ---------------------------------------------------------------------------
+// TENANT SCOPE — the federation tables now carry an org (issue #14, phase 1)
+//
+// These four tables shipped with NO org column, so isolation could not be
+// enforced even in principle: there was nothing to filter on. Migration 0681
+// added `org_id NOT NULL`, which is the FOUNDATION — Row-Level Security is
+// explicitly not part of this phase (see the migration header for why).
+//
+// What these pin is that the column is populated CORRECTLY and cannot be
+// skipped, because a NOT NULL that every INSERT satisfies with the wrong value
+// buys nothing.
+// ---------------------------------------------------------------------------
+
+/// A follow row inherits the org of the citizen that owns it — derived, not passed,
+/// so it cannot disagree with its owner.
+#[tokio::test]
+async fn a_follow_inherits_the_org_of_its_owner() {
+    let (_, st) = app().await;
+    let org_b = Uuid::now_v7();
+    sqlx::query("INSERT INTO org (id, slug, name, created_at) VALUES ($1, $2, 'Org B', $3)")
+        .bind(org_b)
+        .bind(format!("org-{}", org_b.simple()))
+        .bind(Utc::now())
+        .execute(&st.db)
+        .await
+        .expect("seed org B");
+    let (_, citizen_b, _) = seed_session_in_org(&st.db, org_b).await;
+
+    let remote = format!("https://remote.example/users/u{}", Uuid::now_v7().simple());
+    sqlx::query(
+        "INSERT INTO federation_follow
+             (id, org_id, citizen_id, direction, remote_actor_url, remote_inbox_url, created_at)
+         VALUES ($1, (SELECT org_id FROM citizen WHERE id = $2), $2, 'outbound', $3, $4, now())",
+    )
+    .bind(Uuid::now_v7())
+    .bind(citizen_b)
+    .bind(&remote)
+    .bind("https://remote.example/inbox")
+    .execute(&st.db)
+    .await
+    .expect("insert follow");
+
+    let stored: Uuid =
+        sqlx::query_scalar("SELECT org_id FROM federation_follow WHERE remote_actor_url = $1")
+            .bind(&remote)
+            .fetch_one(&st.db)
+            .await
+            .unwrap();
+    assert_eq!(stored, org_b, "the follow must belong to its owner's org");
+
+    // And a query scoped to the OTHER org must not see it — the property the
+    // column exists to make expressible at all.
+    let visible_in_a: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM federation_follow WHERE remote_actor_url = $1 AND org_id = $2",
+    )
+    .bind(&remote)
+    .bind(uuid::uuid!("11111111-1111-1111-1111-111111111111"))
+    .fetch_one(&st.db)
+    .await
+    .unwrap();
+    assert_eq!(visible_in_a, 0, "org A must not see org B's follow");
+}
+
+/// The NOT NULL is load-bearing: an INSERT that forgets the org is refused by the
+/// database, so a row can never become unattributable.
+#[tokio::test]
+async fn an_insert_without_an_org_is_refused_by_the_database() {
+    let (_, st) = app().await;
+    let (_, citizen, _) = seed_session(&st.db).await;
+
+    for sql in [
+        "INSERT INTO federation_follow (id, citizen_id, direction, remote_actor_url, created_at)
+         VALUES ($1, $2, 'outbound', 'https://x.example/u', now())",
+        "INSERT INTO federation_outbox_entry
+             (id, citizen_id, activity_id, kind, visibility, payload, created_at)
+         VALUES ($1, $2, 'https://x.example/a', 'Create', 'public', '{}'::jsonb, now())",
+    ] {
+        let err = sqlx::query(sql)
+            .bind(Uuid::now_v7())
+            .bind(citizen)
+            .execute(&st.db)
+            .await;
+        assert!(
+            err.is_err(),
+            "an INSERT without org_id must be refused, not silently accepted"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // SECURITY — admin authority stops at the org boundary (issue #8)
 //
 // The gate used to be `EXISTS(... WHERE citizen_id=$1 ...)` with no org filter,
