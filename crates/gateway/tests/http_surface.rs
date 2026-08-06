@@ -3752,7 +3752,17 @@ async fn representative_daily_sweep_is_idempotent_and_consolidated() {
     let mandate = seed_rep_mandate(&st.db, org, "Dep. Sweep").await;
 
     // Two citizens tagged YESTERDAY (the sweep's window).
-    let yesterday = Utc::now() - Duration::hours(26);
+    //
+    // Anchored to the sweep's own definition of "yesterday" — the CALENDAR day —
+    // and placed at midday inside it. The previous `Utc::now() - 26h` only lands on
+    // that day when the current UTC hour is >= 02:00: run between 00:00 and 02:00
+    // UTC it fell a day earlier than the sweep looks, and the test failed. That is
+    // a two-hour window of red every single day, and it caught us live at 00:04 UTC.
+    let yesterday = (Utc::now() - Duration::days(1))
+        .date_naive()
+        .and_hms_opt(12, 0, 0)
+        .expect("midday is a valid time")
+        .and_utc();
     for _ in 0..2 {
         let other = Uuid::now_v7();
         sqlx::query(

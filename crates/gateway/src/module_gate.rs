@@ -145,6 +145,20 @@ pub fn routes(state: AppState) -> Router<()> {
         .with_state(state)
 }
 
+async fn list_modules(State(state): State<AppState>, Path(org): Path<Uuid>) -> Response {
+    let mut out = Vec::with_capacity(module_catalog::CATALOG.len());
+    for m in module_catalog::CATALOG {
+        out.push(ModuleStateDto {
+            id: m.id.to_owned(),
+            title: m.title.to_owned(),
+            active: module_active(&state, org, m).await,
+            core: m.core,
+            gateable: m.gateable,
+        });
+    }
+    (StatusCode::OK, Json(ApiResponse::ok(out))).into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -214,18 +228,4 @@ mod tests {
             );
         }
     }
-}
-
-async fn list_modules(State(state): State<AppState>, Path(org): Path<Uuid>) -> Response {
-    let mut out = Vec::with_capacity(module_catalog::CATALOG.len());
-    for m in module_catalog::CATALOG {
-        out.push(ModuleStateDto {
-            id: m.id.to_owned(),
-            title: m.title.to_owned(),
-            active: module_active(&state, org, m).await,
-            core: m.core,
-            gateable: m.gateable,
-        });
-    }
-    (StatusCode::OK, Json(ApiResponse::ok(out))).into_response()
 }
