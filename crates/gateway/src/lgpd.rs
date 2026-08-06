@@ -229,6 +229,35 @@ async fn delete_account(State(state): State<AppState>, headers: HeaderMap) -> Re
         return storage(err);
     }
     // 4. Push subs.
+    // Credential and identifier material that survived erasure before (issue #16).
+    // These are NOT accountability records — they are keys and copies, and a person
+    // who asked to be forgotten should not leave behind a working second factor.
+    //
+    // Deliberately NOT here: votes, comments, proposals and the moderation record.
+    // Those are other people's context and the platform's own acts; LGPD art. 16
+    // covers retaining them, and erasing them would rewrite public deliberation
+    // rather than protect a person.
+    for table in [
+        // Working 2FA recovery codes.
+        "totp_recovery_code",
+        // The ActivityPub signing key — whoever holds it can speak as this actor.
+        "citizen_actor_key",
+        // A copy of the phone number plus the OTP hash.
+        "phone_otp",
+        // Reset tokens carry a request IP alongside the token.
+        "auth_password_reset",
+        // Live API credentials.
+        "oauth_access_token",
+        "oauth_authorization_code",
+        // Push identifiers tie the account to a physical device.
+        "notify_device_token",
+    ] {
+        // The table name comes from this literal list, never from input.
+        let sql = format!("DELETE FROM {table} WHERE citizen_id = $1");
+        if let Err(err) = sqlx::query(&sql).bind(cid).execute(&mut *tx).await {
+            return storage(err);
+        }
+    }
     if let Err(err) = sqlx::query("DELETE FROM notify_web_push_subscription WHERE citizen_id = $1")
         .bind(cid)
         .execute(&mut *tx)
