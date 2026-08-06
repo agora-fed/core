@@ -4325,6 +4325,119 @@ async fn module_gate_does_not_cache_a_failed_lookup() {
 }
 
 // ---------------------------------------------------------------------------
+// LGPD — export and erasure derive from the PII registry (issue #16)
+// ---------------------------------------------------------------------------
+
+/// THE GUARD. Every column of `citizen` must be classified in the registry.
+///
+/// Adding a column to the schema without saying whether it is personal data now FAILS
+/// HERE, instead of silently leaking through the old blocklist export or silently
+/// surviving erasure. This is the test the issue asks for by name, and it is the only
+/// one that keeps the other two honest as the schema grows.
+#[tokio::test]
+async fn every_citizen_column_is_classified_in_the_pii_registry() {
+    let (_, st) = app().await;
+    let columns: Vec<String> = sqlx::query_scalar(
+        "SELECT column_name FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'citizen'
+          ORDER BY ordinal_position",
+    )
+    .fetch_all(&st.db)
+    .await
+    .expect("read the live schema");
+    assert!(!columns.is_empty(), "the citizen table must exist");
+
+    let known: std::collections::HashSet<&str> = dsoc_gateway::pii_registry::CITIZEN
+        .iter()
+        .map(|(n, _)| *n)
+        .collect();
+
+    let unclassified: Vec<&String> = columns
+        .iter()
+        .filter(|c| !known.contains(c.as_str()))
+        .collect();
+    assert!(
+        unclassified.is_empty(),
+        "columns present in the schema but not in the PII registry: {unclassified:?}.\n\
+         Classify each in crates/gateway/src/pii_registry.rs — is it personal data \
+         (ExportAndErase), a record the platform retains (ExportOnly), a secret \
+         (SecretErase), or structural (Internal)? Leaving it out means it either leaks \
+         through the export or survives an erasure request."
+    );
+
+    // The reverse too: a registry entry for a column that no longer exists is a lie
+    // that would make the generated SQL fail at runtime.
+    let live: std::collections::HashSet<&str> = columns.iter().map(String::as_str).collect();
+    let stale: Vec<&str> = known
+        .iter()
+        .copied()
+        .filter(|n| !live.contains(n))
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "registry names columns that no longer exist: {stale:?}"
+    );
+}
+
+/// Erasure actually removes what the registry says it removes — run against a citizen
+/// with every erasable field populated.
+#[tokio::test]
+async fn erasure_leaves_no_residue_in_the_citizen_row() {
+    let (_, st) = app().await;
+    let (_, citizen, _) = seed_session(&st.db).await;
+
+    // Populate every erasable column that a test can set.
+    sqlx::query(
+        "UPDATE citizen SET display_name='Fulana', bio='bio', handle=$2, legal_name='Fulana de Tal',
+             gender='mulher', uf='SP', municipio_ibge=3550308, birth_date='1990-01-01',
+             titulo_last4='1234', phone_last4='4321', totp_enabled_at=now(),
+             phone_verified_at=now(), titulo_status='validated', party_sigla='PT',
+             totp_secret_enc='\\x00'::bytea, phone_enc='\\x00'::bytea,
+             titulo_enc='\\x00'::bytea, titulo_hmac='\\x00'::bytea, oidc_subject=$3
+           WHERE id = $1",
+    )
+    .bind(citizen)
+    .bind(format!("h{}", &citizen.simple().to_string()[..10]))
+    .bind(format!("sub-{}", citizen.simple()))
+    .execute(&st.db)
+    .await
+    .expect("populate");
+
+    // The generated clause is what the handler runs.
+    let sql = format!(
+        "UPDATE citizen SET deleted_at = now(), {} WHERE id = $1",
+        dsoc_gateway::pii_registry::erase_set_clause()
+    );
+    sqlx::query(&sql)
+        .bind(citizen)
+        .execute(&st.db)
+        .await
+        .expect("erasure must not abort — a privacy control that refuses to run is broken");
+
+    // Every erasable column is now empty.
+    for (name, handling) in dsoc_gateway::pii_registry::CITIZEN {
+        if !handling.is_erased() || dsoc_gateway::pii_registry::ERASE_TO_FALSE.contains(name) {
+            continue;
+        }
+        let still_set: bool = sqlx::query_scalar(&format!(
+            "SELECT {name} IS NOT NULL FROM citizen WHERE id = $1"
+        ))
+        .bind(citizen)
+        .fetch_one(&st.db)
+        .await
+        .unwrap();
+        assert!(!still_set, "LGPD REGRESSION: {name} survived erasure");
+    }
+
+    let public: bool = sqlx::query_scalar("SELECT is_public FROM citizen WHERE id = $1")
+        .bind(citizen)
+        .fetch_one(&st.db)
+        .await
+        .unwrap();
+    assert!(!public, "erasure must unpublish the profile");
+}
+
+// ---------------------------------------------------------------------------
 // PII AT REST — identifiers must not be readable in a dump (issue #15, 0682)
 // ---------------------------------------------------------------------------
 

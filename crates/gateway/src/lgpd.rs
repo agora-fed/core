@@ -73,12 +73,17 @@ async fn export(State(state): State<AppState>, headers: HeaderMap) -> Response {
 }
 
 async fn build_export(db: &PgPool, citizen_id: Uuid) -> Result<serde_json::Value, sqlx::Error> {
-    // Citizen row completo.
-    let citizen: serde_json::Value =
-        sqlx::query_scalar(r"SELECT to_jsonb(c) - 'oidc_subject' FROM citizen c WHERE c.id = $1")
-            .bind(citizen_id)
-            .fetch_one(db)
-            .await?;
+    // An ALLOWLIST built from the PII registry (issue #16). This used to be
+    // `to_jsonb(c) - 'oidc_subject'` — a one-field blocklist, so every column added
+    // after it was written was exported by default, the TOTP secret included.
+    let sql = format!(
+        "SELECT {} FROM citizen c WHERE c.id = $1",
+        crate::pii_registry::export_json_object()
+    );
+    let citizen: serde_json::Value = sqlx::query_scalar(&sql)
+        .bind(citizen_id)
+        .fetch_one(db)
+        .await?;
 
     // Credentials (e-mail only; never the password hash).
     let credentials: Vec<serde_json::Value> = sqlx::query_scalar(
@@ -197,28 +202,14 @@ async fn delete_account(State(state): State<AppState>, headers: HeaderMap) -> Re
         Err(err) => return storage(err),
     };
     // 1. Mark deleted_at + wipe editable PII on citizen.
-    if let Err(err) = sqlx::query(
-        r"UPDATE citizen
-             SET deleted_at = now(),
-                 display_name = NULL,
-                 bio = NULL,
-                 handle = NULL,
-                 avatar_object_key = NULL,
-                 cover_object_key = NULL,
-                 titulo_enc = NULL,
-                 titulo_hmac = NULL,
-                 titulo_last4 = NULL,
-                 titulo_status = NULL,
-                 govbr_sub = NULL,
-                 legal_name = NULL,
-                 is_public = false,
-                 profile_updated_at = now()
-           WHERE id = $1",
-    )
-    .bind(cid)
-    .execute(&mut *tx)
-    .await
-    {
+    // Generated from the PII registry (issue #16). The hand-written list this
+    // replaces had fallen behind the schema: phone, TOTP, birth date and domicile all
+    // survived a deletion request.
+    let erase_sql = format!(
+        "UPDATE citizen SET deleted_at = now(), profile_updated_at = now(), {} WHERE id = $1",
+        crate::pii_registry::erase_set_clause()
+    );
+    if let Err(err) = sqlx::query(&erase_sql).bind(cid).execute(&mut *tx).await {
         return storage(err);
     }
     // 2. Limpa credenciais (email, cpf, senha_hash).

@@ -861,6 +861,25 @@ async fn signup_cleanup_loop(state: AppState, period_ms: u64, cutoff_days: i64) 
             Err(err) => tracing::warn!(error = ?err, "signup_verify cleanup falhou"),
         }
         // login_attempt: a short TTL (the same cutoff) — it only matters for rate + audit.
+        // Spent and expired OTPs (issue #16): `phone_otp` held a copy of the phone
+        // number and was never purged, so a row outlived the reason it existed. The
+        // number is encrypted since 0682, but the right amount of PII to keep after
+        // the code is used is none.
+        match sqlx::query(
+            "DELETE FROM phone_otp \
+              WHERE expires_at < now() - make_interval(days => $1::int) \
+                 OR (used_at IS NOT NULL AND used_at < now() - make_interval(days => $1::int))",
+        )
+        .bind(i32::try_from(cutoff_days).unwrap_or(7))
+        .execute(&state.db)
+        .await
+        {
+            Ok(r) if r.rows_affected() > 0 => {
+                tracing::info!(purged = r.rows_affected(), "phone_otp retention tick");
+            }
+            Ok(_) => {}
+            Err(err) => tracing::warn!(error = ?err, "phone_otp retention failed"),
+        }
         match dsoc_auth::signup_verify::SignupVerifyService::cleanup_login_attempts_via(
             &state,
             cutoff_days,
