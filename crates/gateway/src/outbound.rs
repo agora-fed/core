@@ -231,12 +231,19 @@ pub fn validate_url(raw: &str, policy: &OutboundPolicy) -> Result<Url, OutboundE
     Ok(url)
 }
 
-/// Resolve `url`'s host and return the addresses, having rejected the request if ANY
-/// of them is non-routable.
+/// Resolve `url`'s host and return only the ROUTABLE addresses.
 ///
-/// All-or-nothing on purpose: a name that resolves to both a public and a private
-/// address is exactly the DNS-rebinding shape, and picking the "good" one would be
-/// racing the attacker's TTL.
+/// This filters rather than refusing outright, and the distinction was learned the
+/// hard way: `organica.social`, a real federation peer on the same sovereign network,
+/// is dual-stack with a PRIVATE IPv4 (10.88.5.1) and a GLOBAL IPv6. An all-or-nothing
+/// rule refused the whole name and silently broke federation with it.
+///
+/// Filtering is not weaker here, because the result is PINNED: the connection dials
+/// only addresses that passed, so the private one is never reachable. DNS rebinding is
+/// defeated by the pinning, not by refusing names that also carry a private record —
+/// and refusing them breaks every dual-stack peer behind NAT.
+///
+/// A host with NO routable address left is still refused.
 async fn resolve_checked(url: &Url) -> Result<Vec<SocketAddr>, OutboundError> {
     let host = url.host_str().ok_or(OutboundError::NoHost)?;
     let port = url
@@ -250,12 +257,23 @@ async fn resolve_checked(url: &Url) -> Result<Vec<SocketAddr>, OutboundError> {
     if addrs.is_empty() {
         return Err(OutboundError::Unresolvable);
     }
-    for addr in &addrs {
-        if is_blocked_ip(addr.ip()) {
-            return Err(OutboundError::BlockedAddress(addr.ip()));
-        }
+    let (routable, blocked): (Vec<SocketAddr>, Vec<SocketAddr>) =
+        addrs.into_iter().partition(|a| !is_blocked_ip(a.ip()));
+    if routable.is_empty() {
+        // Report one of them so the log names what was refused.
+        let first = blocked
+            .first()
+            .map_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED), |a| a.ip());
+        return Err(OutboundError::BlockedAddress(first));
     }
-    Ok(addrs)
+    if !blocked.is_empty() {
+        tracing::debug!(
+            host = url.host_str().unwrap_or_default(),
+            dropped = blocked.len(),
+            "dropped non-routable addresses; dialling only the routable ones"
+        );
+    }
+    Ok(routable)
 }
 
 /// Build a client pinned to `addrs` for `host`, refusing redirects.
@@ -722,6 +740,34 @@ mod tests {
             .await
             .expect("truncating must succeed");
         assert_eq!(out.len(), 1024);
+    }
+
+    #[test]
+    fn a_dual_stack_host_keeps_only_its_routable_addresses() {
+        // The organica.social case: private IPv4 + global IPv6 on one name. Refusing
+        // the whole name broke federation with a real peer; the routable address must
+        // survive while the private one is dropped from the dial set.
+        let addrs: Vec<SocketAddr> = vec![
+            "10.88.5.1:443".parse().unwrap(),
+            "[2804:710:d0:1003::10]:443".parse().unwrap(),
+        ];
+        let routable: Vec<SocketAddr> = addrs
+            .iter()
+            .copied()
+            .filter(|a| !is_blocked_ip(a.ip()))
+            .collect();
+        assert_eq!(routable.len(), 1);
+        assert!(routable[0].is_ipv6());
+        assert!(is_blocked_ip("10.88.5.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn a_host_with_only_private_addresses_keeps_nothing() {
+        let addrs: Vec<SocketAddr> = vec![
+            "10.0.0.1:443".parse().unwrap(),
+            "[::1]:443".parse().unwrap(),
+        ];
+        assert!(addrs.iter().all(|a| is_blocked_ip(a.ip())));
     }
 
     #[tokio::test]

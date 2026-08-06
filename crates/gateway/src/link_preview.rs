@@ -369,6 +369,15 @@ pub async fn card_for(db: &sqlx::PgPool, object_uri: &str) -> Option<PreviewCard
     .unwrap_or(None)
 }
 
+/// This instance's public origin, with the SAME default the rest of the gateway uses.
+///
+/// Reading `PUBLIC_ORIGIN` directly was a bug: the variable is not set in production,
+/// so the self-link check never fired and every self-link went out to the network to
+/// be refused by the SSRF guard.
+fn our_origin() -> String {
+    std::env::var("PUBLIC_ORIGIN").unwrap_or_else(|_| "https://democracia.social.br".to_owned())
+}
+
 /// Is this a link back to our own instance?
 ///
 /// Found in production: our own hostname resolves to `127.0.1.1` inside the pod, so a
@@ -396,10 +405,8 @@ pub fn spawn_for_note(db: &sqlx::PgPool, object_uri: &str, content: &str) {
     let Some(url) = extract_first_url(content) else {
         return;
     };
-    if let Ok(origin) = std::env::var("PUBLIC_ORIGIN") {
-        if is_self_link(&url, &origin) {
-            return;
-        }
+    if is_self_link(&url, &our_origin()) {
+        return;
     }
     let db = db.clone();
     let object_uri = object_uri.to_owned();
@@ -441,7 +448,7 @@ pub async fn backfill(db: &sqlx::PgPool, limit: i64) -> u64 {
         // The outbox stores the ACTIVITY id; the feed keys cards by the OBJECT id.
         let uri = object_uri.replace("/activities/note-", "/objects/");
         if let Some(url) = extract_first_url(&content) {
-            if std::env::var("PUBLIC_ORIGIN").is_ok_and(|o| is_self_link(&url, &o)) {
+            if is_self_link(&url, &our_origin()) {
                 continue;
             }
             resolve_and_attach(db, &uri, &url).await;
