@@ -52,6 +52,7 @@ pub mod interests;
 pub mod invitations;
 pub mod invite_campaign;
 pub mod lgpd;
+pub mod link_preview;
 pub mod mailer;
 pub mod mastodon_api;
 pub mod mastodon_dto;

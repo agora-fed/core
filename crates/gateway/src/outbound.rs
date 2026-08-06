@@ -95,6 +95,16 @@ pub struct OutboundPolicy {
     pub max_body: usize,
     /// Whole-request timeout.
     pub timeout: Duration,
+    /// Redirect hops to follow, REVALIDATING each one through the full guard.
+    /// Zero (the default) means redirects are refused outright.
+    pub max_redirects: u8,
+    /// At the cap, return what was read instead of failing.
+    ///
+    /// Correct for HTML scraping and WRONG for JSON: the OpenGraph tags live in
+    /// `<head>`, within the first few KB, while a video page's body is megabytes of
+    /// script — refusing the whole response there means no card at all. A truncated
+    /// JSON document, by contrast, is not a document.
+    pub truncate_oversized: bool,
 }
 
 impl Default for OutboundPolicy {
@@ -104,6 +114,8 @@ impl Default for OutboundPolicy {
             allowlist: None,
             max_body: DEFAULT_MAX_BODY,
             timeout: DEFAULT_TIMEOUT,
+            max_redirects: 0,
+            truncate_oversized: false,
         }
     }
 }
@@ -273,9 +285,17 @@ pub const USER_AGENT: &str = concat!("agora-core/", env!("CARGO_PKG_VERSION"));
 /// The declared `Content-Length` is checked first so an oversized reply costs nothing,
 /// but the streamed accounting is what actually enforces the cap — a hostile peer can
 /// simply omit or lie about the header.
-async fn read_capped(resp: reqwest::Response, max_body: usize) -> Result<Vec<u8>, OutboundError> {
-    let declared = resp.content_length();
-    read_capped_stream(resp.bytes_stream(), declared, max_body).await
+async fn read_capped(
+    resp: reqwest::Response,
+    max_body: usize,
+    truncate: bool,
+) -> Result<Vec<u8>, OutboundError> {
+    let declared = if truncate {
+        None
+    } else {
+        resp.content_length()
+    };
+    read_capped_stream(resp.bytes_stream(), declared, max_body, truncate).await
 }
 
 /// The cap itself, over any chunk stream.
@@ -288,15 +308,21 @@ async fn read_capped_stream<S, E>(
     stream: S,
     declared_len: Option<u64>,
     max_body: usize,
+    truncate: bool,
 ) -> Result<Vec<u8>, OutboundError>
 where
     S: futures_util::Stream<Item = Result<bytes::Bytes, E>>,
     E: std::fmt::Display,
 {
-    // A declared length over the cap costs us nothing to refuse up front...
-    if let Some(len) = declared_len {
-        if usize::try_from(len).is_ok_and(|l| l > max_body) {
-            return Err(OutboundError::BodyTooLarge(max_body));
+    // A declared length over the cap costs us nothing to refuse up front — UNLESS we
+    // are truncating, where an oversized page is expected and we want its prefix. The
+    // flag has to govern this check too, or `read_capped_stream` and its caller
+    // disagree about what truncation means.
+    if !truncate {
+        if let Some(len) = declared_len {
+            if usize::try_from(len).is_ok_and(|l| l > max_body) {
+                return Err(OutboundError::BodyTooLarge(max_body));
+            }
         }
     }
     // ...but the streamed accounting is what ENFORCES it, because a hostile peer can
@@ -307,6 +333,11 @@ where
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| OutboundError::Transport(e.to_string()))?;
         if out.len() + chunk.len() > max_body {
+            if truncate {
+                let room = max_body - out.len();
+                out.extend_from_slice(&chunk[..room]);
+                return Ok(out);
+            }
             return Err(OutboundError::BodyTooLarge(max_body));
         }
         out.extend_from_slice(&chunk);
@@ -349,7 +380,72 @@ pub async fn guarded_get(
     if !status.is_success() {
         return Err(OutboundError::Status(status.as_u16()));
     }
-    read_capped(resp, policy.max_body).await
+    read_capped(resp, policy.max_body, policy.truncate_oversized).await
+}
+
+/// GET `raw_url`, following up to `policy.max_redirects` hops and RE-RUNNING the full
+/// guard on every one of them.
+///
+/// This exists because refusing redirects outright is right for federation and wrong
+/// for link previews: `youtu.be/<id>` answers 303, and so does a large share of the
+/// short links people actually paste. reqwest's own redirect policy is not an option
+/// here — it revalidates nothing, so hop 2 could land on `169.254.169.254` having
+/// passed only hop 1's checks. Following manually is what makes each hop cost the
+/// same scrutiny as the first.
+///
+/// # Errors
+/// Returns the [`OutboundError`] of whichever hop was refused, or [`OutboundError::Transport`]
+/// when the chain exceeds the hop budget.
+pub async fn guarded_get_following(
+    raw_url: &str,
+    headers: &[(String, String)],
+    policy: &OutboundPolicy,
+) -> Result<Vec<u8>, OutboundError> {
+    let mut current = raw_url.to_owned();
+    for _ in 0..=policy.max_redirects {
+        let url = validate_url(&current, policy).inspect_err(|err| {
+            tracing::warn!(url = %current, error = %err, "outbound GET refused by the SSRF guard");
+        })?;
+        let addrs = resolve_checked(&url).await.inspect_err(|err| {
+            tracing::warn!(url = %current, error = %err, "outbound GET refused by the SSRF guard");
+        })?;
+        let host = url.host_str().unwrap_or_default().to_owned();
+        let client = pinned_client(&host, &addrs, policy)?;
+
+        let mut req = client.get(url.clone());
+        for (name, value) in headers {
+            req = req.header(name.as_str(), value.as_str());
+        }
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| OutboundError::Transport(e.to_string()))?;
+        let status = resp.status();
+        if status.is_redirection() {
+            let Some(location) = resp
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|v| v.to_str().ok())
+            else {
+                return Err(OutboundError::Status(status.as_u16()));
+            };
+            // A relative Location is resolved against the hop we are on; the result
+            // goes back through validate_url on the next iteration like any other URL.
+            current = url
+                .join(location)
+                .map_err(|_| OutboundError::Malformed)?
+                .to_string();
+            continue;
+        }
+        if !status.is_success() {
+            return Err(OutboundError::Status(status.as_u16()));
+        }
+        return read_capped(resp, policy.max_body, policy.truncate_oversized).await;
+    }
+    Err(OutboundError::Transport(format!(
+        "more than {} redirects",
+        policy.max_redirects
+    )))
 }
 
 /// POST `body` to `raw_url` through the guard, returning `(status, body)`.
@@ -383,7 +479,7 @@ pub async fn guarded_post(
         .await
         .map_err(|e| OutboundError::Transport(e.to_string()))?;
     let status = resp.status().as_u16();
-    let bytes = read_capped(resp, policy.max_body).await?;
+    let bytes = read_capped(resp, policy.max_body, policy.truncate_oversized).await?;
     Ok((status, bytes))
 }
 
@@ -565,7 +661,7 @@ mod tests {
 
     #[tokio::test]
     async fn body_within_the_cap_is_returned_whole() {
-        let out = read_capped_stream(chunks(&[100, 100, 55]), Some(255), 1024)
+        let out = read_capped_stream(chunks(&[100, 100, 55]), Some(255), 1024, false)
             .await
             .unwrap();
         assert_eq!(out.len(), 255);
@@ -573,7 +669,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_oversized_declared_length_is_refused_before_reading() {
-        let err = read_capped_stream(chunks(&[10]), Some(999_999), 1024)
+        let err = read_capped_stream(chunks(&[10]), Some(999_999), 1024, false)
             .await
             .unwrap_err();
         assert_eq!(err, OutboundError::BodyTooLarge(1024));
@@ -583,7 +679,7 @@ mod tests {
     async fn a_lying_content_length_does_not_defeat_the_cap() {
         // The peer declares 10 bytes and then streams 4 KiB. The declared-length
         // short-circuit is an optimisation; the streamed accounting is the control.
-        let err = read_capped_stream(chunks(&[1024, 1024, 1024, 1024]), Some(10), 1024)
+        let err = read_capped_stream(chunks(&[1024, 1024, 1024, 1024]), Some(10), 1024, false)
             .await
             .unwrap_err();
         assert_eq!(err, OutboundError::BodyTooLarge(1024));
@@ -592,7 +688,7 @@ mod tests {
     #[tokio::test]
     async fn an_absent_content_length_does_not_defeat_the_cap() {
         // Chunked transfer encoding declares no length at all.
-        let err = read_capped_stream(chunks(&[600, 600]), None, 1024)
+        let err = read_capped_stream(chunks(&[600, 600]), None, 1024, false)
             .await
             .unwrap_err();
         assert_eq!(err, OutboundError::BodyTooLarge(1024));
@@ -600,12 +696,32 @@ mod tests {
 
     #[tokio::test]
     async fn the_cap_is_a_boundary_not_an_approximation() {
-        assert!(read_capped_stream(chunks(&[1024]), None, 1024)
+        assert!(read_capped_stream(chunks(&[1024]), None, 1024, false)
             .await
             .is_ok());
-        assert!(read_capped_stream(chunks(&[1025]), None, 1024)
+        assert!(read_capped_stream(chunks(&[1025]), None, 1024, false)
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    async fn truncation_returns_the_prefix_instead_of_failing() {
+        // HTML scraping only needs `<head>`; a video page's body is megabytes of
+        // script. Refusing there means no preview card at all.
+        let out = read_capped_stream(chunks(&[600, 600, 600]), None, 1024, true)
+            .await
+            .expect("truncating must succeed");
+        assert_eq!(out.len(), 1024, "exactly the cap, not one byte more");
+    }
+
+    #[tokio::test]
+    async fn truncation_ignores_a_declared_length_over_the_cap() {
+        // The short-circuit on Content-Length must not fire when truncating, or a
+        // large page would be refused before a single byte is read.
+        let out = read_capped_stream(chunks(&[2048]), Some(9_999_999), 1024, true)
+            .await
+            .expect("truncating must succeed");
+        assert_eq!(out.len(), 1024);
     }
 
     #[tokio::test]

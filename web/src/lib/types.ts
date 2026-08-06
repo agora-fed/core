@@ -429,6 +429,8 @@ export interface FeedItemDto {
   spoiler_text?: string | null;
   /** 0.18.0-gamma: media attachments (empty when the note has none). */
   attachments?: MediaAttachmentDto[];
+  /** 0680: link preview card for the note's first link. */
+  card?: LinkPreviewCardDto;
   /** 0.18.0-rc1: when the author edited the note. Absent = never edited. */
   edited_at?: string | null;
   /** 0.18.0-rc1: poll — undefined for regular Notes. */
@@ -436,6 +438,17 @@ export interface FeedItemDto {
 }
 
 /** One media attachment on a Note (image today; video/audio reserved). */
+/** 0680: preview card of the first link in a note. */
+export interface LinkPreviewCardDto {
+  url: string;
+  title?: string | null;
+  description?: string | null;
+  image_url?: string | null;
+  site_name?: string | null;
+  /** `link` | `video` | `photo` */
+  kind: string;
+}
+
 export interface MediaAttachmentDto {
   id: string;
   url: string;

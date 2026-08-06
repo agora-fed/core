@@ -56,6 +56,10 @@ pub struct FeedItemDto {
     /// 0.18.0-rc1: poll DTO when the Note carries a Question, None otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub poll: Option<crate::polls::PollDto>,
+    /// Link preview card for the note's first link (0680). Absent when the note
+    /// carries no link, or when the link yielded nothing worth showing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub card: Option<crate::link_preview::PreviewCard>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -97,6 +101,7 @@ impl From<FeedRow> for FeedItemDto {
             edited_at: r.edited_at,
             attachments: Vec::new(),
             poll: None,
+            card: None,
         }
     }
 }
@@ -114,6 +119,16 @@ pub async fn enrich_with_media(db: &PgPool, items: &mut [FeedItemDto], media_bas
                 it.attachments = v.clone();
             }
         }
+    }
+}
+
+/// Batch-attach link preview cards, the same shape as [`enrich_with_media`].
+///
+/// Read-only: the card is produced when the note is stored, never on the read path —
+/// rendering a feed must not wait on a third party's server.
+pub async fn enrich_with_cards(db: &PgPool, items: &mut [FeedItemDto]) {
+    for it in items.iter_mut() {
+        it.card = crate::link_preview::card_for(db, &it.object_uri).await;
     }
 }
 
@@ -361,6 +376,9 @@ pub async fn upsert_timeline_entry(
     .bind(spoiler_text)
     .execute(db)
     .await?;
+    // A remote note may carry a link too — resolve its card in the background so the
+    // feed can render it. Best-effort: the note is already stored.
+    crate::link_preview::spawn_for_note(db, object_uri, content_html);
     Ok(())
 }
 

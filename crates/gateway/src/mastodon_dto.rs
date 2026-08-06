@@ -340,7 +340,26 @@ impl Status {
             media_attachments: item.attachments.iter().map(MastodonMedia::from).collect(),
             mentions: Vec::new(),
             tags: Vec::new(),
-            card: None,
+            // 0680: the preview card, in Mastodon's own field names so existing
+            // clients (Tusky, Ivory…) render it without knowing anything about us.
+            card: item.card.as_ref().map(|c| {
+                serde_json::json!({
+                    "url": c.url,
+                    "title": c.title.clone().unwrap_or_default(),
+                    "description": c.description.clone().unwrap_or_default(),
+                    "type": c.kind,
+                    "image": c.image_url,
+                    "provider_name": c.site_name.clone().unwrap_or_default(),
+                    "provider_url": "",
+                    "author_name": "",
+                    "author_url": "",
+                    "html": "",
+                    "width": 0,
+                    "height": 0,
+                    "embed_url": "",
+                    "blurhash": null,
+                })
+            }),
             poll: item.poll.as_ref().map(MastodonPoll::from),
             application: None,
             language: None,

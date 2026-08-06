@@ -1533,6 +1533,10 @@ async fn post_my_note(
     {
         Ok((activity_id, fanout)) => {
             let object_id = activity_id.replace("/activities/note-", "/objects/");
+            // Resolve the link preview card in the background (0680): posting must not
+            // wait on a third party's server, and the card appearing a moment later is
+            // the right trade.
+            crate::link_preview::spawn_for_note(&state.db, &object_id, &body.content);
             // 0.18.0-gamma: update alt_text (best-effort, per-id, only when the
             // caller sent a non-empty value) then bind media to the note.
             for (i, mid) in body.media_ids.iter().enumerate() {
@@ -2203,6 +2207,7 @@ async fn get_hashtag_timeline(
     {
         Ok(mut items) => {
             federation_feed::enrich_with_media(&state.db, &mut items, &media_base).await;
+            federation_feed::enrich_with_cards(&state.db, &mut items).await;
             federation_feed::enrich_with_polls(&state.db, &mut items, None).await;
             (
                 StatusCode::OK,
@@ -2455,6 +2460,7 @@ async fn get_thread_context(
     {
         Ok(mut items) => {
             federation_feed::enrich_with_media(&state.db, &mut items, &media_base).await;
+            federation_feed::enrich_with_cards(&state.db, &mut items).await;
             let viewer = viewer_actor_url_of(&state, &caller).await;
             federation_feed::enrich_with_polls(&state.db, &mut items, viewer.as_deref()).await;
             (StatusCode::OK, Json(ApiResponse::ok(items))).into_response()
@@ -2489,6 +2495,7 @@ async fn get_my_feed(
     {
         Ok(mut items) => {
             federation_feed::enrich_with_media(&state.db, &mut items, &media_base).await;
+            federation_feed::enrich_with_cards(&state.db, &mut items).await;
             let viewer = viewer_actor_url_of(&state, &caller).await;
             federation_feed::enrich_with_polls(&state.db, &mut items, viewer.as_deref()).await;
             (StatusCode::OK, Json(ApiResponse::ok(items))).into_response()

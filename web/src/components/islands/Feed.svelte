@@ -40,6 +40,7 @@
   import Menu from '../ui/Menu.svelte';
   import Modal from '../ui/Modal.svelte';
   import MediaGrid from '../social/MediaGrid.svelte';
+  import LinkCard from './LinkCard.svelte';
   import PollView from '../social/PollView.svelte';
 
   const PAGE = 20;
@@ -736,6 +737,12 @@
 
             {#if editingTo !== item.object_uri && item.attachments && item.attachments.length > 0}
               <MediaGrid media={item.attachments} />
+            {/if}
+
+            <!-- 0680: only when the note has no media of its own — an uploaded photo
+                 is the author's, and it outranks a scraped thumbnail. -->
+            {#if editingTo !== item.object_uri && item.card && !(item.attachments && item.attachments.length > 0)}
+              <LinkCard card={item.card} />
             {/if}
 
             {#if editingTo !== item.object_uri && item.poll}

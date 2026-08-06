@@ -415,6 +415,7 @@ async fn get_timeline_home(
         }
     };
     federation_feed::enrich_with_media(&state.db, &mut items, &media_base).await;
+    federation_feed::enrich_with_cards(&state.db, &mut items).await;
     // Poll enrichment scoped to the viewer.
     let viewer = build_account_for_citizen(&state, caller.citizen)
         .await
@@ -493,6 +494,8 @@ async fn get_timeline_public(
                     "pinned": false,
                     "language": null,
                     "poll": null,
+                    // This minimal Status is the public timeline's shape and carries no
+                    // enrichment; the card is served by the full serializer below.
                     "card": null,
                     "application": null,
                 })
@@ -717,6 +720,7 @@ async fn load_status(state: &AppState, id: &str, viewer: Uuid) -> Option<(String
         .await
         .ok()?;
     federation_feed::enrich_with_media(&state.db, &mut items, &media_base).await;
+    federation_feed::enrich_with_cards(&state.db, &mut items).await;
     let host = std::env::var("PUBLIC_HOST").unwrap_or_else(|_| "democracia.social.br".to_owned());
     let viewer_url = build_account_for_citizen(state, CitizenId::from_uuid(viewer))
         .await
@@ -847,6 +851,10 @@ async fn post_status(
     {
         Ok((activity_id, _fanout)) => {
             let object_id = activity_id.replace("/activities/note-", "/objects/");
+            // Resolve the link preview card in the background (0680): posting must not
+            // wait on a third party's server, and the card appearing a moment later is
+            // the right trade.
+            crate::link_preview::spawn_for_note(&state.db, &object_id, &body.status);
             // Media attach + payload patch.
             if !body.media_ids.is_empty() {
                 let mut media_uuids: Vec<Uuid> = Vec::with_capacity(body.media_ids.len());
@@ -1026,6 +1034,7 @@ async fn get_status_context(
         }
     };
     federation_feed::enrich_with_media(&state.db, &mut items, &media_base).await;
+    federation_feed::enrich_with_cards(&state.db, &mut items).await;
     let viewer = build_account_for_citizen(&state, caller.citizen)
         .await
         .map(|a| a.uri);
