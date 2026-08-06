@@ -4377,8 +4377,6 @@ async fn the_totp_secret_is_unreadable_in_the_raw_column() {
 async fn the_cpf_blind_index_enforces_uniqueness_without_the_value() {
     let (_, st) = app().await;
     let org = uuid::uuid!("11111111-1111-1111-1111-111111111111");
-    std::env::set_var("PII_ENCRYPTION_KEY", "chave-de-teste-local");
-
     // A distinct number per run: the test database persists between executions, so a
     // fixed CPF would be permanently taken after the first run and the test would fail
     // on its own leftovers rather than on the property it checks.
@@ -4391,8 +4389,8 @@ async fn the_cpf_blind_index_enforces_uniqueness_without_the_value() {
         &cpf_plain[6..9],
         &cpf_plain[9..11]
     );
-    let idx_a = dsoc_db::pii::blind_index(&cpf_plain).expect("key set");
-    let idx_b = dsoc_db::pii::blind_index(&cpf_formatted).expect("key set");
+    let idx_a = dsoc_db::pii::blind_index_with("chave-de-teste", &cpf_plain).unwrap();
+    let idx_b = dsoc_db::pii::blind_index_with("chave-de-teste", &cpf_formatted).unwrap();
     assert_eq!(idx_a, idx_b, "formatting must not create a second identity");
 
     let mk = |cid: Uuid, idx: &Vec<u8>| {
@@ -4417,7 +4415,6 @@ async fn the_cpf_blind_index_enforces_uniqueness_without_the_value() {
         second.is_err(),
         "SECURITY REGRESSION: the same CPF registered twice — the blind index is not enforcing"
     );
-    std::env::remove_var("PII_ENCRYPTION_KEY");
 }
 
 // ---------------------------------------------------------------------------

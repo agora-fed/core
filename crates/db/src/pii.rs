@@ -78,14 +78,28 @@ pub fn normalize_digits(raw: &str) -> String {
 /// enumeration — the space is 10^11 with a check digit, which is nothing. The key is
 /// what makes the index useless to someone holding only the dump.
 ///
+/// The key is a PARAMETER, not read from the environment in here. Reading it inside
+/// made this a function of hidden global state, and its tests raced each other over
+/// that variable — green locally, red in CI. A pure function has no such failure mode.
+///
 /// # Errors
-/// [`PiiError::NoKey`] when no key is configured.
-pub fn blind_index(raw: &str) -> Result<Vec<u8>, PiiError> {
-    let key = key()?;
+/// [`PiiError::NoKey`] when `key` is blank.
+pub fn blind_index_with(key: &str, raw: &str) -> Result<Vec<u8>, PiiError> {
+    if key.trim().is_empty() {
+        return Err(PiiError::NoKey);
+    }
     let normalized = normalize_digits(raw);
     let mut mac = Hmac::<Sha256>::new_from_slice(key.as_bytes()).map_err(|_| PiiError::NoKey)?;
     mac.update(normalized.as_bytes());
     Ok(mac.finalize().into_bytes().to_vec())
+}
+
+/// [`blind_index_with`] using the configured key.
+///
+/// # Errors
+/// [`PiiError::NoKey`] when no key is configured.
+pub fn blind_index(raw: &str) -> Result<Vec<u8>, PiiError> {
+    blind_index_with(&key()?, raw)
 }
 
 /// The last four digits, which is what the API already shows. Kept in cleartext on
@@ -101,68 +115,52 @@ pub fn last4(raw: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    /// Set the key for one test. Serialised by the `key_guard` mutex because the
-    /// environment is process-global and these tests would otherwise race.
-    fn with_key<T>(k: &str, f: impl FnOnce() -> T) -> T {
-        static GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let _held = GUARD.lock().unwrap_or_else(|p| p.into_inner());
-        std::env::set_var("PII_ENCRYPTION_KEY", k);
-        let out = f();
-        std::env::remove_var("PII_ENCRYPTION_KEY");
-        out
-    }
+    const K: &str = "chave-de-teste";
 
     #[test]
     fn formatting_does_not_change_the_index() {
-        with_key("chave-de-teste", || {
-            let a = blind_index("123.456.789-09").unwrap();
-            let b = blind_index("12345678909").unwrap();
-            assert_eq!(a, b, "the same CPF must index once, however it was typed");
-        });
+        assert_eq!(
+            blind_index_with(K, "123.456.789-09").unwrap(),
+            blind_index_with(K, "12345678909").unwrap(),
+            "the same CPF must index once, however it was typed"
+        );
     }
 
     #[test]
     fn different_identifiers_index_differently() {
-        with_key("chave-de-teste", || {
-            assert_ne!(
-                blind_index("12345678909").unwrap(),
-                blind_index("98765432100").unwrap()
-            );
-        });
+        assert_ne!(
+            blind_index_with(K, "12345678909").unwrap(),
+            blind_index_with(K, "98765432100").unwrap()
+        );
     }
 
     #[test]
     fn the_index_depends_on_the_key() {
-        // Whoever holds the dump but not the key cannot rebuild the table: this is the
-        // whole reason it is an HMAC and not a bare hash.
-        let a = with_key("chave-a", || blind_index("12345678909").unwrap());
-        let b = with_key("chave-b", || blind_index("12345678909").unwrap());
-        assert_ne!(a, b);
+        // Whoever holds the dump but not the key cannot rebuild the column: this is
+        // the whole reason it is an HMAC and not a bare hash.
+        assert_ne!(
+            blind_index_with("chave-a", "12345678909").unwrap(),
+            blind_index_with("chave-b", "12345678909").unwrap()
+        );
     }
 
     #[test]
     fn the_index_is_not_the_value() {
-        with_key("chave-de-teste", || {
-            let idx = blind_index("12345678909").unwrap();
-            assert_eq!(idx.len(), 32);
-            assert!(!String::from_utf8_lossy(&idx).contains("12345678909"));
-        });
+        let idx = blind_index_with(K, "12345678909").unwrap();
+        assert_eq!(idx.len(), 32);
+        assert!(!String::from_utf8_lossy(&idx).contains("12345678909"));
     }
 
     #[test]
-    fn without_a_key_it_refuses_rather_than_degrading() {
-        // The failure mode this guards against is a column that is half encrypted
-        // while everyone believes it is protected.
-        std::env::remove_var("PII_ENCRYPTION_KEY");
-        assert_eq!(blind_index("12345678909").unwrap_err(), PiiError::NoKey);
-        assert!(!is_configured());
-    }
-
-    #[test]
-    fn an_empty_key_counts_as_no_key() {
-        with_key("   ", || {
-            assert_eq!(blind_index("123").unwrap_err(), PiiError::NoKey);
-        });
+    fn a_blank_key_refuses_rather_than_degrading() {
+        // The failure mode this guards against is a column that is half protected
+        // while everyone believes otherwise.
+        for blank in ["", "   "] {
+            assert_eq!(
+                blind_index_with(blank, "12345678909").unwrap_err(),
+                PiiError::NoKey
+            );
+        }
     }
 
     #[test]
