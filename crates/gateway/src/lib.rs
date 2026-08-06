@@ -69,6 +69,9 @@ pub mod notification_receipts;
 pub mod notifications;
 pub mod og_cards;
 pub mod outbound;
+/// Re-export: the identifier protection lives in `dsoc-db` so `dsoc-auth` can use it
+/// too (it writes the CPF), and a Tier-2 crate may not depend on the gateway.
+pub use dsoc_db::pii;
 pub mod parlamentar_activity;
 pub mod party_dashboard;
 pub mod phone;

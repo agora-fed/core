@@ -21,6 +21,8 @@ use sqlx::postgres::{PgPool, PgPoolOptions};
 pub type Db = PgPool;
 
 /// Re-export so crates pin the same migrator source.
+pub mod pii;
+
 pub use sqlx::migrate;
 
 /// Connect to PostgreSQL using an IPv6-first `DATABASE_URL` (PLAN.md principle 4).

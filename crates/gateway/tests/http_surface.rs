@@ -4325,6 +4325,102 @@ async fn module_gate_does_not_cache_a_failed_lookup() {
 }
 
 // ---------------------------------------------------------------------------
+// PII AT REST — identifiers must not be readable in a dump (issue #15, 0682)
+// ---------------------------------------------------------------------------
+
+/// The 2FA shared secret survives a round-trip AND is unreadable in the raw column.
+///
+/// In cleartext this was the worst item in the set: a dump yields working 2FA codes
+/// forever, and nobody would know to rotate.
+#[tokio::test]
+async fn the_totp_secret_is_unreadable_in_the_raw_column() {
+    let (_, st) = app().await;
+    let (_, citizen, _) = seed_session(&st.db).await;
+    let key = std::env::var("PII_ENCRYPTION_KEY").unwrap_or_else(|_| "chave-de-teste-local".into());
+    let secret = "JBSWY3DPEHPK3PXP";
+
+    sqlx::query("UPDATE citizen SET totp_secret_enc = pgp_sym_encrypt($2, $3) WHERE id = $1")
+        .bind(citizen)
+        .bind(secret)
+        .bind(&key)
+        .execute(&st.db)
+        .await
+        .expect("store encrypted secret");
+
+    // With the key: the value comes back.
+    let back: Option<String> = sqlx::query_scalar(
+        "SELECT pgp_sym_decrypt(totp_secret_enc, $2) FROM citizen WHERE id = $1",
+    )
+    .bind(citizen)
+    .bind(&key)
+    .fetch_one(&st.db)
+    .await
+    .unwrap();
+    assert_eq!(back.as_deref(), Some(secret));
+
+    // Without it: what a dump holds is ciphertext, and the secret is not in it.
+    let raw: Vec<u8> = sqlx::query_scalar("SELECT totp_secret_enc FROM citizen WHERE id = $1")
+        .bind(citizen)
+        .fetch_one(&st.db)
+        .await
+        .unwrap();
+    assert!(!raw.is_empty());
+    assert!(
+        !String::from_utf8_lossy(&raw).contains(secret),
+        "SECURITY REGRESSION: the TOTP secret is readable in the stored bytes"
+    );
+}
+
+/// The blind index carries CPF uniqueness without the database holding the CPF, and
+/// it does so regardless of how the number was typed.
+#[tokio::test]
+async fn the_cpf_blind_index_enforces_uniqueness_without_the_value() {
+    let (_, st) = app().await;
+    let org = uuid::uuid!("11111111-1111-1111-1111-111111111111");
+    std::env::set_var("PII_ENCRYPTION_KEY", "chave-de-teste-local");
+
+    // A distinct number per run: the test database persists between executions, so a
+    // fixed CPF would be permanently taken after the first run and the test would fail
+    // on its own leftovers rather than on the property it checks.
+    let n = Uuid::now_v7().as_u128() % 100_000_000_000;
+    let cpf_plain = format!("{n:011}");
+    let cpf_formatted = format!(
+        "{}.{}.{}-{}",
+        &cpf_plain[0..3],
+        &cpf_plain[3..6],
+        &cpf_plain[6..9],
+        &cpf_plain[9..11]
+    );
+    let idx_a = dsoc_db::pii::blind_index(&cpf_plain).expect("key set");
+    let idx_b = dsoc_db::pii::blind_index(&cpf_formatted).expect("key set");
+    assert_eq!(idx_a, idx_b, "formatting must not create a second identity");
+
+    let mk = |cid: Uuid, idx: &Vec<u8>| {
+        sqlx::query(
+            "INSERT INTO auth_credential
+                 (id, citizen_id, org_id, email, password_hash, cpf, cpf_status, created_at, cpf_hmac)
+             VALUES ($1, $2, $3, $4, 'x', $5, 'unverified', now(), $6)",
+        )
+        .bind(Uuid::now_v7())
+        .bind(cid)
+        .bind(org)
+        .bind(format!("{}@example.invalid", Uuid::now_v7().simple()))
+        .bind(Uuid::now_v7().simple().to_string()[..11].to_owned())
+        .bind(idx.clone())
+    };
+
+    let (_, c1, _) = seed_session_in_org(&st.db, org).await;
+    let (_, c2, _) = seed_session_in_org(&st.db, org).await;
+    mk(c1, &idx_a).execute(&st.db).await.expect("first insert");
+    let second = mk(c2, &idx_b).execute(&st.db).await;
+    assert!(
+        second.is_err(),
+        "SECURITY REGRESSION: the same CPF registered twice — the blind index is not enforcing"
+    );
+    std::env::remove_var("PII_ENCRYPTION_KEY");
+}
+
+// ---------------------------------------------------------------------------
 // TENANT SCOPE — the federation tables now carry an org (issue #14, phase 1)
 //
 // These four tables shipped with NO org column, so isolation could not be

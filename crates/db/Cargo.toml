@@ -11,6 +11,10 @@ description = "Tier-0 database layer: sqlx pool setup, migration runner, and que
 workspace = true
 
 [dependencies]
+# Blind index over identifiers (issue #15): HMAC so a dump without the key cannot
+# rebuild the column by enumeration.
+hmac = "0.12"
+sha2 = "0.10"
 dsoc-core = { path = "../core" }
 sqlx = { workspace = true }
 serde_json = { workspace = true }

@@ -178,11 +178,23 @@ async fn setup(State(state): State<AppState>, caller: CallerId) -> Response {
     let mut raw = [0u8; 20];
     rand::thread_rng().fill(&mut raw);
     let secret = base32_encode(&raw);
-    if let Err(err) = sqlx::query("UPDATE citizen SET totp_secret = $2 WHERE id = $1")
-        .bind(citizen)
-        .bind(&secret)
-        .execute(&state.db)
-        .await
+    // Encrypted at rest (0682/#15): in cleartext this column was a permanent 2FA
+    // bypass for anyone holding a dump. No key ⇒ refuse; a cleartext fallback is how
+    // a column ends up half protected while everyone believes otherwise.
+    let Ok(pii_key) = crate::pii::key() else {
+        return fail(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "no_pii_key",
+            "Proteção de dados pessoais não configurada nesta instância.",
+        );
+    };
+    if let Err(err) =
+        sqlx::query("UPDATE citizen SET totp_secret_enc = pgp_sym_encrypt($2, $3) WHERE id = $1")
+            .bind(citizen)
+            .bind(&secret)
+            .bind(&pii_key)
+            .execute(&state.db)
+            .await
     {
         tracing::error!(?err, "totp setup: store secret");
         return storage_error();
@@ -225,11 +237,20 @@ async fn enable(
             "Código de 6 dígitos.",
         );
     };
-    let secret: Result<Option<String>, sqlx::Error> =
-        sqlx::query_scalar("SELECT totp_secret FROM citizen WHERE id = $1")
-            .bind(citizen)
-            .fetch_one(&state.db)
-            .await;
+    let Ok(pii_key) = crate::pii::key() else {
+        return fail(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "no_pii_key",
+            "Proteção de dados pessoais não configurada nesta instância.",
+        );
+    };
+    let secret: Result<Option<String>, sqlx::Error> = sqlx::query_scalar(
+        "SELECT pgp_sym_decrypt(totp_secret_enc, $2) FROM citizen WHERE id = $1",
+    )
+    .bind(citizen)
+    .bind(&pii_key)
+    .fetch_one(&state.db)
+    .await;
     let secret = match secret {
         Ok(Some(s)) => s,
         Ok(None) => {
@@ -314,11 +335,20 @@ async fn disable(
             "Código de 6 dígitos.",
         );
     };
-    let secret: Result<Option<String>, sqlx::Error> =
-        sqlx::query_scalar("SELECT totp_secret FROM citizen WHERE id = $1")
-            .bind(citizen)
-            .fetch_one(&state.db)
-            .await;
+    let Ok(pii_key) = crate::pii::key() else {
+        return fail(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "no_pii_key",
+            "Proteção de dados pessoais não configurada nesta instância.",
+        );
+    };
+    let secret: Result<Option<String>, sqlx::Error> = sqlx::query_scalar(
+        "SELECT pgp_sym_decrypt(totp_secret_enc, $2) FROM citizen WHERE id = $1",
+    )
+    .bind(citizen)
+    .bind(&pii_key)
+    .fetch_one(&state.db)
+    .await;
     let secret = match secret {
         Ok(Some(s)) => s,
         Ok(None) => {
@@ -340,11 +370,12 @@ async fn disable(
         Ok(t) => t,
         Err(_) => return storage_error(),
     };
-    let _ =
-        sqlx::query("UPDATE citizen SET totp_secret = NULL, totp_enabled_at = NULL WHERE id = $1")
-            .bind(citizen)
-            .execute(&mut *tx)
-            .await;
+    let _ = sqlx::query(
+        "UPDATE citizen SET totp_secret_enc = NULL, totp_enabled_at = NULL WHERE id = $1",
+    )
+    .bind(citizen)
+    .execute(&mut *tx)
+    .await;
     let _ = sqlx::query("DELETE FROM totp_recovery_code WHERE citizen_id = $1")
         .bind(citizen)
         .execute(&mut *tx)

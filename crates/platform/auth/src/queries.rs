@@ -331,19 +331,35 @@ pub(crate) async fn insert_credential<'e, E: PgExecutor<'e>>(
     cpf_status: &str,
     now: DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query!(
+    // Alongside the cleartext column (still NOT NULL until the contract migration):
+    // a keyed BLIND INDEX that carries the uniqueness, and an encrypted copy — issue
+    // #15, migration 0682. The CPF is write-only in this codebase, so once the
+    // cleartext column goes, nothing reads the value at all.
+    //
+    // No key ⇒ the row is written WITHOUT them rather than failing signup outright:
+    // this is the expand phase, the cleartext UNIQUE still enforces uniqueness, and
+    // refusing every registration over a missing environment variable would be a
+    // worse failure than the one being fixed. The backfill closes the gap, and the
+    // contract migration makes the column mandatory.
+    let cpf_hmac = dsoc_db::pii::blind_index(cpf).ok();
+    let pii_key = dsoc_db::pii::key().ok();
+    sqlx::query(
         "INSERT INTO auth_credential \
-         (id, citizen_id, org_id, email, password_hash, cpf, cpf_status, created_at) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-        id,
-        citizen,
-        org,
-        email,
-        password_hash,
-        cpf,
-        cpf_status,
-        now
+         (id, citizen_id, org_id, email, password_hash, cpf, cpf_status, created_at, \
+          cpf_hmac, cpf_enc) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, \
+                 CASE WHEN $10::text IS NULL THEN NULL ELSE pgp_sym_encrypt($6, $10) END)",
     )
+    .bind(id)
+    .bind(citizen)
+    .bind(org)
+    .bind(email)
+    .bind(password_hash)
+    .bind(cpf)
+    .bind(cpf_status)
+    .bind(now)
+    .bind(cpf_hmac)
+    .bind(pii_key)
     .execute(ex)
     .await?;
     Ok(())

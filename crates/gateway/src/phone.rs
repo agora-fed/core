@@ -142,14 +142,24 @@ async fn set_phone(
 
     let code = format!("{:06}", rand::thread_rng().gen_range(0..1_000_000));
     let code_hash = hash_code(&code);
+    // The number is encrypted here too (0682/#15): `phone_otp` kept a copy that was
+    // never purged, so an old OTP row outlived the reason it existed.
+    let Ok(pii_key) = crate::pii::key() else {
+        return fail(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "no_pii_key",
+            "Proteção de dados pessoais não configurada nesta instância.",
+        );
+    };
     if let Err(err) = sqlx::query(
-        r"INSERT INTO phone_otp (citizen_id, phone, code_hash, expires_at)
-          VALUES ($1, $2, $3, now() + ($4 || ' minutes')::interval)",
+        r"INSERT INTO phone_otp (citizen_id, phone_enc, code_hash, expires_at)
+          VALUES ($1, pgp_sym_encrypt($2, $5), $3, now() + ($4 || ' minutes')::interval)",
     )
     .bind(citizen)
     .bind(&phone)
     .bind(&code_hash)
     .bind(OTP_TTL_MINUTES.to_string())
+    .bind(&pii_key)
     .execute(&state.db)
     .await
     {
@@ -211,12 +221,20 @@ async fn verify(
         );
     }
     // The most recent OTP, alive and unused.
+    let Ok(pii_key) = crate::pii::key() else {
+        return fail(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "no_pii_key",
+            "Proteção de dados pessoais não configurada nesta instância.",
+        );
+    };
     let row: Result<Option<(uuid::Uuid, String, Vec<u8>)>, sqlx::Error> = sqlx::query_as(
-        r"SELECT id, phone, code_hash FROM phone_otp
+        r"SELECT id, pgp_sym_decrypt(phone_enc, $2), code_hash FROM phone_otp
            WHERE citizen_id = $1 AND used_at IS NULL AND expires_at > now()
            ORDER BY created_at DESC LIMIT 1",
     )
     .bind(citizen)
+    .bind(&pii_key)
     .fetch_optional(&state.db)
     .await;
     let (otp_id, phone, code_hash) = match row {
@@ -252,12 +270,16 @@ async fn verify(
         tracing::error!(?err, "phone verify: mark used");
         return storage_error();
     }
-    if let Err(err) =
-        sqlx::query("UPDATE citizen SET phone = $2, phone_verified_at = now() WHERE id = $1")
-            .bind(citizen)
-            .bind(&phone)
-            .execute(&mut *tx)
-            .await
+    if let Err(err) = sqlx::query(
+        "UPDATE citizen SET phone_enc = pgp_sym_encrypt($2, $3), phone_last4 = $4, \
+             phone_verified_at = now() WHERE id = $1",
+    )
+    .bind(citizen)
+    .bind(&phone)
+    .bind(&pii_key)
+    .bind(crate::pii::last4(&phone))
+    .execute(&mut *tx)
+    .await
     {
         tracing::error!(?err, "phone verify: set phone");
         return storage_error();
