@@ -52,6 +52,10 @@ jobs:
     env:
       DATABASE_URL: postgres://dsoc:dsoc@127.0.0.1:5432/democracia_social_ci
       SQLX_OFFLINE: "true"
+      # Identifier protection is REQUIRED since #15: signup refuses without it, because
+      # a platform storing CPFs with the protection unconfigured is the failure being
+      # fixed. A fixed value here — it protects nothing real, it just has to exist.
+      PII_ENCRYPTION_KEY: ci-fixed-key-not-a-secret
     steps:
       - uses: https://code.forgejo.org/actions/checkout@v4
       - name: migrate + workspace tests (real PostgreSQL)
@@ -66,6 +70,10 @@ jobs:
     env:
       DATABASE_URL: postgres://dsoc:dsoc@127.0.0.1:5432/democracia_social_ci
       SQLX_OFFLINE: "true"
+      # Identifier protection is REQUIRED since #15: signup refuses without it, because
+      # a platform storing CPFs with the protection unconfigured is the failure being
+      # fixed. A fixed value here — it protects nothing real, it just has to exist.
+      PII_ENCRYPTION_KEY: ci-fixed-key-not-a-secret
     steps:
       - uses: https://code.forgejo.org/actions/checkout@v4
       # RATCHET, not aspiration: the number below is the measured floor and may

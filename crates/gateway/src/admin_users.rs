@@ -195,8 +195,10 @@ async fn list(
           c.birth_date,
           c.uf,
           mi.nome AS municipio,
-          CASE WHEN ac.cpf IS NULL OR length(ac.cpf) < 5 THEN NULL
-               ELSE left(ac.cpf, 3) || '.***.***-' || right(ac.cpf, 2) END AS cpf_masked,
+          -- Stored masked (0683/#15): the CPF itself is encrypted, and decrypting
+          -- every row on every page of this list to render a mask would be the wrong
+          -- trade for a string that is already public.
+          ac.cpf_masked,
           c.party_sigla,
           c.created_at,
           plat.role             AS platform_role,

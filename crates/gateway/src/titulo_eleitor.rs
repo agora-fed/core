@@ -108,15 +108,17 @@ async fn get_status(State(state): State<AppState>, headers: HeaderMap) -> Respon
         )>,
         _,
     > = sqlx::query_as(
-        r"SELECT titulo_eleitor, titulo_status, titulo_zona, titulo_secao
+        r"SELECT titulo_last4, titulo_status, titulo_zona, titulo_secao
                 FROM citizen WHERE id = $1",
     )
     .bind(citizen)
     .fetch_optional(&state.db)
     .await;
     match row {
-        Ok(Some((titulo, status, zona, secao))) => {
-            let last4 = titulo
+        Ok(Some((titulo_last4, status, zona, secao))) => {
+            // Already the masked form (0683): the API only ever exposed the last four,
+            // so storing them saves decrypting on every profile read just to mask.
+            let last4 = titulo_last4
                 .as_deref()
                 .filter(|s| s.chars().count() >= 4)
                 .map(|s| s.chars().skip(s.chars().count() - 4).collect::<String>());
@@ -207,8 +209,8 @@ async fn submit(
         let res = sqlx::query_as::<_, (Option<String>, Option<String>)>(
             r"UPDATE citizen
                  SET titulo_zona = $2, titulo_secao = $3
-               WHERE id = $1 AND titulo_eleitor IS NOT NULL
-           RETURNING titulo_status, right(titulo_eleitor, 4)",
+               WHERE id = $1 AND titulo_enc IS NOT NULL
+           RETURNING titulo_status, titulo_last4",
         )
         .bind(citizen)
         .bind(zona.as_deref())
@@ -245,9 +247,33 @@ async fn submit(
         }
     };
     // Updates; ON CONFLICT via the partial UNIQUE raises a violation → 409.
+    // Encrypted, plus the blind index that carries the uniqueness the cleartext
+    // UNIQUE used to hold, plus the last four the API shows (0682/0683, issue #15).
+    let Ok(pii_key) = dsoc_db::pii::key() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ApiResponse::<()>::fail(
+                "no_pii_key",
+                "Proteção de dados pessoais não configurada nesta instância.",
+            )),
+        )
+            .into_response();
+    };
+    let Ok(titulo_hmac) = dsoc_db::pii::blind_index_with(&pii_key, &normalized) else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ApiResponse::<()>::fail(
+                "no_pii_key",
+                "Proteção de dados pessoais não configurada nesta instância.",
+            )),
+        )
+            .into_response();
+    };
     let res = sqlx::query(
         r"UPDATE citizen
-             SET titulo_eleitor = $2,
+             SET titulo_enc     = pgp_sym_encrypt($2, $5),
+                 titulo_hmac    = $6,
+                 titulo_last4   = $7,
                  titulo_status  = 'validated',
                  titulo_zona    = $3,
                  titulo_secao   = $4
@@ -257,6 +283,9 @@ async fn submit(
     .bind(&normalized)
     .bind(zona.as_deref())
     .bind(secao.as_deref())
+    .bind(&pii_key)
+    .bind(titulo_hmac)
+    .bind(dsoc_db::pii::last4(&normalized))
     .execute(&state.db)
     .await;
     match res {

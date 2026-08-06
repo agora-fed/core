@@ -4396,14 +4396,13 @@ async fn the_cpf_blind_index_enforces_uniqueness_without_the_value() {
     let mk = |cid: Uuid, idx: &Vec<u8>| {
         sqlx::query(
             "INSERT INTO auth_credential
-                 (id, citizen_id, org_id, email, password_hash, cpf, cpf_status, created_at, cpf_hmac)
-             VALUES ($1, $2, $3, $4, 'x', $5, 'unverified', now(), $6)",
+                 (id, citizen_id, org_id, email, password_hash, cpf_status, created_at, cpf_hmac)
+             VALUES ($1, $2, $3, $4, 'x', 'unverified', now(), $5)",
         )
         .bind(Uuid::now_v7())
         .bind(cid)
         .bind(org)
         .bind(format!("{}@example.invalid", Uuid::now_v7().simple()))
-        .bind(Uuid::now_v7().simple().to_string()[..11].to_owned())
         .bind(idx.clone())
     };
 

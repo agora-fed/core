@@ -365,15 +365,29 @@ async fn register_then_login_with_cpf_and_password() {
         .await
         .expect("register");
 
-    // credential stored: normalized CPF + algorithmic status; password Argon2id-hashed, never plain.
-    let (cpf, status): (String, String) =
-        sqlx::query_as("SELECT cpf, cpf_status FROM auth_credential WHERE citizen_id = $1")
-            .bind(s.citizen.as_uuid())
-            .fetch_one(&db)
-            .await
-            .unwrap();
-    assert_eq!(cpf, "52998224725");
+    // The CPF is NOT stored in cleartext (issue #15). What the row holds is the blind
+    // index that carries uniqueness and an encrypted copy — this assertion used to read
+    // the cleartext back and is inverted on purpose.
+    let (hmac, enc, status): (Option<Vec<u8>>, Option<Vec<u8>>, String) = sqlx::query_as(
+        "SELECT cpf_hmac, cpf_enc, cpf_status FROM auth_credential WHERE citizen_id = $1",
+    )
+    .bind(s.citizen.as_uuid())
+    .fetch_one(&db)
+    .await
+    .unwrap();
     assert_eq!(status, "validated");
+    let hmac = hmac.expect("the blind index must be written; without it uniqueness is lost");
+    let key = std::env::var("PII_ENCRYPTION_KEY").expect("required since #15");
+    assert_eq!(
+        hmac,
+        dsoc_db::pii::blind_index_with(&key, "52998224725").unwrap(),
+        "the index must match the CPF that was registered"
+    );
+    let enc = enc.expect("the encrypted copy must be written");
+    assert!(
+        !String::from_utf8_lossy(&enc).contains("52998224725"),
+        "SECURITY REGRESSION: the CPF is readable in the stored bytes"
+    );
     let hash: String =
         sqlx::query_scalar("SELECT password_hash FROM auth_credential WHERE citizen_id = $1")
             .bind(s.citizen.as_uuid())
@@ -471,8 +485,12 @@ async fn signup_verify_confirm_materializes_citizen_and_session() {
 
     // Mint a token and insert a pending row by hand (equivalent to request_cidadao,
     // but without touching SMTP).
-    // 32 bytes ~ the same token size the service uses in production.
-    let token: String = URL_SAFE_NO_PAD.encode([7u8; 32]);
+    // 32 bytes ~ the same token size the service uses in production, and DISTINCT per
+    // run: the token used to be a fixed [7u8; 32], so every execution left a pending
+    // row with the same hash in this persistent database. `confirm` then redeemed an
+    // older run's row and this one's stayed unused — the test failing on its own
+    // leftovers rather than on the code.
+    let token: String = URL_SAFE_NO_PAD.encode(Uuid::now_v7().as_bytes().repeat(2));
     let hash: Vec<u8> = {
         let mut h = Sha256::new();
         h.update(token.as_bytes());
@@ -517,8 +535,8 @@ async fn signup_verify_confirm_materializes_citizen_and_session() {
 
     // Credential/citizen materialized with the pending row's exact hash (never
     // rehashed at confirm) and the normalized e-mail.
-    let (cred_email, cred_hash, cred_cpf): (String, String, String) = sqlx::query_as(
-        "SELECT email, password_hash, cpf FROM auth_credential WHERE citizen_id = $1",
+    let (cred_email, cred_hash, cred_hmac): (String, String, Option<Vec<u8>>) = sqlx::query_as(
+        "SELECT email, password_hash, cpf_hmac FROM auth_credential WHERE citizen_id = $1",
     )
     .bind(session.citizen.as_uuid())
     .fetch_one(&db)
@@ -526,7 +544,13 @@ async fn signup_verify_confirm_materializes_citizen_and_session() {
     .unwrap();
     assert_eq!(cred_email, email);
     assert_eq!(cred_hash, password_hash);
-    assert_eq!(cred_cpf, "52998224725");
+    // The CPF itself is not in the row (issue #15); what proves it arrived is the
+    // blind index matching the value the pending carried.
+    let key = std::env::var("PII_ENCRYPTION_KEY").expect("required since #15");
+    assert_eq!(
+        cred_hmac.expect("blind index written"),
+        dsoc_db::pii::blind_index_with(&key, "52998224725").unwrap()
+    );
 
     // Session issued with the expected public_handle (format @cidadao-<short>).
     assert!(!session.public_handle.is_empty());

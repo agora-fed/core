@@ -331,24 +331,24 @@ pub(crate) async fn insert_credential<'e, E: PgExecutor<'e>>(
     cpf_status: &str,
     now: DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
-    // Alongside the cleartext column (still NOT NULL until the contract migration):
-    // a keyed BLIND INDEX that carries the uniqueness, and an encrypted copy — issue
-    // #15, migration 0682. The CPF is write-only in this codebase, so once the
-    // cleartext column goes, nothing reads the value at all.
+    // The CPF no longer touches the row in cleartext (issue #15): a keyed BLIND INDEX
+    // carries the uniqueness the old `UNIQUE (org_id, cpf)` held, and an encrypted copy
+    // keeps it retrievable. The value itself is write-only in this codebase — nothing
+    // reads it back — so this is the last place it appears at all.
     //
-    // No key ⇒ the row is written WITHOUT them rather than failing signup outright:
-    // this is the expand phase, the cleartext UNIQUE still enforces uniqueness, and
-    // refusing every registration over a missing environment variable would be a
-    // worse failure than the one being fixed. The backfill closes the gap, and the
-    // contract migration makes the column mandatory.
-    let cpf_hmac = dsoc_db::pii::blind_index(cpf).ok();
-    let pii_key = dsoc_db::pii::key().ok();
+    // Now that the cleartext column is gone, the key is REQUIRED: without it the blind
+    // index cannot be computed, and a row with no index would silently escape the
+    // uniqueness check. Failing the signup is the correct outcome.
+    let pii_key = dsoc_db::pii::key().map_err(|_| sqlx::Error::Configuration(
+        "PII_ENCRYPTION_KEY is not configured; refusing to register without the CPF uniqueness index".into(),
+    ))?;
+    let cpf_hmac = dsoc_db::pii::blind_index_with(&pii_key, cpf)
+        .map_err(|_| sqlx::Error::Configuration("could not compute the CPF blind index".into()))?;
     sqlx::query(
         "INSERT INTO auth_credential \
-         (id, citizen_id, org_id, email, password_hash, cpf, cpf_status, created_at, \
+         (id, citizen_id, org_id, email, password_hash, cpf_status, created_at, \
           cpf_hmac, cpf_enc) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, \
-                 CASE WHEN $10::text IS NULL THEN NULL ELSE pgp_sym_encrypt($6, $10) END)",
+         VALUES ($1, $2, $3, $4, $5, $7, $8, $9, pgp_sym_encrypt($6, $10))",
     )
     .bind(id)
     .bind(citizen)

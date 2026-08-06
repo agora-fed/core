@@ -369,6 +369,11 @@ struct IdClaims {
     acr: Option<String>,
     /// Set when the `cpf` scope was requested (not requested at this first stage).
     #[serde(default)]
+    /// Parsed but no longer stored: `auth_credential.cpf` was dropped (#15, 0684) and
+    /// this flow is disabled anyway (`ID_TOKEN_IS_VERIFIED`). Kept so the claim shape
+    /// stays documented for whoever revives gov.br — they will need to write the blind
+    /// index and ciphertext, not a cleartext column that no longer exists.
+    #[allow(dead_code)]
     cpf: Option<String>,
 }
 
@@ -452,15 +457,14 @@ async fn upsert_citizen_and_session(
         let email_lc = email.to_lowercase();
         sqlx::query(
             r"INSERT INTO auth_credential
-                 (id, citizen_id, org_id, email, password_hash, cpf, cpf_status, created_at)
-               VALUES ($1, $2, $3, $4, '', COALESCE($5, ''), 'unverified', now())
+                 (id, citizen_id, org_id, email, password_hash, cpf_status, created_at)
+               VALUES ($1, $2, $3, $4, '', 'unverified', now())
                ON CONFLICT (org_id, email) DO NOTHING",
         )
         .bind(Uuid::now_v7())
         .bind(citizen_id)
         .bind(org_id)
         .bind(&email_lc)
-        .bind(&claims.cpf)
         .execute(&mut *tx)
         .await?;
     }
