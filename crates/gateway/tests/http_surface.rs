@@ -3973,6 +3973,169 @@ async fn group_inbox_rejects_malformed_signature_and_unknown_handle() {
 }
 
 // ---------------------------------------------------------------------------
+// SECURITY — the respond link expires, is single-use and is revocable (issue #12)
+//
+// `POST /respond` is UNAUTHENTICATED and writes a mandate's public official
+// response. The token used to be `hmac(secret, sla_id)`: deterministic, eternal,
+// replayable, and revocable only by rotating the global secret — which killed
+// every link at once. Possession of a stale URL was standing authority to speak
+// in an official's name.
+// ---------------------------------------------------------------------------
+
+/// Seeds an SLA with a live link and returns `(sla_id, token)`.
+async fn seed_respond_link(db: &Db, expires_in_days: i64, revoked: bool) -> (Uuid, String) {
+    let sla = Uuid::now_v7();
+    let token: String = (0..64)
+        .map(|i| char::from(b'a' + u8::try_from(i % 6).unwrap()))
+        .collect();
+    let hash = {
+        use sha2::Digest as _;
+        sha2::Sha256::digest(token.as_bytes()).to_vec()
+    };
+    sqlx::query(
+        "INSERT INTO respond_link (id, sla_id, token_hash, expires_at, revoked_at)
+         VALUES ($1, $2, $3, now() + make_interval(days => $4::int), $5)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(sla)
+    .bind(hash)
+    .bind(i32::try_from(expires_in_days).unwrap())
+    .bind(revoked.then(Utc::now))
+    .execute(db)
+    .await
+    .expect("seed respond_link");
+    (sla, token)
+}
+
+fn respond_context(sla: Uuid, token: &str) -> Request<Body> {
+    Request::builder()
+        .uri(format!("/api/v1/respond/context?sla={sla}&t={token}"))
+        .body(Body::empty())
+        .unwrap()
+}
+
+/// A live link is accepted; an EXPIRED one is refused with 410, not 403 — the
+/// official needs to know the link died rather than that they are unauthorised.
+#[tokio::test]
+async fn respond_link_expires() {
+    let (app, st) = app().await;
+
+    let (sla_live, token_live) = seed_respond_link(&st.db, 30, false).await;
+    let resp = app
+        .clone()
+        .oneshot(respond_context(sla_live, &token_live))
+        .await
+        .unwrap();
+    assert_ne!(
+        resp.status(),
+        StatusCode::FORBIDDEN,
+        "a live link must not be refused as invalid"
+    );
+    assert_ne!(resp.status(), StatusCode::GONE, "a live link is not spent");
+
+    let (sla_dead, token_dead) = seed_respond_link(&st.db, -1, false).await;
+    let resp = app
+        .oneshot(respond_context(sla_dead, &token_dead))
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::GONE,
+        "SECURITY REGRESSION: an expired respond link was still honoured"
+    );
+}
+
+/// A revoked link is refused even though it has not expired and was never used.
+#[tokio::test]
+async fn respond_link_is_individually_revocable() {
+    let (app, st) = app().await;
+    let (sla, token) = seed_respond_link(&st.db, 30, true).await;
+    let resp = app.oneshot(respond_context(sla, &token)).await.unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::GONE,
+        "SECURITY REGRESSION: a revoked respond link was still honoured"
+    );
+}
+
+/// THE REPLAY: a link already spent must not authorise a second response. This is
+/// what a captured URL buys an attacker — the previous token bought unlimited use.
+#[tokio::test]
+async fn respond_link_cannot_be_replayed_after_use() {
+    let (app, st) = app().await;
+    let (sla, token) = seed_respond_link(&st.db, 30, false).await;
+
+    // Mark it spent, exactly as a recorded response does.
+    sqlx::query("UPDATE respond_link SET used_at = now() WHERE sla_id = $1")
+        .bind(sla)
+        .execute(&st.db)
+        .await
+        .unwrap();
+
+    let resp = app
+        .clone()
+        .oneshot(respond_context(sla, &token))
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::GONE,
+        "SECURITY REGRESSION: a spent respond link was replayable"
+    );
+
+    // And the write path refuses too, not only the read path.
+    let body = serde_json::json!({
+        "sla_id": sla.to_string(),
+        "token": token,
+        "body": "resposta replayed",
+        "committed": true,
+    })
+    .to_string();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/respond")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::GONE,
+        "SECURITY REGRESSION: a spent link could still POST an official response"
+    );
+}
+
+/// A token belonging to another SLA never authorises this one, and guessing is
+/// bounded by the attempt counter.
+#[tokio::test]
+async fn respond_link_rejects_a_foreign_token_and_counts_attempts() {
+    let (app, st) = app().await;
+    let (sla_a, _) = seed_respond_link(&st.db, 30, false).await;
+    let foreign = "f".repeat(64);
+
+    let resp = app
+        .clone()
+        .oneshot(respond_context(sla_a, &foreign))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+    let attempts: i32 = sqlx::query_scalar("SELECT attempts FROM respond_link WHERE sla_id = $1")
+        .bind(sla_a)
+        .fetch_one(&st.db)
+        .await
+        .unwrap();
+    assert!(
+        attempts >= 1,
+        "a failed presentation must be counted, so guessing is bounded"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // SECURITY — the SSRF guard on every server-side fetch (issue #9)
 //
 // The federation inbox takes an actor URL straight out of an UNAUTHENTICATED

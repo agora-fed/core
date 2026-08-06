@@ -631,7 +631,7 @@ async fn notification_escalation_loop(state: AppState) {
             // zero friction for the office. Without RESPOND_LINK_SECRET, it falls back to
             // the proposal's link (which requires a logged-in operator).
             let origin = public_origin.trim_end_matches('/');
-            let respond_url = match crate::respond_link::respond_token(sla_id) {
+            let respond_url = match crate::respond_link::issue_token(&state.db, sla_id).await {
                 Some(token) => format!("{origin}/responder/?sla={sla_id}&t={token}"),
                 None => format!("{origin}/propostas/{proposal_id}"),
             };

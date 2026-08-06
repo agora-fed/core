@@ -171,7 +171,7 @@ impl CivicNotifySub {
             return;
         }
         let origin = self.public_origin.trim_end_matches('/');
-        let respond_url = match crate::respond_link::respond_token(sla_id) {
+        let respond_url = match crate::respond_link::issue_token(&self.db, sla_id).await {
             Some(token) => format!("{origin}/responder/?sla={sla_id}&t={token}"),
             None => format!("{origin}/propostas/{proposal_id}"),
         };
