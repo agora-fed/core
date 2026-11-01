@@ -3816,3 +3816,40 @@ export const untagTopicRepresentative = (topicId: string, mandateId: string) =>
   apiDelete<null>(
     `/api/v1/topics/${encodeURIComponent(topicId)}/representatives/${encodeURIComponent(mandateId)}`,
   );
+
+// --- Contributions from the fediverse (admin) ---
+
+export interface ForumInboundItem {
+  kind: 'topic' | 'comment';
+  id: string;
+  forum_path: string;
+  actor_url: string;
+  handle: string | null;
+  title: string | null;
+  body: string;
+  created_at: string;
+}
+
+export interface ForumInboundBlock {
+  kind: 'actor' | 'domain';
+  id: string;
+  value: string;
+  reason: string | null;
+  created_at: string;
+}
+
+export const listForumInboundQueue = () =>
+  apiGetCredentialed<ForumInboundItem[]>('/api/v1/admin/forums/inbound/queue');
+export const decideForumInbound = (kind: string, id: string, decision: 'approve' | 'reject') =>
+  apiPost<{ decided: boolean }>(
+    `/api/v1/admin/forums/inbound/queue/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/${decision}`,
+    {},
+  );
+export const listForumInboundBlocks = () =>
+  apiGetCredentialed<ForumInboundBlock[]>('/api/v1/admin/forums/inbound/blocks');
+export const addForumInboundBlock = (body: { kind: 'actor' | 'domain'; value: string; reason?: string }) =>
+  apiPost<{ blocked: boolean }>('/api/v1/admin/forums/inbound/blocks', body);
+export const removeForumInboundBlock = (kind: string, id: string) =>
+  apiDelete<{ removed: boolean }>(
+    `/api/v1/admin/forums/inbound/blocks/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`,
+  );

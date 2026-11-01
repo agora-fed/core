@@ -71,6 +71,8 @@ pub struct TopicRow {
     pub comment_count: i64,
     /// Next threshold to fire (index into `forum.thresholds`).
     pub next_threshold_idx: i32,
+    /// `@name@host` of a topic that came from another server.
+    pub remote_handle: Option<String>,
     /// Creation timestamp.
     pub created_at: DateTime<Utc>,
 }
@@ -322,7 +324,8 @@ pub async fn insert_topic(
            VALUES ($1, $2, $3, $4, $5, $6)
            RETURNING id, forum_id, author_id, title, body, interaction_count,
                      federated_interaction_count, score, favor_count, contra_count,
-                     ponderacao_count, comment_count, next_threshold_idx, created_at"#,
+                     ponderacao_count, comment_count, next_threshold_idx, created_at,
+                     remote_handle"#,
         id,
         forum_id,
         author_id,
@@ -346,6 +349,7 @@ pub async fn insert_topic(
         ponderacao_count: r.ponderacao_count,
         comment_count: r.comment_count,
         next_threshold_idx: r.next_threshold_idx,
+        remote_handle: r.remote_handle,
         created_at: r.created_at,
     })
 }
@@ -361,7 +365,8 @@ pub async fn lock_topic(
     let r = sqlx::query!(
         r#"SELECT id, forum_id, author_id, title, body, interaction_count,
                   federated_interaction_count, score, favor_count, contra_count,
-                  ponderacao_count, comment_count, next_threshold_idx, created_at
+                  ponderacao_count, comment_count, next_threshold_idx, created_at,
+                  remote_handle
            FROM forum_topic WHERE id = $1 AND hidden_at IS NULL FOR UPDATE"#,
         id,
     )
@@ -381,6 +386,7 @@ pub async fn lock_topic(
         ponderacao_count: r.ponderacao_count,
         comment_count: r.comment_count,
         next_threshold_idx: r.next_threshold_idx,
+        remote_handle: r.remote_handle,
         created_at: r.created_at,
     }))
 }
@@ -399,7 +405,8 @@ pub async fn list_topics(
     let rows = sqlx::query!(
         r#"SELECT id, forum_id, author_id, title, body, interaction_count,
                   federated_interaction_count, score, favor_count, contra_count,
-                  ponderacao_count, comment_count, next_threshold_idx, created_at
+                  ponderacao_count, comment_count, next_threshold_idx, created_at,
+                  remote_handle
            FROM forum_topic
            WHERE forum_id = $1 AND hidden_at IS NULL
            ORDER BY CASE WHEN $2 THEN score END DESC NULLS LAST, id DESC
@@ -427,6 +434,7 @@ pub async fn list_topics(
             ponderacao_count: r.ponderacao_count,
             comment_count: r.comment_count,
             next_threshold_idx: r.next_threshold_idx,
+            remote_handle: r.remote_handle,
             created_at: r.created_at,
         })
         .collect())
@@ -528,12 +536,14 @@ pub async fn topic_readable(
     topic_id: Uuid,
     viewer: Option<Uuid>,
 ) -> Result<bool, sqlx::Error> {
-    let readable: Option<bool> =
-        sqlx::query_scalar("SELECT forum_readable(forum_id, $2) FROM forum_topic WHERE id = $1")
-            .bind(topic_id)
-            .bind(viewer)
-            .fetch_optional(executor)
-            .await?;
+    let readable: Option<bool> = sqlx::query_scalar(
+        "SELECT forum_readable(forum_id, $2) FROM forum_topic
+              WHERE id = $1 AND hidden_at IS NULL",
+    )
+    .bind(topic_id)
+    .bind(viewer)
+    .fetch_optional(executor)
+    .await?;
     Ok(readable.unwrap_or(false))
 }
 
@@ -549,7 +559,8 @@ pub async fn comment_readable(
     let readable: Option<bool> = sqlx::query_scalar(
         "SELECT forum_readable(t.forum_id, $2)
            FROM forum_topic_comment c JOIN forum_topic t ON t.id = c.topic_id
-          WHERE c.id = $1",
+          WHERE c.id = $1 AND t.hidden_at IS NULL AND c.hidden_at IS NULL
+            AND c.moderation = 'approved'",
     )
     .bind(comment_id)
     .bind(viewer)
@@ -806,7 +817,10 @@ pub async fn refresh_comment_counters(
              contra_count = v."contra!"
            FROM (SELECT COUNT(*) FILTER (WHERE stance = 'favor') AS "favor!",
                         COUNT(*) FILTER (WHERE stance = 'contra') AS "contra!"
-                   FROM forum_comment_vote WHERE comment_id = $1) v
+                   FROM (SELECT stance FROM forum_comment_vote WHERE comment_id = $1
+                         UNION ALL
+                         SELECT stance FROM forum_remote_vote
+                          WHERE target_kind = 'comment' AND target_id = $1) all_votes) v
            WHERE c.id = $1"#,
         comment_id,
     )
@@ -864,7 +878,8 @@ pub fn karma_value(stance: &str) -> i32 {
 /// Recompute the topic's counters from the source tables (under the row lock):
 /// stances per side, score = favor - contra; countable interactions = votes +
 /// approved local comments + votes on arguments (all local by FK);
-/// federated = approved federated comments.
+/// federated = approved federated comments + remote votes. Remote votes show in favor/contra
+/// but stay out of the score and of the countable interactions.
 /// Retorna (interactions, federated).
 ///
 /// # Errors
@@ -878,13 +893,17 @@ pub async fn refresh_topic_counters(
     // remain the COUNT of votes per side (display); `score` is the signed scoreboard.
     let r = sqlx::query!(
         r#"UPDATE forum_topic t SET
-             favor_count = v."favor!",
-             contra_count = v."contra!",
+             favor_count = v."favor!" + rv."rfavor!",
+             contra_count = v."contra!" + rv."rcontra!",
              score = pos."base!" + amp."amp!",
              comment_count = c."local!" + c."fede!",
              interaction_count = v."votes!" + c."local!" + cv."cvotes!",
-             federated_interaction_count = c."fede!"
+             federated_interaction_count = c."fede!" + rv."rfavor!" + rv."rcontra!"
            FROM
+             (SELECT COUNT(*) FILTER (WHERE stance = 'favor') AS "rfavor!",
+                     COUNT(*) FILTER (WHERE stance = 'contra') AS "rcontra!"
+                FROM forum_remote_vote
+               WHERE target_kind = 'topic' AND target_id = $1) rv,
              (SELECT COUNT(*) FILTER (WHERE stance = 'favor') AS "favor!",
                      COUNT(*) FILTER (WHERE stance = 'contra') AS "contra!",
                      COUNT(*) AS "votes!"

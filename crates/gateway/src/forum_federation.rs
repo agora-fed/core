@@ -8,7 +8,8 @@
 //! Flows: WebFinger/Group actor (federation.rs delegates here) · Follow→Accept
 //! signed with the forum's key (lazy generation) · Announce of new topics to
 //! followers (fan-out swept by the worker, once per inbox) · dereferenceable
-//! topic Note at `/actors/<handle>/objects/<topic_id>`.
+//! topic Page at `/actors/<handle>/objects/<topic_id>`. Everything else a remote
+//! server sends is in [`crate::forum_inbound`].
 
 use serde_json::{json, Value};
 use sqlx::PgPool;
@@ -127,7 +128,7 @@ pub(crate) fn group_actor_json(
     public_pem: &str,
 ) -> Value {
     let actor = format!("https://{host}/actors/{handle}");
-    json!({
+    let mut doc = json!({
         "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
         "id": actor,
         "type": "Group",
@@ -145,18 +146,21 @@ pub(crate) fn group_actor_json(
         "outbox": format!("{actor}/outbox"),
         "followers": format!("{actor}/followers"),
         "manuallyApprovesFollowers": false,
+        // Tells Lemmy not to offer posting where this instance does not accept contributions.
+        "postingRestrictedToMods": !crate::forum_inbound::InboundConfig::from_env().enabled,
         "publicKey": {
             "id": format!("{actor}#main-key"),
             "owner": actor,
             "publicKeyPem": public_pem,
         },
-        "icon": forum.avatar_url.as_ref().map(|u| json!({
-            "type": "Image", "url": absolutize_url(host, u)
-        })),
-        "image": forum.banner_url.as_ref().map(|u| json!({
-            "type": "Image", "url": absolutize_url(host, u)
-        })),
-    })
+    });
+    if let Some(url) = &forum.avatar_url {
+        doc["icon"] = json!({ "type": "Image", "url": absolutize_url(host, url) });
+    }
+    if let Some(url) = &forum.banner_url {
+        doc["image"] = json!({ "type": "Image", "url": absolutize_url(host, url) });
+    }
+    doc
 }
 
 /// `/media/x.png` → `https://<host>/media/x.png`; absolute URLs pass through untouched.
@@ -168,16 +172,27 @@ fn absolutize_url(host: &str, url: &str) -> String {
     }
 }
 
+/// `Follow` or `Undo{Follow}`, the only activities a forum takes with inbound off.
+pub(crate) fn is_follow_activity(activity: &Value) -> bool {
+    match activity.get("type").and_then(Value::as_str) {
+        Some("Follow") => true,
+        Some("Undo") => activity.pointer("/object/type").and_then(Value::as_str) == Some("Follow"),
+        _ => false,
+    }
+}
+
 /// Group inbox: `Follow` → record the follower (the REAL inbox comes from the
 /// actor doc, not the payload — limits spoofing) and reply with an `Accept`
-/// signed by the forum key; `Undo{Follow}` → remove. Everything else: 202 and
-/// ignored (v1 — remote comments land in the next phase, behind moderation).
+/// signed by the forum key; `Undo{Follow}` → remove. The rest goes to
+/// [`crate::forum_inbound`], which ignores it unless the instance opted in.
 pub(crate) async fn inbox(
     db: &PgPool,
+    config: &crate::forum_inbound::InboundConfig,
     host: &str,
     handle: &str,
     forum: &FedForum,
     activity: &Value,
+    preferred_username: Option<&str>,
 ) -> axum::http::StatusCode {
     use axum::http::StatusCode;
     let kind = activity.get("type").and_then(Value::as_str).unwrap_or("");
@@ -257,66 +272,123 @@ pub(crate) async fn inbox(
                 .bind(actor_url)
                 .execute(db)
                 .await;
+                return StatusCode::ACCEPTED;
             }
-            StatusCode::ACCEPTED
+            apply_inbound(db, config, host, handle, activity, preferred_username).await
         }
-        _ => StatusCode::ACCEPTED,
+        _ => apply_inbound(db, config, host, handle, activity, preferred_username).await,
     }
 }
 
-/// Dereferenceable AP Note for a topic (`/actors/<handle>/objects/<topic_id>`).
+async fn apply_inbound(
+    db: &PgPool,
+    config: &crate::forum_inbound::InboundConfig,
+    host: &str,
+    handle: &str,
+    activity: &Value,
+    preferred_username: Option<&str>,
+) -> axum::http::StatusCode {
+    match crate::forum_inbound::apply(db, config, host, handle, activity, preferred_username).await
+    {
+        Ok(status) => status,
+        Err(err) => {
+            tracing::warn!(?err, "forum inbox: applying the activity failed");
+            // The activity was already marked as seen, so make the retry count.
+            let id = activity.get("id").and_then(Value::as_str).unwrap_or("");
+            let _ = sqlx::query("DELETE FROM forum_inbox_seen WHERE activity_id = $1")
+                .bind(id)
+                .execute(db)
+                .await;
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
+}
+
+/// Dereferenceable AP `Page` for a local topic (`/actors/<handle>/objects/<topic_id>`). Lemmy
+/// reads a thread as `Page`, and Mastodon converts it to a status with a link.
 pub(crate) async fn topic_object_json(
     db: &PgPool,
     host: &str,
     handle: &str,
     topic_id: Uuid,
 ) -> Option<Value> {
-    let row: Option<(
-        String,
-        String,
-        chrono::DateTime<chrono::Utc>,
-        Option<String>,
-    )> = sqlx::query_as(
-        r"SELECT t.title, t.body, t.created_at, c.handle
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        title: String,
+        body: String,
+        created_at: chrono::DateTime<chrono::Utc>,
+        author_id: Uuid,
+        author_handle: Option<String>,
+        is_public: bool,
+    }
+    let row: Row = sqlx::query_as(
+        r"SELECT t.title, t.body, t.created_at, t.author_id, c.handle AS author_handle, c.is_public
               FROM forum_topic t
               JOIN forum f ON f.id = t.forum_id
               JOIN citizen c ON c.id = t.author_id
-              WHERE t.id = $1 AND t.hidden_at IS NULL AND f.full_path = $2
-                AND f.federated AND forum_readable(f.id, NULL)",
+              WHERE t.id = $1 AND t.hidden_at IS NULL AND t.remote_actor_url IS NULL
+                AND f.full_path = $2 AND f.federated AND forum_readable(f.id, NULL)",
     )
     .bind(topic_id)
     .bind(handle_to_path(handle)?)
     .fetch_optional(db)
     .await
-    .ok()?;
-    let (title, body, created_at, author_handle) = row?;
+    .ok()??;
     let actor = format!("https://{host}/actors/{handle}");
-    let esc = |s: &str| {
-        s.replace('&', "&amp;")
-            .replace('<', "&lt;")
-            .replace('>', "&gt;")
-    };
-    let content = format!(
-        "<p><strong>{}</strong></p><p>{}</p>",
-        esc(&title),
-        esc(&body).replace('\n', "<br/>")
+    let author = crate::forum_outbound::author_handle(
+        row.author_id,
+        row.author_handle.as_deref(),
+        row.is_public,
     );
-    let attributed = author_handle
-        .map(|h| format!("https://{host}/actors/{h}"))
-        .unwrap_or_else(|| actor.clone());
+    let (content, source) = crate::forum_outbound::content_fields(&row.body, Some(&row.title));
     Some(json!({
         "@context": "https://www.w3.org/ns/activitystreams",
         "id": format!("{actor}/objects/{topic_id}"),
-        "type": "Note",
-        "attributedTo": attributed,
+        "type": "Page",
+        "attributedTo": format!("https://{host}/actors/{author}"),
         "audience": actor,
-        "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        "to": [actor, "https://www.w3.org/ns/activitystreams#Public"],
         "cc": [format!("{actor}/followers")],
-        "name": title,
+        "name": row.title,
         "content": content,
+        "mediaType": "text/html",
+        "source": source,
         "url": format!("https://{host}/f/topico/{topic_id}"),
-        "published": created_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        "published": row.created_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
     }))
+}
+
+/// `Followers` count only: who follows a forum stays private.
+pub(crate) async fn followers_json(
+    db: &PgPool,
+    host: &str,
+    handle: &str,
+    forum: &FedForum,
+) -> Value {
+    let total: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM forum_follower WHERE forum_id = $1 AND accepted_at IS NOT NULL",
+    )
+    .bind(forum.id)
+    .fetch_one(db)
+    .await
+    .unwrap_or(0);
+    json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("https://{host}/actors/{handle}/followers"),
+        "type": "OrderedCollection",
+        "totalItems": total,
+    })
+}
+
+/// An empty outbox: Lemmy fetches it when it first sees a community, to backfill.
+pub(crate) fn empty_outbox_json(host: &str, handle: &str) -> Value {
+    json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("https://{host}/actors/{handle}/outbox"),
+        "type": "OrderedCollection",
+        "totalItems": 0,
+        "orderedItems": [],
+    })
 }
 
 /// Announce sweep (1/min in the worker): enqueues new topics × followers and
@@ -331,7 +403,8 @@ pub async fn announce_sweep(db: &PgPool, public_origin: &str) {
           FROM forum_topic t
           JOIN forum f ON f.id = t.forum_id AND f.federated AND f.hidden_at IS NULL
           JOIN forum_follower ff ON ff.forum_id = t.forum_id AND ff.accepted_at IS NOT NULL
-          WHERE t.hidden_at IS NULL AND t.created_at > now() - interval '7 days'
+          WHERE t.hidden_at IS NULL AND t.remote_actor_url IS NULL
+            AND t.created_at > now() - interval '7 days'
             AND forum_readable(f.id, NULL)
           ON CONFLICT (topic_id, recipient_inbox) DO NOTHING",
     )
@@ -371,16 +444,43 @@ pub async fn announce_sweep(db: &PgPool, public_origin: &str) {
         let Some((_, private_pem)) = ensure_forum_keys(db, forum_id).await else {
             continue;
         };
-        let announce = json!({
-            "@context": "https://www.w3.org/ns/activitystreams",
-            "id": format!("{actor}/activities/announce-{delivery_id}"),
-            "type": "Announce",
-            "actor": actor,
-            "to": ["https://www.w3.org/ns/activitystreams#Public"],
-            "cc": [format!("{actor}/followers")],
-            "object": format!("{actor}/objects/{topic_id}"),
-        });
-        match crate::federation::deliver_signed(&actor, &private_pem, &inbox, &announce).await {
+        let Some(page) = topic_object_json(db, host, &handle, topic_id).await else {
+            // Hidden since it was queued: there is nothing left to send.
+            let _ = sqlx::query("UPDATE forum_announce_delivery SET attempts = 5 WHERE id = $1")
+                .bind(delivery_id)
+                .execute(db)
+                .await;
+            continue;
+        };
+        let announce = |id: String, object: Value| {
+            json!({
+                "@context": "https://www.w3.org/ns/activitystreams",
+                "id": id,
+                "type": "Announce",
+                "actor": actor,
+                "to": ["https://www.w3.org/ns/activitystreams#Public"],
+                "cc": [format!("{actor}/followers")],
+                "audience": actor,
+                "object": object,
+            })
+        };
+        // FEP-1b12 wraps the activity, which is what Lemmy and PieFed read. Mastodon and Pleroma
+        // cannot read that and need the object itself; Lemmy sends both for the same reason.
+        let wrapped = announce(
+            format!("{actor}/activities/announce-create-{delivery_id}"),
+            crate::forum_outbound::create_activity(&actor, &page, &topic_id.to_string()),
+        );
+        let plain = announce(
+            format!("{actor}/activities/announce-{delivery_id}"),
+            json!(format!("{actor}/objects/{topic_id}")),
+        );
+        let sent = match crate::federation::deliver_signed(&actor, &private_pem, &inbox, &wrapped)
+            .await
+        {
+            Ok(()) => crate::federation::deliver_signed(&actor, &private_pem, &inbox, &plain).await,
+            Err(err) => Err(err),
+        };
+        match sent {
             Ok(()) => {
                 let _ = sqlx::query(
                     "UPDATE forum_announce_delivery SET sent_at = now() WHERE id = $1 AND sent_at IS NULL",
@@ -401,6 +501,9 @@ pub async fn announce_sweep(db: &PgPool, public_origin: &str) {
             }
         }
     }
+
+    let config = crate::forum_inbound::InboundConfig::from_env();
+    crate::forum_outbound::sweep(db, host, &config).await;
 }
 
 #[cfg(test)]
