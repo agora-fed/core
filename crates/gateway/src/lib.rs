@@ -44,7 +44,8 @@ pub mod embed;
 pub mod federation;
 pub mod federation_feed;
 pub mod fediverso_admin;
-mod forum_federation;
+#[doc(hidden)]
+pub mod forum_federation;
 mod forum_mailer;
 pub mod govbr_oidc;
 mod instance_html;
@@ -486,7 +487,8 @@ async fn forums_spa(
                 let row: Option<(String, String, String)> = sqlx::query_as(
                     "SELECT t.title, t.body, f.name FROM forum_topic t \
                      JOIN forum f ON f.id = t.forum_id \
-                     WHERE t.id = $1 AND t.hidden_at IS NULL",
+                     WHERE t.id = $1 AND t.hidden_at IS NULL \
+                       AND forum_readable(t.forum_id, NULL)",
                 )
                 .bind(id)
                 .fetch_optional(&state.db)

@@ -58,7 +58,7 @@ pub(crate) async fn lookup_by_handle(db: &PgPool, handle: &str) -> Option<FedFor
     let path = handle_to_path(handle)?;
     sqlx::query_as(
         r"SELECT id, full_path, name, description, federated, avatar_url, banner_url
-          FROM forum WHERE full_path = $1 AND hidden_at IS NULL",
+          FROM forum WHERE full_path = $1 AND federated AND forum_readable(id, NULL)",
     )
     .bind(&path)
     .fetch_optional(db)
@@ -281,7 +281,8 @@ pub(crate) async fn topic_object_json(
               FROM forum_topic t
               JOIN forum f ON f.id = t.forum_id
               JOIN citizen c ON c.id = t.author_id
-              WHERE t.id = $1 AND t.hidden_at IS NULL AND f.full_path = $2",
+              WHERE t.id = $1 AND t.hidden_at IS NULL AND f.full_path = $2
+                AND f.federated AND forum_readable(f.id, NULL)",
     )
     .bind(topic_id)
     .bind(handle_to_path(handle)?)
@@ -320,7 +321,7 @@ pub(crate) async fn topic_object_json(
 
 /// Announce sweep (1/min in the worker): enqueues new topics × followers and
 /// sends the pending ones signed with the forum's key. Idempotent per (topic, inbox).
-pub(crate) async fn announce_sweep(db: &PgPool, public_origin: &str) {
+pub async fn announce_sweep(db: &PgPool, public_origin: &str) {
     let origin = public_origin.trim_end_matches('/');
     let host = origin.trim_start_matches("https://");
 
@@ -331,6 +332,7 @@ pub(crate) async fn announce_sweep(db: &PgPool, public_origin: &str) {
           JOIN forum f ON f.id = t.forum_id AND f.federated AND f.hidden_at IS NULL
           JOIN forum_follower ff ON ff.forum_id = t.forum_id AND ff.accepted_at IS NOT NULL
           WHERE t.hidden_at IS NULL AND t.created_at > now() - interval '7 days'
+            AND forum_readable(f.id, NULL)
           ON CONFLICT (topic_id, recipient_inbox) DO NOTHING",
     )
     .execute(db)
@@ -342,6 +344,7 @@ pub(crate) async fn announce_sweep(db: &PgPool, public_origin: &str) {
           JOIN forum_topic t ON t.id = d.topic_id
           JOIN forum f ON f.id = t.forum_id
           WHERE d.sent_at IS NULL AND d.attempts < 5
+            AND f.federated AND forum_readable(f.id, NULL)
           ORDER BY d.created_at LIMIT 10",
     )
     .fetch_all(db)

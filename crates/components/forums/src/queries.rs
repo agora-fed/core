@@ -433,7 +433,7 @@ pub async fn list_topics(
 }
 
 /// A recent topic with its originating forum (the /f home feed).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 pub struct RecentTopicRow {
     /// Topic id.
     pub id: Uuid,
@@ -466,38 +466,96 @@ pub struct RecentTopicRow {
 pub async fn list_recent_topics(
     executor: impl sqlx::PgExecutor<'_>,
     org_id: Uuid,
+    viewer: Option<Uuid>,
     limit: i64,
 ) -> Result<Vec<RecentTopicRow>, sqlx::Error> {
-    let rows = sqlx::query!(
-        r#"SELECT t.id, t.title, t.score, t.favor_count, t.contra_count,
-                  t.ponderacao_count, t.interaction_count, t.comment_count, t.created_at,
-                  f.full_path AS forum_path, f.name AS forum_name
-           FROM forum_topic t
-           JOIN forum f ON f.id = t.forum_id
+    sqlx::query_as(
+        r"SELECT t.id, t.title, t.score, t.favor_count, t.contra_count,
+                 t.ponderacao_count, t.interaction_count, t.comment_count, t.created_at,
+                 f.full_path AS forum_path, f.name AS forum_name
+            FROM forum_topic t
+            JOIN forum f ON f.id = t.forum_id
            WHERE t.hidden_at IS NULL AND f.hidden_at IS NULL AND f.org_id = $1
+             AND forum_readable(f.id, $2)
            ORDER BY t.id DESC
-           LIMIT $2"#,
-        org_id,
-        limit,
+           LIMIT $3",
     )
+    .bind(org_id)
+    .bind(viewer)
+    .bind(limit)
     .fetch_all(executor)
+    .await
+}
+
+/// Whether `viewer` may read the forum. See the `forum_readable` database function.
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn forum_readable(
+    executor: impl sqlx::PgExecutor<'_>,
+    forum_id: Uuid,
+    viewer: Option<Uuid>,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("SELECT forum_readable($1, $2)")
+        .bind(forum_id)
+        .bind(viewer)
+        .fetch_one(executor)
+        .await
+}
+
+/// The forums among `ids` that `viewer` may read.
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn readable_forums(
+    executor: impl sqlx::PgExecutor<'_>,
+    ids: &[Uuid],
+    viewer: Option<Uuid>,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar("SELECT id FROM unnest($1::uuid[]) AS id WHERE forum_readable(id, $2)")
+        .bind(ids)
+        .bind(viewer)
+        .fetch_all(executor)
+        .await
+}
+
+/// Whether `viewer` may read the forum holding this topic. An unknown topic is not readable.
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn topic_readable(
+    executor: impl sqlx::PgExecutor<'_>,
+    topic_id: Uuid,
+    viewer: Option<Uuid>,
+) -> Result<bool, sqlx::Error> {
+    let readable: Option<bool> =
+        sqlx::query_scalar("SELECT forum_readable(forum_id, $2) FROM forum_topic WHERE id = $1")
+            .bind(topic_id)
+            .bind(viewer)
+            .fetch_optional(executor)
+            .await?;
+    Ok(readable.unwrap_or(false))
+}
+
+/// Whether `viewer` may read the forum holding this comment.
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn comment_readable(
+    executor: impl sqlx::PgExecutor<'_>,
+    comment_id: Uuid,
+    viewer: Option<Uuid>,
+) -> Result<bool, sqlx::Error> {
+    let readable: Option<bool> = sqlx::query_scalar(
+        "SELECT forum_readable(t.forum_id, $2)
+           FROM forum_topic_comment c JOIN forum_topic t ON t.id = c.topic_id
+          WHERE c.id = $1",
+    )
+    .bind(comment_id)
+    .bind(viewer)
+    .fetch_optional(executor)
     .await?;
-    Ok(rows
-        .into_iter()
-        .map(|r| RecentTopicRow {
-            id: r.id,
-            title: r.title,
-            score: r.score,
-            favor_count: r.favor_count,
-            contra_count: r.contra_count,
-            ponderacao_count: r.ponderacao_count,
-            interaction_count: r.interaction_count,
-            comment_count: r.comment_count,
-            created_at: r.created_at,
-            forum_path: r.forum_path,
-            forum_name: r.forum_name,
-        })
-        .collect())
+    Ok(readable.unwrap_or(false))
 }
 
 /// Upsert the citizen's stance (one row per topic-citizen pair; switching

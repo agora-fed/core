@@ -36,7 +36,7 @@ pub(crate) async fn sweep(db: &PgPool, public_origin: &str) {
             FROM forum_dispatch d
             JOIN forum_topic t ON t.id = d.topic_id
             JOIN forum f ON f.id = t.forum_id
-           WHERE d.sent_at IS NULL
+           WHERE d.sent_at IS NULL AND forum_readable(f.id, NULL)
            ORDER BY d.created_at
            LIMIT 10",
     )
