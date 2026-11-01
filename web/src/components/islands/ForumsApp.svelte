@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SITE_NAME } from '../../lib/site';
   // Fóruns institucionais (/f/...) — UMA ilha, três telas, roteamento client-side:
   //   /f/                → home (Federal | Estados | Governança)
   //   /f/<caminho>       → fórum (breadcrumb, seções, tópicos, novo tópico)
@@ -467,7 +468,7 @@
     }
     shareState = 'sending';
     const res = await postNote(
-      `📣 "${detail.topic.title}"\n\nDebate público aberto na DemocraciaBR — participe:\n${topicUrl()}`,
+      `📣 "${detail.topic.title}"\n\nDebate público aberto na ${SITE_NAME} — participe:\n${topicUrl()}`,
     );
     shareState = res.success ? 'sent' : 'failed';
     // URL AP do objeto: seguidores recebem sozinhos; pra IMPORTAR/impulsionar de
@@ -661,7 +662,7 @@
   {#if transparency && (transparency.status === 'parcial' || transparency.status === 'ausente')}
     <aside class="f-transparency" role="note" aria-label="Aviso de transparência da Câmara">
       {#if transparency.status === 'parcial'}
-        <p>📋 Transparência limitada nesta Câmara. Ela mantém um site oficial, mas ainda não publica os dados dos vereadores — contatos, agendas e gastos — em formato aberto e legível por máquina. Por isso o DemocraciaBR ainda não conseguiu conectar automaticamente os gabinetes desta cidade. Site oficial: {#if transparency.official_url}<a href={transparency.official_url} target="_blank" rel="noopener">{transparency.official_url}</a>{/if}. Dados abertos são um direito da população (Lei de Acesso à Informação — Lei nº 12.527/2011).</p>
+        <p>📋 Transparência limitada nesta Câmara. Ela mantém um site oficial, mas ainda não publica os dados dos vereadores — contatos, agendas e gastos — em formato aberto e legível por máquina. Por isso o {SITE_NAME} ainda não conseguiu conectar automaticamente os gabinetes desta cidade. Site oficial: {#if transparency.official_url}<a href={transparency.official_url} target="_blank" rel="noopener">{transparency.official_url}</a>{/if}. Dados abertos são um direito da população (Lei de Acesso à Informação — Lei nº 12.527/2011).</p>
       {:else}
         <p>🔍 Portal de transparência não localizado. Não encontramos um site oficial desta Câmara com dados abertos sobre vereadores, agendas e gastos públicos. A ausência dessas informações em formato acessível enfraquece o controle social garantido pela Lei de Acesso à Informação. Conhece o site oficial? Ajude a comunidade a cadastrá-lo pelo <a href="/contato">/contato</a>.</p>
       {/if}

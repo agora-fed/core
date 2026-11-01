@@ -1,4 +1,5 @@
 ---
+import { SITE_NAME } from '../../lib/site';
 // Página de aceite de convite de parlamentar — o(a) parlamentar clica no link do e-mail e cai
 // aqui. O token é a credencial (32 bytes URL-safe base64), lido client-side pela ilha.
 //
@@ -25,7 +26,7 @@ export async function getStaticPaths() {
 }
 
 const description =
-  'Aceite o convite para assumir o mandato na plataforma DemocraciaBR.';
+  `Aceite o convite para assumir o mandato na plataforma ${SITE_NAME}.`;
 ---
 
 <BaseLayout title="Aceitar convite" {description} noindex>

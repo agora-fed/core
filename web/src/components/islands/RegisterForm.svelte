@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SITE_NAME } from '../../lib/site';
   // Registration: e-mail + senha + CPF, with client-side CPF check-digit
   // validation. Toggle Cidadão | Político/Candidata. In politician mode the
   // user picks their mandate from a searchable list; on submit we hit
@@ -309,7 +310,7 @@
 {:else}
 {#if inviterName}
   <div class="invited-by" role="status">
-    <strong>{inviterName}</strong> te convidou pra DemocraciaBR. Crie sua conta abaixo.
+    <strong>{inviterName}</strong> te convidou pra {SITE_NAME}. Crie sua conta abaixo.
   </div>
 {/if}
 <section class="rules" aria-label="Regras da conta">

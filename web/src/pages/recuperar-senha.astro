@@ -1,10 +1,11 @@
 ---
+import { SITE_NAME } from '../lib/site';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import BrandLine from '../components/BrandLine.astro';
 import PasswordResetRequestForm from '../components/islands/PasswordResetRequestForm.svelte';
 
 const description =
-  'Informe seu e-mail e receba um link para redefinir sua senha na DemocraciaBR.';
+  `Informe seu e-mail e receba um link para redefinir sua senha na ${SITE_NAME}.`;
 ---
 
 <BaseLayout title="Recuperar senha" {description} noindex>

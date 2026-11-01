@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SITE_NAME } from '../../lib/site';
   // Página PÚBLICA da declaração de financiamento de uma candidatura — o que
   // o eleitor vê quando a campanha publica (is_published). Lê ?u=<handle>,
   // igual /perfil. 404 do servidor vira um estado vazio educado.
@@ -114,7 +115,7 @@
       <p class="muted legal">
         Só pessoa física pode doar, até 10% dos rendimentos brutos do ano
         anterior; toda doação exige recibo eleitoral (Lei 9.504/1997). A
-        DemocraciaBR não intermedeia pagamento.
+        {SITE_NAME} não intermedeia pagamento.
       </p>
     </Card>
   {/if}

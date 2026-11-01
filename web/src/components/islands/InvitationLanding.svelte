@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SITE_NAME } from '../../lib/site';
   // Landing do convite de conta. Ler `?convite=TOKEN` da URL, chamar preview,
   // e apresentar CTA "Criar conta" que leva pra /cadastrar preservando o
   // token (rem. pra futuro consumo).
@@ -62,10 +63,10 @@
   {#if preview.invited_by_display_name || preview.invited_by_handle}
     <p class="muted">
       <strong>{preview.invited_by_display_name ?? preview.invited_by_handle}</strong>
-      te convidou pra criar conta na DemocraciaBR.
+      te convidou pra criar conta na {SITE_NAME}.
     </p>
   {:else}
-    <p class="muted">Alguém te convidou pra criar conta na DemocraciaBR.</p>
+    <p class="muted">Alguém te convidou pra criar conta na {SITE_NAME}.</p>
   {/if}
   <p>
     A instância é aberta — o convite não é obrigatório, mas serve pra

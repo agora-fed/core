@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SITE_NAME } from '../../lib/site';
   // Perfil público humano (cidadão OU político). CSR: como o site é SSG (ADR-0009) e não dá pra
   // pré-gerar um HTML por handle arbitrário no build, esta ilha lê o handle do query-param `?u=`
   // (client-side) e hidrata o perfil via GET /api/v1/profiles/{handle}. É o alvo do 302 que o
@@ -179,7 +180,7 @@
       if (!loggedIn) {
         loading = false;
         loadError =
-          'Perfis do fediverso são carregados só pra quem está logado — entre pra ver este perfil dentro do DemocraciaBR.';
+          `Perfis do fediverso são carregados só pra quem está logado — entre pra ver este perfil dentro do ${SITE_NAME}.`;
         return;
       }
       const res = await lookupRemoteActor(handle);
@@ -350,11 +351,11 @@
   <div class="card state" role="alert">
     <h2>{loadError}</h2>
     {#if !loggedIn && isRemoteHandle(handle)}
-      <p class="muted">Perfis do fediverso são renderizados dentro do DemocraciaBR, mas precisam de login.</p>
+      <p class="muted">Perfis do fediverso são renderizados dentro do {SITE_NAME}, mas precisam de login.</p>
       <a class="btn btn-primary" href={`/entrar?next=${encodeURIComponent(`/perfil/?u=${handle}`)}`}>Entrar</a>
     {:else}
       <p class="muted">
-        O perfil pode ser privado — na DemocraciaBR todo perfil nasce privado e
+        O perfil pode ser privado — na {SITE_NAME} todo perfil nasce privado e
         só aparece aqui se a pessoa o tornar público.
       </p>
       <a class="btn btn-ghost" href="/">Voltar para o início</a>

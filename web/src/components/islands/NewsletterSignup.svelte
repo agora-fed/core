@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SITE_NAME } from '../../lib/site';
   // Captação de audiência (0.35.0): o form "receba novidades" do rodapé.
   // Consent LGPD explícito no microcopy; honeypot invisível contra bots.
   import { subscribeAudience } from '../../lib/api';
@@ -31,7 +32,7 @@
 
 <div class="signup">
   {#if done}
-    <p class="ok">✅ Pronto! Você vai receber as novidades da DemocraciaBR.</p>
+    <p class="ok">✅ Pronto! Você vai receber as novidades da {SITE_NAME}.</p>
   {:else}
     <form onsubmit={submit}>
       <div class="fields">
@@ -65,7 +66,7 @@
       </div>
       {#if error}<p class="err">{error}</p>{/if}
       <p class="consent">
-        Ao se inscrever você concorda em receber novidades da DemocraciaBR por
+        Ao se inscrever você concorda em receber novidades da {SITE_NAME} por
         e-mail. Todo e-mail tem link de descadastro de 1 clique.
         <a href="/privacidade">Política de privacidade</a>.
       </p>

@@ -1,10 +1,11 @@
 ---
+import { SITE_HOST, SITE_NAME } from '../lib/site';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import ColorBar from '../components/illustrations/ColorBar.astro';
 import ServerRulesList from '../components/ServerRulesList.astro';
 
 const description =
-  'DemocraciaBR: infraestrutura pública, soberana e auditável para converter demanda popular em accountability parlamentar. Feito pela PopSolutions Cooperativa de Tecnologia.';
+  `${SITE_NAME}: infraestrutura pública, soberana e auditável para converter demanda popular em accountability parlamentar. Feito pela PopSolutions Cooperativa de Tecnologia.`;
 ---
 
 <BaseLayout title="Sobre" {description}>
@@ -12,7 +13,7 @@ const description =
     <div class="container narrow">
       <header class="head">
         <ColorBar class="head-bar" />
-        <h1>Sobre a DemocraciaBR</h1>
+        <h1>Sobre a {SITE_NAME}</h1>
         <p class="lede muted">
           Infraestrutura pública para conectar cidadania e mandatos —
           participação com consequência, silêncio com registro.
@@ -62,8 +63,8 @@ const description =
 
         <h2>Onde está</h2>
         <ul>
-          <li>Instância principal: <code>democracia.social.br</code> — IPv6-first, hospedada em VM soberana no Brasil.</li>
-          <li>Federação ActivityPub: cada cidadã(o) tem endereço fediverso público (<code>@handle@democracia.social.br</code>) e pode seguir/ser seguido por qualquer instância Mastodon, Pleroma, etc.</li>
+          <li>Instância principal: <code>{SITE_HOST}</code> — IPv6-first, hospedada em VM soberana no Brasil.</li>
+          <li>Federação ActivityPub: cada cidadã(o) tem endereço fediverso público (<code>@handle@{SITE_HOST}</code>) e pode seguir/ser seguido por qualquer instância Mastodon, Pleroma, etc.</li>
           <li>Auto-hosteável: qualquer coletivo pode subir uma instância própria com os mesmos garantias.</li>
         </ul>
 
@@ -82,7 +83,7 @@ const description =
         <h2>Regras da instância</h2>
         <p class="muted">
           Além dos Termos, a moderação segue estas regras específicas da
-          DemocraciaBR. Ao criar conta você as aceita.
+          {' '}{SITE_NAME}. Ao criar conta você as aceita.
         </p>
         <ServerRulesList />
 

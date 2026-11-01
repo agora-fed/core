@@ -1,10 +1,11 @@
 ---
+import { SITE_NAME } from '../lib/site';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import BrandLine from '../components/BrandLine.astro';
 import InvitationLanding from '../components/islands/InvitationLanding.svelte';
 
 const description =
-  'Você foi convidado(a) pra criar conta na DemocraciaBR.';
+  `Você foi convidado(a) pra criar conta na ${SITE_NAME}.`;
 ---
 
 <BaseLayout title="Convite" {description} noindex>

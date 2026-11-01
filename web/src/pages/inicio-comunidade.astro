@@ -1,0 +1,73 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { SITE_NAME } from '../lib/site';
+
+const description = `${SITE_NAME}: espaço de decisão coletiva da comunidade, com debates e consultas abertos a quem participa.`;
+const tools = [
+  {
+    href: '/f/',
+    module: 'forums',
+    title: 'Fóruns',
+    text: 'Debata propostas e assuntos da comunidade em conversas organizadas por tema.',
+  },
+  {
+    href: '/consultas',
+    module: 'consultations',
+    title: 'Consultas',
+    text: 'Registre sua posição nas decisões abertas e acompanhe o resultado.',
+  },
+];
+---
+
+<BaseLayout title={SITE_NAME} {description} canonical="/">
+  <section class="section">
+    <div class="container narrow">
+      <h1 data-brand-name>{SITE_NAME}</h1>
+      <p class="lede muted">O espaço onde a comunidade conversa e decide em conjunto.</p>
+      <div class="actions">
+        <a class="btn btn-primary" href="/cadastrar">Criar conta</a>
+        <a class="btn btn-ghost" href="/entrar">Entrar</a>
+      </div>
+    </div>
+  </section>
+  <section class="section alt" aria-labelledby="tools-title">
+    <div class="container">
+      <h2 id="tools-title">O que você pode fazer aqui</h2>
+      <ul class="tools">
+        {
+          tools.map((t) => (
+            <li class="card" data-requires={t.module}>
+              <h3>
+                <a href={t.href}>{t.title}</a>
+              </h3>
+              <p class="muted">{t.text}</p>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .lede {
+    font-size: var(--fs-lg);
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    margin-top: var(--sp-4);
+  }
+  .tools {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: var(--sp-4);
+    padding: 0;
+    margin: var(--sp-4) 0 0;
+    list-style: none;
+  }
+  .tools h3 {
+    margin: 0 0 var(--sp-1);
+  }
+</style>

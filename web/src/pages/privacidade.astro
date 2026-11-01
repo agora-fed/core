@@ -1,9 +1,10 @@
 ---
+import { SITE_HOST, SITE_NAME } from '../lib/site';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import ColorBar from '../components/illustrations/ColorBar.astro';
 
 const description =
-  'Política de privacidade da DemocraciaBR conforme Lei Geral de Proteção de Dados (LGPD): dados coletados, base legal, seus direitos, contato do encarregado.';
+  `Política de privacidade da ${SITE_NAME} conforme Lei Geral de Proteção de Dados (LGPD): dados coletados, base legal, seus direitos, contato do encarregado.`;
 ---
 
 <BaseLayout title="Privacidade" {description}>
@@ -21,7 +22,7 @@ const description =
         <h2>Quem trata seus dados</h2>
         <p>
           <strong>PopSolutions Cooperativa de Tecnologia</strong>, mantenedora da
-          instância <code>democracia.social.br</code>. Contato do Encarregado
+          instância <code>{SITE_HOST}</code>. Contato do Encarregado
           de Proteção de Dados (DPO): <a href="/contato/?setor=lgpd">formulário de contato — setor LGPD</a>.
         </p>
 

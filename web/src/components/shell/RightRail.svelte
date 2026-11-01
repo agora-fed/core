@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SITE_HOST, SITE_NAME } from '../../lib/site';
   // Contextual right rail. Content varies by page via named slots. Falls back
   // to the platform pitch when no widgets are passed — better than empty.
   import type { Snippet } from 'svelte';
@@ -27,8 +28,8 @@
     <section class="w">
       <h3><Icon name="gavel" size={16} />Fediverso</h3>
       <p>
-        DemocraciaBR fala ActivityPub. Sua conta funciona com qualquer
-        instância Mastodon: <strong>@você@democracia.social.br</strong>.
+        {SITE_NAME} fala ActivityPub. Sua conta funciona com qualquer
+        instância Mastodon: <strong>@você@{SITE_HOST}</strong>.
       </p>
       <a class="link" data-requires="federation" href="/explorar"
         >Explorar <Icon name="arrow-right" size={14} /></a
