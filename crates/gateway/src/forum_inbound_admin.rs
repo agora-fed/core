@@ -8,13 +8,12 @@ use axum::{Json, Router};
 use dsoc_api_contract::ApiResponse;
 use dsoc_app::AppState;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::authz_ext::{require_org_admin, AdminCaller};
+use crate::authz_ext::require_org_admin;
 use crate::forum_federation::path_to_handle;
-use crate::forum_inbound::{announce_accepted, https_host};
+use crate::forum_inbound::{is_canonical_actor, relay_item};
 
 /// Router for the queue and block endpoints.
 pub fn routes(state: AppState) -> Router<()> {
@@ -48,12 +47,6 @@ fn storage_failure(err: &sqlx::Error) -> Response {
     )
 }
 
-/// The public host, needed to name the Group when repeating an approved contribution.
-fn public_host() -> Option<String> {
-    let origin = std::env::var("PUBLIC_ORIGIN").ok()?;
-    https_host(&origin)
-}
-
 #[derive(Debug, Serialize, sqlx::FromRow)]
 struct QueueItem {
     kind: String,
@@ -71,19 +64,25 @@ async fn queue(State(state): State<AppState>, headers: HeaderMap) -> Response {
         Ok(admin) => admin,
         Err(denied) => return denied,
     };
+    // Each server's oldest come first, so a flood from one cannot push the others past the limit.
     let rows: Result<Vec<QueueItem>, _> = sqlx::query_as(
-        "SELECT 'topic' AS kind, t.id, f.full_path AS forum_path, t.remote_actor_url AS actor_url,
-                t.remote_handle AS handle, t.title, t.body, t.created_at
-           FROM forum_topic t JOIN forum f ON f.id = t.forum_id
-          WHERE t.moderation = 'pending' AND f.org_id = $1
-         UNION ALL
-         SELECT 'comment', c.id, f.full_path, c.remote_actor_url, c.remote_handle, t.title, c.body,
-                c.created_at
-           FROM forum_topic_comment c
-           JOIN forum_topic t ON t.id = c.topic_id
-           JOIN forum f ON f.id = t.forum_id
-          WHERE c.moderation = 'pending' AND f.org_id = $1
-         ORDER BY created_at LIMIT 200",
+        "SELECT kind, id, forum_path, actor_url, handle, title, body, created_at
+           FROM (SELECT queued.*,
+                        row_number() OVER (PARTITION BY remote_host ORDER BY created_at) AS turn
+                   FROM (SELECT 'topic' AS kind, t.id, f.full_path AS forum_path,
+                                t.remote_actor_url AS actor_url, t.remote_handle AS handle,
+                                t.remote_host, t.title, t.body, t.created_at
+                           FROM forum_topic t JOIN forum f ON f.id = t.forum_id
+                          WHERE t.moderation = 'pending' AND t.deleted_by IS NULL AND f.org_id = $1
+                         UNION ALL
+                         SELECT 'comment', c.id, f.full_path, c.remote_actor_url, c.remote_handle,
+                                c.remote_host, t.title, c.body, c.created_at
+                           FROM forum_topic_comment c
+                           JOIN forum_topic t ON t.id = c.topic_id
+                           JOIN forum f ON f.id = t.forum_id
+                          WHERE c.moderation = 'pending' AND c.deleted_by IS NULL
+                            AND f.org_id = $1) queued) ranked
+          ORDER BY turn, created_at LIMIT 200",
     )
     .bind(admin.org)
     .fetch_all(&state.db)
@@ -108,88 +107,115 @@ async fn decide(
         "reject" => false,
         _ => return fail(StatusCode::NOT_FOUND, "not_found", "Ação inválida."),
     };
-    let result = match kind.as_str() {
-        "topic" => decide_topic(&state.db, &admin, id, approve).await,
-        "comment" => decide_comment(&state.db, &admin, id, approve).await,
-        _ => return fail(StatusCode::NOT_FOUND, "not_found", "Tipo inválido."),
-    };
-    match result {
+    if !matches!(kind.as_str(), "topic" | "comment") {
+        return fail(StatusCode::NOT_FOUND, "not_found", "Tipo inválido.");
+    }
+    let host = crate::forum_inbound::public_host();
+    match decide_item(&state.db, host.as_deref(), admin.org, &kind, id, approve).await {
         Ok(true) => Json(ApiResponse::ok(serde_json::json!({ "decided": true }))).into_response(),
         Ok(false) => fail(StatusCode::NOT_FOUND, "not_found", "Item não está na fila."),
         Err(err) => storage_failure(&err),
     }
 }
 
-async fn decide_topic(
+/// Approve or reject one queued item. `host` names the Group when repeating an approval; without
+/// it the decision still applies and nothing is announced.
+///
+/// # Errors
+/// Propagates storage failures.
+pub async fn decide_item(
     db: &PgPool,
-    admin: &AdminCaller,
+    host: Option<&str>,
+    org: Uuid,
+    kind: &str,
     id: Uuid,
     approve: bool,
 ) -> Result<bool, sqlx::Error> {
-    let row: Option<(Uuid, String, Option<Value>, Option<String>)> = sqlx::query_as(
+    if kind == "topic" {
+        decide_topic(db, host, org, id, approve).await
+    } else {
+        decide_comment(db, host, org, id, approve).await
+    }
+}
+
+async fn decide_topic(
+    db: &PgPool,
+    host: Option<&str>,
+    org: Uuid,
+    id: Uuid,
+    approve: bool,
+) -> Result<bool, sqlx::Error> {
+    let row: Option<(String, bool)> = sqlx::query_as(
         "UPDATE forum_topic t
             SET moderation = $3,
                 hidden_at = CASE WHEN $4 THEN NULL ELSE t.hidden_at END
            FROM forum f
-          WHERE f.id = t.forum_id AND t.id = $1 AND f.org_id = $2 AND t.moderation = 'pending'
-         RETURNING f.id, f.full_path, t.remote_activity, t.ap_object_uri",
+          WHERE f.id = t.forum_id AND t.id = $1 AND f.org_id = $2
+            AND t.moderation = 'pending' AND t.deleted_by IS NULL
+         RETURNING f.full_path, t.relayed",
     )
     .bind(id)
-    .bind(admin.org)
+    .bind(org)
     .bind(if approve { "approved" } else { "rejected" })
     .bind(approve)
     .fetch_optional(db)
     .await?;
-    let Some((forum, path, activity, object)) = row else {
+    let Some((path, relayed)) = row else {
         return Ok(false);
     };
-    if approve {
-        repeat(db, forum, &path, activity.as_ref(), object.as_deref()).await?;
-    }
+    after_decision(db, host, "topic", id, &path, approve, relayed).await?;
     Ok(true)
 }
 
 async fn decide_comment(
     db: &PgPool,
-    admin: &AdminCaller,
+    host: Option<&str>,
+    org: Uuid,
     id: Uuid,
     approve: bool,
 ) -> Result<bool, sqlx::Error> {
-    let row: Option<(Uuid, Uuid, String, Option<Value>)> = sqlx::query_as(
+    let row: Option<(Uuid, String, bool)> = sqlx::query_as(
         "UPDATE forum_topic_comment c
             SET moderation = $3
            FROM forum_topic t, forum f
           WHERE t.id = c.topic_id AND f.id = t.forum_id AND c.id = $1 AND f.org_id = $2
-            AND c.moderation = 'pending'
-         RETURNING c.topic_id, f.id, f.full_path, c.remote_activity",
+            AND c.moderation = 'pending' AND c.deleted_by IS NULL
+         RETURNING c.topic_id, f.full_path, c.relayed",
     )
     .bind(id)
-    .bind(admin.org)
+    .bind(org)
     .bind(if approve { "approved" } else { "rejected" })
     .fetch_optional(db)
     .await?;
-    let Some((topic, forum, path, activity)) = row else {
+    let Some((topic, path, relayed)) = row else {
         return Ok(false);
     };
-    if approve {
-        dsoc_forums::queries::refresh_topic_counters(db, topic).await?;
-        repeat(db, forum, &path, activity.as_ref(), None).await?;
-    }
+    dsoc_forums::queries::refresh_topic_counters(db, topic).await?;
+    after_decision(db, host, "comment", id, &path, approve, relayed).await?;
     Ok(true)
 }
 
-async fn repeat(
+/// Tell followers. Rejecting an edit of something they already have retracts it, since what they
+/// hold is the version before the edit and the author no longer stands behind it.
+async fn after_decision(
     db: &PgPool,
-    forum: Uuid,
+    host: Option<&str>,
+    kind: &str,
+    id: Uuid,
     path: &str,
-    activity: Option<&Value>,
-    new_thread_object: Option<&str>,
+    approve: bool,
+    relayed: bool,
 ) -> Result<(), sqlx::Error> {
-    let (Some(activity), Some(host)) = (activity, public_host()) else {
+    let Some(host) = host else {
         return Ok(());
     };
-    let group = format!("https://{host}/actors/{}", path_to_handle(path));
-    announce_accepted(db, forum, &group, activity, new_thread_object).await
+    if approve {
+        relay_item(db, host, &path_to_handle(path), kind, id).await
+    } else if relayed {
+        crate::forum_outbound::enqueue_removal(db, host, kind, id, None).await
+    } else {
+        Ok(())
+    }
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -245,7 +271,7 @@ async fn add_block(
         .map(str::trim)
         .filter(|r| !r.is_empty());
     let result = match block.kind.as_str() {
-        "actor" if https_host(&value).is_some() => {
+        "actor" if is_canonical_actor(&value) => {
             sqlx::query(
                 "INSERT INTO forum_remote_actor_block (id, actor_url, reason, created_by)
                  VALUES ($1, $2, $3, $4) ON CONFLICT (actor_url) DO NOTHING",
@@ -274,7 +300,7 @@ async fn add_block(
             return fail(
                 StatusCode::BAD_REQUEST,
                 "validation",
-                "Informe a URL https da conta ou o domínio do servidor.",
+                "Informe a URL https exata da conta ou o domínio do servidor.",
             )
         }
     };

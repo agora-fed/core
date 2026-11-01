@@ -17,20 +17,51 @@ use dsoc_forums::domain::{MAX_BODY_LEN, MAX_COMMENT_LEN, MAX_TITLE_LEN};
 use crate::forum_federation::{lookup_by_handle, FedForum};
 
 const SYSTEM_SUBJECT: &str = "system:fediverse";
+const PUBLIC: &str = "https://www.w3.org/ns/activitystreams#Public";
 
 /// Instance policy. Unset means inbound is off and a forum only takes Follow and Undo Follow.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct InboundConfig {
     /// `FORUM_INBOUND_ENABLED=true`.
     pub enabled: bool,
     /// `FORUM_INBOUND_TRUSTED_HOSTS`: comma-separated hosts whose accounts skip the queue.
     pub trusted_hosts: Vec<String>,
+    /// `FORUM_INBOUND_PER_ACTOR_PER_MIN`.
+    pub per_actor_per_min: u32,
+    /// `FORUM_INBOUND_PER_HOST_PER_MIN`.
+    pub per_host_per_min: u32,
+    /// `FORUM_INBOUND_MAX_PENDING_PER_HOST`.
+    pub max_pending_per_host: i64,
+    /// `FORUM_INBOUND_MAX_PENDING_PER_FORUM`.
+    pub max_pending_per_forum: i64,
+}
+
+impl Default for InboundConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            trusted_hosts: Vec::new(),
+            per_actor_per_min: 30,
+            per_host_per_min: 300,
+            max_pending_per_host: 20,
+            max_pending_per_forum: 100,
+        }
+    }
+}
+
+fn env_number<T: std::str::FromStr + PartialOrd + From<u8>>(name: &str, default: T) -> T {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|n| *n > T::from(0))
+        .unwrap_or(default)
 }
 
 impl InboundConfig {
     /// Read the policy from the environment.
     #[must_use]
     pub fn from_env() -> Self {
+        let defaults = Self::default();
         Self {
             enabled: std::env::var("FORUM_INBOUND_ENABLED").is_ok_and(|v| v == "true"),
             trusted_hosts: std::env::var("FORUM_INBOUND_TRUSTED_HOSTS")
@@ -39,17 +70,60 @@ impl InboundConfig {
                 .map(|h| h.trim().to_ascii_lowercase())
                 .filter(|h| !h.is_empty())
                 .collect(),
+            per_actor_per_min: env_number(
+                "FORUM_INBOUND_PER_ACTOR_PER_MIN",
+                defaults.per_actor_per_min,
+            ),
+            per_host_per_min: env_number(
+                "FORUM_INBOUND_PER_HOST_PER_MIN",
+                defaults.per_host_per_min,
+            ),
+            max_pending_per_host: env_number(
+                "FORUM_INBOUND_MAX_PENDING_PER_HOST",
+                defaults.max_pending_per_host,
+            ),
+            max_pending_per_forum: env_number(
+                "FORUM_INBOUND_MAX_PENDING_PER_FORUM",
+                defaults.max_pending_per_forum,
+            ),
         }
     }
 }
 
-/// Lowercase host of an https URL.
+/// This instance's public `host[:port]`, from `PUBLIC_ORIGIN`.
+#[must_use]
+pub fn public_host() -> Option<String> {
+    let origin = Url::parse(&std::env::var("PUBLIC_ORIGIN").ok()?).ok()?;
+    let host = origin.host_str()?;
+    Some(match origin.port() {
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_owned(),
+    })
+}
+
+/// Lowercase host of a plain https URL. A port, userinfo or trailing dot gives `None`: those
+/// spell a different identity for the same name, so they can match neither a trusted host nor a
+/// block. Federating on a non-default port is therefore not supported inbound.
 pub(crate) fn https_host(url: &str) -> Option<String> {
     let parsed = Url::parse(url).ok()?;
-    if parsed.scheme() != "https" {
+    if parsed.scheme() != "https"
+        || parsed.port().is_some()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+    {
         return None;
     }
-    parsed.host_str().map(str::to_ascii_lowercase)
+    let host = parsed.host_str()?.to_ascii_lowercase();
+    (!host.ends_with('.')).then_some(host)
+}
+
+/// Whether this is the one spelling of an actor. Identity comparisons (votes, blocks, rate limits)
+/// use the URL as a string, so every other spelling of it would be a new person.
+#[must_use]
+pub fn is_canonical_actor(url: &str) -> bool {
+    https_host(url).is_some()
+        && Url::parse(url)
+            .is_ok_and(|p| p.query().is_none() && p.fragment().is_none() && p.as_str() == url)
 }
 
 fn strings(value: Option<&Value>) -> Vec<&str> {
@@ -358,35 +432,138 @@ pub(crate) async fn enqueue_announce(
     Ok(())
 }
 
-/// Repeat an accepted activity. A new thread also goes as a plain `Announce` of the object:
-/// Mastodon and Pleroma cannot read `Announce(Create(Page))`, and Lemmy sends both for that reason.
+/// Repeat an accepted activity, once per type and id.
 pub(crate) async fn announce_accepted(
     db: &PgPool,
     forum_id: Uuid,
     group_actor: &str,
-    activity: &Value,
-    new_thread_object: Option<&str>,
+    activity: Value,
 ) -> Result<(), sqlx::Error> {
-    let activity_id = activity.get("id").and_then(Value::as_str).unwrap_or("");
-    enqueue_announce(
-        db,
-        forum_id,
-        group_actor,
-        activity.clone(),
-        &format!("relay:{forum_id}:{activity_id}"),
-    )
-    .await?;
-    if let Some(object) = new_thread_object {
+    let kind = activity.get("type").and_then(Value::as_str).unwrap_or("");
+    let id = activity.get("id").and_then(Value::as_str).unwrap_or("");
+    let key = format!("relay:{forum_id}:{kind}:{id}");
+    enqueue_announce(db, forum_id, group_actor, activity, &key).await
+}
+
+/// A contribution as it was stored, the only form of it a moderator can have seen.
+#[derive(sqlx::FromRow)]
+struct StoredItem {
+    forum_id: Uuid,
+    actor: String,
+    object_uri: String,
+    title: Option<String>,
+    body: String,
+    original: Value,
+    relayed: bool,
+}
+
+/// Build the activity for followers from the stored fields. It keeps the sender's ids, because
+/// followers check them against the actor's server, and nothing else that was received.
+fn rebuilt_activity(item: &StoredItem, group_actor: &str) -> Value {
+    let kind = if item.relayed { "Update" } else { "Create" };
+    let (content, source) = crate::forum_outbound::content_fields(&item.body, None);
+    let mut object = json!({
+        "id": item.object_uri,
+        "type": if item.title.is_some() { "Page" } else { "Note" },
+        "attributedTo": item.actor,
+        "to": [group_actor, PUBLIC],
+        "cc": [format!("{group_actor}/followers")],
+        "audience": group_actor,
+        "content": content,
+        "mediaType": "text/html",
+        "source": source,
+    });
+    if let Some(title) = &item.title {
+        object["name"] = json!(title);
+    }
+    if let Some(parent) = item
+        .original
+        .pointer("/object/inReplyTo")
+        .and_then(Value::as_str)
+    {
+        object["inReplyTo"] = json!(parent);
+    }
+    json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": item.original.get("id").cloned().unwrap_or(Value::Null),
+        "type": kind,
+        "actor": item.actor,
+        "to": [PUBLIC],
+        "cc": [group_actor],
+        "audience": group_actor,
+        "object": object,
+    })
+}
+
+/// Send a contribution to followers if it is publicly visible now: a `Create` the first time, an
+/// `Update` afterwards. A new thread also goes as a plain `Announce` of the object: Mastodon and
+/// Pleroma cannot read `Announce(Create(Page))`, and Lemmy sends both for that reason.
+pub(crate) async fn relay_item(
+    db: &PgPool,
+    host: &str,
+    handle: &str,
+    kind: &str,
+    id: Uuid,
+) -> Result<(), sqlx::Error> {
+    let select = if kind == "topic" {
+        "SELECT t.forum_id, t.remote_actor_url AS actor, t.ap_object_uri AS object_uri,
+                t.title, t.body, t.remote_activity AS original, t.relayed
+           FROM forum_topic t
+          WHERE t.id = $1 AND t.hidden_at IS NULL AND t.moderation = 'approved'
+            AND t.remote_activity IS NOT NULL"
+    } else {
+        "SELECT t.forum_id, c.remote_actor_url AS actor, c.ap_object_uri AS object_uri,
+                NULL::text AS title, c.body, c.remote_activity AS original, c.relayed
+           FROM forum_topic_comment c JOIN forum_topic t ON t.id = c.topic_id
+          WHERE c.id = $1 AND c.hidden_at IS NULL AND c.moderation = 'approved'
+            AND t.hidden_at IS NULL AND c.remote_activity IS NOT NULL"
+    };
+    let Some(item): Option<StoredItem> = sqlx::query_as(select).bind(id).fetch_optional(db).await?
+    else {
+        return Ok(());
+    };
+    let group = format!("https://{host}/actors/{handle}");
+    announce_accepted(db, item.forum_id, &group, rebuilt_activity(&item, &group)).await?;
+    if kind == "topic" && !item.relayed {
         enqueue_announce(
             db,
-            forum_id,
-            group_actor,
-            json!(object),
-            &format!("relay-plain:{forum_id}:{object}"),
+            item.forum_id,
+            &group,
+            json!(item.object_uri),
+            &format!("relay-plain:{}:{}", item.forum_id, item.object_uri),
         )
         .await?;
     }
+    let mark = if kind == "topic" {
+        "UPDATE forum_topic SET relayed = true WHERE id = $1"
+    } else {
+        "UPDATE forum_topic_comment SET relayed = true WHERE id = $1"
+    };
+    sqlx::query(mark).bind(id).execute(db).await?;
     Ok(())
+}
+
+/// Whether the queue still has room for this server and forum. A single server could otherwise
+/// fill it and force a moderator through its flood.
+async fn queue_has_room(
+    db: &PgPool,
+    config: &InboundConfig,
+    forum: Uuid,
+    host: &str,
+) -> Result<bool, sqlx::Error> {
+    let (per_host, per_forum): (i64, i64) = sqlx::query_as(
+        "SELECT count(*) FILTER (WHERE remote_host = $2),
+                count(*) FILTER (WHERE forum_id = $1)
+           FROM (SELECT remote_host, forum_id FROM forum_topic WHERE moderation = 'pending'
+                 UNION ALL
+                 SELECT c.remote_host, t.forum_id FROM forum_topic_comment c
+                   JOIN forum_topic t ON t.id = c.topic_id WHERE c.moderation = 'pending') queued",
+    )
+    .bind(forum)
+    .bind(host)
+    .fetch_one(db)
+    .await?;
+    Ok(per_host < config.max_pending_per_host && per_forum < config.max_pending_per_forum)
 }
 
 async fn refresh_for(db: &PgPool, target: Target) -> Result<(), sqlx::Error> {
@@ -404,6 +581,10 @@ async fn refresh_for(db: &PgPool, target: Target) -> Result<(), sqlx::Error> {
 /// Everything an activity handler needs about who sent it and where it landed.
 struct Ctx<'a> {
     db: &'a PgPool,
+    config: &'a InboundConfig,
+    host: &'a str,
+    handle: &'a str,
+    actor_host: String,
     forum: &'a FedForum,
     group_actor: String,
     actor: &'a str,
@@ -464,14 +645,19 @@ pub async fn apply(
     let Some(actor) = activity.get("actor").and_then(Value::as_str) else {
         return Ok(StatusCode::BAD_REQUEST);
     };
-    if https_host(actor).is_none_or(|h| h == host) {
+    let Some(actor_host) = https_host(actor).filter(|h| h != host && is_canonical_actor(actor))
+    else {
         return Ok(StatusCode::ACCEPTED);
-    }
+    };
     if is_blocked(db, actor).await {
         return Ok(StatusCode::FORBIDDEN);
     }
     let ctx = Ctx {
         db,
+        config,
+        host,
+        handle,
+        actor_host,
         forum: &forum,
         group_actor: format!("https://{host}/actors/{handle}"),
         actor,
@@ -509,19 +695,24 @@ async fn create_topic(ctx: &Ctx<'_>, item: &Contribution) -> Result<(), sqlx::Er
     if item.body.chars().count() > MAX_BODY_LEN {
         return Ok(());
     }
+    if !ctx.direct && !queue_has_room(ctx.db, ctx.config, ctx.forum.id, &ctx.actor_host).await? {
+        return Ok(());
+    }
     let org: Uuid = sqlx::query_scalar("SELECT org_id FROM forum WHERE id = $1")
         .bind(ctx.forum.id)
         .fetch_one(ctx.db)
         .await?;
     let author = system_author(ctx.db, org).await?;
+    let id = Uuid::now_v7();
     let inserted = sqlx::query(
         "INSERT INTO forum_topic (id, forum_id, author_id, title, body, created_at, ap_object_uri,
-                                  remote_actor_url, remote_handle, remote_activity, moderation, hidden_at)
-         VALUES ($1, $2, $3, $4, $5, now(), $6, $7, $8, $9, $10,
-                 CASE WHEN $11 THEN NULL ELSE now() END)
+                                  remote_actor_url, remote_handle, remote_host, remote_activity,
+                                  moderation, hidden_at)
+         VALUES ($1, $2, $3, $4, $5, now(), $6, $7, $8, $9, $10, $11,
+                 CASE WHEN $12 THEN NULL ELSE now() END)
          ON CONFLICT (ap_object_uri) WHERE ap_object_uri IS NOT NULL DO NOTHING",
     )
-    .bind(Uuid::now_v7())
+    .bind(id)
     .bind(ctx.forum.id)
     .bind(author)
     .bind(&item.title)
@@ -529,6 +720,7 @@ async fn create_topic(ctx: &Ctx<'_>, item: &Contribution) -> Result<(), sqlx::Er
     .bind(&item.object_uri)
     .bind(ctx.actor)
     .bind(remote_handle(ctx.preferred_username, ctx.actor))
+    .bind(&ctx.actor_host)
     .bind(ctx.activity)
     .bind(if ctx.direct { "approved" } else { "pending" })
     .bind(ctx.direct)
@@ -536,14 +728,7 @@ async fn create_topic(ctx: &Ctx<'_>, item: &Contribution) -> Result<(), sqlx::Er
     .await?
     .rows_affected();
     if inserted > 0 && ctx.direct {
-        announce_accepted(
-            ctx.db,
-            ctx.forum.id,
-            &ctx.group_actor,
-            ctx.activity,
-            Some(&item.object_uri),
-        )
-        .await?;
+        relay_item(ctx.db, ctx.host, ctx.handle, "topic", id).await?;
     }
     Ok(())
 }
@@ -560,16 +745,22 @@ async fn create_comment(
         return Ok(());
     }
     let (Target::Topic(topic) | Target::Comment { topic, .. }) = target;
+    if !ctx.direct && !queue_has_room(ctx.db, ctx.config, ctx.forum.id, &ctx.actor_host).await? {
+        return Ok(());
+    }
+    let id = Uuid::now_v7();
     let inserted = sqlx::query(
-        "INSERT INTO forum_topic_comment (id, topic_id, remote_actor_url, remote_handle, federated,
-                                          moderation, body, created_at, ap_object_uri, remote_activity)
-         VALUES ($1, $2, $3, $4, true, $5, $6, now(), $7, $8)
+        "INSERT INTO forum_topic_comment (id, topic_id, remote_actor_url, remote_handle, remote_host,
+                                          federated, moderation, body, created_at, ap_object_uri,
+                                          remote_activity)
+         VALUES ($1, $2, $3, $4, $5, true, $6, $7, now(), $8, $9)
          ON CONFLICT (ap_object_uri) WHERE ap_object_uri IS NOT NULL DO NOTHING",
     )
-    .bind(Uuid::now_v7())
+    .bind(id)
     .bind(topic)
     .bind(ctx.actor)
     .bind(remote_handle(ctx.preferred_username, ctx.actor))
+    .bind(&ctx.actor_host)
     .bind(if ctx.direct { "approved" } else { "pending" })
     .bind(&item.body)
     .bind(&item.object_uri)
@@ -579,13 +770,14 @@ async fn create_comment(
     .rows_affected();
     if inserted > 0 && ctx.direct {
         dsoc_forums::queries::refresh_topic_counters(ctx.db, topic).await?;
-        announce_accepted(ctx.db, ctx.forum.id, &ctx.group_actor, ctx.activity, None).await?;
+        relay_item(ctx.db, ctx.host, ctx.handle, "comment", id).await?;
     }
     Ok(())
 }
 
 /// An edit from an untrusted account goes back to the queue, or approval would let it swap
-/// approved text for anything afterwards.
+/// approved text for anything afterwards. A moderator's removal is final: `deleted_by` and
+/// `rejected` keep the item out of reach of any edit.
 async fn on_update(ctx: &Ctx<'_>) -> Result<(), sqlx::Error> {
     let Some(item) = parse_contribution(ctx.activity) else {
         return Ok(());
@@ -599,7 +791,7 @@ async fn on_update(ctx: &Ctx<'_>) -> Result<(), sqlx::Error> {
                 moderation = CASE WHEN $6 THEN moderation ELSE 'pending' END,
                 hidden_at = CASE WHEN $6 THEN hidden_at ELSE now() END
           WHERE ap_object_uri = $1 AND remote_actor_url = $2 AND forum_id = $7
-            AND moderation <> 'rejected'
+            AND moderation <> 'rejected' AND deleted_by IS NULL
          RETURNING id",
     )
     .bind(&item.object_uri)
@@ -611,37 +803,54 @@ async fn on_update(ctx: &Ctx<'_>) -> Result<(), sqlx::Error> {
     .bind(ctx.forum.id)
     .fetch_optional(ctx.db)
     .await?;
-    let comment_topic: Option<Uuid> = if topic.is_some() {
-        None
-    } else if item.body.chars().count() > MAX_COMMENT_LEN {
+    if let Some(topic) = topic {
+        if ctx.direct {
+            relay_item(ctx.db, ctx.host, ctx.handle, "topic", topic).await?;
+        }
         return Ok(());
-    } else {
-        sqlx::query_scalar(
-            "UPDATE forum_topic_comment c
-                SET body = $3, remote_activity = $4,
-                    moderation = CASE WHEN $5 THEN c.moderation ELSE 'pending' END
-               FROM forum_topic t
-              WHERE t.id = c.topic_id AND t.forum_id = $6
-                AND c.ap_object_uri = $1 AND c.remote_actor_url = $2
-                AND c.moderation <> 'rejected'
-             RETURNING c.topic_id",
-        )
-        .bind(&item.object_uri)
-        .bind(ctx.actor)
-        .bind(&item.body)
-        .bind(ctx.activity)
-        .bind(ctx.direct)
-        .bind(ctx.forum.id)
-        .fetch_optional(ctx.db)
-        .await?
-    };
-    if let Some(topic) = comment_topic {
-        dsoc_forums::queries::refresh_topic_counters(ctx.db, topic).await?;
     }
-    if ctx.direct && (topic.is_some() || comment_topic.is_some()) {
-        announce_accepted(ctx.db, ctx.forum.id, &ctx.group_actor, ctx.activity, None).await?;
+    if item.body.chars().count() > MAX_COMMENT_LEN {
+        return Ok(());
+    }
+    let comment: Option<(Uuid, Uuid)> = sqlx::query_as(
+        "UPDATE forum_topic_comment c
+            SET body = $3, remote_activity = $4,
+                moderation = CASE WHEN $5 THEN c.moderation ELSE 'pending' END
+           FROM forum_topic t
+          WHERE t.id = c.topic_id AND t.forum_id = $6
+            AND c.ap_object_uri = $1 AND c.remote_actor_url = $2
+            AND c.moderation <> 'rejected' AND c.deleted_by IS NULL
+         RETURNING c.id, c.topic_id",
+    )
+    .bind(&item.object_uri)
+    .bind(ctx.actor)
+    .bind(&item.body)
+    .bind(ctx.activity)
+    .bind(ctx.direct)
+    .bind(ctx.forum.id)
+    .fetch_optional(ctx.db)
+    .await?;
+    if let Some((comment, topic)) = comment {
+        dsoc_forums::queries::refresh_topic_counters(ctx.db, topic).await?;
+        if ctx.direct {
+            relay_item(ctx.db, ctx.host, ctx.handle, "comment", comment).await?;
+        }
     }
     Ok(())
+}
+
+/// A vote, undo or delete for followers, with only the fields that have a meaning here.
+fn minimal_activity(ctx: &Ctx<'_>, kind: &str, object: Value) -> Value {
+    json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": ctx.activity.get("id").cloned().unwrap_or(Value::Null),
+        "type": kind,
+        "actor": ctx.actor,
+        "to": [PUBLIC],
+        "cc": [ctx.group_actor],
+        "audience": ctx.group_actor,
+        "object": object,
+    })
 }
 
 async fn on_delete(ctx: &Ctx<'_>) -> Result<(), sqlx::Error> {
@@ -657,7 +866,8 @@ async fn on_delete(ctx: &Ctx<'_>) -> Result<(), sqlx::Error> {
     }
     let was_public = hide_own_object(ctx, uri).await?;
     if was_public {
-        announce_accepted(ctx.db, ctx.forum.id, &ctx.group_actor, ctx.activity, None).await?;
+        let delete = minimal_activity(ctx, "Delete", json!(uri));
+        announce_accepted(ctx.db, ctx.forum.id, &ctx.group_actor, delete).await?;
     }
     Ok(())
 }
@@ -668,7 +878,7 @@ async fn hide_own_object(ctx: &Ctx<'_>, uri: &str) -> Result<bool, sqlx::Error> 
                                     deletion_reason = 'deleted by its remote author'
            FROM forum_topic old
           WHERE new.id = old.id AND new.ap_object_uri = $1 AND new.remote_actor_url = $2
-            AND new.forum_id = $3
+            AND new.forum_id = $3 AND old.deleted_by IS NULL
          RETURNING old.hidden_at IS NULL",
     )
     .bind(uri)
@@ -686,6 +896,7 @@ async fn hide_own_object(ctx: &Ctx<'_>, uri: &str) -> Result<bool, sqlx::Error> 
            FROM forum_topic_comment old, forum_topic t
           WHERE new.id = old.id AND t.id = new.topic_id AND t.forum_id = $3
             AND new.ap_object_uri = $1 AND new.remote_actor_url = $2
+            AND old.deleted_by IS NULL
          RETURNING new.topic_id, old.moderation = 'approved' AND old.hidden_at IS NULL",
     )
     .bind(uri)
@@ -705,7 +916,7 @@ async fn erase_actor(db: &PgPool, actor: &str) -> Result<(), sqlx::Error> {
     let mut topics: Vec<Uuid> = sqlx::query_scalar(
         "UPDATE forum_topic_comment SET moderation = 'rejected', hidden_at = now(),
                                         deletion_reason = 'remote account deleted'
-          WHERE remote_actor_url = $1 RETURNING topic_id",
+          WHERE remote_actor_url = $1 AND deleted_by IS NULL RETURNING topic_id",
     )
     .bind(actor)
     .fetch_all(db)
@@ -713,7 +924,7 @@ async fn erase_actor(db: &PgPool, actor: &str) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE forum_topic SET moderation = 'rejected', hidden_at = now(),
                                 deletion_reason = 'remote account deleted'
-          WHERE remote_actor_url = $1",
+          WHERE remote_actor_url = $1 AND deleted_by IS NULL",
     )
     .bind(actor)
     .execute(db)
@@ -774,7 +985,9 @@ async fn on_vote(ctx: &Ctx<'_>, stance: &str) -> Result<(), sqlx::Error> {
     .execute(ctx.db)
     .await?;
     refresh_for(ctx.db, target).await?;
-    announce_accepted(ctx.db, ctx.forum.id, &ctx.group_actor, ctx.activity, None).await
+    let kind = if stance == "favor" { "Like" } else { "Dislike" };
+    let vote = minimal_activity(ctx, kind, json!(uri));
+    announce_accepted(ctx.db, ctx.forum.id, &ctx.group_actor, vote).await
 }
 
 async fn on_undo(ctx: &Ctx<'_>) -> Result<(), sqlx::Error> {
@@ -803,7 +1016,14 @@ async fn on_undo(ctx: &Ctx<'_>) -> Result<(), sqlx::Error> {
     .rows_affected();
     if removed > 0 {
         refresh_for(ctx.db, target).await?;
-        announce_accepted(ctx.db, ctx.forum.id, &ctx.group_actor, ctx.activity, None).await?;
+        let vote = json!({
+            "id": inner.get("id").cloned().unwrap_or(Value::Null),
+            "type": inner_type,
+            "actor": ctx.actor,
+            "object": uri,
+        });
+        let undo = minimal_activity(ctx, "Undo", vote);
+        announce_accepted(ctx.db, ctx.forum.id, &ctx.group_actor, undo).await?;
     }
     Ok(())
 }

@@ -141,6 +141,7 @@ fn on() -> InboundConfig {
     InboundConfig {
         enabled: true,
         trusted_hosts: vec!["trusted.example".to_owned()],
+        ..InboundConfig::default()
     }
 }
 
@@ -283,7 +284,8 @@ async fn a_trusted_post_becomes_a_visible_topic_and_is_repeated() {
     .unwrap();
     assert_eq!(wrapped["type"], "Announce");
     assert_eq!(wrapped["actor"], group(&handle));
-    assert_eq!(wrapped["object"], activity);
+    assert_eq!(wrapped["object"]["id"], activity["id"]);
+    assert_eq!(wrapped["object"]["object"]["id"], activity["object"]["id"]);
 
     // The same activity again, or a new one with the same object, adds nothing.
     send(&st, &on(), &handle, &activity).await;
@@ -980,4 +982,379 @@ async fn a_deleted_remote_account_takes_its_content_and_votes() {
         .await
         .unwrap();
     assert_eq!(favor, 0);
+}
+
+// --- Security review of #88 ---
+
+async fn queue_body(app: &Router, admin: &str) -> String {
+    call(
+        app,
+        "GET",
+        "/api/v1/admin/forums/inbound/queue",
+        Some(admin),
+        None,
+    )
+    .await
+    .1
+}
+
+fn update_of(activity: &Value, actor: &str, name: &str, content: &str) -> Value {
+    let mut update = activity.clone();
+    update["type"] = json!("Update");
+    update["id"] = json!(format!("{actor}/activities/{}", Uuid::now_v7().simple()));
+    update["object"]["name"] = json!(name);
+    update["object"]["content"] = json!(content);
+    update
+}
+
+async fn relays(db: &Db, forum: Uuid) -> Vec<Value> {
+    sqlx::query_scalar(
+        "SELECT activity FROM forum_outbound_activity WHERE forum_id = $1 ORDER BY id",
+    )
+    .bind(forum)
+    .fetch_all(db)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn another_port_on_a_trusted_host_is_not_that_host() {
+    let st = state().await;
+    let (_, handle) = forum(&st.db, "public", true).await;
+    let (activity, uri) = lemmy_post(
+        &format!("https://trusted.example:8443/u/{}", Uuid::now_v7().simple()),
+        &handle,
+        "porta",
+    );
+    send(&st, &on(), &handle, &activity).await;
+    assert!(topic_by_uri(&st.db, &uri).await.is_none());
+}
+
+#[tokio::test]
+async fn a_non_canonical_actor_is_ignored() {
+    let st = state().await;
+    let (_, handle) = forum(&st.db, "public", true).await;
+    for actor in [
+        "https://other.example/u/a?x=1",
+        "https://me@other.example/u/a",
+        "https://OTHER.example/u/a",
+        "https://other.example./u/a",
+    ] {
+        let (mut activity, uri) = lemmy_post("https://other.example/u/a", &handle, "x");
+        activity["actor"] = json!(actor);
+        activity["object"]["attributedTo"] = json!(actor);
+        send(&st, &on(), &handle, &activity).await;
+        assert!(topic_by_uri(&st.db, &uri).await.is_none(), "{actor}");
+    }
+}
+
+#[tokio::test]
+async fn the_queue_is_capped_per_host_and_per_forum() {
+    let st = state().await;
+    let (_, handle) = forum(&st.db, "public", true).await;
+    let host = format!("h{}.example", Uuid::now_v7().simple());
+    let capped = InboundConfig {
+        max_pending_per_host: 2,
+        ..on()
+    };
+    let mut stored = 0;
+    for _ in 0..4 {
+        let (activity, uri) = lemmy_post(&unique_actor(&host), &handle, "fila");
+        send(&st, &capped, &handle, &activity).await;
+        stored += i32::from(topic_by_uri(&st.db, &uri).await.is_some());
+    }
+    assert_eq!(stored, 2);
+
+    let (_, small) = forum(&st.db, "public", true).await;
+    let capped = InboundConfig {
+        max_pending_per_forum: 1,
+        ..on()
+    };
+    let mut stored = 0;
+    for _ in 0..3 {
+        let flood = format!("h{}.example", Uuid::now_v7().simple());
+        let (activity, uri) = lemmy_post(&unique_actor(&flood), &small, "fila");
+        send(&st, &capped, &small, &activity).await;
+        stored += i32::from(topic_by_uri(&st.db, &uri).await.is_some());
+    }
+    assert_eq!(stored, 1);
+}
+
+#[tokio::test]
+async fn one_flooding_server_cannot_bury_another_in_the_queue() {
+    let st = state().await;
+    let app = api(&st);
+    let (_, handle) = forum(&st.db, "public", true).await;
+    let flood = format!("h{}.example", Uuid::now_v7().simple());
+    let wide = InboundConfig {
+        max_pending_per_host: 1000,
+        max_pending_per_forum: 1000,
+        ..on()
+    };
+    for _ in 0..205 {
+        let (activity, _) = lemmy_post(&unique_actor(&flood), &handle, "flood");
+        send(&st, &wide, &handle, &activity).await;
+    }
+    let title = format!("legitimo {}", Uuid::now_v7().simple());
+    let (activity, _) = lemmy_post(&unique_actor("late.example"), &handle, &title);
+    send(&st, &wide, &handle, &activity).await;
+    let (_, admin) = person(&st.db, Some("admin")).await;
+    assert!(queue_body(&app, &admin).await.contains(&title));
+}
+
+/// A forum moderator's session.
+async fn moderator(db: &Db, forum: Uuid) -> String {
+    let (citizen, cookie) = person(db, None).await;
+    sqlx::query("INSERT INTO forum_moderator (forum_id, citizen_id) VALUES ($1, $2)")
+        .bind(forum)
+        .bind(citizen)
+        .execute(db)
+        .await
+        .unwrap();
+    cookie
+}
+
+async fn moderator_removes(app: &Router, admin: &str, kind: &str, id: Uuid) {
+    let (status, body) = call(
+        app,
+        "POST",
+        &format!("/api/v1/f/{kind}/{id}/remove"),
+        Some(admin),
+        Some(json!({"reason": "regra 3"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+}
+
+#[tokio::test]
+async fn a_moderator_removal_of_a_remote_topic_is_final() {
+    let st = state().await;
+    let app = api(&st);
+    let (forum_id, handle) = forum(&st.db, "public", true).await;
+    let admin = moderator(&st.db, forum_id).await;
+    for owner in [
+        unique_actor("trusted.example"),
+        unique_actor("other.example"),
+    ] {
+        let (activity, uri) = lemmy_post(&owner, &handle, "Removido");
+        send(&st, &on(), &handle, &activity).await;
+        let id = topic_by_uri(&st.db, &uri).await.unwrap().0;
+        dsoc_gateway::forum_inbound_admin::decide_item(&st.db, Some(HOST), ORG, "topic", id, true)
+            .await
+            .unwrap();
+        moderator_removes(&app, &admin, "topics", id).await;
+        let before = relays(&st.db, forum_id).await.len();
+
+        send(
+            &st,
+            &on(),
+            &handle,
+            &update_of(&activity, &owner, "Voltei", "<p>x</p>"),
+        )
+        .await;
+        let (title, moderation): (String, String) =
+            sqlx::query_as("SELECT title, moderation FROM forum_topic WHERE id = $1")
+                .bind(id)
+                .fetch_one(&st.db)
+                .await
+                .unwrap();
+        assert_eq!(title, "Removido");
+        assert_ne!(moderation, "pending");
+        let approved = dsoc_gateway::forum_inbound_admin::decide_item(
+            &st.db,
+            Some(HOST),
+            ORG,
+            "topic",
+            id,
+            true,
+        )
+        .await
+        .unwrap();
+        assert!(!approved);
+        let delete = json!({"id": format!("{owner}/d/{id}"), "type": "Delete", "actor": owner,
+                            "to": [PUBLIC], "object": uri});
+        send(&st, &on(), &handle, &delete).await;
+        let reason: Option<String> =
+            sqlx::query_scalar("SELECT deletion_reason FROM forum_topic WHERE id = $1")
+                .bind(id)
+                .fetch_one(&st.db)
+                .await
+                .unwrap();
+        assert_eq!(reason.as_deref(), Some("regra 3"));
+        let (status, _) = call(&app, "GET", &format!("/api/v1/f/topics/{id}"), None, None).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(relays(&st.db, forum_id).await.len(), before);
+    }
+}
+
+#[tokio::test]
+async fn a_moderator_removal_of_a_remote_comment_is_final() {
+    let st = state().await;
+    let app = api(&st);
+    let (forum_id, handle) = forum(&st.db, "public", true).await;
+    let (author, _) = person(&st.db, None).await;
+    let topic = local_topic(&st.db, forum_id, author).await;
+    let parent = format!("{}/objects/{topic}", group(&handle));
+    let admin = moderator(&st.db, forum_id).await;
+    let owner = unique_actor("trusted.example");
+    let (reply, uri) = mastodon_reply(&owner, &parent, "comentario removido");
+    send(&st, &on(), &handle, &reply).await;
+    let id: Uuid =
+        sqlx::query_scalar("SELECT id FROM forum_topic_comment WHERE ap_object_uri = $1")
+            .bind(&uri)
+            .fetch_one(&st.db)
+            .await
+            .unwrap();
+    moderator_removes(&app, &admin, "comments", id).await;
+
+    let mut edit = reply.clone();
+    edit["type"] = json!("Update");
+    edit["id"] = json!(format!("{owner}/edit/1"));
+    edit["object"]["content"] = json!("<p>voltei</p>");
+    send(&st, &on(), &handle, &edit).await;
+    send(
+        &st,
+        &InboundConfig {
+            trusted_hosts: vec![],
+            ..on()
+        },
+        &handle,
+        &edit,
+    )
+    .await;
+    let approved = dsoc_gateway::forum_inbound_admin::decide_item(
+        &st.db,
+        Some(HOST),
+        ORG,
+        "comment",
+        id,
+        true,
+    )
+    .await
+    .unwrap();
+    assert!(!approved);
+    let delete = json!({"id": format!("{owner}/d/1"), "type": "Delete", "actor": owner,
+                        "to": [PUBLIC], "object": uri});
+    send(&st, &on(), &handle, &delete).await;
+    let row: (String, Option<String>) =
+        sqlx::query_as("SELECT body, deletion_reason FROM forum_topic_comment WHERE id = $1")
+            .bind(id)
+            .fetch_one(&st.db)
+            .await
+            .unwrap();
+    assert_eq!(row.0, "comentario removido");
+    assert_eq!(row.1.as_deref(), Some("regra 3"));
+    let (_, body) = call(
+        &app,
+        "GET",
+        &format!("/api/v1/f/topics/{topic}"),
+        None,
+        None,
+    )
+    .await;
+    assert!(!body.contains("comentario removido"), "{body}");
+}
+
+#[tokio::test]
+async fn an_edit_of_something_not_public_is_not_relayed() {
+    let st = state().await;
+    let (forum_id, handle) = forum(&st.db, "public", true).await;
+    let host = format!("h{}.example", Uuid::now_v7().simple());
+    let owner = unique_actor(&host);
+    let (activity, _) = lemmy_post(&owner, &handle, "Na fila");
+    send(&st, &on(), &handle, &activity).await;
+    // The host became trusted while the post waits: the edit applies, the post is still pending.
+    let trusted_now = InboundConfig {
+        trusted_hosts: vec![host],
+        ..on()
+    };
+    send(
+        &st,
+        &trusted_now,
+        &handle,
+        &update_of(&activity, &owner, "Editado", "<p>x</p>"),
+    )
+    .await;
+    assert!(relays(&st.db, forum_id).await.is_empty());
+}
+
+#[tokio::test]
+async fn what_is_relayed_is_rebuilt_from_what_was_stored() {
+    let st = state().await;
+    let (forum_id, handle) = forum(&st.db, "public", true).await;
+    let (mut activity, _) = lemmy_post(&unique_actor("trusted.example"), &handle, "Limpo");
+    activity["object"]["content"] = json!("<p>texto</p><script>mal()</script><img src=x>");
+    activity["object"]["attachment"] =
+        json!([{"type": "Document", "url": "https://x.example/mal.exe", "name": "mal"}]);
+    activity["hidden_payload"] = json!("nao visto");
+    activity["object"]["hidden_payload"] = json!("nao visto");
+    send(&st, &on(), &handle, &activity).await;
+    let wrapped = relays(&st.db, forum_id)
+        .await
+        .into_iter()
+        .find(|a| a["object"].is_object())
+        .unwrap();
+    let text = wrapped.to_string();
+    assert!(!text.contains("nao visto"), "{text}");
+    assert!(!text.contains("<script"), "{text}");
+    assert!(!text.contains("<img"), "{text}");
+    assert_eq!(wrapped["object"]["type"], "Create");
+    assert_eq!(wrapped["object"]["object"]["name"], "Limpo");
+    assert_eq!(wrapped["object"]["object"]["id"], activity["object"]["id"]);
+}
+
+#[tokio::test]
+async fn approving_an_edited_item_never_relayed_sends_a_create() {
+    let st = state().await;
+    let (forum_id, handle) = forum(&st.db, "public", true).await;
+    let owner = unique_actor("other.example");
+    let (activity, uri) = lemmy_post(&owner, &handle, "Primeira");
+    send(&st, &on(), &handle, &activity).await;
+    send(
+        &st,
+        &on(),
+        &handle,
+        &update_of(&activity, &owner, "Segunda", "<p>editado</p>"),
+    )
+    .await;
+    let id = topic_by_uri(&st.db, &uri).await.unwrap().0;
+    assert!(dsoc_gateway::forum_inbound_admin::decide_item(
+        &st.db,
+        Some(HOST),
+        ORG,
+        "topic",
+        id,
+        true
+    )
+    .await
+    .unwrap());
+    let wrapped = relays(&st.db, forum_id)
+        .await
+        .into_iter()
+        .find(|a| a["object"].is_object())
+        .unwrap();
+    assert_eq!(wrapped["object"]["type"], "Create");
+    assert_eq!(wrapped["object"]["object"]["name"], "Segunda");
+
+    // Once it went out, a later approved edit is an Update.
+    send(
+        &st,
+        &on(),
+        &handle,
+        &update_of(&activity, &owner, "Terceira", "<p>de novo</p>"),
+    )
+    .await;
+    assert!(dsoc_gateway::forum_inbound_admin::decide_item(
+        &st.db,
+        Some(HOST),
+        ORG,
+        "topic",
+        id,
+        true
+    )
+    .await
+    .unwrap());
+    let last = relays(&st.db, forum_id).await.pop().unwrap();
+    assert_eq!(last["object"]["type"], "Update");
+    assert_eq!(last["object"]["object"]["name"], "Terceira");
 }

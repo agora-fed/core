@@ -442,25 +442,12 @@ async fn actor_handler(
 }
 
 /// Per-minute caps on what one account and one server may send to forums.
-fn over_inbound_limit(actor: &str) -> bool {
-    let cap = |name: &str, default: u32| {
-        std::env::var(name)
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .filter(|&n: &u32| n > 0)
-            .unwrap_or(default)
-    };
-    let per_host = host_from_url(actor).is_some_and(|host| {
-        crate::rate_limit::over_limit(
-            &format!("fed-host:{host}"),
-            cap("FORUM_INBOUND_PER_HOST_PER_MIN", 300),
-        )
+fn over_inbound_limit(config: &crate::forum_inbound::InboundConfig, actor: &str) -> bool {
+    let per_host = crate::forum_inbound::https_host(actor).is_some_and(|host| {
+        crate::rate_limit::over_limit(&format!("fed-host:{host}"), config.per_host_per_min)
     });
     per_host
-        || crate::rate_limit::over_limit(
-            &format!("fed-actor:{actor}"),
-            cap("FORUM_INBOUND_PER_ACTOR_PER_MIN", 30),
-        )
+        || crate::rate_limit::over_limit(&format!("fed-actor:{actor}"), config.per_actor_per_min)
 }
 
 /// `POST /actors/{handle}/inbox` — receive a signed activity.
@@ -481,6 +468,27 @@ async fn inbox_post(
     Path(handle): Path<String>,
     body: Bytes,
 ) -> Response {
+    let config = crate::forum_inbound::InboundConfig::from_env();
+    process_inbox(state, headers, handle, body, config, |url| async move {
+        fetch_remote_actor(&url).await.map_err(|e| format!("{e:?}"))
+    })
+    .await
+}
+
+/// The inbox itself. `fetch_actor` retrieves the signer's document; production passes
+/// [`fetch_remote_actor`], and a test can answer without a public server behind the SSRF guard.
+pub async fn process_inbox<F, Fut>(
+    state: AppState,
+    headers: HeaderMap,
+    handle: String,
+    body: Bytes,
+    config: crate::forum_inbound::InboundConfig,
+    fetch_actor: F,
+) -> Response
+where
+    F: FnOnce(String) -> Fut,
+    Fut: std::future::Future<Output = Result<Value, String>>,
+{
     let Some(host) = host_from(&headers) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
@@ -549,6 +557,14 @@ async fn inbox_post(
         .next()
         .unwrap_or(&sig.key_id)
         .to_owned();
+    // Identity is compared as a string from here on, so one account must have one spelling.
+    if config.enabled
+        && forum_recipient.is_err()
+        && !crate::forum_inbound::is_canonical_actor(&signer_actor_url)
+    {
+        tracing::warn!(key = %sig.key_id, "forum inbox: signer is not a canonical actor URL");
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
     // Server-wide block (migration 0508): when the signer's host is in
     // server_domain_block with severity='suspend', we reject the activity
     // BEFORE any fetch. Silence-only does not block delivery — it only
@@ -568,7 +584,7 @@ async fn inbox_post(
             return StatusCode::FORBIDDEN.into_response();
         }
     }
-    let signer_actor = match fetch_remote_actor(&signer_actor_url).await {
+    let signer_actor = match fetch_actor(signer_actor_url.clone()).await {
         Ok(v) => v,
         Err(err) => {
             tracing::warn!(error = ?err, url = %signer_actor_url, "failed to fetch signer actor");
@@ -651,13 +667,26 @@ async fn inbox_post(
                 );
                 return StatusCode::UNAUTHORIZED.into_response();
             }
-            // An activity id belongs to its sender's server. Otherwise a signer could mark
-            // another server's activity as seen and have it dropped when it really arrives.
-            if host_from_url(&activity_id) != host_from_url(&signer_actor_url) {
-                return StatusCode::BAD_REQUEST.into_response();
-            }
-            if over_inbound_limit(&signer_actor_url) {
-                return StatusCode::TOO_MANY_REQUESTS.into_response();
+            if config.enabled {
+                // Without this a server could present another account's document as its own.
+                if signer_actor.get("id").and_then(Value::as_str) != Some(&signer_actor_url) {
+                    tracing::warn!(signer = %signer_actor_url, "forum inbox: actor document has another id");
+                    return StatusCode::UNAUTHORIZED.into_response();
+                }
+                // An activity id belongs to its sender's server. Otherwise a signer could mark
+                // another server's activity as seen and have it dropped when it really arrives.
+                let id_host = crate::forum_inbound::https_host(&activity_id);
+                if id_host.is_none()
+                    || id_host != crate::forum_inbound::https_host(&signer_actor_url)
+                {
+                    return StatusCode::BAD_REQUEST.into_response();
+                }
+                if over_inbound_limit(&config, &signer_actor_url) {
+                    return StatusCode::TOO_MANY_REQUESTS.into_response();
+                }
+            } else if !crate::forum_federation::is_follow_activity(&activity) {
+                // Ignored, so not "seen": turning inbound on later must still process a retry.
+                return StatusCode::ACCEPTED.into_response();
             }
             // Insert-before-act idempotency (0678): a replayed activity is a no-op.
             let fresh = sqlx::query(
@@ -677,7 +706,7 @@ async fn inbox_post(
                 .get("preferredUsername")
                 .and_then(Value::as_str);
             let status = crate::forum_federation::inbox(
-                &state.db, &host, &handle, &forum, &activity, preferred,
+                &state.db, &config, &host, &handle, &forum, &activity, preferred,
             )
             .await;
             return status.into_response();
@@ -4099,7 +4128,7 @@ fn host_from_url(u: &str) -> Option<String> {
         .strip_prefix("https://")
         .or_else(|| u.strip_prefix("http://"))?;
     let end = rest.find('/').unwrap_or(rest.len());
-    let hostport = &rest[..end];
+    let hostport = rest[..end].rsplit('@').next().unwrap_or("");
     let host = hostport
         .split(':')
         .next()

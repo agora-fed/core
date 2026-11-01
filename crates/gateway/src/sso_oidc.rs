@@ -304,8 +304,17 @@ fn display_name(name: Option<&str>) -> Option<String> {
     (!name.is_empty()).then(|| name.chars().take(80).collect())
 }
 
+/// Whether a provider's subject may sign in at all. `system:` names internal citizens with no
+/// credentials, which a misconfigured provider must not be able to enter.
+pub(crate) fn subject_may_sign_in(subject: &str) -> bool {
+    !subject.starts_with("system:")
+}
+
 /// Find or create the account and open a session. `None` means the account may not enter.
 async fn sign_in(db: &PgPool, claims: &Claims) -> Result<Option<(Uuid, i64)>, sqlx::Error> {
+    if !subject_may_sign_in(&claims.sub) {
+        return Ok(None);
+    }
     let org = DEFAULT_ORG_UUID;
     let email = claims
         .email
@@ -452,6 +461,13 @@ async fn create_account(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_system_subject_can_never_sign_in() {
+        assert!(!subject_may_sign_in("system:fediverse"));
+        assert!(!subject_may_sign_in("system:socrates"));
+        assert!(subject_may_sign_in("397439380358169871"));
+    }
 
     #[test]
     fn next_stays_on_this_site() {

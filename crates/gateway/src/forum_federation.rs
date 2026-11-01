@@ -172,12 +172,22 @@ fn absolutize_url(host: &str, url: &str) -> String {
     }
 }
 
+/// `Follow` or `Undo{Follow}`, the only activities a forum takes with inbound off.
+pub(crate) fn is_follow_activity(activity: &Value) -> bool {
+    match activity.get("type").and_then(Value::as_str) {
+        Some("Follow") => true,
+        Some("Undo") => activity.pointer("/object/type").and_then(Value::as_str) == Some("Follow"),
+        _ => false,
+    }
+}
+
 /// Group inbox: `Follow` → record the follower (the REAL inbox comes from the
 /// actor doc, not the payload — limits spoofing) and reply with an `Accept`
 /// signed by the forum key; `Undo{Follow}` → remove. The rest goes to
 /// [`crate::forum_inbound`], which ignores it unless the instance opted in.
 pub(crate) async fn inbox(
     db: &PgPool,
+    config: &crate::forum_inbound::InboundConfig,
     host: &str,
     handle: &str,
     forum: &FedForum,
@@ -264,21 +274,21 @@ pub(crate) async fn inbox(
                 .await;
                 return StatusCode::ACCEPTED;
             }
-            apply_inbound(db, host, handle, activity, preferred_username).await
+            apply_inbound(db, config, host, handle, activity, preferred_username).await
         }
-        _ => apply_inbound(db, host, handle, activity, preferred_username).await,
+        _ => apply_inbound(db, config, host, handle, activity, preferred_username).await,
     }
 }
 
 async fn apply_inbound(
     db: &PgPool,
+    config: &crate::forum_inbound::InboundConfig,
     host: &str,
     handle: &str,
     activity: &Value,
     preferred_username: Option<&str>,
 ) -> axum::http::StatusCode {
-    let config = crate::forum_inbound::InboundConfig::from_env();
-    match crate::forum_inbound::apply(db, &config, host, handle, activity, preferred_username).await
+    match crate::forum_inbound::apply(db, config, host, handle, activity, preferred_username).await
     {
         Ok(status) => status,
         Err(err) => {
