@@ -59,3 +59,12 @@ INSERT INTO interest_area (slug, name, ministry, position) VALUES
     ('meio-ambiente', 'Meio ambiente', NULL, 7),
     ('tecnologia', 'Tecnologia', NULL, 8)
 ON CONFLICT (slug) DO NOTHING;
+
+-- Starter forums for a cooperative; the political forum tree is never created here.
+INSERT INTO forum (id, org_id, slug, full_path, name, description, kind, federated) VALUES
+    (gen_random_uuid(), '11111111-1111-1111-1111-111111111111', 'geral', 'geral', 'Geral', 'Conversas e avisos da comunidade.', 'comunitario', false),
+    (gen_random_uuid(), '11111111-1111-1111-1111-111111111111', 'assembleias', 'assembleias', 'Assembleias e governança', 'Pautas, regras e decisões coletivas.', 'comunitario', false),
+    (gen_random_uuid(), '11111111-1111-1111-1111-111111111111', 'financas', 'financas', 'Finanças e orçamento', 'Contas, orçamento e prioridades de investimento.', 'comunitario', false),
+    (gen_random_uuid(), '11111111-1111-1111-1111-111111111111', 'producao', 'producao', 'Produção e trabalho', 'Organização do trabalho e da produção.', 'comunitario', false),
+    (gen_random_uuid(), '11111111-1111-1111-1111-111111111111', 'ideias', 'ideias', 'Ideias e propostas', 'Sugestões para a cooperativa.', 'comunitario', false)
+ON CONFLICT (org_id, full_path) DO NOTHING;
