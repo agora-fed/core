@@ -6,6 +6,7 @@ import NewsletterSignup from './islands/NewsletterSignup.svelte';
 
 const year = new Date().getFullYear();
 const SITE_NAME = (import.meta.env.PUBLIC_SITE_NAME as string | undefined) || 'AGORA';
+const MOTTO = (import.meta.env.PUBLIC_SITE_MOTTO as string | undefined) || '';
 const ANALYTICS_DOMAIN = import.meta.env.PUBLIC_ANALYTICS_DOMAIN as string | undefined;
 const ANALYTICS_URL = import.meta.env.PUBLIC_ANALYTICS_URL as string | undefined;
 const pillars = [
@@ -82,7 +83,7 @@ const pillars = [
 
     <p class="copy muted">
       © {year} <span data-brand-name>{SITE_NAME}</span> · Infraestrutura democrática soberana, aberta e
-      auditável.<br />
+      auditável.{MOTTO && ` ${MOTTO}`}<br />
       Código aberto sob AGPLv3 · IPv6-first · Sem publicidade · Sem venda de dados.
     </p>
   </div>

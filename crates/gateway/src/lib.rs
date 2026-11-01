@@ -46,7 +46,8 @@ pub mod fediverso_admin;
 mod forum_federation;
 mod forum_mailer;
 pub mod govbr_oidc;
-pub mod intercoms;
+mod instance_html;
+mod intercoms;
 pub mod intercoms_config;
 pub mod interests;
 pub mod invitations;
@@ -409,7 +410,12 @@ pub fn api_router(state: AppState) -> Router {
     // Serve the static front-end (Astro SSG, ADR-0009) at the same origin as the API
     // (no CORS). WEB_ROOT defaults to /srv/web (baked into the image); a missing dir just 404s.
     let web_root = std::env::var("WEB_ROOT").unwrap_or_else(|_| "/srv/web".to_string());
-    let static_site = ServeDir::new(web_root).append_index_html_on_directories(true);
+    let static_site = Router::new()
+        .fallback_service(ServeDir::new(web_root).append_index_html_on_directories(true))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            instance_html::apply_site_name,
+        ));
 
     // Federation PUBLIC surface lives at the root (NOT under /api/v1): /.well-known/webfinger,
     // /actors/<handle>, /actors/<handle>/{inbox,outbox,followers,following}. These are read by
@@ -459,7 +465,12 @@ async fn forums_spa(
     let Ok(bytes) = tokio::fs::read(format!("{web_root}/f/index.html")).await else {
         return axum::http::StatusCode::NOT_FOUND.into_response();
     };
-    let mut html = String::from_utf8_lossy(&bytes).into_owned();
+    let site_name = instance_html::current_site_name(&state).await;
+    let mut html = instance_html::rewrite_site_name(
+        &String::from_utf8_lossy(&bytes),
+        &instance_html::built_site_name(),
+        &site_name,
+    );
 
     if let Some(axum::extract::Path(p)) = path {
         if let Some(rest) = p.strip_prefix("topico/") {
@@ -489,8 +500,6 @@ async fn forums_spa(
                         };
                     let origin = std::env::var("PUBLIC_ORIGIN")
                         .unwrap_or_else(|_| "http://localhost:8080".to_owned());
-                    let site_name = std::env::var("PUBLIC_SITE_NAME")
-                        .unwrap_or_else(|_| "AGORA".to_owned());
                     let tags = format!(
                         "<meta property=\"og:title\" content=\"{t}\"/>\
                          <meta property=\"og:description\" content=\"{d}\"/>\
