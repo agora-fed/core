@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   isModuleOff,
   moduleFlagKey,
@@ -72,5 +73,13 @@ describe('admin module lists', () => {
 
   it('builds the flag key the gateway reads', () => {
     expect(moduleFlagKey('forums')).toBe('module.forums');
+  });
+});
+
+describe('settings tabs', () => {
+  const shell = readFileSync('src/components/islands/SettingsShell.svelte', 'utf8');
+  it('declares the voter-ID and fediverse tabs as module-gated', () => {
+    expect(shell).toContain("label: 'Identidade', requires: 'mandates'");
+    expect(shell).toContain("label: 'Fediverso', requires: 'federation'");
   });
 });

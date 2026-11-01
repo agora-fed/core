@@ -14,7 +14,8 @@ const description =
       <div class="auth-card card">
         <BrandLine size={34} class="logo" />
         <h1>Entrar</h1>
-        <p class="muted">Bem-vindo de volta. Sua voz, com consequência.</p>
+        <p class="muted" data-requires="mandates">Bem-vindo de volta. Sua voz, com consequência.</p>
+        <p class="muted" data-when-off="mandates">Bem-vindo de volta.</p>
         <LoginForm client:load />
       </div>
     </div>
