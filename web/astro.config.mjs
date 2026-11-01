@@ -4,8 +4,8 @@ import svelte from '@astrojs/svelte';
 import sitemap from '@astrojs/sitemap';
 
 // Public canonical site URL (used for sitemap, canonical tags, Open Graph).
-// Override with the SITE env var in production.
-const SITE = process.env.SITE || 'https://democracia.social.br';
+// Each instance MUST set SITE in production (ActivityPub IDs are permanent).
+const SITE = process.env.SITE || 'http://localhost:4321';
 
 // https://astro.build/config
 //

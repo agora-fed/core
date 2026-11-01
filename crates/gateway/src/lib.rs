@@ -406,7 +406,7 @@ pub fn api_router(state: AppState) -> Router {
             threshold_policy::threshold_middleware,
         ));
 
-    // Serve the static DemocraciaBR front-end (Astro SSG, ADR-0009) at the same origin as the API
+    // Serve the static front-end (Astro SSG, ADR-0009) at the same origin as the API
     // (no CORS). WEB_ROOT defaults to /srv/web (baked into the image); a missing dir just 404s.
     let web_root = std::env::var("WEB_ROOT").unwrap_or_else(|_| "/srv/web".to_string());
     let static_site = ServeDir::new(web_root).append_index_html_on_directories(true);
@@ -488,16 +488,19 @@ async fn forums_spa(
                             ""
                         };
                     let origin = std::env::var("PUBLIC_ORIGIN")
-                        .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
+                        .unwrap_or_else(|_| "http://localhost:8080".to_owned());
+                    let site_name = std::env::var("PUBLIC_SITE_NAME")
+                        .unwrap_or_else(|_| "AGORA".to_owned());
                     let tags = format!(
                         "<meta property=\"og:title\" content=\"{t}\"/>\
                          <meta property=\"og:description\" content=\"{d}\"/>\
                          <meta property=\"og:type\" content=\"article\"/>\
-                         <meta property=\"og:site_name\" content=\"DemocraciaBR\"/>\
+                         <meta property=\"og:site_name\" content=\"{sn}\"/>\
                          <meta property=\"og:url\" content=\"{o}/f/{p}\"/>\
                          <meta name=\"twitter:card\" content=\"summary\"/>",
                         t = esc(&format!("{title} — {forum_name}")),
                         d = esc(&desc),
+                        sn = esc(&site_name),
                         o = origin.trim_end_matches('/'),
                         p = esc(&p),
                     );
@@ -517,7 +520,7 @@ async fn forums_spa(
                         if a < b {
                             html.replace_range(
                                 a..b + "</title>".len(),
-                                &format!("<title>{} — DemocraciaBR</title>", esc(&title)),
+                                &format!("<title>{} — {}</title>", esc(&title), esc(&site_name)),
                             );
                         }
                     }

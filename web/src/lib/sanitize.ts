@@ -29,7 +29,7 @@ const DROP = new Set([
 const SAFE_HREF = /^https?:\/\//i;
 
 /** Turn a Mastodon-style mention link (<a href="https://host/@user">@user</a>)
- *  into an in-app link that opens the profile inside DemocraciaBR. Returns
+ *  into an in-app link that opens the profile inside this instance. Returns
  *  `null` if the anchor is a plain external link, not a mention. */
 function rewriteMentionHref(el: Element, href: string): string | null {
   const text = (el.textContent ?? '').trim();
@@ -72,8 +72,8 @@ function sanitizeNode(node: Node, doc: Document): Node | null {
   if (tag === 'A') {
     const href = el.getAttribute('href')?.trim() ?? '';
     if (SAFE_HREF.test(href)) {
-      // Menções (@user / @user@host) viram links internos pro perfil dentro
-      // do DemocraciaBR. Qualquer outro link segue com target="_blank".
+      // Mentions (@user / @user@host) become in-app profile links.
+      // All other external links open in a new tab.
       const inApp = rewriteMentionHref(el, href);
       if (inApp) {
         out.setAttribute('href', inApp);

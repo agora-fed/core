@@ -5,6 +5,9 @@ import Participacao from './icons/Participacao.astro';
 import NewsletterSignup from './islands/NewsletterSignup.svelte';
 
 const year = new Date().getFullYear();
+const SITE_NAME = (import.meta.env.PUBLIC_SITE_NAME as string | undefined) || 'AGORA';
+const ANALYTICS_DOMAIN = import.meta.env.PUBLIC_ANALYTICS_DOMAIN as string | undefined;
+const ANALYTICS_URL = import.meta.env.PUBLIC_ANALYTICS_URL as string | undefined;
 const pillars = [
   {
     Icon: Dialogo,
@@ -55,8 +58,8 @@ const pillars = [
     <div class="foot-bar">
       <div class="foot-brand">
         <a href="/" class="brand-line">
-          <img src="/emblem.png" width="28" height="26" alt="" />
-          <span>DemocraciaBR</span>
+          <img src="/emblem.png" width="28" height="26" alt="" data-brand-logo />
+          <span data-brand-name>{SITE_NAME}</span>
         </a>
         <p class="tagline">Diferentes ideias, um só Brasil.</p>
       </div>
@@ -78,27 +81,30 @@ const pillars = [
     </div>
 
     <p class="copy muted">
-      © {year} DemocraciaBR · Infraestrutura democrática soberana, aberta e
-      auditável. Participação sem consequência é teatro.<br />
+      © {year} <span data-brand-name>{SITE_NAME}</span> · Infraestrutura democrática soberana, aberta e
+      auditável.<br />
       Código aberto sob AGPLv3 · IPv6-first · Sem publicidade · Sem venda de dados.
     </p>
   </div>
 </footer>
 
-<!-- Plausible (self-hosted em analytics.pop.coop) — pedido do produto 2026-07-26. -->
-<script
-  is:inline
-  defer
-  data-domain="democracia.social.br"
-  src="https://analytics.pop.coop/js/script.file-downloads.hash.outbound-links.pageview-props.revenue.tagged-events.js"
-></script>
-<script is:inline>
-  window.plausible =
-    window.plausible ||
-    function () {
-      (window.plausible.q = window.plausible.q || []).push(arguments);
-    };
-</script>
+{ANALYTICS_DOMAIN && ANALYTICS_URL && (
+  <Fragment>
+    <script
+      is:inline
+      defer
+      data-domain={ANALYTICS_DOMAIN}
+      src={ANALYTICS_URL}
+    />
+    <script is:inline>
+      window.plausible =
+        window.plausible ||
+        function () {
+          (window.plausible.q = window.plausible.q || []).push(arguments);
+        };
+    </script>
+  </Fragment>
+)}
 
 <style>
   .site-footer {

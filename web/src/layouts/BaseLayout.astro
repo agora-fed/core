@@ -29,11 +29,11 @@ const {
   noindex = false,
 } = Astro.props;
 
-const SITE_NAME = 'DemocraciaBR';
+const SITE_NAME = (import.meta.env.PUBLIC_SITE_NAME as string | undefined) || 'AGORA';
 const fullTitle = title.includes(SITE_NAME) ? title : `${title} · ${SITE_NAME}`;
 
 // Resolve absolute URLs for canonical + social cards.
-const site = Astro.site ?? new URL('https://democracia.social.br');
+const site = Astro.site ?? new URL('http://localhost:4321');
 const canonicalUrl = new URL(canonical ?? Astro.url.pathname, site).href;
 const imageUrl = new URL(image, site).href;
 
