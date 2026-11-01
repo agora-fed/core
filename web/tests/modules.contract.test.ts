@@ -25,6 +25,8 @@ describe('isModuleOff for modules off by default', () => {
   it('is off unless the gateway lists it as on', () => {
     expect(isModuleOff('groups', root())).toBe(true);
     expect(isModuleOff('groups', { dataset: { modulesOn: 'groups' } })).toBe(false);
+    expect(isModuleOff('meetings', root())).toBe(true);
+    expect(isModuleOff('meetings', { dataset: { modulesOn: 'meetings' } })).toBe(false);
   });
 });
 

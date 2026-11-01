@@ -1,5 +1,5 @@
 /** Off unless the gateway lists them; must match UI_OPTIONAL_MODULES in the gateway. */
-const OPTIONAL_MODULES = ['groups'];
+const OPTIONAL_MODULES = ['groups', 'meetings'];
 
 const listed = (value: string | undefined, moduleId: string) =>
   (value ?? '').split(/\s+/).includes(moduleId);

@@ -13,6 +13,7 @@ const INSTANCE_ONLY_PAGES = [
   '/sobre-comunidade',
   '/modulo-indisponivel',
   '/grupos',
+  '/reunioes',
 ];
 
 // https://astro.build/config

@@ -46,6 +46,7 @@
         { id: 'go-foruns', label: 'Fóruns', icon: 'chat', action: nav('/f/'), requires: 'forums' },
         { id: 'go-consultas', label: 'Consultas', icon: 'mic', action: nav('/consultas'), requires: 'consultations' },
         { id: 'go-grupos', label: 'Grupos', icon: 'users', action: nav('/grupos'), requires: 'groups' },
+        { id: 'go-reunioes', label: 'Reuniões', icon: 'calendar', action: nav('/reunioes'), requires: 'meetings' },
         { id: 'act-propor', label: 'Propor algo novo', hint: 'Ação', icon: 'plus', action: nav('/propor'), requires: 'proposals' },
         { id: 'act-config', label: 'Configurações', hint: 'Ação', icon: 'settings', action: nav('/configuracoes'), when: 'auth' },
         { id: 'act-login', label: 'Entrar', hint: 'Ação', icon: 'unlock', action: nav('/entrar'), when: 'anon' },

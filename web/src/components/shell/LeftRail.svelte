@@ -26,6 +26,7 @@
     { id: 'foruns', href: '/f/', icon: 'chat', label: 'Fóruns', requires: 'forums' },
     { id: 'consultas', href: '/consultas', icon: 'mic', label: 'Consultas', requires: 'consultations' },
     { id: 'grupos', href: '/grupos', icon: 'users', label: 'Grupos', requires: 'groups' },
+    { id: 'reunioes', href: '/reunioes', icon: 'calendar', label: 'Reuniões', requires: 'meetings' },
   ];
 
   let handle = $state<string | null>(null);

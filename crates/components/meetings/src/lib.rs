@@ -21,7 +21,7 @@ pub mod queries;
 pub mod service;
 
 pub use domain::{NewMeeting, ValidMinutes};
-pub use http::routes;
+pub use http::{minutes_routes, routes};
 pub use queries::{AttendeeRow, MeetingRow};
 pub use service::MeetingService;
 
