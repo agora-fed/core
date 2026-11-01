@@ -1,0 +1,12 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SurveysApp from '../components/islands/SurveysApp.svelte';
+---
+
+<BaseLayout title="Enquetes" description="Enquetes da comunidade: responda e crie novas perguntas.">
+  <section class="section">
+    <div class="container narrow">
+      <SurveysApp client:load />
+    </div>
+  </section>
+</BaseLayout>
