@@ -1,0 +1,15 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import ProcessesApp from '../components/islands/ProcessesApp.svelte';
+---
+
+<BaseLayout
+  title="Processos participativos"
+  description="Acompanhe as etapas dos processos de decisão da comunidade."
+>
+  <section class="section">
+    <div class="container narrow">
+      <ProcessesApp client:load />
+    </div>
+  </section>
+</BaseLayout>

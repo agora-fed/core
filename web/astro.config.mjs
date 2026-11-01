@@ -12,6 +12,7 @@ const INSTANCE_ONLY_PAGES = [
   '/inicio-comunidade',
   '/sobre-comunidade',
   '/modulo-indisponivel',
+  '/processos',
   '/orcamento',
   '/enquetes',
   '/reunioes',
