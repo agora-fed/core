@@ -4,8 +4,9 @@
 //! `SSO_ALLOWED_ORG_ID` limits who may enter. Set `SSO_ISSUER`, `SSO_CLIENT_ID`,
 //! `SSO_CLIENT_SECRET` and `SSO_ALLOWED_ORG_ID` to enable; `SSO_LABEL` names the button.
 
-use axum::extract::{Query, State};
+use axum::extract::{Query, Request, State};
 use axum::http::{header, HeaderMap, StatusCode};
+use axum::middleware::Next;
 use axum::response::{AppendHeaders, IntoResponse, Redirect, Response};
 use axum::routing::get;
 use axum::{Json, Router};
@@ -61,13 +62,47 @@ impl Cfg {
     }
 }
 
+/// `SSO_ONLY=true` makes the provider the only way to get an account or sign in.
+pub(crate) fn sso_only() -> bool {
+    Cfg::from_env().is_some() && std::env::var("SSO_ONLY").is_ok_and(|v| v == "true")
+}
+
 async fn status() -> Response {
     let cfg = Cfg::from_env();
     Json(ApiResponse::ok(serde_json::json!({
         "enabled": cfg.is_some(),
+        "only": sso_only(),
         "label": cfg.map(|c| c.label),
     })))
     .into_response()
+}
+
+fn is_signup_page(path: &str) -> bool {
+    matches!(path, "/cadastrar" | "/cadastrar/")
+}
+
+/// Send the sign-up page to the provider, where accounts are created.
+pub(crate) async fn signup_page_redirect(req: Request, next: Next) -> Response {
+    if sso_only() && is_signup_page(req.uri().path()) {
+        let target = std::env::var("SSO_SIGNUP_URL").unwrap_or_else(|_| "/entrar/".to_owned());
+        return Redirect::temporary(&target).into_response();
+    }
+    next.run(req).await
+}
+
+/// The break-glass password login, kept so that an outage at the provider can't lock
+/// administrators out.
+pub(crate) async fn may_use_password(db: &PgPool, email: &str) -> bool {
+    sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (
+            SELECT 1 FROM auth_credential a
+              JOIN admin_role_binding r ON r.citizen_id = a.citizen_id AND r.org_id = a.org_id
+             WHERE a.email = $1 AND r.role IN ('owner', 'admin'))",
+    )
+    .bind(email.trim().to_lowercase())
+    .fetch_one(db)
+    .await
+    .unwrap_or(false)
 }
 
 fn random_token() -> String {
@@ -452,6 +487,13 @@ async fn create_account(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_signup_page_redirects() {
+        assert!(is_signup_page("/cadastrar"));
+        assert!(is_signup_page("/cadastrar/"));
+        assert!(!is_signup_page("/cadastrar-algo"));
+    }
 
     #[test]
     fn next_stays_on_this_site() {

@@ -1,7 +1,7 @@
 <script lang="ts">
   // Login: e-mail + senha. On success the gateway sets a session cookie.
   import { onMount } from 'svelte';
-  import { apiGetCredentialed, login, getGovbrStatus } from '../../lib/api';
+  import { apiGetCredentialed, login, getGovbrStatus, getSsoStatus } from '../../lib/api';
   import SsoButton from './SsoButton.svelte';
   import Input from '../ui/Input.svelte';
   import Button from '../ui/Button.svelte';
@@ -13,6 +13,7 @@
   let busy = $state(false);
   let serverError = $state<string | null>(null);
   let govbrEnabled = $state(false);
+  let passwordHidden = $state(false);
 
   const SSO_ERRORS: Record<string, string> = {
     organizacao: 'Esta conta não pertence a esta comunidade.',
@@ -44,6 +45,9 @@
     if (ssoError) {
       serverError = SSO_ERRORS[ssoError] ?? 'Não foi possível entrar com essa conta. Tente novamente.';
     }
+    const sso = await getSsoStatus();
+    // `?admin=1` keeps the password form reachable if the provider is down.
+    passwordHidden = sso.ok && sso.data?.only === true && query.get('admin') !== '1';
     const r = await getGovbrStatus();
     govbrEnabled = r.ok && r.data?.enabled === true;
     // Erro devolvido pelo callback do gov.br (query ?govbr_erro=...).
@@ -107,6 +111,7 @@
   <p class="or muted">ou</p>
 {/if}
 
+{#if !passwordHidden}
 <form class="auth-form" onsubmit={submit} novalidate>
   <Input
     id="l-email"
@@ -162,6 +167,7 @@
     <a href="/recuperar-senha">Esqueci minha senha</a>
   </p>
 </form>
+{/if}
 
 <style>
   .govbr-btn {

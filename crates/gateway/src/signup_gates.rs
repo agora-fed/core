@@ -391,6 +391,17 @@ async fn reject_pending(
 /// register/login payloads are ~200 bytes; 32 KiB leaves room without opening a DoS.
 const GATE_BODY_LIMIT: usize = 32 * 1024;
 
+fn sso_required() -> Response {
+    (
+        StatusCode::FORBIDDEN,
+        Json(ApiResponse::<()>::fail(
+            "sso_required",
+            "Nesta comunidade, as contas são criadas e acessadas pelo login único.",
+        )),
+    )
+        .into_response()
+}
+
 /// Middleware applied to the `/api/v1` router: intercepts register/login and
 /// aplica as regras administradas em /admin/email-domains e /admin/ip-rules.
 /// Fails OPEN on a DB error (log + carry on) — a storage outage
@@ -398,9 +409,31 @@ const GATE_BODY_LIMIT: usize = 32 * 1024;
 /// next healthy request.
 pub async fn gates_middleware(State(state): State<AppState>, req: Request, next: Next) -> Response {
     let path = req.uri().path();
+    let sso_only = crate::sso_oidc::sso_only();
+    if sso_only && path.contains("/auth/register") {
+        return sso_required();
+    }
     let is_register =
         path.ends_with("/auth/register") || path.ends_with("/auth/register/politician");
     let is_login = path.ends_with("/auth/login");
+    if sso_only && is_login {
+        let (parts, body) = req.into_parts();
+        let Ok(bytes) = axum::body::to_bytes(body, GATE_BODY_LIMIT).await else {
+            return sso_required();
+        };
+        let email = serde_json::from_slice::<serde_json::Value>(&bytes)
+            .ok()
+            .and_then(|v| v.get("email").and_then(|e| e.as_str()).map(str::to_owned));
+        let allowed = match email {
+            Some(email) => crate::sso_oidc::may_use_password(&state.db, &email).await,
+            None => false,
+        };
+        if !allowed {
+            return sso_required();
+        }
+        let req = Request::from_parts(parts, axum::body::Body::from(bytes));
+        return next.run(req).await;
+    }
     if !is_register && !is_login {
         return next.run(req).await;
     }

@@ -4,11 +4,15 @@
   import { getSsoStatus } from '../../lib/api';
 
   let label = $state<string | null>(null);
+  let only = $state(false);
   let href = $state('/auth/sso/start');
 
   onMount(async () => {
     const res = await getSsoStatus();
-    if (res.ok && res.data?.enabled) label = res.data.label ?? 'Entrar com sua conta';
+    if (res.ok && res.data?.enabled) {
+      label = res.data.label ?? 'Entrar com sua conta';
+      only = res.data.only;
+    }
     const next = new URLSearchParams(window.location.search).get('next');
     if (next) href = `/auth/sso/start?next=${encodeURIComponent(next)}`;
   });
@@ -16,7 +20,7 @@
 
 {#if label}
   <a class="btn btn-primary sso" {href}>{label}</a>
-  <p class="or muted">ou</p>
+  {#if !only}<p class="or muted">ou</p>{/if}
 {/if}
 
 <style>
