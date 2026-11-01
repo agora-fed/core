@@ -651,6 +651,19 @@ fn trim_reason(reason: Option<String>) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// Tell a forum's followers about a removal. Never fails the moderation that already happened.
+async fn announce_removal(db: &PgPool, kind: &str, id: Uuid, reason: Option<&str>) {
+    let Some(host) = std::env::var("PUBLIC_ORIGIN")
+        .ok()
+        .and_then(|origin| crate::forum_inbound::https_host(&origin))
+    else {
+        return;
+    };
+    if let Err(err) = crate::forum_outbound::enqueue_removal(db, &host, kind, id, reason).await {
+        tracing::warn!(?err, "forum removal: queueing the announcement failed");
+    }
+}
+
 async fn topic_remove(
     State(state): State<AppState>,
     caller: CallerId,
@@ -697,6 +710,7 @@ async fn topic_remove(
         reason.as_deref(),
     )
     .await;
+    announce_removal(&state.db, "topic", id, reason.as_deref()).await;
     (
         StatusCode::OK,
         Json(ApiResponse::ok(serde_json::json!({"removed": true}))),
@@ -757,6 +771,7 @@ async fn comment_remove(
         reason.as_deref(),
     )
     .await;
+    announce_removal(&state.db, "comment", id, reason.as_deref()).await;
     (
         StatusCode::OK,
         Json(ApiResponse::ok(serde_json::json!({"removed": true}))),

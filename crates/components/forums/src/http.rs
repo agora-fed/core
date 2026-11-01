@@ -293,7 +293,9 @@ fn topic_dto(r: TopicRow) -> TopicDto {
         forum_id: r.forum_id,
         title: r.title,
         body: r.body,
-        author_public_handle: format!("u-{}", r.author_id.as_simple()),
+        author_public_handle: r
+            .remote_handle
+            .unwrap_or_else(|| format!("u-{}", r.author_id.as_simple())),
         interactions: r.interaction_count,
         federated_interactions: r.federated_interaction_count,
         score: r.score,

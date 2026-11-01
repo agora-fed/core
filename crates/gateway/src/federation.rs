@@ -165,7 +165,13 @@ async fn webfinger_handler(
                 Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
             };
         }
-        return StatusCode::NOT_FOUND.into_response();
+        // Mastodon checks WebFinger for an author it has just fetched.
+        if crate::forum_outbound::resolve_opaque_author(&state.db, user)
+            .await
+            .is_none()
+        {
+            return StatusCode::NOT_FOUND.into_response();
+        }
     }
     let actor_url = actor_id(&host, user);
     let jrd = json!({
@@ -217,6 +223,17 @@ async fn object_handler(
                             header::CONTENT_TYPE,
                             "application/activity+json; charset=utf-8",
                         )],
+                        axum::Json(note),
+                    )
+                        .into_response();
+                }
+                if let Some(note) =
+                    crate::forum_outbound::comment_object_json(&state.db, &host, &handle, topic_id)
+                        .await
+                {
+                    return (
+                        StatusCode::OK,
+                        [(header::CONTENT_TYPE, ACTIVITY_JSON)],
                         axum::Json(note),
                     )
                         .into_response();
@@ -368,6 +385,24 @@ async fn actor_handler(
                 )
                     .into_response();
             }
+            // A forum author with a private profile: resolvable, and nothing about the person.
+            if let Some(citizen) =
+                crate::forum_outbound::resolve_opaque_author(&state.db, &handle).await
+            {
+                let Ok(public_pem) = svc
+                    .ensure_actor_public_key(CitizenId::from_uuid(citizen))
+                    .await
+                else {
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                };
+                let doc = crate::forum_outbound::opaque_author_json(&host, &handle, &public_pem);
+                return (
+                    StatusCode::OK,
+                    [(header::CONTENT_TYPE, ACTIVITY_JSON)],
+                    axum::Json(doc),
+                )
+                    .into_response();
+            }
             return StatusCode::NOT_FOUND.into_response();
         }
     };
@@ -404,6 +439,28 @@ async fn actor_handler(
         Ok(body) => ([(header::CONTENT_TYPE, ACTIVITY_JSON)], body).into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
+}
+
+/// Per-minute caps on what one account and one server may send to forums.
+fn over_inbound_limit(actor: &str) -> bool {
+    let cap = |name: &str, default: u32| {
+        std::env::var(name)
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|&n: &u32| n > 0)
+            .unwrap_or(default)
+    };
+    let per_host = host_from_url(actor).is_some_and(|host| {
+        crate::rate_limit::over_limit(
+            &format!("fed-host:{host}"),
+            cap("FORUM_INBOUND_PER_HOST_PER_MIN", 300),
+        )
+    });
+    per_host
+        || crate::rate_limit::over_limit(
+            &format!("fed-actor:{actor}"),
+            cap("FORUM_INBOUND_PER_ACTOR_PER_MIN", 30),
+        )
 }
 
 /// `POST /actors/{handle}/inbox` — receive a signed activity.
@@ -594,6 +651,14 @@ async fn inbox_post(
                 );
                 return StatusCode::UNAUTHORIZED.into_response();
             }
+            // An activity id belongs to its sender's server. Otherwise a signer could mark
+            // another server's activity as seen and have it dropped when it really arrives.
+            if host_from_url(&activity_id) != host_from_url(&signer_actor_url) {
+                return StatusCode::BAD_REQUEST.into_response();
+            }
+            if over_inbound_limit(&signer_actor_url) {
+                return StatusCode::TOO_MANY_REQUESTS.into_response();
+            }
             // Insert-before-act idempotency (0678): a replayed activity is a no-op.
             let fresh = sqlx::query(
                 "INSERT INTO forum_inbox_seen (activity_id, forum_id) \
@@ -608,8 +673,13 @@ async fn inbox_post(
             if !fresh {
                 return StatusCode::ACCEPTED.into_response();
             }
-            let status =
-                crate::forum_federation::inbox(&state.db, &host, &handle, &forum, &activity).await;
+            let preferred = signer_actor
+                .get("preferredUsername")
+                .and_then(Value::as_str);
+            let status = crate::forum_federation::inbox(
+                &state.db, &host, &handle, &forum, &activity, preferred,
+            )
+            .await;
             return status.into_response();
         }
     };
@@ -901,6 +971,13 @@ async fn outbox_get_populated(
     let svc = ProfileService::from_state(&state);
     let org = OrgId::from_uuid(DEFAULT_ORG_UUID);
     let Ok(profile) = svc.find_public_by_handle(org, &handle).await else {
+        if crate::forum_federation::lookup_by_handle(&state.db, &handle)
+            .await
+            .is_some()
+        {
+            let doc = crate::forum_federation::empty_outbox_json(&host, &handle);
+            return ([(header::CONTENT_TYPE, ACTIVITY_JSON)], axum::Json(doc)).into_response();
+        }
         return StatusCode::NOT_FOUND.into_response();
     };
     let (items, total) = match svc
@@ -3350,6 +3427,11 @@ async fn followers_get(
     let svc = ProfileService::from_state(&state);
     let org = OrgId::from_uuid(DEFAULT_ORG_UUID);
     let Ok(profile) = svc.find_public_by_handle(org, &handle).await else {
+        if let Some(forum) = crate::forum_federation::lookup_by_handle(&state.db, &handle).await {
+            let doc =
+                crate::forum_federation::followers_json(&state.db, &host, &handle, &forum).await;
+            return ([(header::CONTENT_TYPE, ACTIVITY_JSON)], axum::Json(doc)).into_response();
+        }
         return StatusCode::NOT_FOUND.into_response();
     };
     let (items, total) = match svc

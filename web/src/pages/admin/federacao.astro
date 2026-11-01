@@ -1,6 +1,7 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import AdminFederation from '../../components/islands/AdminFederation.svelte';
+import AdminForumInbound from '../../components/islands/AdminForumInbound.svelte';
 ---
 
 <AdminLayout
@@ -16,6 +17,7 @@ import AdminFederation from '../../components/islands/AdminFederation.svelte';
     </p>
   </header>
   <AdminFederation client:load />
+  <AdminForumInbound client:load />
 </AdminLayout>
 
 <style>
