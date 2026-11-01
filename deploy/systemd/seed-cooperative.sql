@@ -45,3 +45,17 @@ VALUES
     (gen_random_uuid(), '11111111-1111-1111-1111-111111111111', 'module.comments',      true, now(), now()),
     (gen_random_uuid(), '11111111-1111-1111-1111-111111111111', 'module.votes',         true, now(), now())
 ON CONFLICT (org_id, key) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now();
+
+-- Replace the ministry-based interest areas, keeping any already chosen by someone.
+DELETE FROM interest_area a
+ WHERE NOT EXISTS (SELECT 1 FROM citizen_interest c WHERE c.area_slug = a.slug);
+INSERT INTO interest_area (slug, name, ministry, position) VALUES
+    ('governanca', 'Assembleias e governança', NULL, 1),
+    ('financas', 'Finanças e orçamento', NULL, 2),
+    ('producao', 'Produção e trabalho', NULL, 3),
+    ('educacao-cooperativa', 'Educação cooperativista', NULL, 4),
+    ('comunicacao', 'Comunicação', NULL, 5),
+    ('comunidade', 'Comunidade e território', NULL, 6),
+    ('meio-ambiente', 'Meio ambiente', NULL, 7),
+    ('tecnologia', 'Tecnologia', NULL, 8)
+ON CONFLICT (slug) DO NOTHING;
