@@ -184,6 +184,11 @@ async fn oauth_token(State(state): State<AppState>, Form(body): Form<TokenReques
         GrantType::Password => {
             let email = body.username.as_deref().unwrap_or_default();
             let password = body.password.as_deref().unwrap_or_default();
+            if crate::sso_oidc::sso_only()
+                && !crate::sso_oidc::may_use_password(&state.db, email).await
+            {
+                return oauth_error(StatusCode::UNAUTHORIZED, OAuthError::InvalidCredentials);
+            }
             if email.is_empty() || password.is_empty() {
                 return oauth_error(
                     StatusCode::BAD_REQUEST,
