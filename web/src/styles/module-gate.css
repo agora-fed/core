@@ -14,6 +14,10 @@ html:not([data-modules-on~='meetings']) [data-requires~='meetings'] {
   display: none !important;
 }
 
+html:not([data-modules-on~='surveys']) [data-requires~='surveys'] {
+  display: none !important;
+}
+
 /* Replacement entries, shown only on instances where the module is off. */
 html:not([data-modules-off~='mandates']) [data-when-off~='mandates'] {
   display: none !important;
