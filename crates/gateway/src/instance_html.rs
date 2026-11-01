@@ -1,7 +1,7 @@
-//! Serves the admin-edited site name in pre-built HTML, so crawlers see it.
+//! Adapts pre-built HTML to the instance: the admin-edited site name and the disabled modules.
 //!
-//! The site is static (ADR-0009) and crawlers do not run the shell's branding script.
-//! Instances that never set `org_branding.site_name` pass through byte for byte.
+//! The site is static (ADR-0009) and crawlers do not run the shell's scripts. Instances with
+//! no saved name and every UI-gated module on pass through byte for byte.
 
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
@@ -20,6 +20,15 @@ const NAMED_META: [&str; 3] = [
     "property=\"og:site_name\"",
     "property=\"og:title\"",
     "name=\"twitter:title\"",
+];
+
+/// Must match web/src/styles/module-gate.css.
+const UI_GATED_MODULES: [&str; 5] = [
+    "mandates",
+    "proposals",
+    "forums",
+    "consultations",
+    "federation",
 ];
 
 type CachedName = Option<(Instant, Option<String>)>;
@@ -62,7 +71,7 @@ pub(crate) async fn current_site_name(state: &AppState) -> String {
 }
 
 /// Replace `built` with `name` in `<title>` and the social-card metas, leaving the rest intact.
-pub(crate) fn rewrite_site_name(html: &str, built: &str, name: &str) -> String {
+fn rewrite_site_name(html: &str, built: &str, name: &str) -> String {
     let Some(head_end) = html.find("</head>") else {
         return html.to_owned();
     };
@@ -95,6 +104,50 @@ pub(crate) fn rewrite_site_name(html: &str, built: &str, name: &str) -> String {
     out
 }
 
+fn mark_modules_off(html: &str, off: &[&str]) -> String {
+    if off.is_empty() {
+        return html.to_owned();
+    }
+    html.replacen(
+        "<html",
+        &format!("<html data-modules-off=\"{}\"", off.join(" ")),
+        1,
+    )
+}
+
+/// What to change in this instance's pages, or `None` when they are served as built.
+pub(crate) struct InstancePatch {
+    built: String,
+    name: Option<String>,
+    modules_off: Vec<&'static str>,
+}
+
+impl InstancePatch {
+    pub(crate) async fn load(state: &AppState) -> Option<Self> {
+        let built = built_site_name();
+        let name = branded_site_name(state).await.filter(|n| *n != built);
+        let modules_off = crate::module_gate::inactive_for_ui(
+            state,
+            crate::admin_branding::DEFAULT_ORG_UUID,
+            &UI_GATED_MODULES,
+        )
+        .await;
+        (name.is_some() || !modules_off.is_empty()).then_some(Self {
+            built,
+            name,
+            modules_off,
+        })
+    }
+
+    pub(crate) fn apply(&self, html: &str) -> String {
+        let html = match &self.name {
+            Some(name) => rewrite_site_name(html, &self.built, name),
+            None => html.to_owned(),
+        };
+        mark_modules_off(&html, &self.modules_off)
+    }
+}
+
 fn next_tag(head: &str, from: usize) -> Option<usize> {
     let tail = &head[from..];
     [tail.find("<title"), tail.find("<meta ")]
@@ -119,10 +172,8 @@ pub(crate) async fn apply_site_name(
     if req.method() != Method::GET || !is_page_path(req.uri().path()) {
         return next.run(req).await;
     }
-    let built = built_site_name();
-    let name = match branded_site_name(&state).await {
-        Some(name) if name != built => name,
-        _ => return next.run(req).await,
+    let Some(patch) = InstancePatch::load(&state).await else {
+        return next.run(req).await;
     };
     req.headers_mut().remove(header::IF_MODIFIED_SINCE);
     req.headers_mut().remove(header::IF_NONE_MATCH);
@@ -138,7 +189,9 @@ pub(crate) async fn apply_site_name(
     }
     let (mut parts, body) = res.into_parts();
     let Ok(bytes) = to_bytes(body, MAX_HTML_BYTES).await else {
-        tracing::error!("static page exceeded {MAX_HTML_BYTES} bytes while applying branding");
+        tracing::error!(
+            "static page exceeded {MAX_HTML_BYTES} bytes while applying the instance patch"
+        );
         parts.status = StatusCode::INTERNAL_SERVER_ERROR;
         parts.headers.remove(header::CONTENT_LENGTH);
         return Response::from_parts(parts, Body::empty());
@@ -146,7 +199,7 @@ pub(crate) async fn apply_site_name(
     let Ok(html) = std::str::from_utf8(&bytes) else {
         return Response::from_parts(parts, Body::from(bytes));
     };
-    let rewritten = rewrite_site_name(html, &built, &name);
+    let rewritten = patch.apply(html);
     parts.headers.remove(header::CONTENT_LENGTH);
     parts.headers.remove(header::ETAG);
     parts.headers.remove(header::LAST_MODIFIED);
@@ -199,6 +252,32 @@ mod tests {
     fn unterminated_title_is_preserved() {
         let html = "<head><title>AGORA</head>";
         assert_eq!(rewrite_site_name(html, "AGORA", "Coop"), html);
+    }
+
+    #[test]
+    fn marks_disabled_modules_on_the_root_only() {
+        let out = mark_modules_off(
+            "<html lang=\"pt\"><head></head></html>",
+            &["mandates", "forums"],
+        );
+        assert_eq!(
+            out,
+            "<html data-modules-off=\"mandates forums\" lang=\"pt\"><head></head></html>"
+        );
+    }
+
+    #[test]
+    fn nothing_disabled_leaves_the_page_unchanged() {
+        assert_eq!(mark_modules_off("<html></html>", &[]), "<html></html>");
+    }
+
+    #[test]
+    fn every_gated_module_has_a_css_rule_and_a_catalog_entry() {
+        let css = include_str!("../../../web/src/styles/module-gate.css");
+        for id in UI_GATED_MODULES {
+            assert!(css.contains(&format!("[data-requires~='{id}']")), "{id}");
+            assert!(crate::module_catalog::find(id).is_some(), "{id}");
+        }
     }
 
     #[test]

@@ -466,11 +466,10 @@ async fn forums_spa(
         return axum::http::StatusCode::NOT_FOUND.into_response();
     };
     let site_name = instance_html::current_site_name(&state).await;
-    let mut html = instance_html::rewrite_site_name(
-        &String::from_utf8_lossy(&bytes),
-        &instance_html::built_site_name(),
-        &site_name,
-    );
+    let mut html = String::from_utf8_lossy(&bytes).into_owned();
+    if let Some(patch) = instance_html::InstancePatch::load(&state).await {
+        html = patch.apply(&html);
+    }
 
     if let Some(axum::extract::Path(p)) = path {
         if let Some(rest) = p.strip_prefix("topico/") {

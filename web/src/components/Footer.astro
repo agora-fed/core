@@ -49,9 +49,12 @@ const pillars = [
 
     <div class="newsletter">
       <h3>📬 Receba as novidades</h3>
-      <p class="muted">
+      <p class="muted" data-requires="mandates">
         Acompanhe o placar dos políticos, propostas em alta e o que mudou —
         direto no seu e-mail.
+      </p>
+      <p class="muted" data-when-off="mandates">
+        Acompanhe as decisões e novidades da comunidade direto no seu e-mail.
       </p>
       <NewsletterSignup client:visible />
     </div>
@@ -62,19 +65,19 @@ const pillars = [
           <img src="/emblem.png" width="28" height="26" alt="" data-brand-logo />
           <span data-brand-name>{SITE_NAME}</span>
         </a>
-        <p class="tagline">Diferentes ideias, um só Brasil.</p>
+        <p class="tagline" data-requires="mandates">Diferentes ideias, um só Brasil.</p>
       </div>
       <nav aria-label="Rodapé" class="foot-nav">
-        <a href="/politicos">Políticos</a>
-        <a href="/propostas">Propostas</a>
-        <a href="/f/">Fóruns</a>
-        <a href="/consultas">Consultas</a>
-        <a href="/servicos">Serviços</a>
+        <a href="/politicos" data-requires="mandates">Políticos</a>
+        <a href="/propostas" data-requires="proposals">Propostas</a>
+        <a href="/f/" data-requires="forums">Fóruns</a>
+        <a href="/consultas" data-requires="consultations">Consultas</a>
+        <a href="/servicos" data-requires="mandates">Serviços</a>
         <a href="/cadastrar">Criar conta</a>
       </nav>
       <nav aria-label="Institucional" class="foot-nav institutional">
         <a href="/sobre">Sobre</a>
-        <a href="/imprensa">Imprensa</a>
+        <a href="/imprensa" data-requires="mandates">Imprensa</a>
         <a href="/transparencia">Transparência</a>
         <a href="/privacidade">Privacidade (LGPD)</a>
         <a href="/termos">Termos</a>

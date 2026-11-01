@@ -17,11 +17,19 @@ const isActive = (href: string) =>
 // dentro de /propostas; /f (Fóruns) e /consultas seguem linkadas nas páginas de
 // deliberação. B2: "Serviços" (financiamento de campanha) saiu do caminho do
 // cidadão — vive na área de campanha, visível só a candidatos.
-const links: Array<{ href: string; label: string; cta?: boolean }> = [
-  { href: '/politicos/', label: 'Políticos' },
-  { href: '/propostas', label: 'Propostas' },
-  { href: '/eleicoes/2026', label: 'Eleições 2026' },
-  { href: '/partidos', label: 'Partidos' },
+const links: Array<{
+  href: string;
+  label: string;
+  cta?: boolean;
+  requires?: string;
+  whenOff?: string;
+}> = [
+  { href: '/politicos/', label: 'Políticos', requires: 'mandates' },
+  { href: '/propostas', label: 'Propostas', requires: 'proposals' },
+  { href: '/eleicoes/2026', label: 'Eleições 2026', requires: 'mandates' },
+  { href: '/partidos', label: 'Partidos', requires: 'mandates' },
+  { href: '/f/', label: 'Fóruns', requires: 'forums', whenOff: 'mandates' },
+  { href: '/consultas', label: 'Consultas', requires: 'consultations', whenOff: 'mandates' },
 ];
 ---
 
@@ -46,6 +54,8 @@ const links: Array<{ href: string; label: string; cta?: boolean }> = [
           links.map((l) => (
             <a
               href={l.href}
+              data-requires={l.requires}
+              data-when-off={l.whenOff}
               class:list={[
                 'nav-link',
                 { active: isActive(l.href), cta: l.cta },

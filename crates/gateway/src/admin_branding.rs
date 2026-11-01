@@ -30,7 +30,7 @@ use serde_json::{Map, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-const DEFAULT_ORG_UUID: Uuid = uuid::uuid!("11111111-1111-1111-1111-111111111111");
+pub(crate) const DEFAULT_ORG_UUID: Uuid = uuid::uuid!("11111111-1111-1111-1111-111111111111");
 
 /// Semantic color tokens an admin may override (the web shell maps each to the
 /// CSS custom property of the same name). Extending this list is a code change
