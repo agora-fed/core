@@ -467,9 +467,9 @@ async fn forums_spa(
     };
     let site_name = instance_html::current_site_name(&state).await;
     let mut html = String::from_utf8_lossy(&bytes).into_owned();
-    if let Some(patch) = instance_html::InstancePatch::load(&state).await {
-        html = patch.apply(&html);
-    }
+    html = instance_html::InstancePatch::load(&state)
+        .await
+        .apply(&html);
 
     if let Some(axum::extract::Path(p)) = path {
         if let Some(rest) = p.strip_prefix("topico/") {

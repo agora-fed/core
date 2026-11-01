@@ -20,6 +20,13 @@ describe('isModuleOff', () => {
   });
 });
 
+describe('isModuleOff for modules off by default', () => {
+  it('is off unless the gateway lists it as on', () => {
+    expect(isModuleOff('meetings', root())).toBe(true);
+    expect(isModuleOff('meetings', { dataset: { modulesOn: 'meetings' } })).toBe(false);
+  });
+});
+
 describe('visibleForModules', () => {
   const items = [
     { id: 'always' },
