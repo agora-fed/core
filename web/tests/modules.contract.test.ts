@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { isModuleOff, visibleForModules } from '../src/lib/modules';
+import {
+  isModuleOff,
+  moduleFlagKey,
+  politicalPackageState,
+  toggleableModules,
+  visibleForModules,
+  type ModuleState,
+} from '../src/lib/modules';
 
 const root = (modulesOff?: string) => ({ dataset: { modulesOff } }) as { dataset: DOMStringMap };
 
@@ -27,5 +34,43 @@ describe('visibleForModules', () => {
   });
   it('swaps entries when the module is off', () => {
     expect(ids(['mandates'])).toEqual(['always', 'replacement']);
+  });
+});
+
+describe('admin module lists', () => {
+  const mod = (id: string, active: boolean, extra: Partial<ModuleState> = {}): ModuleState => ({
+    id,
+    title: id,
+    active,
+    core: false,
+    gateable: true,
+    ...extra,
+  });
+
+  it('offers only optional modules outside the political package', () => {
+    const list = [
+      mod('auth', true, { core: true, gateable: false }),
+      mod('forums', true),
+      mod('votes', true, { gateable: false }),
+      mod('scorecard', false),
+    ];
+    expect(toggleableModules(list).map((m) => m.id)).toEqual(['forums']);
+  });
+
+  it('lists what is missing from the political package', () => {
+    const state = politicalPackageState([
+      mod('mandates', false, { gateable: false }),
+      mod('consequence', true, { gateable: false }),
+      mod('forums', true),
+    ]);
+    expect(state).toEqual({ installed: false, missing: ['mandates'] });
+  });
+
+  it('reports the package as installed when every member is on', () => {
+    expect(politicalPackageState([mod('mandates', true), mod('proposals', true)]).installed).toBe(true);
+  });
+
+  it('builds the flag key the gateway reads', () => {
+    expect(moduleFlagKey('forums')).toBe('module.forums');
   });
 });
