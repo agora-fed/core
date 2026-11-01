@@ -9,7 +9,7 @@
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post, put};
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
 use dsoc_api_contract::{ApiResponse, PageMeta};
@@ -24,7 +24,7 @@ use crate::domain::{NewMeeting, ValidMinutes};
 use crate::queries::{AttendeeRow, MeetingRow};
 use crate::service::{MeetingService, DEFAULT_PAGE_LIMIT};
 
-/// Minimum assurance required to schedule, RSVP, or set minutes: an email-confirmed citizen.
+/// Minimum assurance required to schedule or RSVP: an email-confirmed citizen.
 const REQUIRED_LEVEL: VerificationLevel = VerificationLevel::Email;
 
 /// The crate's router. Mounted by the gateway; takes the frozen [`dsoc_app::AppState`].
@@ -32,8 +32,15 @@ pub fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/meetings", post(schedule).get(list_meetings))
         .route("/meetings/{id}", get(get_meeting))
-        .route("/meetings/{id}/minutes", put(set_minutes))
         .route("/meetings/{id}/attendees", post(attend).get(list_attendees))
+        .with_state(state)
+}
+
+/// Routes for a meeting's minutes. They do not check roles themselves: the gateway mounts them
+/// behind its org admin guard, and these handlers only confirm the meeting is in the caller's org.
+pub fn minutes_routes(state: AppState) -> Router<()> {
+    Router::new()
+        .route("/meetings/{id}/minutes", get(get_minutes).put(set_minutes))
         .with_state(state)
 }
 
@@ -52,8 +59,6 @@ pub struct MeetingDto {
     pub location: String,
     /// When the meeting begins.
     pub starts_at: DateTime<Utc>,
-    /// Recorded minutes, absent until set after the meeting.
-    pub minutes: Option<String>,
     /// Creation time.
     pub created_at: DateTime<Utc>,
 }
@@ -66,7 +71,6 @@ impl From<MeetingRow> for MeetingDto {
             title: row.title,
             location: row.location,
             starts_at: row.starts_at,
-            minutes: row.minutes,
             created_at: row.created_at,
         }
     }
@@ -106,6 +110,13 @@ pub struct ScheduleRequest {
     pub location: String,
     /// When the meeting begins.
     pub starts_at: DateTime<Utc>,
+}
+
+/// A meeting's minutes, absent until recorded.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct MinutesDto {
+    /// The minutes text.
+    pub minutes: Option<String>,
 }
 
 /// Request to set a meeting's minutes.
@@ -198,31 +209,64 @@ async fn list_meetings(
     }
 }
 
-/// `PUT /meetings/{id}/minutes` — set (replace) a meeting's minutes.
-///
-/// Recording minutes is a citizen action; the verified caller (from [`dsoc_app::CallerId`], never
-/// the body — ADR-0007) is authorized (email-verified) before any write.
+/// Fetch a meeting only if it belongs to the caller's org. Another org's meeting reads as missing.
+async fn meeting_in_org(
+    svc: &MeetingService,
+    caller: CallerId,
+    id: Uuid,
+) -> dsoc_core::Result<crate::queries::MeetingRow> {
+    let row = svc.get_meeting(id).await?;
+    if row.org_id == caller.org.as_uuid() {
+        Ok(row)
+    } else {
+        Err(dsoc_core::Error::NotFound("meeting not found".to_string()))
+    }
+}
+
+/// `GET /meetings/{id}/minutes` — read a meeting's minutes (org admins, see [`minutes_routes`]).
+async fn get_minutes(
+    State(state): State<AppState>,
+    caller: CallerId,
+    Path(id): Path<Uuid>,
+) -> Response {
+    let svc = MeetingService::from_state(&state);
+    match meeting_in_org(&svc, caller, id).await {
+        Ok(row) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(MinutesDto {
+                minutes: row.minutes,
+            })),
+        )
+            .into_response(),
+        Err(e) => error_response::<MinutesDto>(&e),
+    }
+}
+
+/// `PUT /meetings/{id}/minutes` — set (replace) a meeting's minutes (org admins, see
+/// [`minutes_routes`]).
 async fn set_minutes(
     State(state): State<AppState>,
     caller: CallerId,
     Path(id): Path<Uuid>,
     Json(req): Json<SetMinutesRequest>,
 ) -> Response {
-    if let Err(e) = state
-        .authz
-        .require(caller.org, caller.citizen, REQUIRED_LEVEL)
-        .await
-    {
-        return error_response::<MeetingDto>(&e);
-    }
     let minutes = match ValidMinutes::validate(&req.minutes) {
         Ok(m) => m,
-        Err(e) => return error_response::<MeetingDto>(&e),
+        Err(e) => return error_response::<MinutesDto>(&e),
     };
     let svc = MeetingService::from_state(&state);
+    if let Err(e) = meeting_in_org(&svc, caller, id).await {
+        return error_response::<MinutesDto>(&e);
+    }
     match svc.set_minutes(id, &minutes).await {
-        Ok(row) => (StatusCode::OK, Json(ApiResponse::ok(MeetingDto::from(row)))).into_response(),
-        Err(e) => error_response::<MeetingDto>(&e),
+        Ok(row) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(MinutesDto {
+                minutes: row.minutes,
+            })),
+        )
+            .into_response(),
+        Err(e) => error_response::<MinutesDto>(&e),
     }
 }
 
@@ -328,7 +372,6 @@ mod tests {
         assert_eq!(dto.title, "Assembleia");
         assert_eq!(dto.location, "Praça Central");
         assert_eq!(dto.starts_at, at());
-        assert!(dto.minutes.is_none());
     }
 
     #[test]

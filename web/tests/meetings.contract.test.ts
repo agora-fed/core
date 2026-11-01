@@ -7,7 +7,6 @@ const meeting = (id: string, starts_at: string): MeetingDto => ({
   title: id,
   location: 'x',
   starts_at,
-  minutes: null,
   created_at: starts_at,
 });
 

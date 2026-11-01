@@ -120,6 +120,46 @@ impl AdminService {
         }
     }
 
+    /// Allow administrative reads only to holders of a role in `org`.
+    ///
+    /// # Errors
+    /// [`Error::Forbidden`] without a role, [`Error::Storage`] on persistence failure.
+    pub async fn authorize_read(&self, org: OrgId, actor: CitizenId) -> Result<()> {
+        let allowed = queries::actor_has_any_role(&self.db, org.as_uuid(), actor.as_uuid())
+            .await
+            .map_err(map_sqlx)?;
+        if allowed {
+            Ok(())
+        } else {
+            Err(Error::Forbidden(
+                "requer papel administrativo nesta organização".to_owned(),
+            ))
+        }
+    }
+
+    /// List the administrative orgs where `actor` holds a role.
+    ///
+    /// # Errors
+    /// [`Error::Storage`] on persistence failure.
+    pub async fn list_orgs_for_actor(
+        &self,
+        actor: CitizenId,
+        after: Option<OrgId>,
+        limit: Option<u32>,
+    ) -> Result<Vec<AdminOrg>> {
+        let orgs = self.list_orgs(after, limit).await?;
+        let mut visible = Vec::with_capacity(orgs.len());
+        for org in orgs {
+            if queries::actor_has_any_role(&self.db, org.org_id.as_uuid(), actor.as_uuid())
+                .await
+                .map_err(map_sqlx)?
+            {
+                visible.push(org);
+            }
+        }
+        Ok(visible)
+    }
+
     /// Create the administrative extension for an existing baseline organization.
     ///
     /// # Errors
