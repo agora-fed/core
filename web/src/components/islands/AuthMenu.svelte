@@ -8,6 +8,7 @@
   // the login response only carries the opaque `u-<hex>` public handle, which we never
   // show as a label anymore.
   import { onMount } from 'svelte';
+  import { IDENTITY_KEYS, SESSION_EXPIRED_EVENT } from '../../lib/session';
   import {
     getMyProfile,
     refreshMyActor,
@@ -54,6 +55,11 @@
   );
 
   onMount(async () => {
+    window.addEventListener(SESSION_EXPIRED_EVENT, () => {
+      loggedIn = false;
+      isAdmin = false;
+      isPolitico = false;
+    });
     loggedIn = Boolean(read('dsoc_citizen'));
     // Paint immediately from cache, then refresh from /me in the background.
     name = read('dsoc_name');
@@ -131,7 +137,7 @@
     } catch {
       /* still clear locally; the cookie's TTL will expire it server-side */
     }
-    for (const k of ['dsoc_citizen', 'dsoc_handle', 'dsoc_name', 'dsoc_avatar', 'dsoc_is_admin', 'dsoc_is_politico'])
+    for (const k of IDENTITY_KEYS)
       write(k, null);
     window.location.href = '/';
   }

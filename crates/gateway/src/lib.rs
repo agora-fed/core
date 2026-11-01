@@ -17,6 +17,7 @@ pub mod admin_content;
 pub mod admin_ext;
 pub mod admin_forums;
 mod admin_interests;
+mod admin_pages;
 pub mod admin_parties;
 pub mod admin_reports;
 pub mod admin_roles;
@@ -415,6 +416,10 @@ pub fn api_router(state: AppState) -> Router {
         .layer(middleware::from_fn_with_state(
             state.clone(),
             instance_html::apply_site_name,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            admin_pages::guard,
         ));
 
     // Federation PUBLIC surface lives at the root (NOT under /api/v1): /.well-known/webfinger,

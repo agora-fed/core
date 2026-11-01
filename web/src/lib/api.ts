@@ -1,6 +1,8 @@
 // Tiny typed API client wrapping `fetch` with the frozen ApiResponse envelope.
 // Base URL comes from PUBLIC_API_BASE (IPv6-first, per platform principle 4).
 
+import { onUnauthorized } from './session';
+
 import type {
   ActivityDto,
   ApiResponse,
@@ -188,6 +190,7 @@ export async function apiGetCredentialed<T>(
         ...(init?.headers ?? {}),
       },
     });
+    if (res.status === 401) void onUnauthorized(false, API_BASE);
     return parseEnvelope<T>(res);
   } catch {
     return networkFailure<T>();
@@ -212,6 +215,7 @@ async function apiBody<T>(
       },
       body: JSON.stringify(payload),
     });
+    if (res.status === 401) void onUnauthorized(true, API_BASE);
     return parseEnvelope<T>(res);
   } catch {
     return networkFailure<T>();
