@@ -175,7 +175,19 @@ fn is_blocked_v4(ip: Ipv4Addr) -> bool {
         || a >= 240 // 240/4 reserved, and 255.255.255.255
 }
 
+/// The IPv4 address a NAT64 gateway would dial for `64:ff9b::/96` (RFC 6052).
+fn nat64_target(ip: Ipv6Addr) -> Option<Ipv4Addr> {
+    let seg = ip.segments();
+    (seg[..6] == [0x0064, 0xff9b, 0, 0, 0, 0]).then(|| {
+        let o = ip.octets();
+        Ipv4Addr::new(o[12], o[13], o[14], o[15])
+    })
+}
+
 fn is_blocked_v6(ip: Ipv6Addr) -> bool {
+    if let Some(target) = nat64_target(ip) {
+        return is_blocked_v4(target);
+    }
     let seg = ip.segments();
     ip.is_loopback()        // ::1
         || ip.is_unspecified() // ::
@@ -505,6 +517,14 @@ pub async fn guarded_post(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nat64_is_judged_by_the_ipv4_it_dials() {
+        for internal in ["64:ff9b::a00:1", "64:ff9b::7f00:1", "64:ff9b::a9fe:a9fe"] {
+            assert!(is_blocked_ip(internal.parse().unwrap()), "{internal}");
+        }
+        assert!(!is_blocked_ip("64:ff9b::808:808".parse().unwrap()));
+    }
 
     fn ip(s: &str) -> IpAddr {
         s.parse().unwrap()
