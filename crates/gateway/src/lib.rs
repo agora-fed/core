@@ -47,7 +47,7 @@ mod forum_federation;
 mod forum_mailer;
 pub mod govbr_oidc;
 mod instance_html;
-mod intercoms;
+pub mod intercoms;
 pub mod intercoms_config;
 pub mod interests;
 pub mod invitations;
