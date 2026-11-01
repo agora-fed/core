@@ -10,6 +10,10 @@ description = "Tier-0 database layer: sqlx pool setup, migration runner, and que
 [lints]
 workspace = true
 
+[[bin]]
+name = "agora-migrate"
+path = "src/bin/migrate.rs"
+
 [dependencies]
 # Blind index over identifiers (issue #15): HMAC so a dump without the key cannot
 # rebuild the column by enumeration.

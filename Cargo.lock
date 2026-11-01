@@ -1515,7 +1515,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dsoc-core",
+ "hmac 0.12.1",
  "serde_json",
+ "sha2 0.10.9",
  "sqlx 0.8.6",
  "thiserror 2.0.18",
  "tokio",
