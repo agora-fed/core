@@ -121,6 +121,22 @@ pub(crate) async fn effective_permission_key_lists(
 
 /// Whether `citizen` holds a mutating administrative role (`owner`|`admin`) in `org`.
 /// The root of trust is `scripts/bootstrap-admin.sh`, which seeds the first owner via SQL.
+/// Any administrative role, including read-only auditors.
+pub(crate) async fn actor_has_any_role(
+    db: &Db,
+    org_id: Uuid,
+    citizen_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM admin_role_binding
+          WHERE org_id = $1 AND citizen_id = $2 AND role IN ('owner', 'admin', 'auditor'))",
+    )
+    .bind(org_id)
+    .bind(citizen_id)
+    .fetch_one(db)
+    .await
+}
+
 pub(crate) async fn actor_has_admin_role(
     db: &Db,
     org_id: Uuid,

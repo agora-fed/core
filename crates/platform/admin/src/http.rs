@@ -135,7 +135,8 @@ pub struct ListParams {
 
 /// Mount the admin routes onto a router carrying the shared [`AppState`].
 ///
-/// Reads are open; mutations (`POST`/`PUT`) require a verified actor (see [`AdminService`]).
+/// Reads require an administrative role in the org; mutations also require a verified actor
+/// (see [`AdminService`]).
 pub fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/admin/orgs", post(create_org).get(list_orgs))
@@ -168,20 +169,25 @@ async fn create_org(
 
 async fn get_org(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(org_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<AdminOrgDto>>, ApiErr> {
+    let actor = actor_from_headers(&headers)?;
     let svc = AdminService::from_state(&state);
+    svc.authorize_read(OrgId::from_uuid(org_id), actor).await?;
     let org = svc.get_org(OrgId::from_uuid(org_id)).await?;
     Ok(Json(ApiResponse::ok(AdminOrgDto::from(org))))
 }
 
 async fn list_orgs(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(params): Query<ListParams>,
 ) -> Result<Json<ApiResponse<Vec<AdminOrgDto>>>, ApiErr> {
+    let actor = actor_from_headers(&headers)?;
     let svc = AdminService::from_state(&state);
     let orgs = svc
-        .list_orgs(params.after.map(OrgId::from_uuid), params.limit)
+        .list_orgs_for_actor(actor, params.after.map(OrgId::from_uuid), params.limit)
         .await?;
     Ok(Json(ApiResponse::ok(
         orgs.into_iter().map(AdminOrgDto::from).collect(),
@@ -213,10 +219,13 @@ async fn bind_role(
 
 async fn list_role_bindings(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(org_id): Path<Uuid>,
     Query(params): Query<ListParams>,
 ) -> Result<Json<ApiResponse<Vec<RoleBindingDto>>>, ApiErr> {
+    let actor = actor_from_headers(&headers)?;
     let svc = AdminService::from_state(&state);
+    svc.authorize_read(OrgId::from_uuid(org_id), actor).await?;
     let bindings = svc
         .list_role_bindings(OrgId::from_uuid(org_id), params.after, params.limit)
         .await?;
@@ -241,19 +250,25 @@ async fn set_feature_flag(
 
 async fn get_feature_flag(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path((org_id, key)): Path<(Uuid, String)>,
 ) -> Result<Json<ApiResponse<FeatureFlagDto>>, ApiErr> {
+    let actor = actor_from_headers(&headers)?;
     let svc = AdminService::from_state(&state);
+    svc.authorize_read(OrgId::from_uuid(org_id), actor).await?;
     let flag = svc.get_feature_flag(OrgId::from_uuid(org_id), &key).await?;
     Ok(Json(ApiResponse::ok(FeatureFlagDto::from(flag))))
 }
 
 async fn list_feature_flags(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(org_id): Path<Uuid>,
     Query(params): Query<ListParams>,
 ) -> Result<Json<ApiResponse<Vec<FeatureFlagDto>>>, ApiErr> {
+    let actor = actor_from_headers(&headers)?;
     let svc = AdminService::from_state(&state);
+    svc.authorize_read(OrgId::from_uuid(org_id), actor).await?;
     let flags = svc
         .list_feature_flags(OrgId::from_uuid(org_id), params.after, params.limit)
         .await?;
