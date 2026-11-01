@@ -1,0 +1,15 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import BudgetsApp from '../components/islands/BudgetsApp.svelte';
+---
+
+<BaseLayout
+  title="Orçamento participativo"
+  description="Escolha os projetos que devem receber os recursos da comunidade."
+>
+  <section class="section">
+    <div class="container narrow">
+      <BudgetsApp client:load />
+    </div>
+  </section>
+</BaseLayout>
