@@ -6,7 +6,6 @@ export interface MeetingDto {
   title: string;
   location: string;
   starts_at: string;
-  minutes: string | null;
   created_at: string;
 }
 
@@ -31,8 +30,10 @@ export const scheduleMeeting = (body: { title: string; location: string; starts_
   apiPost<MeetingDto>('/api/v1/meetings', body);
 export const attendMeeting = (id: string) =>
   apiPost<AttendeeDto>(`/api/v1/meetings/${encodeURIComponent(id)}/attendees`, {});
+export const getMinutes = (id: string) =>
+  apiGet<{ minutes: string | null }>(`/api/v1/meetings/${encodeURIComponent(id)}/minutes`);
 export const setMinutes = (id: string, minutes: string) =>
-  apiPut<MeetingDto>(`/api/v1/meetings/${encodeURIComponent(id)}/minutes`, { minutes });
+  apiPut<{ minutes: string | null }>(`/api/v1/meetings/${encodeURIComponent(id)}/minutes`, { minutes });
 
 /** Upcoming first by nearest date, then past meetings by most recent. */
 export function splitMeetings(meetings: MeetingDto[], now: Date) {

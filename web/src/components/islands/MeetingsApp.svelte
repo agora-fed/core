@@ -5,6 +5,7 @@
     attendMeeting,
     formatMeetingDate,
     getMeeting,
+    getMinutes,
     listAttendees,
     listMeetings,
     localToIso,
@@ -29,6 +30,9 @@
   let location = $state('');
   let startsAt = $state('');
   let minutesDraft = $state('');
+  // Stays false unless the API lets this person read the minutes, which only org admins can.
+  let canSeeMinutes = $state(false);
+  let minutes = $state<string | null>(null);
 
   const groups = $derived(splitMeetings(meetings, new Date()));
 
@@ -42,8 +46,13 @@
     const [meeting, people] = await Promise.all([getMeeting(id), listAttendees(id)]);
     if (meeting.ok && meeting.data) {
       current = meeting.data;
-      if (!minutesDraft) minutesDraft = meeting.data.minutes ?? '';
       attendees = people.data?.length ?? 0;
+      if (logged) {
+        const record = await getMinutes(id);
+        canSeeMinutes = record.ok;
+        minutes = record.data?.minutes ?? null;
+        if (!minutesDraft) minutesDraft = minutes ?? '';
+      }
     } else {
       loadError = meeting.error ?? 'Reunião não encontrada.';
     }
@@ -133,13 +142,13 @@
     <p class="muted"><a href="/entrar">Entre</a> para confirmar presença.</p>
   {/if}
 
-  <h2>Ata</h2>
-  {#if current.minutes}
-    <p class="minutes">{current.minutes}</p>
-  {:else}
-    <p class="muted">A ata ainda não foi registrada.</p>
-  {/if}
-  {#if logged}
+  {#if canSeeMinutes}
+    <h2>Ata</h2>
+    {#if minutes}
+      <p class="minutes">{minutes}</p>
+    {:else}
+      <p class="muted">A ata ainda não foi registrada.</p>
+    {/if}
     <form onsubmit={saveMinutes}>
       <label>
         Registrar ata
