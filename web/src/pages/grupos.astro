@@ -1,0 +1,12 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import GroupsApp from '../components/islands/GroupsApp.svelte';
+---
+
+<BaseLayout title="Grupos" description="Grupos de trabalho da comunidade." noindex>
+  <section class="section">
+    <div class="container narrow">
+      <GroupsApp client:load />
+    </div>
+  </section>
+</BaseLayout>

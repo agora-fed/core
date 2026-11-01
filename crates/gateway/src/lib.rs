@@ -48,6 +48,7 @@ pub mod fediverso_admin;
 pub mod forum_federation;
 mod forum_mailer;
 pub mod govbr_oidc;
+mod groups;
 mod instance_html;
 pub mod intercoms;
 pub mod intercoms_config;
@@ -258,6 +259,7 @@ pub fn api_router(state: AppState) -> Router {
         // Campaign panel of the party/directory (AGORA F7, #64).
         .merge(crate::party_dashboard::routes(state.clone()))
         .merge(crate::module_gate::routes(state.clone()))
+        .merge(crate::groups::routes(state.clone()))
         .merge(admin_ext::routes(state.clone()))
         // Super-admin: editar/ocultar/apagar mandato, proposta, partido (0.40, SOCRATES).
         .merge(admin_content::routes(state.clone()))
@@ -476,9 +478,9 @@ async fn forums_spa(
     };
     let site_name = instance_html::current_site_name(&state).await;
     let mut html = String::from_utf8_lossy(&bytes).into_owned();
-    if let Some(patch) = instance_html::InstancePatch::load(&state).await {
-        html = patch.apply(&html);
-    }
+    html = instance_html::InstancePatch::load(&state)
+        .await
+        .apply(&html);
 
     if let Some(axum::extract::Path(p)) = path {
         if let Some(rest) = p.strip_prefix("topico/") {
