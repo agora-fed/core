@@ -422,7 +422,8 @@ pub fn api_router(state: AppState) -> Router {
         .layer(middleware::from_fn_with_state(
             state.clone(),
             admin_pages::guard,
-        ));
+        ))
+        .layer(middleware::from_fn(sso_oidc::signup_page_redirect));
 
     // Federation PUBLIC surface lives at the root (NOT under /api/v1): /.well-known/webfinger,
     // /actors/<handle>, /actors/<handle>/{inbox,outbox,followers,following}. These are read by

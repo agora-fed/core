@@ -1361,7 +1361,7 @@ export const getPublicStats = () =>
 
 /** GET /auth/sso/status — whether to show the single sign-on button. */
 export const getSsoStatus = () =>
-  apiGet<{ enabled: boolean; label: string | null }>('/api/v1/auth/sso/status');
+  apiGet<{ enabled: boolean; only: boolean; label: string | null }>('/api/v1/auth/sso/status');
 
 /** GET /auth/govbr/status — front usa pra decidir se mostra o botão. */
 export const getGovbrStatus = () =>
