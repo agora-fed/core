@@ -46,6 +46,12 @@ const MODULE_ROUTES: [(&str, &str); 19] = [
 ];
 const UNAVAILABLE_PAGE: &str = "/modulo-indisponivel/";
 
+/// First path segment of static pages that belong to a module that is off by default.
+const OPTIONAL_MODULE_ROUTES: &[(&str, &str)] = &[("reunioes", "meetings")];
+
+/// Off by default, so listed only when on. Must match web/src/styles/module-gate.css.
+const UI_OPTIONAL_MODULES: &[&str] = &["meetings"];
+
 /// Must match web/src/styles/module-gate.css.
 const UI_GATED_MODULES: [&str; 5] = [
     "mandates",
@@ -129,7 +135,7 @@ fn rewrite_site_name(html: &str, built: &str, name: &str) -> String {
 }
 
 /// The page to serve instead of the requested one, with its status.
-fn route_override(path: &str, off: &[&str]) -> Option<(&'static str, StatusCode)> {
+fn route_override(path: &str, off: &[&str], on: &[&str]) -> Option<(&'static str, StatusCode)> {
     let trimmed = path.trim_matches('/');
     if off.contains(&"mandates") {
         match trimmed {
@@ -139,45 +145,52 @@ fn route_override(path: &str, off: &[&str]) -> Option<(&'static str, StatusCode)
         }
     }
     let first = trimmed.split('/').next().unwrap_or("");
-    MODULE_ROUTES
+    let gated_off = MODULE_ROUTES
         .iter()
-        .any(|(route, module)| *route == first && off.contains(module))
-        .then_some((UNAVAILABLE_PAGE, StatusCode::NOT_FOUND))
+        .any(|(route, module)| *route == first && off.contains(module));
+    let optional_off = OPTIONAL_MODULE_ROUTES
+        .iter()
+        .any(|(route, module)| *route == first && !on.contains(module));
+    (gated_off || optional_off).then_some((UNAVAILABLE_PAGE, StatusCode::NOT_FOUND))
 }
 
-fn mark_modules_off(html: &str, off: &[&str]) -> String {
-    if off.is_empty() {
+fn mark_modules(html: &str, attribute: &str, ids: &[&str]) -> String {
+    if ids.is_empty() {
         return html.to_owned();
     }
     html.replacen(
         "<html",
-        &format!("<html data-modules-off=\"{}\"", off.join(" ")),
+        &format!("<html {attribute}=\"{}\"", ids.join(" ")),
         1,
     )
 }
 
-/// What to change in this instance's pages, or `None` when they are served as built.
+/// What to change in this instance's pages.
 pub(crate) struct InstancePatch {
     built: String,
     name: Option<String>,
     modules_off: Vec<&'static str>,
+    modules_on: Vec<&'static str>,
 }
 
 impl InstancePatch {
-    pub(crate) async fn load(state: &AppState) -> Option<Self> {
+    pub(crate) async fn load(state: &AppState) -> Self {
         let built = built_site_name();
         let name = branded_site_name(state).await.filter(|n| *n != built);
-        let modules_off = crate::module_gate::inactive_for_ui(
-            state,
-            crate::admin_branding::DEFAULT_ORG_UUID,
-            &UI_GATED_MODULES,
-        )
-        .await;
-        (name.is_some() || !modules_off.is_empty()).then_some(Self {
+        let org = crate::admin_branding::DEFAULT_ORG_UUID;
+        let modules_off = crate::module_gate::inactive_for_ui(state, org, &UI_GATED_MODULES).await;
+        let modules_on = crate::module_gate::active_for_ui(state, org, UI_OPTIONAL_MODULES).await;
+        Self {
             built,
             name,
             modules_off,
-        })
+            modules_on,
+        }
+    }
+
+    /// True when pages can be served as built, keeping their validators.
+    fn is_noop(&self) -> bool {
+        self.name.is_none() && self.modules_off.is_empty() && self.modules_on.is_empty()
     }
 
     pub(crate) fn apply(&self, html: &str) -> String {
@@ -185,7 +198,8 @@ impl InstancePatch {
             Some(name) => rewrite_site_name(html, &self.built, name),
             None => html.to_owned(),
         };
-        mark_modules_off(&html, &self.modules_off)
+        let html = mark_modules(&html, "data-modules-off", &self.modules_off);
+        mark_modules(&html, "data-modules-on", &self.modules_on)
     }
 }
 
@@ -213,10 +227,11 @@ pub(crate) async fn apply_site_name(
     if req.method() != Method::GET || !is_page_path(req.uri().path()) {
         return next.run(req).await;
     }
-    let Some(patch) = InstancePatch::load(&state).await else {
+    let patch = InstancePatch::load(&state).await;
+    let page = route_override(req.uri().path(), &patch.modules_off, &patch.modules_on);
+    if page.is_none() && patch.is_noop() {
         return next.run(req).await;
-    };
-    let page = route_override(req.uri().path(), &patch.modules_off);
+    }
     if let Some((target, _)) = page {
         match target.parse() {
             Ok(uri) => *req.uri_mut() = uri,
@@ -308,40 +323,65 @@ mod tests {
     #[test]
     fn home_and_about_swap_only_when_mandates_is_off() {
         assert_eq!(
-            route_override("/", &["mandates"]),
+            route_override("/", &["mandates"], &[]),
             Some(("/inicio-comunidade/", StatusCode::OK))
         );
         assert_eq!(
-            route_override("/sobre/", &["mandates"]),
+            route_override("/sobre/", &["mandates"], &[]),
             Some(("/sobre-comunidade/", StatusCode::OK))
         );
-        assert_eq!(route_override("/", &["forums"]), None);
+        assert_eq!(route_override("/", &["forums"], &[]), None);
     }
 
     #[test]
     fn routes_of_disabled_modules_are_unavailable() {
         let expected = Some((UNAVAILABLE_PAGE, StatusCode::NOT_FOUND));
-        assert_eq!(route_override("/politicos/abc/", &["mandates"]), expected);
-        assert_eq!(route_override("/propor", &["proposals"]), expected);
+        assert_eq!(
+            route_override("/politicos/abc/", &["mandates"], &[]),
+            expected
+        );
+        assert_eq!(route_override("/propor", &["proposals"], &[]), expected);
     }
 
     #[test]
     fn route_match_uses_whole_segments() {
-        assert_eq!(route_override("/politicos-x/", &["mandates"]), None);
-        assert_eq!(route_override("/politicos/", &["forums"]), None);
+        assert_eq!(route_override("/politicos-x/", &["mandates"], &[]), None);
+        assert_eq!(route_override("/politicos/", &["forums"], &[]), None);
     }
 
     #[test]
-    fn module_routes_point_at_gated_modules() {
+    fn optional_routes_are_unavailable_unless_on() {
+        let expected = Some((UNAVAILABLE_PAGE, StatusCode::NOT_FOUND));
+        assert_eq!(route_override("/reunioes/", &[], &[]), expected);
+        assert_eq!(route_override("/reunioes/", &[], &["meetings"]), None);
+    }
+
+    #[test]
+    fn default_instance_is_served_as_built() {
+        let patch = InstancePatch {
+            built: "AGORA".to_owned(),
+            name: None,
+            modules_off: Vec::new(),
+            modules_on: Vec::new(),
+        };
+        assert!(patch.is_noop());
+    }
+
+    #[test]
+    fn module_routes_point_at_listed_modules() {
         for (_, module) in MODULE_ROUTES {
             assert!(UI_GATED_MODULES.contains(&module), "{module}");
+        }
+        for (_, module) in OPTIONAL_MODULE_ROUTES {
+            assert!(UI_OPTIONAL_MODULES.contains(module), "{module}");
         }
     }
 
     #[test]
     fn marks_disabled_modules_on_the_root_only() {
-        let out = mark_modules_off(
+        let out = mark_modules(
             "<html lang=\"pt\"><head></head></html>",
+            "data-modules-off",
             &["mandates", "forums"],
         );
         assert_eq!(
@@ -352,15 +392,26 @@ mod tests {
 
     #[test]
     fn nothing_disabled_leaves_the_page_unchanged() {
-        assert_eq!(mark_modules_off("<html></html>", &[]), "<html></html>");
+        assert_eq!(
+            mark_modules("<html></html>", "data-modules-off", &[]),
+            "<html></html>"
+        );
     }
 
     #[test]
     fn every_gated_module_has_a_css_rule_and_a_catalog_entry() {
         let css = include_str!("../../../web/src/styles/module-gate.css");
         for id in UI_GATED_MODULES {
-            assert!(css.contains(&format!("[data-requires~='{id}']")), "{id}");
-            assert!(crate::module_catalog::find(id).is_some(), "{id}");
+            let rule = format!("html[data-modules-off~='{id}'] [data-requires~='{id}']");
+            assert!(css.contains(&rule), "{id}");
+            let module = crate::module_catalog::find(id).expect(id);
+            assert!(module.default_enabled, "{id} must be on by default");
+        }
+        for id in UI_OPTIONAL_MODULES {
+            let rule = format!("html:not([data-modules-on~='{id}']) [data-requires~='{id}']");
+            assert!(css.contains(&rule), "{id}");
+            let module = crate::module_catalog::find(id).expect(id);
+            assert!(!module.default_enabled, "{id} must be off by default");
         }
     }
 
