@@ -255,13 +255,15 @@
                 </span>
               </div>
             </Card>
-            <Card>
-              <div class="metric">
-                <span class="k">Mandatos</span>
-                <strong class="v">{fmtNum(stats.mandates)}</strong>
-                <span class="s muted">Câmara + Senado + subnacionais</span>
-              </div>
-            </Card>
+            <div class="gate-wrap" data-requires="mandates">
+              <Card>
+                <div class="metric">
+                  <span class="k">Mandatos</span>
+                  <strong class="v">{fmtNum(stats.mandates)}</strong>
+                  <span class="s muted">Câmara + Senado + subnacionais</span>
+                </div>
+              </Card>
+            </div>
             <Card>
               <div class="metric">
                 <span class="k">Propostas</span>
@@ -654,4 +656,5 @@
   a:hover {
     text-decoration: underline;
   }
+  .gate-wrap { display: contents; }
 </style>

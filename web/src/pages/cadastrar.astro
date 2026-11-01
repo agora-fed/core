@@ -14,10 +14,11 @@ const description =
       <div class="auth-card card">
         <BrandLine size={34} class="logo" />
         <h1>Criar conta</h1>
-        <p class="muted">
+        <p class="muted" data-requires="mandates">
           Participe da plataforma onde a demanda popular vira responsabilidade
           pública.
         </p>
+        <p class="muted" data-when-off="mandates">Participe das decisões da sua comunidade.</p>
         <RegisterForm client:load />
       </div>
     </div>

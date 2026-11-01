@@ -324,7 +324,7 @@
       <strong>Uma publicação a cada 15 minutos</strong> — pra debate saudável,
       não enxurrada.
     </li>
-    <li>
+    <li data-requires="mandates">
       <strong>Só cidadã(o) verificada(o) vota em pauta urgente.</strong>
       Título de eleitor confirmado sinaliza voz brasileira.
     </li>
@@ -339,7 +339,7 @@
   {#if !showRoleOptions}
     <!-- B4: cadastro de cidadã(o) é o padrão. O seletor de papel só aparece
          quando alguém que representa um mandato/candidatura pede por ele. -->
-    <p class="role-reveal muted">
+    <p class="role-reveal muted" data-requires="mandates">
       Você está criando uma conta de <strong>cidadã(o)</strong>.
       <button
         type="button"
@@ -644,6 +644,7 @@
         </select>
       </label>
     </div>
+    <div data-requires="mandates">
     <Input
       id="r-titulo"
       label="Título de eleitor (opcional)"
@@ -656,6 +657,7 @@
         ? 'Habilita seu poder de voto no sistema.'
         : 'Sem o título, sua conta é criada, mas você NÃO terá poder de voto válido.'}
     />
+    </div>
   {/if}
 
   {#snippet atIcon()}<Icon name="at" size={16} />{/snippet}

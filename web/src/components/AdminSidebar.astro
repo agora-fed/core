@@ -6,22 +6,22 @@ const path = Astro.url.pathname;
 const isActive = (href: string) =>
   href === '/admin/' ? path === '/admin/' || path === '/admin' : path.startsWith(href);
 
-const items = [
+const items: { href: string; label: string; icon: string; requires?: string }[] = [
   { href: '/admin/', label: 'Painel', icon: 'stats' },
   { href: '/admin/denuncias', label: 'Denúncias', icon: 'flag' },
   { href: '/admin/revisoes', label: 'Revisões', icon: 'users' },
   { href: '/admin/usuarios', label: 'Contas', icon: 'users' },
   { href: '/admin/papeis', label: 'Papéis & permissões', icon: 'shield' },
-  { href: '/admin/partidos', label: 'Partidos & Diretórios', icon: 'shield' },
-  { href: '/admin/consultas', label: 'Consultas', icon: 'stats' },
-  { href: '/admin/base-contatos', label: 'Base de contatos', icon: 'users' },
-  { href: '/admin/convites-gabinetes', label: 'Convites aos gabinetes', icon: 'bell' },
+  { href: '/admin/partidos', label: 'Partidos & Diretórios', icon: 'shield', requires: 'mandates' },
+  { href: '/admin/consultas', label: 'Consultas', icon: 'stats', requires: 'consultations' },
+  { href: '/admin/base-contatos', label: 'Base de contatos', icon: 'users', requires: 'mandates' },
+  { href: '/admin/convites-gabinetes', label: 'Convites aos gabinetes', icon: 'bell', requires: 'mandates' },
   { href: '/admin/completar-perfil', label: 'Completar perfil', icon: 'users' },
-  { href: '/admin/contatos-politicos', label: 'Contatos dos políticos', icon: 'users' },
-  { href: '/admin/fontes-civicas', label: 'Fontes cívicas (plataformas)', icon: 'globe' },
-  { href: '/admin/socrates', label: 'SOCRATES (e-Cidadania)', icon: 'globe' },
+  { href: '/admin/contatos-politicos', label: 'Contatos dos políticos', icon: 'users', requires: 'mandates' },
+  { href: '/admin/fontes-civicas', label: 'Fontes cívicas (plataformas)', icon: 'globe', requires: 'mandates' },
+  { href: '/admin/socrates', label: 'SOCRATES (e-Cidadania)', icon: 'globe', requires: 'mandates' },
   { href: '/admin/interesses', label: 'Áreas de interesse', icon: 'hashtag' },
-  { href: '/admin/federacao', label: 'Federação', icon: 'globe' },
+  { href: '/admin/federacao', label: 'Federação', icon: 'globe', requires: 'federation' },
   { href: '/admin/email-templates', label: 'Templates de e-mail', icon: 'edit' },
   { href: '/admin/email-domains', label: 'E-mails bloqueados', icon: 'block' },
   { href: '/admin/ip-rules', label: 'Regras de IP', icon: 'block' },
@@ -45,6 +45,7 @@ const items = [
         <li>
           <a
             href={it.href}
+            data-requires={it.requires}
             class:list={['sb-link', { active: isActive(it.href) }]}
             aria-current={isActive(it.href) ? 'page' : undefined}
           >

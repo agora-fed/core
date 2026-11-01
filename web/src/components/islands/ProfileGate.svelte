@@ -56,8 +56,11 @@
   <div class="gate" role="dialog" aria-modal="true" aria-labelledby="gate-h">
     <div class="card">
       <h2 id="gate-h">Complete seu cadastro</h2>
-      <p class="muted">
+      <p class="muted" data-requires="mandates">
         Precisamos de alguns dados obrigatórios pra sua conta cívica. Leva menos de um minuto.
+      </p>
+      <p class="muted" data-when-off="mandates">
+        Precisamos de alguns dados obrigatórios pra sua conta. Leva menos de um minuto.
       </p>
       <form onsubmit={save}>
         <label>

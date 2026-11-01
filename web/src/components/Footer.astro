@@ -21,12 +21,14 @@ const pillars = [
     name: 'Transparência',
     color: 'var(--pol-right)',
     text: 'Cada resposta — ou silêncio — fica registrado em público.',
+    textWhenOff: 'As decisões e os caminhos até elas ficam registrados.',
   },
   {
     Icon: Participacao,
     name: 'Participação',
     color: 'var(--accent)',
     text: 'Da proposta ao voto, a população no centro da decisão.',
+    textWhenOff: 'Da proposta ao voto, cada pessoa no centro da decisão.',
   },
 ];
 ---
@@ -41,7 +43,8 @@ const pillars = [
               <p.Icon size={26} />
             </span>
             <h3>{p.name}</h3>
-            <p class="muted">{p.text}</p>
+            <p class="muted" data-requires={p.textWhenOff && 'mandates'}>{p.text}</p>
+            {p.textWhenOff && <p class="muted" data-when-off="mandates">{p.textWhenOff}</p>}
           </div>
         ))
       }
@@ -78,15 +81,15 @@ const pillars = [
       <nav aria-label="Institucional" class="foot-nav institutional">
         <a href="/sobre">Sobre</a>
         <a href="/imprensa" data-requires="mandates">Imprensa</a>
-        <a href="/transparencia">Transparência</a>
+        <a href="/transparencia" data-requires="mandates">Transparência</a>
         <a href="/privacidade">Privacidade (LGPD)</a>
         <a href="/termos">Termos</a>
       </nav>
     </div>
 
     <p class="copy muted">
-      © {year} <span data-brand-name>{SITE_NAME}</span> · Infraestrutura democrática soberana, aberta e
-      auditável.{MOTTO && ` ${MOTTO}`}<br />
+      © {year} <span data-brand-name>{SITE_NAME}</span> <span data-requires="mandates">· Infraestrutura democrática soberana, aberta e
+      auditável.</span>{MOTTO && ` ${MOTTO}`}<br />
       Código aberto sob AGPLv3 · IPv6-first · Sem publicidade · Sem venda de dados.
     </p>
   </div>

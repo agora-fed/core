@@ -38,9 +38,13 @@
 </script>
 
 <div class="int">
-  <p class="muted small">
+  <p class="muted small" data-requires="mandates">
     Marque as áreas que você quer acompanhar — baseadas na estrutura ministerial. Usaremos isso
     para direcionar atualizações e consultas relevantes para você.
+  </p>
+  <p class="muted small" data-when-off="mandates">
+    Marque as áreas que você quer acompanhar. Usaremos isso para direcionar as atualizações
+    relevantes para você.
   </p>
 
   {#if loading}

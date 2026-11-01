@@ -96,9 +96,11 @@
     Direito de eliminação (LGPD art. 18 VI). Ao confirmar:
   </p>
   <ul class="muted">
-    <li>Seu perfil, e-mail, senha, CPF, título de eleitor e vínculo gov.br são apagados.</li>
+    <li data-requires="mandates">Seu perfil, e-mail, senha, CPF, título de eleitor e vínculo gov.br são apagados.</li>
+    <li data-when-off="mandates">Seu perfil, e-mail, senha e CPF são apagados.</li>
     <li>Todas as sessões ativas são encerradas.</li>
-    <li>Conteúdo já publicado (propostas, votos, comentários) permanece no registro histórico — mas anonimizado. Interesse público em accountability parlamentar prevalece (LGPD art. 16).</li>
+    <li data-requires="mandates">Conteúdo já publicado (propostas, votos, comentários) permanece no registro histórico — mas anonimizado. Interesse público em accountability parlamentar prevalece (LGPD art. 16).</li>
+    <li data-when-off="mandates">Conteúdo já publicado permanece no registro histórico, mas anonimizado (LGPD art. 16).</li>
     <li>Não é reversível.</li>
   </ul>
   <div class="row">

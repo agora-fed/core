@@ -21,6 +21,7 @@
   import FiltersPanel from './FiltersPanel.svelte';
   import PreferencesPanel from './PreferencesPanel.svelte';
   import ImportPanel from './ImportPanel.svelte';
+  import { visibleForModules, type ModuleAware } from '../../lib/modules';
 
   type TabId =
     | 'perfil'
@@ -31,15 +32,17 @@
     | 'fediverso'
     | 'dados';
 
-  const tabs: { id: TabId; label: string }[] = [
+  const allTabs: ({ id: TabId; label: string } & ModuleAware)[] = [
     { id: 'perfil', label: 'Perfil' },
-    { id: 'identidade', label: 'Identidade' },
+    { id: 'identidade', label: 'Identidade', requires: 'mandates' },
     { id: 'aparencia', label: 'Aparência' },
     { id: 'preferencias', label: 'Preferências' },
     { id: 'seguranca', label: 'Segurança & acesso' },
-    { id: 'fediverso', label: 'Fediverso' },
+    { id: 'fediverso', label: 'Fediverso', requires: 'federation' },
     { id: 'dados', label: 'Meus dados' },
   ];
+
+  let tabs = $state(allTabs);
 
   // Compat: hashes antigos (#lgpd, #2fa, #campanha…) caem no grupo novo.
   const HASH_ALIAS: Record<string, TabId> = {
@@ -54,9 +57,11 @@
   let active = $state<TabId>('perfil');
 
   onMount(() => {
+    // The module list is only readable in the browser; a hidden tab's old link opens the first tab.
+    tabs = visibleForModules(allTabs);
     const h = window.location.hash.replace('#', '');
-    if (tabs.some((t) => t.id === h)) active = h as TabId;
-    else if (HASH_ALIAS[h]) active = HASH_ALIAS[h];
+    const wanted = HASH_ALIAS[h] ?? h;
+    if (tabs.some((t) => t.id === wanted)) active = wanted as TabId;
   });
 
   function select(id: string) {
@@ -84,8 +89,11 @@
 
         <div class="spacer"></div>
         <h3 class="grp">Meus interesses</h3>
-        <p class="muted small">
+        <p class="muted small" data-requires="mandates">
           Áreas (baseadas na estrutura ministerial) sobre as quais você quer receber atualizações.
+        </p>
+        <p class="muted small" data-when-off="mandates">
+          Áreas sobre as quais você quer receber atualizações.
         </p>
         <InterestsPanel />
       </section>
@@ -193,16 +201,19 @@
       <section class="section">
         <header class="s-head">
           <h2>Meus dados</h2>
-          <p class="muted">Consentimento de campanha e seus direitos de titular (LGPD).</p>
+          <p class="muted" data-requires="mandates">Consentimento de campanha e seus direitos de titular (LGPD).</p>
+          <p class="muted" data-when-off="mandates">Seus direitos de titular (LGPD).</p>
         </header>
 
-        <h3 class="grp">Consentimento de campanha</h3>
-        <p class="muted small">
-          Controle quem — se alguém — pode usar seus dados para campanha. <strong>Padrão: ninguém.</strong>
-        </p>
-        <CampaignConsentPanel />
+        <div data-requires="mandates">
+          <h3 class="grp">Consentimento de campanha</h3>
+          <p class="muted small">
+            Controle quem — se alguém — pode usar seus dados para campanha. <strong>Padrão: ninguém.</strong>
+          </p>
+          <CampaignConsentPanel />
 
-        <div class="spacer"></div>
+          <div class="spacer"></div>
+        </div>
         <h3 class="grp">Direitos LGPD (art. 18)</h3>
         <p class="muted small">Exporte seus dados em formato portável ou exclua sua conta.</p>
         <LgpdPanel />
