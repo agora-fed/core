@@ -17,8 +17,7 @@ WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
-# The SSG bundle calls the API on the SAME origin by default in dev images.
-ARG PUBLIC_API_BASE=""
+ARG PUBLIC_API_BASE="https://democracia.social.br"
 ENV PUBLIC_API_BASE=${PUBLIC_API_BASE}
 # Identity of the release image. Other instances override these with --build-arg.
 ARG SITE="https://democracia.social.br"
