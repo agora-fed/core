@@ -45,6 +45,7 @@
         { id: 'go-propostas', label: 'Propostas', icon: 'ballot', action: nav('/propostas'), requires: 'proposals' },
         { id: 'go-foruns', label: 'Fóruns', icon: 'chat', action: nav('/f/'), requires: 'forums' },
         { id: 'go-consultas', label: 'Consultas', icon: 'mic', action: nav('/consultas'), requires: 'consultations' },
+        { id: 'go-processos', label: 'Processos', icon: 'gavel', action: nav('/processos'), requires: 'processes' },
         { id: 'go-orcamento', label: 'Orçamento', icon: 'ballot', action: nav('/orcamento'), requires: 'budgets' },
         { id: 'go-enquetes', label: 'Enquetes', icon: 'poll', action: nav('/enquetes'), requires: 'surveys' },
         { id: 'go-reunioes', label: 'Reuniões', icon: 'calendar', action: nav('/reunioes'), requires: 'meetings' },

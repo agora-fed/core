@@ -51,10 +51,11 @@ const OPTIONAL_MODULE_ROUTES: &[(&str, &str)] = &[
     ("reunioes", "meetings"),
     ("enquetes", "surveys"),
     ("orcamento", "budgets"),
+    ("processos", "processes"),
 ];
 
 /// Off by default, so listed only when on. Must match web/src/styles/module-gate.css.
-const UI_OPTIONAL_MODULES: &[&str] = &["meetings", "surveys", "budgets"];
+const UI_OPTIONAL_MODULES: &[&str] = &["meetings", "surveys", "budgets", "processes"];
 
 /// Must match web/src/styles/module-gate.css.
 const UI_GATED_MODULES: [&str; 5] = [
