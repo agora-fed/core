@@ -17,3 +17,37 @@ export function visibleForModules<T extends ModuleAware>(
     (it) => !(it.requires && isOff(it.requires)) && !(it.whenOff && !isOff(it.whenOff)),
   );
 }
+
+export interface ModuleState {
+  id: string;
+  title: string;
+  active: boolean;
+  core: boolean;
+  gateable: boolean;
+}
+
+export const POLITICAL_PACKAGE = [
+  'mandates',
+  'consequence',
+  'scorecard',
+  'accountability',
+  'proposals',
+] as const;
+
+const inPackage = (id: string) => (POLITICAL_PACKAGE as readonly string[]).includes(id);
+
+export const moduleFlagKey = (id: string) => `module.${id}`;
+
+/** Package members are managed as one unit; core modules are not offered at all. */
+export function toggleableModules(modules: ModuleState[]): ModuleState[] {
+  return modules.filter((m) => !m.core && m.gateable && !inPackage(m.id));
+}
+
+export function politicalPackageState(modules: ModuleState[]) {
+  const members = modules.filter((m) => inPackage(m.id));
+  const missing = members.filter((m) => !m.active).map((m) => m.id);
+  return {
+    installed: members.length > 0 && missing.length === 0,
+    missing,
+  };
+}
