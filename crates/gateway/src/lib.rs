@@ -237,7 +237,12 @@ pub fn api_router(state: AppState) -> Router {
         .merge(dsoc_auth::routes(state.clone()))
         .merge(whoami::routes(state.clone()))
         .merge(dsoc_notify::routes(state.clone()))
-        .merge(dsoc_events::routes(state.clone()))
+        .merge(
+            dsoc_events::routes(state.clone()).route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                authz_ext::admin_only,
+            )),
+        )
         .merge(dsoc_consensus::routes(state.clone()))
         .merge(dsoc_moderation::routes(state.clone()))
         .merge(dsoc_admin::routes(state.clone()))
