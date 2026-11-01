@@ -3075,6 +3075,7 @@ export interface TransparencyDto {
 }
 
 export interface ForumTopicListDto {
+  visibility: 'public' | 'members' | 'list';
   forum: ForumDto;
   topics: ForumTopicDto[];
   /** Banner de transparência da câmara — só em fóruns municipais. */
@@ -3150,21 +3151,26 @@ export interface ForumTopicConsensusDto {
 export const getForumTree = (path?: string) =>
   apiGet<ForumTreeDto>(
     `/api/v1/f/tree${path ? `?path=${encodeURIComponent(path)}` : ''}`,
+    { credentials: 'include' },
   );
 
 /** Top N afirmações-ponte de um tópico (D8.2) — "argumentos que uniram quem discorda". */
 export const getForumConsensus = (id: string, limit = 5) =>
   apiGet<ForumTopicConsensusDto>(
     `/api/v1/f/topics/${encodeURIComponent(id)}/consensus?limit=${limit}`,
+    { credentials: 'include' },
   );
 
 export const getForumTopics = (path: string, sort: 'hot' | 'new' = 'hot') =>
   apiGet<ForumTopicListDto>(
     `/api/v1/f/topics?path=${encodeURIComponent(path)}&sort=${sort}`,
+    { credentials: 'include' },
   );
 
 export const getForumTopic = (id: string) =>
-  apiGet<ForumTopicDetailDto>(`/api/v1/f/topics/${encodeURIComponent(id)}`);
+  apiGet<ForumTopicDetailDto>(`/api/v1/f/topics/${encodeURIComponent(id)}`, {
+    credentials: 'include',
+  });
 
 /** Cria um tópico de fórum. `targets` (B1) = mandate_ids para direcionar a
  *  demanda a gabinete(s) específico(s); ausente/vazio = tópico sem alvo (cai no
@@ -3205,6 +3211,8 @@ export const voteForumComment = (id: string, stance: ForumStance) =>
   );
 
 /** Linha do painel admin de fóruns (F3). */
+export type ForumVisibility = 'public' | 'members' | 'list';
+
 export interface AdminForumDto {
   id: string;
   full_path: string;
@@ -3215,6 +3223,9 @@ export interface AdminForumDto {
   avatar_url: string | null;
   banner_url: string | null;
   thresholds: number[];
+  visibility: ForumVisibility;
+  federated: boolean;
+  member_count: number;
   moderator_count: number;
   pending_dispatches: number;
   topic_count: number;
@@ -3238,8 +3249,36 @@ export const adminUpdateForum = (
     thresholds?: number[];
     avatar_url?: string;
     banner_url?: string;
+    visibility?: ForumVisibility;
+    federated?: boolean;
   },
 ) => apiPatch<{ ok: true }>(`/api/v1/admin/forums/${encodeURIComponent(id)}`, payload);
+
+export const adminCreateForum = (payload: {
+  slug: string;
+  name: string;
+  description?: string;
+  visibility: ForumVisibility;
+  federated: boolean;
+}) => apiPost<{ id: string; full_path: string }>('/api/v1/admin/forums', payload);
+
+export const adminArchiveForum = (id: string) =>
+  apiDelete<{ ok: true }>(`/api/v1/admin/forums/${encodeURIComponent(id)}`);
+
+export const adminForumMembers = (id: string) =>
+  apiGetCredentialed<ForumModeratorDto[]>(
+    `/api/v1/admin/forums/${encodeURIComponent(id)}/members`,
+  );
+
+export const adminForumAddMember = (id: string, citizenId: string) =>
+  apiPost<{ ok: true }>(`/api/v1/admin/forums/${encodeURIComponent(id)}/members`, {
+    citizen_id: citizenId,
+  });
+
+export const adminForumRemoveMember = (id: string, citizenId: string) =>
+  apiDelete<{ ok: true }>(
+    `/api/v1/admin/forums/${encodeURIComponent(id)}/members/${encodeURIComponent(citizenId)}`,
+  );
 
 export const adminForumModerators = (id: string) =>
   apiGetCredentialed<ForumModeratorDto[]>(
@@ -3283,7 +3322,7 @@ export interface RecentForumTopicDto {
 }
 
 export const getRecentForumTopics = (limit = 25) =>
-  apiGet<RecentForumTopicDto[]>(`/api/v1/f/recent?limit=${limit}`);
+  apiGet<RecentForumTopicDto[]>(`/api/v1/f/recent?limit=${limit}`, { credentials: 'include' });
 
 /** Permissões efetivas do caller (chaves modulo.acao) — a UI decide o que mostrar. */
 export interface MyPermissions {

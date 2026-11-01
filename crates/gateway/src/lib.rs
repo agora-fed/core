@@ -44,9 +44,11 @@ pub mod embed;
 pub mod federation;
 pub mod federation_feed;
 pub mod fediverso_admin;
-mod forum_federation;
+#[doc(hidden)]
+pub mod forum_federation;
 mod forum_mailer;
 pub mod govbr_oidc;
+mod groups;
 mod instance_html;
 pub mod intercoms;
 pub mod intercoms_config;
@@ -262,6 +264,7 @@ pub fn api_router(state: AppState) -> Router {
         // Campaign panel of the party/directory (AGORA F7, #64).
         .merge(crate::party_dashboard::routes(state.clone()))
         .merge(crate::module_gate::routes(state.clone()))
+        .merge(crate::groups::routes(state.clone()))
         .merge(admin_ext::routes(state.clone()))
         // Super-admin: editar/ocultar/apagar mandato, proposta, partido (0.40, SOCRATES).
         .merge(admin_content::routes(state.clone()))
@@ -481,9 +484,9 @@ async fn forums_spa(
     };
     let site_name = instance_html::current_site_name(&state).await;
     let mut html = String::from_utf8_lossy(&bytes).into_owned();
-    if let Some(patch) = instance_html::InstancePatch::load(&state).await {
-        html = patch.apply(&html);
-    }
+    html = instance_html::InstancePatch::load(&state)
+        .await
+        .apply(&html);
 
     if let Some(axum::extract::Path(p)) = path {
         if let Some(rest) = p.strip_prefix("topico/") {
@@ -492,7 +495,8 @@ async fn forums_spa(
                 let row: Option<(String, String, String)> = sqlx::query_as(
                     "SELECT t.title, t.body, f.name FROM forum_topic t \
                      JOIN forum f ON f.id = t.forum_id \
-                     WHERE t.id = $1 AND t.hidden_at IS NULL",
+                     WHERE t.id = $1 AND t.hidden_at IS NULL \
+                       AND forum_readable(t.forum_id, NULL)",
                 )
                 .bind(id)
                 .fetch_optional(&state.db)

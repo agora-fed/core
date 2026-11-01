@@ -111,16 +111,17 @@ fn fail(status: StatusCode, code: &str, msg: &str) -> Response {
 }
 
 /// The topic must exist, be visible, and belong to the caller's org.
-async fn topic_visible(db: &PgPool, org: Uuid, topic: Uuid) -> bool {
+async fn topic_visible(db: &PgPool, org: Uuid, topic: Uuid, viewer: Option<Uuid>) -> bool {
     sqlx::query_scalar::<_, bool>(
         r"SELECT EXISTS(
             SELECT 1 FROM forum_topic t
               JOIN forum f ON f.id = t.forum_id
              WHERE t.id = $1 AND f.org_id = $2
-               AND t.hidden_at IS NULL AND f.hidden_at IS NULL)",
+               AND t.hidden_at IS NULL AND forum_readable(f.id, $3))",
     )
     .bind(topic)
     .bind(org)
+    .bind(viewer)
     .fetch_one(db)
     .await
     .unwrap_or(false)
@@ -137,7 +138,7 @@ async fn list_representatives(
     Path(topic_id): Path<Uuid>,
 ) -> Response {
     let org = caller_org(&headers);
-    if !topic_visible(&state.db, org, topic_id).await {
+    if !topic_visible(&state.db, org, topic_id, caller_citizen(&headers)).await {
         return fail(StatusCode::NOT_FOUND, "not_found", "Tópico não encontrado.");
     }
     type AggRow = (
@@ -244,7 +245,7 @@ async fn tag_representative(
         );
     };
     let org = caller_org(&headers);
-    if !topic_visible(&state.db, org, topic_id).await {
+    if !topic_visible(&state.db, org, topic_id, Some(citizen)).await {
         return fail(StatusCode::NOT_FOUND, "not_found", "Tópico não encontrado.");
     }
     let mandate_ok: bool = sqlx::query_scalar(
@@ -478,7 +479,7 @@ pub async fn daily_alert_sweep(db: &PgPool, public_origin: &str) {
             r"SELECT t.topic_id, ft.title, count(*) AS c, ft.score
                 FROM topic_representative_tag t
                 JOIN forum_topic ft ON ft.id = t.topic_id
-               WHERE t.mandate_id = $1
+               WHERE t.mandate_id = $1 AND forum_readable(ft.forum_id, NULL)
                  AND t.created_at >= $2::date AND t.created_at < ($2::date + interval '1 day')
                GROUP BY t.topic_id, ft.title, ft.score
                ORDER BY c DESC
