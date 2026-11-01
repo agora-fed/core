@@ -20,7 +20,7 @@
         Cada pergunta feita a um mandato tem <strong>72 horas</strong> para
         resposta. Silêncio vira registro público — imutável.
       </p>
-      <a class="link" href="/politicos"
+      <a class="link" data-requires="mandates" href="/politicos"
         >Ver placar <Icon name="arrow-right" size={14} /></a
       >
     </section>
@@ -30,7 +30,7 @@
         DemocraciaBR fala ActivityPub. Sua conta funciona com qualquer
         instância Mastodon: <strong>@você@democracia.social.br</strong>.
       </p>
-      <a class="link" href="/explorar"
+      <a class="link" data-requires="federation" href="/explorar"
         >Explorar <Icon name="arrow-right" size={14} /></a
       >
     </section>

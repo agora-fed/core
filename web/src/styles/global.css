@@ -3,6 +3,7 @@
    Brand identity palette stays here as anchor for --pol-* references. */
 
 @import './tokens.css';
+@import './module-gate.css';
 
 /* Poppins, self-hosted via @fontsource. font-display: swap by default. */
 @import '@fontsource/poppins/400.css';

@@ -8,10 +8,12 @@
 
   const items = [
     { href: '/', icon: 'home', label: 'Início' },
-    { href: '/feed', icon: 'feed', label: 'Feed' },
-    { href: '/propor', icon: 'plus', label: 'Propor', cta: true },
+    { href: '/feed', icon: 'feed', label: 'Feed', requires: 'federation' },
+    { href: '/f/', icon: 'chat', label: 'Fóruns', requires: 'forums', whenOff: 'mandates' },
+    { href: '/propor', icon: 'plus', label: 'Propor', cta: true, requires: 'proposals' },
     { href: '/notificacoes', icon: 'bell', label: 'Notif.', unread: true },
-    { href: '/politicos', icon: 'users', label: 'Políticos' },
+    { href: '/politicos', icon: 'users', label: 'Políticos', requires: 'mandates' },
+    { href: '/consultas', icon: 'mic', label: 'Consultas', requires: 'consultations', whenOff: 'mandates' },
   ];
 
   let path = $state('');
@@ -73,6 +75,8 @@
   {#each items as it}
     <a
       href={it.href}
+      data-requires={it.requires}
+      data-when-off={it.whenOff}
       class:active={isActive(it.href)}
       class:cta={it.cta}
       aria-current={isActive(it.href) ? 'page' : undefined}
@@ -97,7 +101,8 @@
   @media (max-width: 920px) {
     .bn {
       display: grid;
-      grid-template-columns: repeat(5, 1fr);
+      grid-auto-flow: column;
+      grid-auto-columns: 1fr;
       position: fixed;
       bottom: 0;
       left: 0;
