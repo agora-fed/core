@@ -1,6 +1,13 @@
+/** Off unless the gateway lists them; must match UI_OPTIONAL_MODULES in the gateway. */
+const OPTIONAL_MODULES = ['groups'];
+
+const listed = (value: string | undefined, moduleId: string) =>
+  (value ?? '').split(/\s+/).includes(moduleId);
+
 export function isModuleOff(moduleId: string, root?: { dataset: DOMStringMap }): boolean {
   const el = root ?? (typeof document === 'undefined' ? undefined : document.documentElement);
-  return (el?.dataset.modulesOff ?? '').split(/\s+/).includes(moduleId);
+  if (OPTIONAL_MODULES.includes(moduleId)) return !listed(el?.dataset.modulesOn, moduleId);
+  return listed(el?.dataset.modulesOff, moduleId);
 }
 
 export interface ModuleAware {

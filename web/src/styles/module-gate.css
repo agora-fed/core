@@ -8,6 +8,12 @@ html[data-modules-off~='federation'] [data-requires~='federation'] {
   display: none !important;
 }
 
+/* Off by default: the gateway lists these on <html data-modules-on> only when on. The ids
+   must match UI_OPTIONAL_MODULES in the same file. */
+html:not([data-modules-on~='groups']) [data-requires~='groups'] {
+  display: none !important;
+}
+
 /* Replacement entries, shown only on instances where the module is off. */
 html:not([data-modules-off~='mandates']) [data-when-off~='mandates'] {
   display: none !important;

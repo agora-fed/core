@@ -386,6 +386,17 @@ pub static CATALOG: &[ModuleManifest] = &[
         permissions: &[],
         nav: &[],
     },
+    ModuleManifest {
+        id: "groups",
+        title: "Grupos",
+        core: false,
+        flag_key: "module.groups",
+        default_enabled: false,
+        gateable: true,
+        depends_on: &[],
+        permissions: &[],
+        nav: &[],
+    },
 ];
 
 /// Find a manifest by id.
