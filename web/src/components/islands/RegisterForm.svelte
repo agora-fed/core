@@ -21,6 +21,7 @@
     type MandateDto,
   } from '../../lib/api';
   import { formatCpf, isValidCpf, onlyDigits } from '../../lib/cpf';
+  import SsoButton from './SsoButton.svelte';
   import Input from '../ui/Input.svelte';
   import Button from '../ui/Button.svelte';
   import Alert from '../ui/Alert.svelte';
@@ -313,6 +314,7 @@
     <strong>{inviterName}</strong> te convidou pra {SITE_NAME}. Crie sua conta abaixo.
   </div>
 {/if}
+<SsoButton />
 <section class="rules" aria-label="Regras da conta">
   <h2>Antes de criar sua conta</h2>
   <ul>

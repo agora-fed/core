@@ -1,7 +1,8 @@
 <script lang="ts">
   // Login: e-mail + senha. On success the gateway sets a session cookie.
   import { onMount } from 'svelte';
-  import { login, getGovbrStatus } from '../../lib/api';
+  import { apiGetCredentialed, login, getGovbrStatus } from '../../lib/api';
+  import SsoButton from './SsoButton.svelte';
   import Input from '../ui/Input.svelte';
   import Button from '../ui/Button.svelte';
   import Alert from '../ui/Alert.svelte';
@@ -13,7 +14,36 @@
   let serverError = $state<string | null>(null);
   let govbrEnabled = $state(false);
 
+  const SSO_ERRORS: Record<string, string> = {
+    organizacao: 'Esta conta não pertence a esta comunidade.',
+    conta: 'Sua conta não pode entrar agora. Fale com a moderação.',
+  };
+
+  /** The session cookie is HttpOnly, so ask the API who signed in and go on. */
+  async function finishSso(params: URLSearchParams) {
+    const who = await apiGetCredentialed<{ citizen_id: string; public_handle?: string }>(
+      '/api/v1/me/whoami',
+    );
+    if (!who.success || !who.data?.citizen_id) {
+      serverError = 'Não foi possível concluir o login. Tente novamente.';
+      return;
+    }
+    try {
+      localStorage.setItem('dsoc_citizen', who.data.citizen_id);
+    } catch {
+      /* storage may be blocked; the session cookie is still set */
+    }
+    const next = params.get('next') ?? '/';
+    window.location.replace(next.startsWith('/') && !next.startsWith('//') ? next : '/');
+  }
+
   onMount(async () => {
+    const query = new URLSearchParams(window.location.search);
+    if (query.get('sso') === 'ok') return finishSso(query);
+    const ssoError = query.get('sso_erro');
+    if (ssoError) {
+      serverError = SSO_ERRORS[ssoError] ?? 'Não foi possível entrar com essa conta. Tente novamente.';
+    }
     const r = await getGovbrStatus();
     govbrEnabled = r.ok && r.data?.enabled === true;
     // Erro devolvido pelo callback do gov.br (query ?govbr_erro=...).
@@ -66,6 +96,8 @@
     }
   }
 </script>
+
+<SsoButton />
 
 {#if govbrEnabled}
   <a class="govbr-btn" href="/auth/govbr/start" aria-label="Entrar com gov.br">

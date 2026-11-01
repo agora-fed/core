@@ -40,7 +40,7 @@ pub use domain::{
     KeySource, StaticKeySource, TokenValidator, ValidatedToken, DEFAULT_SESSION_TTL_SECS,
 };
 pub use dto::{CreateSessionRequest, MeDto, SessionDto};
-pub use http::{authorization, routes, zitadel_from_state};
+pub use http::{authorization, oidc_validator, routes, zitadel_from_state};
 pub use service::{AuditEntry, Identity, IssuedSession, ZitadelAuth};
 
 /// Compile-time marker proving the crate name is wired into the workspace (event routing key).

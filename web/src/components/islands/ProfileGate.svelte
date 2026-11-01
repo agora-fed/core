@@ -3,6 +3,7 @@
   // nome/sexo/nascimento serem capturados: bloqueia a tela até completarem. Silencioso pra quem
   // já está completo ou não está logado (getProfileStatus responde 401 → não mostra nada).
   import { onMount } from 'svelte';
+  import { isModuleOff } from '../../lib/modules';
   import { getProfileStatus, completeProfile } from '../../lib/api';
   import { toast } from '../../lib/toasts';
 
@@ -23,6 +24,8 @@
   const valid = $derived(nomeValid && sexoValid && nascValid && nickValid);
 
   onMount(async () => {
+    // Voter-grade identity data only matters where the political modules run.
+    if (isModuleOff('mandates')) return;
     const res = await getProfileStatus();
     if (res.success && res.data && !res.data.complete) {
       show = true;
