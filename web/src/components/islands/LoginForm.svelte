@@ -20,27 +20,38 @@
     conta: 'Sua conta não pode entrar agora. Fale com a moderação.',
   };
 
-  /** The session cookie is HttpOnly, so ask the API who signed in and go on. */
-  async function finishSso(params: URLSearchParams) {
+  /** The session cookie is HttpOnly, so ask the API who is signed in and go on. */
+  async function enterIfSignedIn(params: URLSearchParams): Promise<boolean> {
     const who = await apiGetCredentialed<{ citizen_id: string; public_handle?: string }>(
       '/api/v1/me/whoami',
     );
-    if (!who.success || !who.data?.citizen_id) {
-      serverError = 'Não foi possível concluir o login. Tente novamente.';
-      return;
-    }
+    if (!who.success || !who.data?.citizen_id) return false;
     try {
       localStorage.setItem('dsoc_citizen', who.data.citizen_id);
     } catch {
       /* storage may be blocked; the session cookie is still set */
     }
+    window.location.replace(destination(params));
+    return true;
+  }
+
+  /** Where to go after signing in; never an outside site or the login page itself. */
+  function destination(params: URLSearchParams): string {
     const next = params.get('next') ?? '/';
-    window.location.replace(next.startsWith('/') && !next.startsWith('//') ? next : '/');
+    if (!next.startsWith('/') || next.startsWith('//') || next.startsWith('/entrar')) return '/';
+    return next;
   }
 
   onMount(async () => {
     const query = new URLSearchParams(window.location.search);
-    if (query.get('sso') === 'ok') return finishSso(query);
+    if (query.get('sso') === 'ok') {
+      if (!(await enterIfSignedIn(query))) {
+        serverError = 'Não foi possível concluir o login. Tente novamente.';
+      }
+      return;
+    }
+    // `?admin=1` is the break-glass form; an error must stay visible rather than redirect.
+    if (query.get('admin') !== '1' && !query.get('sso_erro') && (await enterIfSignedIn(query))) return;
     const ssoError = query.get('sso_erro');
     if (ssoError) {
       serverError = SSO_ERRORS[ssoError] ?? 'Não foi possível entrar com essa conta. Tente novamente.';
