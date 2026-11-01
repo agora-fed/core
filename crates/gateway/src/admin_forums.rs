@@ -24,8 +24,13 @@ use uuid::Uuid;
 
 pub fn routes(state: AppState) -> Router<()> {
     Router::new()
-        .route("/admin/forums", get(list))
-        .route("/admin/forums/{id}", patch(update))
+        .route("/admin/forums", get(list).post(create))
+        .route("/admin/forums/{id}", patch(update).delete(archive))
+        .route(
+            "/admin/forums/{id}/members",
+            get(members_list).post(members_add),
+        )
+        .route("/admin/forums/{id}/members/{cid}", delete(members_remove))
         .route(
             "/admin/forums/{id}/moderators",
             get(mods_list).post(mods_add),
@@ -75,6 +80,9 @@ struct AdminForumRow {
     avatar_url: Option<String>,
     banner_url: Option<String>,
     thresholds: Vec<i32>,
+    visibility: String,
+    federated: bool,
+    member_count: i64,
     moderator_count: i64,
     pending_dispatches: i64,
     topic_count: i64,
@@ -92,7 +100,8 @@ async fn list(
     let like = format!("%{}%", q.trim().to_lowercase());
     let rows: Result<Vec<AdminForumRow>, _> = sqlx::query_as(
         r"SELECT f.id, f.full_path, f.name, f.kind, f.esfera, f.contact_email,
-                 f.avatar_url, f.banner_url, f.thresholds,
+                 f.avatar_url, f.banner_url, f.thresholds, f.visibility, f.federated,
+                 (SELECT count(*) FROM forum_member m WHERE m.forum_id = f.id) AS member_count,
                  (SELECT count(*) FROM forum_moderator m WHERE m.forum_id = f.id) AS moderator_count,
                  (SELECT count(*) FROM forum_dispatch d JOIN forum_topic t ON t.id = d.topic_id
                    WHERE t.forum_id = f.id AND d.sent_at IS NULL) AS pending_dispatches,
@@ -127,6 +136,132 @@ struct UpdateForumRequest {
     avatar_url: Option<String>,
     /// Banner — `Some("")` clears it; `None` keeps it.
     banner_url: Option<String>,
+    /// `public` | `members` | `list`. Restricting a forum also stops its federation.
+    visibility: Option<String>,
+    /// Only a public forum may federate.
+    federated: Option<bool>,
+}
+
+fn valid_visibility(value: &str) -> bool {
+    matches!(value, "public" | "members" | "list")
+}
+
+/// The slug becomes both a URL and a fediverse handle. `topico` is a route under `/f/`, and
+/// two-letter slugs are reserved for states in the territorial tree.
+fn valid_slug(slug: &str) -> bool {
+    (3..=79).contains(&slug.len())
+        && slug != "topico"
+        && slug
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        && !slug.starts_with('-')
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateForumRequest {
+    slug: String,
+    name: String,
+    #[serde(default)]
+    description: String,
+    visibility: Option<String>,
+    #[serde(default)]
+    federated: bool,
+}
+
+/// `POST /admin/forums` — a new community forum at the root of the tree.
+async fn create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<CreateForumRequest>,
+) -> Response {
+    let admin = match crate::authz_ext::require_org_admin(&state.db, &headers).await {
+        Ok(admin) => admin,
+        Err(denied) => return denied,
+    };
+    let slug = req.slug.trim().to_lowercase();
+    let name = req.name.trim();
+    let visibility = req.visibility.as_deref().unwrap_or("public");
+    if !valid_slug(&slug) || name.is_empty() || name.chars().count() > 120 {
+        return fail(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_input",
+            "Use um endereço com letras minúsculas, números e hífens (mínimo 3) e um nome de até 120 caracteres.",
+        );
+    }
+    if !valid_visibility(visibility) || (req.federated && visibility != "public") {
+        return fail(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_input",
+            "Só um fórum público pode ser federado.",
+        );
+    }
+    let id = Uuid::now_v7();
+    let res = sqlx::query(
+        r"INSERT INTO forum (id, org_id, slug, full_path, name, description, kind, federated,
+                             visibility, created_by)
+          VALUES ($1, $2, $3, $3, $4, $5, 'comunitario', $6, $7, $8)
+          ON CONFLICT DO NOTHING",
+    )
+    .bind(id)
+    .bind(admin.org)
+    .bind(&slug)
+    .bind(name)
+    .bind(req.description.trim())
+    .bind(req.federated)
+    .bind(visibility)
+    .bind(admin.citizen)
+    .execute(&state.db)
+    .await;
+    match res {
+        Ok(r) if r.rows_affected() == 1 => (
+            StatusCode::CREATED,
+            Json(ApiResponse::ok(
+                serde_json::json!({"id": id, "full_path": slug}),
+            )),
+        )
+            .into_response(),
+        Ok(_) => fail(
+            StatusCode::CONFLICT,
+            "conflict",
+            "Já existe um fórum com esse endereço.",
+        ),
+        Err(err) => {
+            tracing::warn!(?err, "admin_forums: create falhou");
+            storage_error()
+        }
+    }
+}
+
+/// `DELETE /admin/forums/{id}` — archive: leaves every listing and its topics stop being
+/// readable. Rows are kept for the record.
+async fn archive(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Response {
+    let admin = match crate::authz_ext::require_org_admin(&state.db, &headers).await {
+        Ok(admin) => admin,
+        Err(denied) => return denied,
+    };
+    let res = sqlx::query(
+        "UPDATE forum SET hidden_at = now() WHERE id = $1 AND org_id = $2 AND hidden_at IS NULL",
+    )
+    .bind(id)
+    .bind(admin.org)
+    .execute(&state.db)
+    .await;
+    match res {
+        Ok(r) if r.rows_affected() == 1 => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(serde_json::json!({"ok": true}))),
+        )
+            .into_response(),
+        Ok(_) => fail(StatusCode::NOT_FOUND, "not_found", "Fórum não encontrado."),
+        Err(err) => {
+            tracing::warn!(?err, "admin_forums: archive falhou");
+            storage_error()
+        }
+    }
 }
 
 async fn update(
@@ -137,6 +272,17 @@ async fn update(
 ) -> Response {
     if let Err(r) = require_admin(&state.db, &headers).await {
         return r;
+    }
+    if req
+        .visibility
+        .as_deref()
+        .is_some_and(|v| !valid_visibility(v))
+    {
+        return fail(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_input",
+            "Nível de acesso inválido.",
+        );
     }
     if let Some(ts) = &req.thresholds {
         let ok = !ts.is_empty()
@@ -161,6 +307,7 @@ async fn update(
             );
         }
     }
+    let restricted_federation = req.federated == Some(true);
     let email_update = req.contact_email.is_some();
     let email_value: Option<String> = req.contact_email.and_then(|e| {
         let e = e.trim().to_owned();
@@ -186,8 +333,12 @@ async fn update(
              contact_email = CASE WHEN $2 THEN $3 ELSE contact_email END,
              thresholds    = COALESCE($4, thresholds),
              avatar_url    = CASE WHEN $5 THEN $6 ELSE avatar_url END,
-             banner_url    = CASE WHEN $7 THEN $8 ELSE banner_url END
-           WHERE id = $1",
+             banner_url    = CASE WHEN $7 THEN $8 ELSE banner_url END,
+             visibility    = COALESCE($9, visibility),
+             federated     = CASE WHEN COALESCE($9, visibility) = 'public'
+                                  THEN COALESCE($10, federated) ELSE false END
+           WHERE id = $1
+             AND NOT ($10 IS TRUE AND COALESCE($9, visibility) <> 'public')",
     )
     .bind(id)
     .bind(email_update)
@@ -197,6 +348,8 @@ async fn update(
     .bind(av_val)
     .bind(bn_up)
     .bind(bn_val)
+    .bind(req.visibility)
+    .bind(req.federated)
     .execute(&state.db)
     .await;
     match res {
@@ -205,9 +358,128 @@ async fn update(
             Json(ApiResponse::ok(serde_json::json!({"ok": true}))),
         )
             .into_response(),
+        Ok(_) if restricted_federation => fail(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_input",
+            "Só um fórum público pode ser federado.",
+        ),
         Ok(_) => fail(StatusCode::NOT_FOUND, "not_found", "Fórum não encontrado."),
         Err(err) => {
             tracing::warn!(?err, "admin_forums: update falhou");
+            storage_error()
+        }
+    }
+}
+
+/// The forum, when it belongs to the admin's org.
+async fn own_forum(db: &PgPool, org: Uuid, id: Uuid) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM forum WHERE id = $1 AND org_id = $2)")
+        .bind(id)
+        .bind(org)
+        .fetch_one(db)
+        .await
+}
+
+/// `GET /admin/forums/{id}/members`.
+async fn members_list(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Response {
+    let admin = match crate::authz_ext::require_org_admin(&state.db, &headers).await {
+        Ok(admin) => admin,
+        Err(denied) => return denied,
+    };
+    let rows: Result<Vec<ModeratorRow>, _> = sqlx::query_as(
+        r"SELECT m.citizen_id, c.handle, c.display_name
+            FROM forum_member m
+            JOIN citizen c ON c.id = m.citizen_id
+            JOIN forum f ON f.id = m.forum_id
+           WHERE m.forum_id = $1 AND f.org_id = $2
+           ORDER BY c.display_name NULLS LAST, c.handle",
+    )
+    .bind(id)
+    .bind(admin.org)
+    .fetch_all(&state.db)
+    .await;
+    match rows {
+        Ok(rows) => (StatusCode::OK, Json(ApiResponse::ok(rows))).into_response(),
+        Err(err) => {
+            tracing::warn!(?err, "admin_forums: members_list falhou");
+            storage_error()
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct AddMemberRequest {
+    citizen_id: Uuid,
+}
+
+/// `POST /admin/forums/{id}/members` — the id comes from the person search on the admin page.
+async fn members_add(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(req): Json<AddMemberRequest>,
+) -> Response {
+    let admin = match crate::authz_ext::require_org_admin(&state.db, &headers).await {
+        Ok(admin) => admin,
+        Err(denied) => return denied,
+    };
+    if !matches!(own_forum(&state.db, admin.org, id).await, Ok(true)) {
+        return fail(StatusCode::NOT_FOUND, "not_found", "Fórum não encontrado.");
+    }
+    let res = sqlx::query(
+        r"INSERT INTO forum_member (forum_id, citizen_id, added_by)
+          SELECT $1, c.id, $3 FROM citizen c WHERE c.id = $2 AND c.org_id = $4
+          ON CONFLICT DO NOTHING",
+    )
+    .bind(id)
+    .bind(req.citizen_id)
+    .bind(admin.citizen)
+    .bind(admin.org)
+    .execute(&state.db)
+    .await;
+    match res {
+        Ok(_) => (
+            StatusCode::CREATED,
+            Json(ApiResponse::ok(serde_json::json!({"ok": true}))),
+        )
+            .into_response(),
+        Err(err) => {
+            tracing::warn!(?err, "admin_forums: members_add falhou");
+            storage_error()
+        }
+    }
+}
+
+/// `DELETE /admin/forums/{id}/members/{cid}`.
+async fn members_remove(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((id, citizen_id)): Path<(Uuid, Uuid)>,
+) -> Response {
+    let admin = match crate::authz_ext::require_org_admin(&state.db, &headers).await {
+        Ok(admin) => admin,
+        Err(denied) => return denied,
+    };
+    if !matches!(own_forum(&state.db, admin.org, id).await, Ok(true)) {
+        return fail(StatusCode::NOT_FOUND, "not_found", "Fórum não encontrado.");
+    }
+    let res = sqlx::query("DELETE FROM forum_member WHERE forum_id = $1 AND citizen_id = $2")
+        .bind(id)
+        .bind(citizen_id)
+        .execute(&state.db)
+        .await;
+    match res {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(serde_json::json!({"ok": true}))),
+        )
+            .into_response(),
+        Err(err) => {
+            tracing::warn!(?err, "admin_forums: members_remove falhou");
             storage_error()
         }
     }
@@ -350,6 +622,29 @@ async fn can_moderate_forum(state: &AppState, caller: CallerId, forum_id: Uuid) 
     .unwrap_or(false)
 }
 
+/// Someone who can't read a restricted forum must not learn that the content exists.
+async fn cannot_moderate(db: &PgPool, caller: CallerId, forum_id: Uuid) -> Response {
+    let readable: bool = sqlx::query_scalar("SELECT forum_readable($1, $2)")
+        .bind(forum_id)
+        .bind(caller.citizen.as_uuid())
+        .fetch_one(db)
+        .await
+        .unwrap_or(false);
+    if readable {
+        fail(
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            "Você não pode moderar este fórum.",
+        )
+    } else {
+        fail(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "Conteúdo não encontrado.",
+        )
+    }
+}
+
 fn trim_reason(reason: Option<String>) -> Option<String> {
     reason
         .map(|s| s.trim().chars().take(2000).collect::<String>())
@@ -378,11 +673,7 @@ async fn topic_remove(
         return r;
     }
     if !can_moderate_forum(&state, caller, forum_id).await {
-        return fail(
-            StatusCode::FORBIDDEN,
-            "forbidden",
-            "Você não pode moderar este fórum.",
-        );
+        return cannot_moderate(&state.db, caller, forum_id).await;
     }
     let reason = trim_reason(body.map(|b| b.0).unwrap_or_default().reason);
     let res = sqlx::query(
@@ -442,11 +733,7 @@ async fn comment_remove(
         return r;
     }
     if !can_moderate_forum(&state, caller, forum_id).await {
-        return fail(
-            StatusCode::FORBIDDEN,
-            "forbidden",
-            "Você não pode moderar este fórum.",
-        );
+        return cannot_moderate(&state.db, caller, forum_id).await;
     }
     let reason = trim_reason(body.map(|b| b.0).unwrap_or_default().reason);
     let res = sqlx::query(

@@ -56,6 +56,7 @@
   let recent = $state<RecentForumTopicDto[]>([]);
   // forum
   let forum = $state<ForumDto | null>(null);
+  let visibility = $state<string>('public');
   let children = $state<ForumChildDto[]>([]);
   let topics = $state<ForumTopicDto[]>([]);
   // Transparência da câmara (só fórum municipal): banner âmbar quando faltam
@@ -209,6 +210,7 @@
         return;
       }
       topics = tp.ok && tp.data ? tp.data.topics : [];
+      visibility = tp.ok && tp.data ? tp.data.visibility : 'public';
       transparency = tp.ok && tp.data ? (tp.data.transparency ?? null) : null;
       // Vereadores desta câmara — só em fórum municipal com uf+municipio. Fetch
       // best-effort e não-bloqueante: uma falha nunca derruba a listagem.
@@ -297,6 +299,13 @@
   let judiciario = $derived(roots.filter((r) => JUDICIARIO.has(r.slug)));
   let governanca = $derived(roots.filter((r) => r.slug === 'governanca'));
   let estados = $derived(roots.filter((r) => r.slug.length === 2));
+  let outros = $derived(
+    roots.filter(
+      (r) =>
+        r.slug !== 'senado' && r.slug !== 'camara' && r.slug !== 'governanca' &&
+        !r.slug.startsWith('ministerio-') && !JUDICIARIO.has(r.slug) && r.slug.length !== 2,
+    ),
+  );
 
   // --- forum estado: separa seções padrão dos ~200 municípios ---
   let isEstado = $derived(
@@ -578,6 +587,16 @@
           {/each}
         </nav>
       </details>
+      {#if outros.length > 0}
+        <details open>
+          <summary>💬 Comunidade</summary>
+          <nav>
+            {#each outros as o (o.slug)}
+              <a href={`/f/${o.full_path}`} onclick={(e) => { e.preventDefault(); navigate(`/f/${o.full_path}`); }}>{o.name}</a>
+            {/each}
+          </nav>
+        </details>
+      {/if}
       {#if governanca.length > 0}
         <details>
           <summary>⚙️ Plataforma</summary>
@@ -637,6 +656,11 @@
       {/if}
       <h1>{forum.name}</h1>
     </div>
+    {#if visibility === 'list'}
+      <p class="f-badge" role="note">🔒 Fórum privado: só as pessoas da lista leem e participam.</p>
+    {:else if visibility === 'members'}
+      <p class="f-badge" role="note">🔒 Visível para quem tem conta nesta comunidade.</p>
+    {/if}
     {#if forum.description}<p class="muted">{forum.description}</p>{/if}
     {#if forum.has_contact_email}
       <p class="f-badge" data-requires="mandates">✉️ Instituição com e-mail vinculado — patamares: {forum.thresholds.map((t) => t.toLocaleString('pt-BR')).join(' · ')} interações</p>

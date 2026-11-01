@@ -3,7 +3,7 @@
 //! [`ApiResponse`] envelope and error map identical to the other crates (ADR-0007).
 
 use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -394,14 +394,28 @@ pub struct RecentTopicDto {
     pub forum_name: String,
 }
 
+/// The signed-in reader, set by the gateway from the session. Client copies are stripped there.
+fn viewer(headers: &HeaderMap) -> Option<Uuid> {
+    headers
+        .get("x-dsoc-citizen-id")?
+        .to_str()
+        .ok()?
+        .parse()
+        .ok()
+}
+
 /// `GET /f/recent?limit=` — latest posts across all forums (home feed).
 async fn recent(
     State(state): State<dsoc_app::AppState>,
+    headers: HeaderMap,
     Query(p): Query<RecentParams>,
 ) -> Response {
     let svc = ForumService::from_state(&state);
     let org = OrgId::from_uuid(DEFAULT_ORG_UUID);
-    match svc.recent_topics(org, p.limit.unwrap_or(25)).await {
+    match svc
+        .recent_topics(org, p.limit.unwrap_or(25), viewer(&headers))
+        .await
+    {
         Ok(rows) => {
             let dtos: Vec<RecentTopicDto> = rows
                 .into_iter()
@@ -431,10 +445,22 @@ struct RecentParams {
 }
 
 /// `GET /f/tree?path=&esfera=` — one level of the tree (root when `path` is absent).
-async fn tree(State(state): State<dsoc_app::AppState>, Query(p): Query<TreeParams>) -> Response {
+async fn tree(
+    State(state): State<dsoc_app::AppState>,
+    headers: HeaderMap,
+    Query(p): Query<TreeParams>,
+) -> Response {
     let svc = ForumService::from_state(&state);
     let org = OrgId::from_uuid(DEFAULT_ORG_UUID);
-    match svc.tree(org, p.path.as_deref(), p.esfera.as_deref()).await {
+    match svc
+        .tree(
+            org,
+            p.path.as_deref(),
+            p.esfera.as_deref(),
+            viewer(&headers),
+        )
+        .await
+    {
         Ok((forum, children)) => {
             let dto = ForumTreeDto {
                 forum: forum.map(forum_dto),
@@ -476,6 +502,7 @@ async fn create_topic(
 /// `GET /f/topics?path=&sort=hot|new&limit=&offset=`.
 async fn list_topics(
     State(state): State<dsoc_app::AppState>,
+    headers: HeaderMap,
     Query(p): Query<TopicListParams>,
 ) -> Response {
     let svc = ForumService::from_state(&state);
@@ -488,6 +515,7 @@ async fn list_topics(
             hot,
             p.limit.unwrap_or(30),
             p.offset.unwrap_or(0),
+            viewer(&headers),
         )
         .await
     {
@@ -501,7 +529,12 @@ async fn list_topics(
                         status,
                         official_url,
                     });
+            let visibility = match svc.forum_visibility(forum.id).await {
+                Ok(visibility) => visibility,
+                Err(e) => return error_response::<serde_json::Value>(&e),
+            };
             let dto = serde_json::json!({
+                "visibility": visibility,
                 "forum": forum_dto(forum),
                 "topics": topics.into_iter().map(topic_dto).collect::<Vec<_>>(),
                 "transparency": transparency,
@@ -513,9 +546,13 @@ async fn list_topics(
 }
 
 /// `GET /f/topics/{id}` — detail with comments and receipts.
-async fn get_topic(State(state): State<dsoc_app::AppState>, Path(id): Path<Uuid>) -> Response {
+async fn get_topic(
+    State(state): State<dsoc_app::AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Response {
     let svc = ForumService::from_state(&state);
-    match svc.get_topic(id).await {
+    match svc.get_topic(id, viewer(&headers)).await {
         Ok(d) => {
             let aggregate_only = d.aggregate_only;
             let dto = TopicDetailDto {
@@ -547,11 +584,15 @@ struct ConsensusParams {
 /// defaults to 5, capped at 20 (enforced in the service).
 async fn consensus(
     State(state): State<dsoc_app::AppState>,
+    headers: HeaderMap,
     Path(id): Path<Uuid>,
     Query(p): Query<ConsensusParams>,
 ) -> Response {
     let svc = ForumService::from_state(&state);
-    match svc.topic_consensus(id, p.limit.unwrap_or(5)).await {
+    match svc
+        .topic_consensus(id, p.limit.unwrap_or(5), viewer(&headers))
+        .await
+    {
         Ok(c) => {
             let protect = c.aggregate_only;
             let bridges: Vec<BridgeCommentDto> = c
