@@ -72,6 +72,7 @@ pub mod notifications;
 pub mod og_cards;
 pub mod outbound;
 pub mod pii_registry;
+mod sso_oidc;
 
 /// Re-export: the identifier protection lives in `dsoc-db` so `dsoc-auth` can use it
 /// too (it writes the CPF), and a Tier-2 crate may not depend on the gateway.
@@ -367,6 +368,7 @@ pub fn api_router(state: AppState) -> Router {
         .merge(webhooks::routes(state.clone()))
         // gov.br OIDC status (just the "enabled?"). Start/callback live at the root.
         .merge(govbr_oidc::api_routes(state.clone()))
+        .merge(sso_oidc::api_routes())
         // LGPD art. 18 — exportar/excluir dados pessoais.
         .merge(lgpd::routes(state.clone()))
         // Public statistics — used on the landing page to reinforce the thesis.
@@ -443,6 +445,7 @@ pub fn api_router(state: AppState) -> Router {
         // gov.br OIDC — start/callback at the root because gov.br requires
         // `redirect_uri` to be exactly `<origin>/auth/govbr/callback`.
         .merge(govbr_oidc::root_routes(state.clone()))
+        .merge(sso_oidc::root_routes(state.clone()))
         // Forums (/f/*): SPA fallback — the front end routes client-side; any path
         // serves the same f/index.html (forums/topics created at runtime never 404).
         .merge(forums_spa_routes(state.clone()))

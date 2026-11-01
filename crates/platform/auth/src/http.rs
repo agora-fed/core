@@ -105,6 +105,16 @@ fn build_service(state: &AppState) -> Arc<ZitadelAuth> {
     ))
 }
 
+/// A validator for ID tokens from an OIDC provider, using its JWKS endpoint.
+#[must_use]
+pub fn oidc_validator(jwks_url: String, issuer: String, audience: String) -> TokenValidator {
+    TokenValidator::new(Arc::new(JwksKeySource::new(
+        jwks_url,
+        issuer,
+        Some(audience),
+    )))
+}
+
 /// Build the OIDC token validator from the sovereign-issuer environment (never hardcoded —
 /// PLAN.md principle 8). When unconfigured, returns a validator that rejects every token.
 fn validator_from_env() -> TokenValidator {
