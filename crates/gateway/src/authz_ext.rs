@@ -160,3 +160,15 @@ pub async fn require_permission(
         }
     }
 }
+
+/// Route layer for operational endpoints that have no authorization of their own.
+pub async fn admin_only(
+    axum::extract::State(state): axum::extract::State<dsoc_app::AppState>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    match require_org_admin(&state.db, req.headers()).await {
+        Ok(_) => next.run(req).await,
+        Err(denied) => denied,
+    }
+}
