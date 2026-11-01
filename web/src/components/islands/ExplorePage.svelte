@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SITE_NAME } from '../../lib/site';
   // Explore — trending hashtags + suggested follows + a peek at the profile
   // directory. Anonymous users see everything except suggestions (which need
   // a session so the DB can filter "who you don't already follow").
@@ -325,7 +326,7 @@
         Digite um nome pra ver sugestões, ou cole <code>@usuario@instancia</code>
         (o <code>@</code> inicial é opcional) ou a URL do perfil
         (<code>https://instancia/@usuario</code>) pra puxar uma conta nova do
-        fediverso. O perfil abre dentro do DemocraciaBR e você pode seguir sem sair.
+        fediverso. O perfil abre dentro do {SITE_NAME} e você pode seguir sem sair.
       </p>
     </form>
 

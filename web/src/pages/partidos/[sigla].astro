@@ -1,4 +1,5 @@
 ---
+import { SITE_NAME } from '../../lib/site';
 // Página de um partido. SSG: uma página por sigla distinta existente no build (derivada dos
 // mandatos). O slug (ex.: "pcdob") vira param; a sigla real ("PCdoB") vai por prop pra a ilha
 // filtrar getMandates. Conteúdo (lista de representantes) hidrata client-side.
@@ -28,7 +29,7 @@ export async function getStaticPaths() {
 }
 
 const { sigla } = Astro.props as { sigla: string };
-const description = `Partido ${sigla} na DemocraciaBR — representantes por esfera (federal, estadual, municipal).`;
+const description = `Partido ${sigla} na ${SITE_NAME} — representantes por esfera (federal, estadual, municipal).`;
 ---
 
 <BaseLayout title={`${sigla} · Partidos`} {description} noindex>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SITE_NAME } from '../../lib/site';
   // Placar público dedicado — 1 mandato. Foco visual no dado (números
   // grandes), botão compartilhar (Web Share API + fallback copy link),
   // botão publicar-no-fediverso (cria uma nota com o link).
@@ -51,8 +52,8 @@
     if (typeof window === 'undefined') return;
     const url = window.location.href;
     const title = mandate
-      ? `Placar de ${mandate.display_name} — DemocraciaBR`
-      : 'Placar do parlamentar — DemocraciaBR';
+      ? `Placar de ${mandate.display_name} — ${SITE_NAME}`
+      : `Placar do parlamentar — ${SITE_NAME}`;
     if (navigator.share) {
       navigator.share({ title, url }).catch(() => {});
     } else {
@@ -69,7 +70,7 @@
     const rate_bit = rate != null ? ` — ${rate}% de resposta` : '';
     const content =
       `📊 Placar público de accountability: ${mandate.display_name}${rate_bit}.\n\n` +
-      `Propostas cidadãs respondidas × silêncio público registrado.\n\n${url}\n\n#DemocraciaBR`;
+      `Propostas cidadãs respondidas × silêncio público registrado.\n\n${url}\n\n#${SITE_NAME.replace(/\s+/g, '')}`;
     const res = await postNote(content);
     publishing = false;
     msg = res.success

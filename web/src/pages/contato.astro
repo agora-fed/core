@@ -1,10 +1,11 @@
 ---
+import { SITE_NAME } from '../lib/site';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import ColorBar from '../components/illustrations/ColorBar.astro';
 import ContactForm from '../components/islands/ContactForm.svelte';
 
 const description =
-  'Fale com a DemocraciaBR: dúvidas gerais, privacidade (LGPD), moderação e segurança — um único formulário, sem expor e-mails.';
+  `Fale com a ${SITE_NAME}: dúvidas gerais, privacidade (LGPD), moderação e segurança — um único formulário, sem expor e-mails.`;
 ---
 
 <BaseLayout title="Contato" {description}>

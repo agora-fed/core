@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SITE_NAME } from '../../lib/site';
   // Administrative console for the DemocraciaBR instance. Every request is
   // gated by the backend's `require_admin` check on DEFAULT_ORG_UUID — a
   // non-admin caller sees the "acesso restrito" empty state below.
@@ -213,7 +214,7 @@
       <EmptyState
         icon="lock"
         title="Acesso restrito"
-        description="Esta área é reservada a administradores da instância DemocraciaBR."
+        description={`Esta área é reservada a administradores da instância ${SITE_NAME}.`}
       />
     </Card>
   {:else}

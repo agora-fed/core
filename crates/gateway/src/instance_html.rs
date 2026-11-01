@@ -22,6 +22,30 @@ const NAMED_META: [&str; 3] = [
     "name=\"twitter:title\"",
 ];
 
+/// First path segment of static pages that belong to a module.
+const MODULE_ROUTES: [(&str, &str); 19] = [
+    ("politicos", "mandates"),
+    ("partidos", "mandates"),
+    ("eleicoes", "mandates"),
+    ("servicos", "mandates"),
+    ("campanha", "mandates"),
+    ("painel-mandato", "mandates"),
+    ("meu-grupo", "mandates"),
+    ("grupo", "mandates"),
+    ("municipio", "mandates"),
+    ("imprensa", "mandates"),
+    ("propostas", "proposals"),
+    ("propor", "proposals"),
+    ("consultas", "consultations"),
+    ("consulta", "consultations"),
+    ("feed", "federation"),
+    ("explorar", "federation"),
+    ("rede", "federation"),
+    ("publicacao", "federation"),
+    ("tag", "federation"),
+];
+const UNAVAILABLE_PAGE: &str = "/modulo-indisponivel/";
+
 /// Must match web/src/styles/module-gate.css.
 const UI_GATED_MODULES: [&str; 5] = [
     "mandates",
@@ -104,6 +128,23 @@ fn rewrite_site_name(html: &str, built: &str, name: &str) -> String {
     out
 }
 
+/// The page to serve instead of the requested one, with its status.
+fn route_override(path: &str, off: &[&str]) -> Option<(&'static str, StatusCode)> {
+    let trimmed = path.trim_matches('/');
+    if off.contains(&"mandates") {
+        match trimmed {
+            "" => return Some(("/inicio-comunidade/", StatusCode::OK)),
+            "sobre" => return Some(("/sobre-comunidade/", StatusCode::OK)),
+            _ => {}
+        }
+    }
+    let first = trimmed.split('/').next().unwrap_or("");
+    MODULE_ROUTES
+        .iter()
+        .any(|(route, module)| *route == first && off.contains(module))
+        .then_some((UNAVAILABLE_PAGE, StatusCode::NOT_FOUND))
+}
+
 fn mark_modules_off(html: &str, off: &[&str]) -> String {
     if off.is_empty() {
         return html.to_owned();
@@ -175,6 +216,13 @@ pub(crate) async fn apply_site_name(
     let Some(patch) = InstancePatch::load(&state).await else {
         return next.run(req).await;
     };
+    let page = route_override(req.uri().path(), &patch.modules_off);
+    if let Some((target, _)) = page {
+        match target.parse() {
+            Ok(uri) => *req.uri_mut() = uri,
+            Err(err) => tracing::error!(?err, target, "invalid page override"),
+        }
+    }
     req.headers_mut().remove(header::IF_MODIFIED_SINCE);
     req.headers_mut().remove(header::IF_NONE_MATCH);
     let res = next.run(req).await;
@@ -188,6 +236,9 @@ pub(crate) async fn apply_site_name(
         return res;
     }
     let (mut parts, body) = res.into_parts();
+    if let Some((_, status)) = page {
+        parts.status = status;
+    }
     let Ok(bytes) = to_bytes(body, MAX_HTML_BYTES).await else {
         tracing::error!(
             "static page exceeded {MAX_HTML_BYTES} bytes while applying the instance patch"
@@ -252,6 +303,39 @@ mod tests {
     fn unterminated_title_is_preserved() {
         let html = "<head><title>AGORA</head>";
         assert_eq!(rewrite_site_name(html, "AGORA", "Coop"), html);
+    }
+
+    #[test]
+    fn home_and_about_swap_only_when_mandates_is_off() {
+        assert_eq!(
+            route_override("/", &["mandates"]),
+            Some(("/inicio-comunidade/", StatusCode::OK))
+        );
+        assert_eq!(
+            route_override("/sobre/", &["mandates"]),
+            Some(("/sobre-comunidade/", StatusCode::OK))
+        );
+        assert_eq!(route_override("/", &["forums"]), None);
+    }
+
+    #[test]
+    fn routes_of_disabled_modules_are_unavailable() {
+        let expected = Some((UNAVAILABLE_PAGE, StatusCode::NOT_FOUND));
+        assert_eq!(route_override("/politicos/abc/", &["mandates"]), expected);
+        assert_eq!(route_override("/propor", &["proposals"]), expected);
+    }
+
+    #[test]
+    fn route_match_uses_whole_segments() {
+        assert_eq!(route_override("/politicos-x/", &["mandates"]), None);
+        assert_eq!(route_override("/politicos/", &["forums"]), None);
+    }
+
+    #[test]
+    fn module_routes_point_at_gated_modules() {
+        for (_, module) in MODULE_ROUTES {
+            assert!(UI_GATED_MODULES.contains(&module), "{module}");
+        }
     }
 
     #[test]

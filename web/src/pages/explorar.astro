@@ -1,4 +1,5 @@
 ---
+import { SITE_NAME } from '../lib/site';
 // Explorar — trending hashtags + sugestões de quem seguir + diretório
 // público. Aberto ao público; sugestões dependem de sessão para saber
 // quem o caller ainda não segue.
@@ -6,7 +7,7 @@ import AppShellLayout from '../layouts/AppShellLayout.astro';
 import ExplorePage from '../components/islands/ExplorePage.svelte';
 
 const description =
-  'Hashtags em alta, pessoas para acompanhar e o diretório público da DemocraciaBR.';
+  `Hashtags em alta, pessoas para acompanhar e o diretório público da ${SITE_NAME}.`;
 ---
 
 <AppShellLayout title="Explorar" {description} active="explore">

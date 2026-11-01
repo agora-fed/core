@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SITE_NAME } from '../../lib/site';
   // Página detalhada de proposta — CSR. Foca em VOTAR: contador grande, barra de progresso até o
   // threshold (se houver), botão Apoiar. Mostra também o político-alvo (foto + nome + link), o
   // status da SLA (relógio rolando ou silêncio público), e o corpo da demanda. Comentários
@@ -135,7 +136,7 @@
     const mandateBit = mandate
       ? ` para ${mandate.display_name}${mandate.party ? ` (${mandate.party})` : ''}`
       : '';
-    const content = `Nova proposta cidadã${mandateBit}: "${proposal.title}"\n\nApoie e amplie:\n${url}\n\n#DemocraciaBR`;
+    const content = `Nova proposta cidadã${mandateBit}: "${proposal.title}"\n\nApoie e amplie:\n${url}\n\n#${SITE_NAME.replace(/\s+/g, '')}`;
     const res = await postNote(content);
     publishing = false;
     publishMsg = res.success
@@ -367,7 +368,7 @@
 
   function share() {
     const url = window.location.href;
-    const title = proposal?.title ?? 'Demanda pública na DemocraciaBR';
+    const title = proposal?.title ?? `Demanda pública na ${SITE_NAME}`;
     if (navigator.share) {
       navigator.share({ title, url }).catch(() => {});
     } else {

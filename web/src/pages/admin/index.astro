@@ -1,4 +1,5 @@
 ---
+import { SITE_NAME } from '../../lib/site';
 // /admin/ agora é só o Painel de métricas. Cada seção admin virou página
 // própria (denúncias, usuários, federação, auditoria) linkada pelo
 // AdminSidebar comum.
@@ -8,7 +9,7 @@ import AdminDashboard from '../../components/islands/AdminDashboard.svelte';
 
 <AdminLayout
   title="Painel"
-  description="Painel de métricas da instância DemocraciaBR."
+  description={`Painel de métricas da instância ${SITE_NAME}.`}
 >
   <header class="head">
     <h1>Painel</h1>

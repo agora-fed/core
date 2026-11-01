@@ -1,10 +1,11 @@
 ---
+import { SITE_NAME } from '../lib/site';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import BrandLine from '../components/BrandLine.astro';
 import LoginForm from '../components/islands/LoginForm.svelte';
 
 const description =
-  'Entre na sua conta DemocraciaBR para apoiar propostas, comentar e cobrar respostas dos mandatos.';
+  `Entre na sua conta ${SITE_NAME} para apoiar propostas, comentar e cobrar respostas dos mandatos.`;
 ---
 
 <BaseLayout title="Entrar" {description} noindex>

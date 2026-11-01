@@ -1,11 +1,12 @@
 ---
+import { SITE_NAME } from '../lib/site';
 // Página participativa de uma consulta. /consulta/?id=<uuid>
 // SSG + querystring (a ilha resolve no client, como /grupo e /municipio).
 import BaseLayout from '../layouts/BaseLayout.astro';
 import ConsultaDetail from '../components/islands/ConsultaDetail.svelte';
 
 const description =
-  'Consulta pública da DemocraciaBR: registre sua posição e acompanhe o resultado em tempo real.';
+  `Consulta pública da ${SITE_NAME}: registre sua posição e acompanhe o resultado em tempo real.`;
 ---
 
 <BaseLayout title="Consulta pública" {description}>

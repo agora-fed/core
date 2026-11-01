@@ -1,4 +1,5 @@
 ---
+import { SITE_NAME } from '../../lib/site';
 // B1 — fusão Propor ≡ Fórum: /propostas foi absorvida por /f. A "proposta" virou
 // um TÓPICO DE FÓRUM direcionado a gabinete(s) (uma porta, uma régua). Esta rota
 // vira um redirect estável pro hub de fóruns; permalinks de propostas antigas
@@ -13,7 +14,7 @@ export const prerender = true;
     <meta http-equiv="refresh" content="0; url=/f" />
     <link rel="canonical" href="/f" />
     <meta name="robots" content="noindex, follow" />
-    <title>Propostas agora vivem nos Fóruns · DemocraciaBR</title>
+    <title>Propostas agora vivem nos Fóruns · {SITE_NAME}</title>
   </head>
   <body>
     <p>

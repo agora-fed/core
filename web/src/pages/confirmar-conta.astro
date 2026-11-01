@@ -1,10 +1,11 @@
 ---
+import { SITE_NAME } from '../lib/site';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import BrandLine from '../components/BrandLine.astro';
 import ConfirmSignupForm from '../components/islands/ConfirmSignupForm.svelte';
 
 const description =
-  'Verificação final do cadastro na DemocraciaBR. Ativa a conta e leva ao painel inicial.';
+  `Verificação final do cadastro na ${SITE_NAME}. Ativa a conta e leva ao painel inicial.`;
 ---
 
 <BaseLayout title="Confirmar conta" {description} noindex>

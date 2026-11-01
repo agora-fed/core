@@ -1,10 +1,11 @@
 ---
+import { SITE_NAME } from '../lib/site';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import BrandLine from '../components/BrandLine.astro';
 import RegisterForm from '../components/islands/RegisterForm.svelte';
 
 const description =
-  'Crie sua conta DemocraciaBR com e-mail, senha e CPF e participe da cobrança pública aos mandatos.';
+  `Crie sua conta ${SITE_NAME} com e-mail, senha e CPF e participe da cobrança pública aos mandatos.`;
 ---
 
 <BaseLayout title="Criar conta" {description} noindex>

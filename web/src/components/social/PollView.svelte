@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SITE_HOST } from '../../lib/site';
   // Poll renderer + voter. Shows one bar per option with percentage + count.
   // Ballot form on top when the viewer hasn't voted and the poll is open;
   // switches to read-only "results" mode after voting or on expiry.
@@ -140,7 +141,7 @@
     {/if}
   </div>
   <p class="gate-note muted" title="A enquete circula no fediverso, mas o voto é local.">
-    Apenas cidadãos com conta em <strong>democracia.social.br</strong> votam
+    Apenas cidadãos com conta em <strong>{SITE_HOST}</strong> votam
     aqui. Fediversos parceiros veem a enquete, mas o voto de fora não conta.
   </p>
 </div>

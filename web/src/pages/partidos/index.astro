@@ -1,4 +1,5 @@
 ---
+import { SITE_NAME } from '../../lib/site';
 // Partidos (Fase 2, fatia A). Catálogo derivado dos mandatos reais; CSR pela ilha pra refletir
 // novos seeds sem rebuild. Diretórios (subgrupos estaduais/municipais) e administração por pessoas
 // físicas entram na fatia B.
@@ -7,12 +8,12 @@ import ColorBar from '../../components/illustrations/ColorBar.astro';
 import PartidosBrowser from '../../components/islands/PartidosBrowser.svelte';
 
 const description =
-  'Partidos na DemocraciaBR — por esfera (federal, estadual, municipal), com seus candidatos e representantes.';
+  `Partidos na ${SITE_NAME} — por esfera (federal, estadual, municipal), com seus candidatos e representantes.`;
 
 const jsonLd = {
   '@context': 'https://schema.org',
   '@type': 'CollectionPage',
-  name: 'Partidos · DemocraciaBR',
+  name: `Partidos · ${SITE_NAME}`,
   inLanguage: 'pt-BR',
   description,
 };

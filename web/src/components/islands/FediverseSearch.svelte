@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SITE_NAME } from '../../lib/site';
   // Search a fediverse account by `@user@host` and (optionally) follow it. The result card is
   // intentionally minimal — name, handle, summary, avatar, Seguir button. Follow goes async
   // ("Solicitação enviada"); the Accept comes back to our inbox and the row flips to ACK'd then.
@@ -65,7 +66,7 @@
   <p class="muted">
     Busque por <code>@usuario@instancia</code> ou cole a URL do perfil
     (<code>https://instancia/@usuario</code>) — Mastodon, Pleroma, outras
-    instâncias DemocraciaBR. Você precisa ter perfil público para seguir.
+    instâncias {SITE_NAME}. Você precisa ter perfil público para seguir.
   </p>
 
   <form class="row" onsubmit={lookup} novalidate>

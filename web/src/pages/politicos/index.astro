@@ -1,4 +1,5 @@
 ---
+import { SITE_NAME } from '../../lib/site';
 // Diretório de parlamentares — CSR (ilha Svelte) pra a lista refletir mudanças em prod sem
 // rebuild. O backend tem 100+ deputados reais (PT/PCdoB/PSOL/PV/Rede da Câmara + 9 senadores
 // PT do Senado), e a esposa quer filtrar por partido/casa e ver as fotos oficiais. SSG não
@@ -14,7 +15,7 @@ const description =
 const jsonLd = {
   '@context': 'https://schema.org',
   '@type': 'CollectionPage',
-  name: 'Placar dos políticos · DemocraciaBR',
+  name: `Placar dos políticos · ${SITE_NAME}`,
   inLanguage: 'pt-BR',
   description,
 };

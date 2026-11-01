@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SITE_NAME } from '../../lib/site';
   // Painel de métricas da instância. Reusa o endpoint /admin/stats que já
   // existe (getAdminStats). Cada card é uma métrica agregada; o botão
   // 'Atualizar' força refresh.
@@ -59,7 +60,7 @@
     <EmptyState
       icon="lock"
       title="Acesso restrito"
-      description="Esta área é reservada a administradores da instância DemocraciaBR."
+      description={`Esta área é reservada a administradores da instância ${SITE_NAME}.`}
     />
   </Card>
 {:else if loading}

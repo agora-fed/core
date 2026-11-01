@@ -1,4 +1,5 @@
 ---
+import { SITE_NAME } from '../../lib/site';
 // Painel de gerenciamento de doações/financiamento de campanha (0.31).
 // Exclusivo de contas com vínculo de mandato — o gate mora no servidor
 // (GET /me/campanha → is_politico) e a entrada fica no submenu do perfil.
@@ -7,7 +8,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 import DoacoesPainel from '../../components/islands/DoacoesPainel.svelte';
 
 const description =
-  'Painel de doações e financiamento de campanha da DemocraciaBR.';
+  `Painel de doações e financiamento de campanha da ${SITE_NAME}.`;
 ---
 
 <BaseLayout title="Doações e financiamento" {description} noindex>

@@ -1,0 +1,25 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { SITE_HOST, SITE_NAME } from '../lib/site';
+
+const description = `Sobre ${SITE_NAME}: plataforma de participação da comunidade, feita com software livre.`;
+---
+
+<BaseLayout title="Sobre" {description} canonical="/sobre">
+  <section class="section">
+    <div class="container narrow">
+      <h1>Sobre <span data-brand-name>{SITE_NAME}</span></h1>
+      <p class="lede muted">O espaço onde a comunidade conversa e decide em conjunto.</p>
+      <h2>Como funciona</h2>
+      <p>
+        Esta instância, em <code>{SITE_HOST}</code>, usa o AGORA, plataforma federada de
+        participação publicada sob a licença AGPLv3. Cada comunidade escolhe quais módulos usar.
+      </p>
+      <h2>Transparência</h2>
+      <p>
+        Veja <a href="/transparencia">como a plataforma é construída</a>, a
+        <a href="/privacidade">política de privacidade</a> e os <a href="/termos">termos de uso</a>.
+      </p>
+    </div>
+  </section>
+</BaseLayout>
