@@ -46,7 +46,10 @@ pub mod federation_feed;
 pub mod fediverso_admin;
 #[doc(hidden)]
 pub mod forum_federation;
+pub mod forum_inbound;
+pub mod forum_inbound_admin;
 mod forum_mailer;
+pub mod forum_outbound;
 pub mod govbr_oidc;
 mod groups;
 mod instance_html;
@@ -371,6 +374,7 @@ pub fn api_router(state: AppState) -> Router {
         .merge(admin_interests::routes(state.clone()))
         .merge(admin_consultations::routes(state.clone()))
         .merge(admin_forums::routes(state.clone()))
+        .merge(forum_inbound_admin::routes(state.clone()))
         // SOCRATES: mirrors e-Cidadania Legislative Ideas as topics of the
         // `senado` forum (admin-curated, migration 0670).
         .merge(socrates_mirror::routes(state.clone()))

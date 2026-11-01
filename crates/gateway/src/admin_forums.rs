@@ -651,6 +651,16 @@ fn trim_reason(reason: Option<String>) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// Tell a forum's followers about a removal. Never fails the moderation that already happened.
+async fn announce_removal(db: &PgPool, kind: &str, id: Uuid, reason: Option<&str>) {
+    let Some(host) = crate::forum_inbound::public_host() else {
+        return;
+    };
+    if let Err(err) = crate::forum_outbound::enqueue_removal(db, &host, kind, id, reason).await {
+        tracing::warn!(?err, "forum removal: queueing the announcement failed");
+    }
+}
+
 async fn topic_remove(
     State(state): State<AppState>,
     caller: CallerId,
@@ -677,7 +687,8 @@ async fn topic_remove(
     }
     let reason = trim_reason(body.map(|b| b.0).unwrap_or_default().reason);
     let res = sqlx::query(
-        "UPDATE forum_topic SET hidden_at = now(), deleted_by = $2, deletion_reason = $3 \
+        "UPDATE forum_topic SET hidden_at = now(), deleted_by = $2, deletion_reason = $3, \
+         moderation = CASE WHEN remote_actor_url IS NULL THEN moderation ELSE 'rejected' END \
          WHERE id = $1",
     )
     .bind(id)
@@ -697,6 +708,7 @@ async fn topic_remove(
         reason.as_deref(),
     )
     .await;
+    announce_removal(&state.db, "topic", id, reason.as_deref()).await;
     (
         StatusCode::OK,
         Json(ApiResponse::ok(serde_json::json!({"removed": true}))),
@@ -737,7 +749,8 @@ async fn comment_remove(
     }
     let reason = trim_reason(body.map(|b| b.0).unwrap_or_default().reason);
     let res = sqlx::query(
-        "UPDATE forum_topic_comment SET hidden_at = now(), deleted_by = $2, deletion_reason = $3 \
+        "UPDATE forum_topic_comment SET hidden_at = now(), deleted_by = $2, deletion_reason = $3, \
+         moderation = CASE WHEN federated THEN 'rejected' ELSE moderation END \
          WHERE id = $1",
     )
     .bind(id)
@@ -757,6 +770,7 @@ async fn comment_remove(
         reason.as_deref(),
     )
     .await;
+    announce_removal(&state.db, "comment", id, reason.as_deref()).await;
     (
         StatusCode::OK,
         Json(ApiResponse::ok(serde_json::json!({"removed": true}))),

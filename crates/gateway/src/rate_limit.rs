@@ -75,6 +75,12 @@ fn hit(key: &str, per_min: u32) -> bool {
     entry.1 > per_min
 }
 
+/// Count one event for `key` and say whether it went over `per_min`. For callers that are not
+/// signed-in citizens, such as remote servers.
+pub(crate) fn over_limit(key: &str, per_min: u32) -> bool {
+    hit(key, per_min)
+}
+
 fn too_many() -> Response {
     (
         StatusCode::TOO_MANY_REQUESTS,
