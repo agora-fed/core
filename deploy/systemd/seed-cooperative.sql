@@ -50,21 +50,30 @@ ON CONFLICT (org_id, key) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at =
 DELETE FROM interest_area a
  WHERE NOT EXISTS (SELECT 1 FROM citizen_interest c WHERE c.area_slug = a.slug);
 INSERT INTO interest_area (slug, name, ministry, position) VALUES
-    ('governanca', 'Assembleias e governança', NULL, 1),
-    ('financas', 'Finanças e orçamento', NULL, 2),
-    ('producao', 'Produção e trabalho', NULL, 3),
-    ('educacao-cooperativa', 'Educação cooperativista', NULL, 4),
-    ('comunicacao', 'Comunicação', NULL, 5),
-    ('comunidade', 'Comunidade e território', NULL, 6),
-    ('meio-ambiente', 'Meio ambiente', NULL, 7),
-    ('tecnologia', 'Tecnologia', NULL, 8)
+    ('governanca', 'Governança da comunidade', NULL, 1),
+    ('moderacao', 'Moderação e acolhimento', NULL, 2),
+    ('sustentacao', 'Sustentação e finanças', NULL, 3),
+    ('tecnologia', 'Fediverso e software livre', NULL, 4),
+    ('agroecologia', 'Agroecologia e regeneração', NULL, 5),
+    ('arte-cultura', 'Arte e cultura', NULL, 6),
+    ('educacao-pesquisa', 'Educação e pesquisa', NULL, 7),
+    ('movimentos', 'Movimentos sociais', NULL, 8)
 ON CONFLICT (slug) DO NOTHING;
 
--- Starter forums for a cooperative; the political forum tree is never created here.
-INSERT INTO forum (id, org_id, slug, full_path, name, description, kind, federated) VALUES
-    (gen_random_uuid(), '11111111-1111-1111-1111-111111111111', 'geral', 'geral', 'Geral', 'Conversas e avisos da comunidade.', 'comunitario', false),
-    (gen_random_uuid(), '11111111-1111-1111-1111-111111111111', 'assembleias', 'assembleias', 'Assembleias e governança', 'Pautas, regras e decisões coletivas.', 'comunitario', false),
-    (gen_random_uuid(), '11111111-1111-1111-1111-111111111111', 'financas', 'financas', 'Finanças e orçamento', 'Contas, orçamento e prioridades de investimento.', 'comunitario', false),
-    (gen_random_uuid(), '11111111-1111-1111-1111-111111111111', 'producao', 'producao', 'Produção e trabalho', 'Organização do trabalho e da produção.', 'comunitario', false),
-    (gen_random_uuid(), '11111111-1111-1111-1111-111111111111', 'ideias', 'ideias', 'Ideias e propostas', 'Sugestões para a cooperativa.', 'comunitario', false)
+-- Starter forums for a community; the political forum tree is never created here.
+INSERT INTO forum (id, org_id, slug, full_path, name, description, kind, federated)
+SELECT gen_random_uuid(), '11111111-1111-1111-1111-111111111111', s, s, n, d, 'comunitario', fed
+  FROM (VALUES
+    ('assembleia', 'Assembleia e decisões', 'Pautas e votações da comunidade.', false),
+    ('propostas', 'Propostas para a Orgânica', 'Ideias antes de virarem pauta.', false),
+    ('moderacao', 'Moderação e código de conduta', 'Regras e orientações; casos individuais ficam fora do fórum.', false),
+    ('sustentacao', 'Sustentação e finanças', 'Custos, doações e prestação de contas.', false),
+    ('tecnica', 'Técnica e infraestrutura', 'Manutenção, pedidos e melhorias.', false),
+    ('boas-vindas', 'Boas-vindas', 'Apresente-se e conheça a comunidade.', true),
+    ('fediverso', 'Fediverso e software livre', 'Oficinas, dúvidas e tecnologias livres.', true),
+    ('agroecologia', 'Agroecologia e regeneração', 'Permacultura, agrofloresta e solarpunk.', true),
+    ('arte-cultura', 'Arte e cultura', 'Música, escrita, fotografia, artes visuais e audiovisual.', true),
+    ('educacao-pesquisa', 'Educação e pesquisa', 'Ensino, ciência e pesquisa.', true),
+    ('movimentos', 'Movimentos sociais', 'Articulação com a sociedade civil organizada.', true)
+  ) v(s, n, d, fed)
 ON CONFLICT (org_id, full_path) DO NOTHING;
