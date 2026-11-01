@@ -7,6 +7,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 import ForumsApp from '../../components/islands/ForumsApp.svelte';
 
 const description =
+  (import.meta.env.PUBLIC_FORUMS_DESCRIPTION as string | undefined) ||
   'Fóruns institucionais: debata com a sociedade e leve o resultado ao Senado, à Câmara, aos ministérios, estados e municípios — com recibo público.';
 ---
 

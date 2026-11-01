@@ -524,7 +524,10 @@
 {:else if view === 'home'}
   <header class="f-head">
     <h1>🏛 Fóruns</h1>
-    <p class="muted">
+    <p class="muted" data-when-off="mandates">
+      Converse com a comunidade, proponha ideias e construa decisões em conjunto.
+    </p>
+    <p class="muted" data-requires="mandates">
       Debata com a sociedade e leve o resultado às instituições: ao cruzar os
       patamares de interação, o fórum envia o debate — com as respostas mais
       votadas — para a comissão, ministério ou secretaria responsável, com
@@ -533,7 +536,16 @@
   </header>
 
   <div class="f-home">
-    <aside class="f-side" aria-label="Todos os fóruns">
+    <aside class="f-side" aria-label="Todos os fóruns" data-when-off="mandates">
+      <nav>
+        {#each roots as r (r.slug)}
+          <a href={`/f/${r.full_path}`} onclick={(e) => { e.preventDefault(); navigate(`/f/${r.full_path}`); }}>{r.name}</a>
+        {:else}
+          <p class="muted small">Nenhum fórum criado ainda.</p>
+        {/each}
+      </nav>
+    </aside>
+    <aside class="f-side" aria-label="Todos os fóruns" data-requires="mandates">
       <details open>
         <summary>🇧🇷 Casas Federais</summary>
         <nav>
@@ -627,9 +639,9 @@
     </div>
     {#if forum.description}<p class="muted">{forum.description}</p>{/if}
     {#if forum.has_contact_email}
-      <p class="f-badge">✉️ Instituição com e-mail vinculado — patamares: {forum.thresholds.map((t) => t.toLocaleString('pt-BR')).join(' · ')} interações</p>
+      <p class="f-badge" data-requires="mandates">✉️ Instituição com e-mail vinculado — patamares: {forum.thresholds.map((t) => t.toLocaleString('pt-BR')).join(' · ')} interações</p>
     {:else}
-      <p class="f-badge muted">Patamares: {forum.thresholds.map((t) => t.toLocaleString('pt-BR')).join(' · ')} interações (e-mail institucional em curadoria)</p>
+      <p class="f-badge muted" data-requires="mandates">Patamares: {forum.thresholds.map((t) => t.toLocaleString('pt-BR')).join(' · ')} interações (e-mail institucional em curadoria)</p>
     {/if}
     {#if isAdmin}
       <details class="f-admin">
@@ -822,7 +834,7 @@
       <!-- Tag-a-representative (issue #3): the citizen marks the mandate who
            should care about this cause; the mandate gets a daily consolidated
            e-mail (aggregates only — LGPD). -->
-      <RepresentativeTagWidget topicId={detail.topic.id} />
+      <div data-requires="mandates"><RepresentativeTagWidget topicId={detail.topic.id} /></div>
 
       <!-- 🌉 Pontos de consenso (D8.2): ACIMA do placar de torcida. A síntese
            estilo Polis/vTaiwan — os argumentos-ponte, endossados pelos DOIS
@@ -865,18 +877,18 @@
         <span class="f-score-lbl">pontos</span>
         {#if detail.topic.score >= detail.escalation_threshold}
           {#if detail.escalation_destination}
-            <span class="f-score-hint ok">✓ encaminhado a {detail.escalation_destination}</span>
+            <span data-requires="mandates" class="f-score-hint ok">✓ encaminhado a {detail.escalation_destination}</span>
           {:else}
-            <span class="f-score-hint">✓ patamar cruzado — encaminhamento pendente (seção ainda sem canal institucional conectado)</span>
+            <span data-requires="mandates" class="f-score-hint">✓ patamar cruzado — encaminhamento pendente (seção ainda sem canal institucional conectado)</span>
           {/if}
         {:else if detail.topic.score > 0}
           {#if detail.escalation_destination}
-            <span class="f-score-hint">faltam {(detail.escalation_threshold - detail.topic.score).toLocaleString('pt-BR')} pontos para encaminhar a <strong>{detail.escalation_destination}</strong></span>
+            <span data-requires="mandates" class="f-score-hint">faltam {(detail.escalation_threshold - detail.topic.score).toLocaleString('pt-BR')} pontos para encaminhar a <strong>{detail.escalation_destination}</strong></span>
           {:else}
-            <span class="f-score-hint">faltam {(detail.escalation_threshold - detail.topic.score).toLocaleString('pt-BR')} pontos para o patamar — seção ainda sem canal institucional (encaminha quando conectar)</span>
+            <span data-requires="mandates" class="f-score-hint">faltam {(detail.escalation_threshold - detail.topic.score).toLocaleString('pt-BR')} pontos para o patamar — seção ainda sem canal institucional (encaminha quando conectar)</span>
           {/if}
         {:else}
-          <span class="f-score-hint">apoio líquido negativo — não encaminha</span>
+          <span data-requires="mandates" class="f-score-hint">apoio líquido negativo — não encaminha</span>
         {/if}
       </div>
 
@@ -970,7 +982,7 @@
             {/each}
           </div>
           {#if federatedComments.length > 0}
-            <h3>🌐 Comentários do fediverso <span class="muted small">(não contam pros patamares)</span></h3>
+            <h3>🌐 Comentários do fediverso <span class="muted small" data-requires="mandates">(não contam pros patamares)</span></h3>
             <ul>
               {#each federatedComments as c (c.id)}
                 <li>
