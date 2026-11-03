@@ -163,6 +163,8 @@ struct ConsultaDetail {
     opens_at: DateTime<Utc>,
     closes_at: DateTime<Utc>,
     questions: Vec<QuestionResult>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ap_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -238,20 +240,25 @@ async fn detail(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Response {
-    let head: Option<(String, String, String, DateTime<Utc>, DateTime<Utc>)> = match sqlx::query_as(
-        "SELECT title, kind, status, opens_at, closes_at FROM consultations_consultation WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(&state.db)
-    .await
-    {
-        Ok(h) => h,
-        Err(err) => {
-            tracing::error!(?err, "consultas detail: head");
-            return storage_error();
-        }
-    };
-    let Some((title, kind, status, opens_at, closes_at)) = head else {
+    let head: Option<(String, String, String, DateTime<Utc>, DateTime<Utc>, Option<String>)> =
+        match sqlx::query_as(
+            r"SELECT c.title, c.kind, c.status, c.opens_at, c.closes_at,
+                     ci.handle AS creator_handle
+                FROM consultations_consultation c
+                LEFT JOIN citizen ci ON ci.id = c.created_by
+               WHERE c.id = $1",
+        )
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await
+        {
+            Ok(h) => h,
+            Err(err) => {
+                tracing::error!(?err, "consultas detail: head");
+                return storage_error();
+            }
+        };
+    let Some((title, kind, status, opens_at, closes_at, creator_handle)) = head else {
         return fail(
             StatusCode::NOT_FOUND,
             "not_found",
@@ -396,6 +403,20 @@ async fn detail(
         })
         .collect();
 
+    let ap_url = if kind == "consulta" {
+        creator_handle.as_deref().map(|h| {
+            let origin = std::env::var("PUBLIC_ORIGIN")
+                .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
+            let host = origin
+                .trim_start_matches("https://")
+                .trim_start_matches("http://")
+                .trim_end_matches('/');
+            crate::consulta_ap::consulta_object_url(host, h, id)
+        })
+    } else {
+        None
+    };
+
     (
         StatusCode::OK,
         Json(ApiResponse::ok(ConsultaDetail {
@@ -406,6 +427,7 @@ async fn detail(
             opens_at,
             closes_at,
             questions: results,
+            ap_url,
         })),
     )
         .into_response()
@@ -754,7 +776,7 @@ async fn votar(
         Ok(_) => (
             StatusCode::OK,
             Json(ApiResponse::ok(
-                serde_json::json!({ "voted": body.question_id }),
+                serde_json::json!({ "saved": true }),
             )),
         )
             .into_response(),

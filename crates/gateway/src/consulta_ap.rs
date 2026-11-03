@@ -59,7 +59,7 @@ pub(crate) async fn consulta_object_json(
     .await
     .ok()??;
 
-    let creator_handle = row.creator_handle.as_deref().unwrap_or(handle);
+    let creator_handle = row.creator_handle.as_deref()?;
     if creator_handle != handle {
         return None;
     }
@@ -227,10 +227,15 @@ async fn resolve_vote_target(
 }
 
 /// Extract a consultation UUID from a consulta object URL.
-/// Expected: `https://{host}/actors/{handle}/objects/consulta-{uuid}`
+/// Only matches our own origin to prevent cross-instance spoofing.
 fn parse_consulta_id_from_url(url: &str) -> Option<Uuid> {
-    let path = url.split("//").nth(1)?.split_once('/')?.1;
-    let segment = path.rsplit('/').next()?;
+    let origin = std::env::var("PUBLIC_ORIGIN")
+        .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
+    let base = origin.trim_end_matches('/');
+    if !url.starts_with(base) {
+        return None;
+    }
+    let segment = url.rsplit('/').next()?;
     parse_consulta_id(segment)
 }
 

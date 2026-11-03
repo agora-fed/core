@@ -17,10 +17,12 @@ CREATE TABLE consultation_vote (
     citizen_id   uuid REFERENCES citizen(id),
     actor_url    text,
     created_at   timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT consultation_vote_exactly_one_identity
+        CHECK (num_nonnulls(citizen_id, actor_url) = 1),
     CONSTRAINT consultation_vote_one_per_voter
-        UNIQUE NULLS NOT DISTINCT (consultation_id, citizen_id),
+        UNIQUE (consultation_id, citizen_id),
     CONSTRAINT consultation_vote_one_per_remote
-        UNIQUE NULLS NOT DISTINCT (consultation_id, actor_url)
+        UNIQUE (consultation_id, actor_url)
 );
 
 CREATE INDEX idx_consultation_vote_question ON consultation_vote(question_id);

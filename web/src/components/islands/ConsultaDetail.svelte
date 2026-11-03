@@ -152,6 +152,13 @@
     </p>
   </header>
 
+  {#if consulta.ap_url}
+    <p class="ap-link muted small">
+      Fediverso: <code class="ap-url">{consulta.ap_url}</code>
+      <button type="button" class="copy-btn" onclick={() => { navigator.clipboard.writeText(consulta?.ap_url ?? ''); }}>Copiar</button>
+    </p>
+  {/if}
+
   {#if !loggedIn && isOpen}
     <div class="card notice">
       {#if isPlebiscito}
@@ -297,4 +304,7 @@
   .hint-error { color: #b91c1c; margin: 0; }
   .hint-ok { color: #15803d; margin: 0; }
   .back { margin-top: 2rem; }
+  .ap-link { margin: 0.5rem 0 1rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+  .ap-url { font-size: 0.78rem; word-break: break-all; }
+  .copy-btn { font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 4px; border: 1px solid var(--c-border, #cbd5e1); background: var(--c-paper, #fff); cursor: pointer; }
 </style>

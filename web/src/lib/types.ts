@@ -331,6 +331,7 @@ export interface ConsultaDetail {
   opens_at: string;
   closes_at: string;
   questions: ConsultaQuestion[];
+  ap_url?: string;
 }
 
 // --- Parties (Fase 2B, migration 0204) ----------------------------------------
