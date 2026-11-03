@@ -32,37 +32,32 @@ pub(crate) fn consulta_object_url(host: &str, handle: &str, consultation_id: Uui
 /// Serve the AP `Question` JSON for a consulta.
 ///
 /// Returns `None` when the consultation doesn't exist, isn't a consulta kind,
-/// or the handle doesn't match the creator.
+/// or the handle doesn't match the owning forum.
 pub(crate) async fn consulta_object_json(
     db: &PgPool,
     host: &str,
     handle: &str,
     consultation_id: Uuid,
 ) -> Option<Value> {
+    let forum = crate::forum_federation::lookup_by_handle(db, handle).await?;
+
     #[derive(sqlx::FromRow)]
     struct Row {
         title: String,
         status: String,
         closes_at: DateTime<Utc>,
         created_at: DateTime<Utc>,
-        creator_handle: Option<String>,
     }
     let row: Row = sqlx::query_as(
-        r"SELECT c.title, c.status, c.closes_at, c.created_at,
-                 ci.handle AS creator_handle
+        r"SELECT c.title, c.status, c.closes_at, c.created_at
             FROM consultations_consultation c
-            LEFT JOIN citizen ci ON ci.id = c.created_by
-           WHERE c.id = $1 AND c.kind = 'consulta'",
+           WHERE c.id = $1 AND c.kind = 'consulta' AND c.forum_id = $2",
     )
     .bind(consultation_id)
+    .bind(forum.id)
     .fetch_optional(db)
     .await
     .ok()??;
-
-    let creator_handle = row.creator_handle.as_deref()?;
-    if creator_handle != handle {
-        return None;
-    }
 
     let questions: Vec<(Uuid, String, i32)> = sqlx::query_as(
         r"SELECT id, prompt, position FROM consultations_consultation_question
@@ -117,11 +112,12 @@ pub(crate) async fn consulta_object_json(
         "id": object_url,
         "type": "Question",
         "attributedTo": actor_url,
+        "audience": actor_url,
         "content": format!("<p>{}</p>", html_escape(&row.title)),
         "published": row.created_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         "endTime": row.closes_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         "url": format!("{origin}/consulta/?id={consultation_id}"),
-        "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        "to": [&actor_url, "https://www.w3.org/ns/activitystreams#Public"],
         "cc": [format!("{actor_url}/followers")],
         "oneOf": one_of,
         "votersCount": total_voters,

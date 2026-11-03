@@ -243,9 +243,9 @@ async fn detail(
     let head: Option<(String, String, String, DateTime<Utc>, DateTime<Utc>, Option<String>)> =
         match sqlx::query_as(
             r"SELECT c.title, c.kind, c.status, c.opens_at, c.closes_at,
-                     ci.handle AS creator_handle
+                     f.full_path AS forum_slug
                 FROM consultations_consultation c
-                LEFT JOIN citizen ci ON ci.id = c.created_by
+                LEFT JOIN forum f ON f.id = c.forum_id
                WHERE c.id = $1",
         )
         .bind(id)
@@ -258,7 +258,7 @@ async fn detail(
                 return storage_error();
             }
         };
-    let Some((title, kind, status, opens_at, closes_at, creator_handle)) = head else {
+    let Some((title, kind, status, opens_at, closes_at, forum_slug)) = head else {
         return fail(
             StatusCode::NOT_FOUND,
             "not_found",
@@ -404,14 +404,14 @@ async fn detail(
         .collect();
 
     let ap_url = if kind == "consulta" {
-        creator_handle.as_deref().map(|h| {
+        forum_slug.as_deref().map(|slug| {
             let origin = std::env::var("PUBLIC_ORIGIN")
                 .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
             let host = origin
                 .trim_start_matches("https://")
                 .trim_start_matches("http://")
                 .trim_end_matches('/');
-            crate::consulta_ap::consulta_object_url(host, h, id)
+            crate::consulta_ap::consulta_object_url(host, slug, id)
         })
     } else {
         None
@@ -490,6 +490,18 @@ async fn create(
         );
     }
 
+    let forum_id: Option<Uuid> = if kind == "consulta" {
+        sqlx::query_scalar(
+            "SELECT id FROM forum WHERE full_path = 'propostas' AND federated",
+        )
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten()
+    } else {
+        None
+    };
+
     let mut tx = match state.db.begin().await {
         Ok(t) => t,
         Err(err) => {
@@ -498,8 +510,8 @@ async fn create(
         }
     };
     let cid: Uuid = match sqlx::query_scalar(
-        r"INSERT INTO consultations_consultation (id, org_id, title, kind, opens_at, closes_at, status, created_at, created_by)
-          VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 'open', now(), $6)
+        r"INSERT INTO consultations_consultation (id, org_id, title, kind, opens_at, closes_at, status, created_at, created_by, forum_id)
+          VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 'open', now(), $6, $7)
           RETURNING id",
     )
     .bind(DEFAULT_ORG_UUID)
@@ -508,6 +520,7 @@ async fn create(
     .bind(body.opens_at)
     .bind(body.closes_at)
     .bind(creator)
+    .bind(forum_id)
     .fetch_one(&mut *tx)
     .await
     {

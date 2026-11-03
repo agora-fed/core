@@ -680,6 +680,22 @@ where
                 );
                 return StatusCode::UNAUTHORIZED.into_response();
             }
+            // Consulta vote: intercept Create{Note{name, inReplyTo}} before
+            // the general inbound gate — votes work even without full forum
+            // inbound federation enabled.
+            if activity.get("type").and_then(Value::as_str) == Some("Create") {
+                if let Some(obj) = activity.get("object") {
+                    if crate::consulta_ap::handle_consulta_vote(
+                        &state.db,
+                        &signer_actor_url,
+                        obj,
+                    )
+                    .await
+                    {
+                        return StatusCode::ACCEPTED.into_response();
+                    }
+                }
+            }
             if config.enabled {
                 // Without this a server could present another account's document as its own.
                 if signer_actor.get("id").and_then(Value::as_str) != Some(&signer_actor_url) {
