@@ -17,6 +17,7 @@ pub mod admin_content;
 pub mod admin_ext;
 pub mod admin_forums;
 mod admin_interests;
+mod admin_pages;
 pub mod admin_parties;
 pub mod admin_reports;
 pub mod admin_roles;
@@ -34,6 +35,7 @@ pub mod campaign_groups;
 pub mod campanha;
 pub mod civic_notify;
 mod civic_sources;
+pub mod consulta_ap;
 pub mod consultas_ext;
 pub mod contact;
 pub mod discovery;
@@ -43,9 +45,15 @@ pub mod embed;
 pub mod federation;
 pub mod federation_feed;
 pub mod fediverso_admin;
-mod forum_federation;
+#[doc(hidden)]
+pub mod forum_federation;
+pub mod forum_inbound;
+pub mod forum_inbound_admin;
 mod forum_mailer;
+pub mod forum_outbound;
 pub mod govbr_oidc;
+mod groups;
+mod instance_html;
 pub mod intercoms;
 pub mod intercoms_config;
 pub mod interests;
@@ -70,6 +78,7 @@ pub mod notifications;
 pub mod og_cards;
 pub mod outbound;
 pub mod pii_registry;
+mod sso_oidc;
 
 /// Re-export: the identifier protection lives in `dsoc-db` so `dsoc-auth` can use it
 /// too (it writes the CPF), and a Tier-2 crate may not depend on the gateway.
@@ -236,7 +245,12 @@ pub fn api_router(state: AppState) -> Router {
         .merge(dsoc_auth::routes(state.clone()))
         .merge(whoami::routes(state.clone()))
         .merge(dsoc_notify::routes(state.clone()))
-        .merge(dsoc_events::routes(state.clone()))
+        .merge(
+            dsoc_events::routes(state.clone()).route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                authz_ext::admin_only,
+            )),
+        )
         .merge(dsoc_consensus::routes(state.clone()))
         .merge(dsoc_moderation::routes(state.clone()))
         .merge(dsoc_admin::routes(state.clone()))
@@ -254,6 +268,7 @@ pub fn api_router(state: AppState) -> Router {
         // Campaign panel of the party/directory (AGORA F7, #64).
         .merge(crate::party_dashboard::routes(state.clone()))
         .merge(crate::module_gate::routes(state.clone()))
+        .merge(crate::groups::routes(state.clone()))
         .merge(admin_ext::routes(state.clone()))
         // Super-admin: editar/ocultar/apagar mandato, proposta, partido (0.40, SOCRATES).
         .merge(admin_content::routes(state.clone()))
@@ -290,6 +305,9 @@ pub fn api_router(state: AppState) -> Router {
         .merge(dsoc_comments::routes(state.clone()))
         .merge(dsoc_forums::routes(state.clone()))
         .merge(dsoc_meetings::routes(state.clone()))
+        .merge(dsoc_meetings::minutes_routes(state.clone()).route_layer(
+            middleware::from_fn_with_state(state.clone(), authz_ext::admin_only),
+        ))
         .merge(dsoc_budgets::routes(state.clone()))
         .merge(dsoc_surveys::routes(state.clone()))
         .merge(dsoc_accountability::routes(state.clone()))
@@ -357,6 +375,7 @@ pub fn api_router(state: AppState) -> Router {
         .merge(admin_interests::routes(state.clone()))
         .merge(admin_consultations::routes(state.clone()))
         .merge(admin_forums::routes(state.clone()))
+        .merge(forum_inbound_admin::routes(state.clone()))
         // SOCRATES: mirrors e-Cidadania Legislative Ideas as topics of the
         // `senado` forum (admin-curated, migration 0670).
         .merge(socrates_mirror::routes(state.clone()))
@@ -365,6 +384,7 @@ pub fn api_router(state: AppState) -> Router {
         .merge(webhooks::routes(state.clone()))
         // gov.br OIDC status (just the "enabled?"). Start/callback live at the root.
         .merge(govbr_oidc::api_routes(state.clone()))
+        .merge(sso_oidc::api_routes())
         // LGPD art. 18 — exportar/excluir dados pessoais.
         .merge(lgpd::routes(state.clone()))
         // Public statistics — used on the landing page to reinforce the thesis.
@@ -406,10 +426,20 @@ pub fn api_router(state: AppState) -> Router {
             threshold_policy::threshold_middleware,
         ));
 
-    // Serve the static DemocraciaBR front-end (Astro SSG, ADR-0009) at the same origin as the API
+    // Serve the static front-end (Astro SSG, ADR-0009) at the same origin as the API
     // (no CORS). WEB_ROOT defaults to /srv/web (baked into the image); a missing dir just 404s.
     let web_root = std::env::var("WEB_ROOT").unwrap_or_else(|_| "/srv/web".to_string());
-    let static_site = ServeDir::new(web_root).append_index_html_on_directories(true);
+    let static_site = Router::new()
+        .fallback_service(ServeDir::new(web_root).append_index_html_on_directories(true))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            instance_html::apply_site_name,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            admin_pages::guard,
+        ))
+        .layer(middleware::from_fn(sso_oidc::signup_page_redirect));
 
     // Federation PUBLIC surface lives at the root (NOT under /api/v1): /.well-known/webfinger,
     // /actors/<handle>, /actors/<handle>/{inbox,outbox,followers,following}. These are read by
@@ -432,6 +462,7 @@ pub fn api_router(state: AppState) -> Router {
         // gov.br OIDC — start/callback at the root because gov.br requires
         // `redirect_uri` to be exactly `<origin>/auth/govbr/callback`.
         .merge(govbr_oidc::root_routes(state.clone()))
+        .merge(sso_oidc::root_routes(state.clone()))
         // Forums (/f/*): SPA fallback — the front end routes client-side; any path
         // serves the same f/index.html (forums/topics created at runtime never 404).
         .merge(forums_spa_routes(state.clone()))
@@ -459,7 +490,11 @@ async fn forums_spa(
     let Ok(bytes) = tokio::fs::read(format!("{web_root}/f/index.html")).await else {
         return axum::http::StatusCode::NOT_FOUND.into_response();
     };
+    let site_name = instance_html::current_site_name(&state).await;
     let mut html = String::from_utf8_lossy(&bytes).into_owned();
+    html = instance_html::InstancePatch::load(&state)
+        .await
+        .apply(&html);
 
     if let Some(axum::extract::Path(p)) = path {
         if let Some(rest) = p.strip_prefix("topico/") {
@@ -468,7 +503,8 @@ async fn forums_spa(
                 let row: Option<(String, String, String)> = sqlx::query_as(
                     "SELECT t.title, t.body, f.name FROM forum_topic t \
                      JOIN forum f ON f.id = t.forum_id \
-                     WHERE t.id = $1 AND t.hidden_at IS NULL",
+                     WHERE t.id = $1 AND t.hidden_at IS NULL \
+                       AND forum_readable(t.forum_id, NULL)",
                 )
                 .bind(id)
                 .fetch_optional(&state.db)
@@ -488,16 +524,17 @@ async fn forums_spa(
                             ""
                         };
                     let origin = std::env::var("PUBLIC_ORIGIN")
-                        .unwrap_or_else(|_| "https://democracia.social.br".to_owned());
+                        .unwrap_or_else(|_| "http://localhost:8080".to_owned());
                     let tags = format!(
                         "<meta property=\"og:title\" content=\"{t}\"/>\
                          <meta property=\"og:description\" content=\"{d}\"/>\
                          <meta property=\"og:type\" content=\"article\"/>\
-                         <meta property=\"og:site_name\" content=\"DemocraciaBR\"/>\
+                         <meta property=\"og:site_name\" content=\"{sn}\"/>\
                          <meta property=\"og:url\" content=\"{o}/f/{p}\"/>\
                          <meta name=\"twitter:card\" content=\"summary\"/>",
                         t = esc(&format!("{title} — {forum_name}")),
                         d = esc(&desc),
+                        sn = esc(&site_name),
                         o = origin.trim_end_matches('/'),
                         p = esc(&p),
                     );
@@ -517,7 +554,7 @@ async fn forums_spa(
                         if a < b {
                             html.replace_range(
                                 a..b + "</title>".len(),
-                                &format!("<title>{} — DemocraciaBR</title>", esc(&title)),
+                                &format!("<title>{} — {}</title>", esc(&title), esc(&site_name)),
                             );
                         }
                     }

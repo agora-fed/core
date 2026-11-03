@@ -1,16 +1,17 @@
-//! # Consultas participativas (0.44.0, migration 0531) — Fase 3.3.
+//! # Consultas participativas (0.44.0, migration 0531; kinds: 0689).
 //!
-//! The `dsoc-consultations` crate models a consultation + questions with an answer
-//! window, but: (1) every read required a login (org-scoping via `CallerId`) and
-//! (2) there was NO way for a citizen to answer. This surface closes both
-//! — a PUBLIC read and a real answering mechanism (agree/neutral/disagree,
-//! one per citizen per question, editable) — reusing the existing tables +
-//! `consultation_response` (0531). Runtime queries (no sqlx cache regeneration).
+//! Two kinds of participatory spaces:
 //!
-//! - `GET  /consultas`                 — PUBLIC list (title, status, window, question count).
+//! - **consulta** — open federated poll (ActivityPub `Question`). Anyone can view
+//!   and, in a future release, federated actors will be able to vote.
+//! - **plebiscito** — agree/neutral/disagree, restricted to SSO-authenticated
+//!   members of the instance (citizen must have `oidc_subject IS NOT NULL`).
+//!
+//! Endpoints:
+//! - `GET  /consultas`                 — PUBLIC list (title, status, kind, window, question count).
 //! - `GET  /consultas/{id}`            — PUBLIC detail: questions + aggregate + my answer.
 //! - `POST /consultas`                 — create (gate: platform admin OR politician).
-//! - `POST /consultas/{id}/responder`  — a logged-in citizen answers (only while the consultation is open).
+//! - `POST /consultas/{id}/responder`  — a logged-in citizen answers (only while open; plebiscito requires SSO).
 //! - `POST /consultas/{id}/close`      — close (gate: platform admin OR politician).
 
 use std::collections::{HashMap, HashSet};
@@ -33,12 +34,14 @@ const MAX_PROMPT: usize = 500;
 const MAX_QUESTIONS: usize = 20;
 const LIST_LIMIT: i64 = 100;
 const ANSWERS: [&str; 3] = ["concordo", "neutro", "discordo"];
+const VALID_KINDS: [&str; 2] = ["consulta", "plebiscito"];
 
 pub fn routes(state: AppState) -> Router<()> {
     Router::new()
         .route("/consultas", get(list).post(create))
         .route("/consultas/{id}", get(detail))
         .route("/consultas/{id}/responder", post(responder))
+        .route("/consultas/{id}/votar", post(votar))
         .route("/consultas/{id}/close", post(close))
         .with_state(state)
 }
@@ -115,6 +118,7 @@ async fn require_manager(db: &PgPool, headers: &HeaderMap) -> Result<Uuid, Respo
 struct ConsultaSummary {
     id: Uuid,
     title: String,
+    kind: String,
     status: String,
     opens_at: DateTime<Utc>,
     closes_at: DateTime<Utc>,
@@ -130,19 +134,31 @@ struct Tally {
 }
 
 #[derive(Debug, Serialize)]
+struct VoteTally {
+    votes: i64,
+}
+
+#[derive(Debug, Serialize)]
 struct QuestionResult {
     id: Uuid,
     prompt: String,
     position: i32,
-    tally: Tally,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tally: Option<Tally>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vote_tally: Option<VoteTally>,
     /// The authenticated caller's answer (`None` = did not answer / anonymous).
     my_answer: Option<String>,
+    /// The question_id the caller voted for (consulta kind only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    my_vote: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
 struct ConsultaDetail {
     id: Uuid,
     title: String,
+    kind: String,
     status: String,
     opens_at: DateTime<Utc>,
     closes_at: DateTime<Utc>,
@@ -152,9 +168,15 @@ struct ConsultaDetail {
 #[derive(Debug, Deserialize)]
 struct CreateBody {
     title: String,
+    #[serde(default = "default_kind")]
+    kind: String,
     opens_at: DateTime<Utc>,
     closes_at: DateTime<Utc>,
     questions: Vec<String>,
+}
+
+fn default_kind() -> String {
+    "plebiscito".to_owned()
 }
 
 #[derive(Debug, Deserialize)]
@@ -172,20 +194,32 @@ struct ResponderBody {
 // GET /consultas — public list
 // ---------------------------------------------------------------------------
 
-async fn list(State(state): State<AppState>) -> Response {
-    let rows: Result<Vec<ConsultaSummary>, sqlx::Error> = sqlx::query_as(
-        r"SELECT c.id, c.title, c.status, c.opens_at, c.closes_at,
+#[derive(Debug, Deserialize)]
+struct ListQuery {
+    kind: Option<String>,
+}
+
+async fn list(
+    State(state): State<AppState>,
+    axum::extract::Query(q): axum::extract::Query<ListQuery>,
+) -> Response {
+    let mut qb = sqlx::QueryBuilder::new(
+        r"SELECT c.id, c.title, c.kind, c.status, c.opens_at, c.closes_at,
                  (SELECT count(*) FROM consultations_consultation_question q
                    WHERE q.consultation_id = c.id) AS question_count
             FROM consultations_consultation c
-           WHERE c.org_id = $1
-           ORDER BY c.created_at DESC
-           LIMIT $2",
-    )
-    .bind(DEFAULT_ORG_UUID)
-    .bind(LIST_LIMIT)
-    .fetch_all(&state.db)
-    .await;
+           WHERE c.org_id = ",
+    );
+    qb.push_bind(DEFAULT_ORG_UUID);
+    if let Some(ref kind) = q.kind {
+        if VALID_KINDS.contains(&kind.as_str()) {
+            qb.push(" AND c.kind = ").push_bind(kind.clone());
+        }
+    }
+    qb.push(" ORDER BY c.created_at DESC LIMIT ")
+        .push_bind(LIST_LIMIT);
+    let rows: Result<Vec<ConsultaSummary>, sqlx::Error> =
+        qb.build_query_as().fetch_all(&state.db).await;
     match rows {
         Ok(items) => (StatusCode::OK, Json(ApiResponse::ok(items))).into_response(),
         Err(err) => {
@@ -204,8 +238,8 @@ async fn detail(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Response {
-    let head: Option<(String, String, DateTime<Utc>, DateTime<Utc>)> = match sqlx::query_as(
-        "SELECT title, status, opens_at, closes_at FROM consultations_consultation WHERE id = $1",
+    let head: Option<(String, String, String, DateTime<Utc>, DateTime<Utc>)> = match sqlx::query_as(
+        "SELECT title, kind, status, opens_at, closes_at FROM consultations_consultation WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(&state.db)
@@ -217,7 +251,7 @@ async fn detail(
             return storage_error();
         }
     };
-    let Some((title, status, opens_at, closes_at)) = head else {
+    let Some((title, kind, status, opens_at, closes_at)) = head else {
         return fail(
             StatusCode::NOT_FOUND,
             "not_found",
@@ -241,66 +275,123 @@ async fn detail(
     };
     let qids: Vec<Uuid> = questions.iter().map(|(qid, _, _)| *qid).collect();
 
-    // Aggregated per (question, answer).
-    let tallies: Vec<(Uuid, String, i64)> = match sqlx::query_as(
-        r"SELECT question_id, answer, count(*)
-            FROM consultation_response
-           WHERE question_id = ANY($1)
-           GROUP BY question_id, answer",
-    )
-    .bind(&qids)
-    .fetch_all(&state.db)
-    .await
-    {
-        Ok(t) => t,
-        Err(err) => {
-            tracing::error!(?err, "consultas detail: tally");
-            return storage_error();
-        }
-    };
-    let mut by_q: HashMap<Uuid, (i64, i64, i64)> = HashMap::new();
-    for (qid, answer, n) in tallies {
-        let e = by_q.entry(qid).or_insert((0, 0, 0));
-        match answer.as_str() {
-            "concordo" => e.0 += n,
-            "neutro" => e.1 += n,
-            "discordo" => e.2 += n,
-            _ => {}
-        }
-    }
+    let is_consulta = kind == "consulta";
 
-    // My answers (only with an authenticated caller).
-    let mut mine: HashMap<Uuid, String> = HashMap::new();
-    if let Some(citizen) = caller_citizen(&headers) {
-        match sqlx::query_as::<_, (Uuid, String)>(
-            r"SELECT question_id, answer FROM consultation_response
-               WHERE citizen_id = $1 AND question_id = ANY($2)",
+    // Plebiscito: aggregated per (question, answer).
+    let mut by_q: HashMap<Uuid, (i64, i64, i64)> = HashMap::new();
+    if !is_consulta {
+        let tallies: Vec<(Uuid, String, i64)> = match sqlx::query_as(
+            r"SELECT question_id, answer, count(*)
+                FROM consultation_response
+               WHERE question_id = ANY($1)
+               GROUP BY question_id, answer",
         )
-        .bind(citizen)
         .bind(&qids)
         .fetch_all(&state.db)
         .await
         {
-            Ok(rows) => mine = rows.into_iter().collect(),
-            Err(err) => tracing::error!(?err, "consultas detail: mine"),
+            Ok(t) => t,
+            Err(err) => {
+                tracing::error!(?err, "consultas detail: tally");
+                return storage_error();
+            }
+        };
+        for (qid, answer, n) in tallies {
+            let e = by_q.entry(qid).or_insert((0, 0, 0));
+            match answer.as_str() {
+                "concordo" => e.0 += n,
+                "neutro" => e.1 += n,
+                "discordo" => e.2 += n,
+                _ => {}
+            }
+        }
+    }
+
+    // Consulta: vote counts per question (option).
+    let mut vote_counts: HashMap<Uuid, i64> = HashMap::new();
+    if is_consulta {
+        let rows: Vec<(Uuid, i64)> = match sqlx::query_as(
+            r"SELECT question_id, count(*) FROM consultation_vote
+               WHERE question_id = ANY($1)
+               GROUP BY question_id",
+        )
+        .bind(&qids)
+        .fetch_all(&state.db)
+        .await
+        {
+            Ok(r) => r,
+            Err(err) => {
+                tracing::error!(?err, "consultas detail: vote_tally");
+                return storage_error();
+            }
+        };
+        vote_counts = rows.into_iter().collect();
+    }
+
+    // My answers / votes (only with an authenticated caller).
+    let mut mine: HashMap<Uuid, String> = HashMap::new();
+    let mut my_voted_question: Option<Uuid> = None;
+    if let Some(citizen) = caller_citizen(&headers) {
+        if is_consulta {
+            match sqlx::query_scalar::<_, Uuid>(
+                r"SELECT question_id FROM consultation_vote
+                   WHERE consultation_id = $1 AND citizen_id = $2",
+            )
+            .bind(id)
+            .bind(citizen)
+            .fetch_optional(&state.db)
+            .await
+            {
+                Ok(v) => my_voted_question = v,
+                Err(err) => tracing::error!(?err, "consultas detail: my_vote"),
+            }
+        } else {
+            match sqlx::query_as::<_, (Uuid, String)>(
+                r"SELECT question_id, answer FROM consultation_response
+                   WHERE citizen_id = $1 AND question_id = ANY($2)",
+            )
+            .bind(citizen)
+            .bind(&qids)
+            .fetch_all(&state.db)
+            .await
+            {
+                Ok(rows) => mine = rows.into_iter().collect(),
+                Err(err) => tracing::error!(?err, "consultas detail: mine"),
+            }
         }
     }
 
     let results = questions
         .into_iter()
         .map(|(qid, prompt, position)| {
-            let (c, n, d) = by_q.get(&qid).copied().unwrap_or((0, 0, 0));
-            QuestionResult {
-                id: qid,
-                prompt,
-                position,
-                tally: Tally {
-                    concordo: c,
-                    neutro: n,
-                    discordo: d,
-                    total: c + n + d,
-                },
-                my_answer: mine.get(&qid).cloned(),
+            if is_consulta {
+                QuestionResult {
+                    id: qid,
+                    prompt,
+                    position,
+                    tally: None,
+                    vote_tally: Some(VoteTally {
+                        votes: vote_counts.get(&qid).copied().unwrap_or(0),
+                    }),
+                    my_answer: None,
+                    my_vote: my_voted_question.map(|vq| vq == qid),
+                }
+            } else {
+                let (c, n, d) = by_q.get(&qid).copied().unwrap_or((0, 0, 0));
+                QuestionResult {
+                    id: qid,
+                    prompt,
+                    position,
+                    tally: Some(Tally {
+                        concordo: c,
+                        neutro: n,
+                        discordo: d,
+                        total: c + n + d,
+                    }),
+                    vote_tally: None,
+                    my_answer: mine.get(&qid).cloned(),
+                    my_vote: None,
+                }
             }
         })
         .collect();
@@ -310,6 +401,7 @@ async fn detail(
         Json(ApiResponse::ok(ConsultaDetail {
             id,
             title,
+            kind,
             status,
             opens_at,
             closes_at,
@@ -328,8 +420,17 @@ async fn create(
     headers: HeaderMap,
     Json(body): Json<CreateBody>,
 ) -> Response {
-    if let Err(resp) = require_manager(&state.db, &headers).await {
-        return resp;
+    let creator = match require_manager(&state.db, &headers).await {
+        Ok(citizen) => citizen,
+        Err(resp) => return resp,
+    };
+    let kind = body.kind.trim().to_lowercase();
+    if !VALID_KINDS.contains(&kind.as_str()) {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_kind",
+            "Tipo deve ser 'consulta' ou 'plebiscito'.",
+        );
     }
     let title = body.title.trim();
     if title.is_empty() || title.chars().count() > MAX_TITLE {
@@ -375,14 +476,16 @@ async fn create(
         }
     };
     let cid: Uuid = match sqlx::query_scalar(
-        r"INSERT INTO consultations_consultation (id, org_id, title, opens_at, closes_at, status, created_at)
-          VALUES (gen_random_uuid(), $1, $2, $3, $4, 'open', now())
+        r"INSERT INTO consultations_consultation (id, org_id, title, kind, opens_at, closes_at, status, created_at, created_by)
+          VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 'open', now(), $6)
           RETURNING id",
     )
     .bind(DEFAULT_ORG_UUID)
     .bind(title)
+    .bind(&kind)
     .bind(body.opens_at)
     .bind(body.closes_at)
+    .bind(creator)
     .fetch_one(&mut *tx)
     .await
     {
@@ -440,8 +543,8 @@ async fn responder(
     }
 
     // Does the consultation exist and is it open?
-    let status: Option<String> =
-        match sqlx::query_scalar("SELECT status FROM consultations_consultation WHERE id = $1")
+    let head: Option<(String, String)> =
+        match sqlx::query_as("SELECT kind, status FROM consultations_consultation WHERE id = $1")
             .bind(id)
             .fetch_optional(&state.db)
             .await
@@ -452,21 +555,50 @@ async fn responder(
                 return storage_error();
             }
         };
-    match status.as_deref() {
-        None => {
+    let Some((kind, status)) = head else {
+        return fail(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "Consulta não encontrada.",
+        );
+    };
+    if kind == "consulta" {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "wrong_kind",
+            "Consultas usam o endpoint /votar, não /responder.",
+        );
+    }
+    if status != "open" {
+        return fail(
+            StatusCode::CONFLICT,
+            "closed",
+            "Esta consulta está encerrada.",
+        );
+    }
+
+    // Plebiscitos are restricted to SSO-authenticated members.
+    if kind == "plebiscito" {
+        let is_sso: bool = match sqlx::query_scalar(
+            "SELECT oidc_subject IS NOT NULL FROM citizen WHERE id = $1",
+        )
+        .bind(citizen)
+        .fetch_optional(&state.db)
+        .await
+        {
+            Ok(Some(v)) => v,
+            Ok(None) => false,
+            Err(err) => {
+                tracing::error!(?err, "consultas responder: sso check");
+                return storage_error();
+            }
+        };
+        if !is_sso {
             return fail(
-                StatusCode::NOT_FOUND,
-                "not_found",
-                "Consulta não encontrada.",
-            )
-        }
-        Some("open") => {}
-        Some(_) => {
-            return fail(
-                StatusCode::CONFLICT,
-                "closed",
-                "Esta consulta está encerrada.",
-            )
+                StatusCode::FORBIDDEN,
+                "sso_required",
+                "Plebiscitos são restritos a membros autenticados via SSO da Orgânica.",
+            );
         }
     }
 
@@ -536,6 +668,101 @@ async fn responder(
         )),
     )
         .into_response()
+}
+
+// ---------------------------------------------------------------------------
+// POST /consultas/{id}/votar — single-choice vote (consulta kind)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+struct VotarBody {
+    question_id: Uuid,
+}
+
+async fn votar(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(body): Json<VotarBody>,
+) -> Response {
+    let Some(citizen) = caller_citizen(&headers) else {
+        return unauthorized();
+    };
+
+    let head: Option<(String, String)> =
+        match sqlx::query_as("SELECT kind, status FROM consultations_consultation WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.db)
+            .await
+        {
+            Ok(s) => s,
+            Err(err) => {
+                tracing::error!(?err, "consultas votar: status");
+                return storage_error();
+            }
+        };
+    let Some((kind, status)) = head else {
+        return fail(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "Consulta não encontrada.",
+        );
+    };
+    if kind != "consulta" {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "wrong_kind",
+            "Plebiscitos usam o endpoint /responder, não /votar.",
+        );
+    }
+    if status != "open" {
+        return fail(
+            StatusCode::CONFLICT,
+            "closed",
+            "Esta consulta está encerrada.",
+        );
+    }
+
+    let valid: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM consultations_consultation_question WHERE id = $1 AND consultation_id = $2)",
+    )
+    .bind(body.question_id)
+    .bind(id)
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(false);
+    if !valid {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "unknown_question",
+            "Opção não pertence à consulta.",
+        );
+    }
+
+    match sqlx::query(
+        r"INSERT INTO consultation_vote (consultation_id, question_id, citizen_id)
+          VALUES ($1, $2, $3)
+          ON CONFLICT ON CONSTRAINT consultation_vote_one_per_voter
+          DO UPDATE SET question_id = EXCLUDED.question_id, created_at = now()",
+    )
+    .bind(id)
+    .bind(body.question_id)
+    .bind(citizen)
+    .execute(&state.db)
+    .await
+    {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(ApiResponse::ok(
+                serde_json::json!({ "voted": body.question_id }),
+            )),
+        )
+            .into_response(),
+        Err(err) => {
+            tracing::error!(?err, "consultas votar: upsert");
+            storage_error()
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

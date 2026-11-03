@@ -1,7 +1,8 @@
 <script lang="ts">
   // Login: e-mail + senha. On success the gateway sets a session cookie.
   import { onMount } from 'svelte';
-  import { login, getGovbrStatus } from '../../lib/api';
+  import { apiGetCredentialed, login, getGovbrStatus, getSsoStatus } from '../../lib/api';
+  import SsoButton from './SsoButton.svelte';
   import Input from '../ui/Input.svelte';
   import Button from '../ui/Button.svelte';
   import Alert from '../ui/Alert.svelte';
@@ -12,8 +13,52 @@
   let busy = $state(false);
   let serverError = $state<string | null>(null);
   let govbrEnabled = $state(false);
+  let passwordHidden = $state(false);
+
+  const SSO_ERRORS: Record<string, string> = {
+    organizacao: 'Esta conta não pertence a esta comunidade.',
+    conta: 'Sua conta não pode entrar agora. Fale com a moderação.',
+  };
+
+  /** The session cookie is HttpOnly, so ask the API who is signed in and go on. */
+  async function enterIfSignedIn(params: URLSearchParams): Promise<boolean> {
+    const who = await apiGetCredentialed<{ citizen_id: string; public_handle?: string }>(
+      '/api/v1/me/whoami',
+    );
+    if (!who.success || !who.data?.citizen_id) return false;
+    try {
+      localStorage.setItem('dsoc_citizen', who.data.citizen_id);
+    } catch {
+      /* storage may be blocked; the session cookie is still set */
+    }
+    window.location.replace(destination(params));
+    return true;
+  }
+
+  /** Where to go after signing in; never an outside site or the login page itself. */
+  function destination(params: URLSearchParams): string {
+    const next = params.get('next') ?? '/';
+    if (!next.startsWith('/') || next.startsWith('//') || next.startsWith('/entrar')) return '/';
+    return next;
+  }
 
   onMount(async () => {
+    const query = new URLSearchParams(window.location.search);
+    if (query.get('sso') === 'ok') {
+      if (!(await enterIfSignedIn(query))) {
+        serverError = 'Não foi possível concluir o login. Tente novamente.';
+      }
+      return;
+    }
+    // `?admin=1` is the break-glass form; an error must stay visible rather than redirect.
+    if (query.get('admin') !== '1' && !query.get('sso_erro') && (await enterIfSignedIn(query))) return;
+    const ssoError = query.get('sso_erro');
+    if (ssoError) {
+      serverError = SSO_ERRORS[ssoError] ?? 'Não foi possível entrar com essa conta. Tente novamente.';
+    }
+    const sso = await getSsoStatus();
+    // `?admin=1` keeps the password form reachable if the provider is down.
+    passwordHidden = sso.ok && sso.data?.only === true && query.get('admin') !== '1';
     const r = await getGovbrStatus();
     govbrEnabled = r.ok && r.data?.enabled === true;
     // Erro devolvido pelo callback do gov.br (query ?govbr_erro=...).
@@ -67,6 +112,8 @@
   }
 </script>
 
+<SsoButton />
+
 {#if govbrEnabled}
   <a class="govbr-btn" href="/auth/govbr/start" aria-label="Entrar com gov.br">
     <span class="govbr-mark" aria-hidden="true">gov.br</span>
@@ -75,6 +122,7 @@
   <p class="or muted">ou</p>
 {/if}
 
+{#if !passwordHidden}
 <form class="auth-form" onsubmit={submit} novalidate>
   <Input
     id="l-email"
@@ -130,6 +178,7 @@
     <a href="/recuperar-senha">Esqueci minha senha</a>
   </p>
 </form>
+{/if}
 
 <style>
   .govbr-btn {

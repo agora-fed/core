@@ -1,11 +1,12 @@
 ---
+import { SITE_NAME } from '../lib/site';
 // Hashtag timeline page. Query string carries the tag (?nome=<name>) —
 // same SSG pattern as /publicacao and /perfil.
 import AppShellLayout from '../layouts/AppShellLayout.astro';
 import HashtagTimeline from '../components/islands/HashtagTimeline.svelte';
 
 const description =
-  'Publicações agrupadas por hashtag, cruzando DemocraciaBR e o fediverso.';
+  `Publicações agrupadas por hashtag, cruzando ${SITE_NAME} e o fediverso.`;
 ---
 
 <AppShellLayout title="Hashtag" {description} noindex>

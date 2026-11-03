@@ -1,10 +1,11 @@
 ---
+import { SITE_NAME } from '../lib/site';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import BrandLine from '../components/BrandLine.astro';
 import RegisterForm from '../components/islands/RegisterForm.svelte';
 
 const description =
-  'Crie sua conta DemocraciaBR com e-mail, senha e CPF e participe da cobrança pública aos mandatos.';
+  `Crie sua conta ${SITE_NAME} com e-mail, senha e CPF e participe da cobrança pública aos mandatos.`;
 ---
 
 <BaseLayout title="Criar conta" {description} noindex>
@@ -13,10 +14,11 @@ const description =
       <div class="auth-card card">
         <BrandLine size={34} class="logo" />
         <h1>Criar conta</h1>
-        <p class="muted">
+        <p class="muted" data-requires="mandates">
           Participe da plataforma onde a demanda popular vira responsabilidade
           pública.
         </p>
+        <p class="muted" data-when-off="mandates">Participe das decisões da sua comunidade.</p>
         <RegisterForm client:load />
       </div>
     </div>

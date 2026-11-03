@@ -9,10 +9,11 @@ import AdminUsersPage from '../../components/islands/AdminUsersPage.svelte';
 >
   <header class="head">
     <h1>Contas</h1>
-    <p class="muted">
+    <p data-requires="mandates" class="muted">
       Busca, filtros por partido/papel/tipo cívico + drawer com edição e
       ações de moderação (suspender, silenciar).
     </p>
+    <p class="muted" data-when-off="mandates">Busca, filtros por papel, edição e ações de moderação.</p>
   </header>
   <AdminUsersPage client:load />
 </AdminLayout>

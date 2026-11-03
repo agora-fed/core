@@ -8,6 +8,7 @@
   // Enter executes.
   import { onMount, tick } from 'svelte';
   import Icon from '../ui/Icon.svelte';
+  import { visibleForModules } from '../../lib/modules';
   import { setChoice, type ThemeChoice } from '../../lib/theme';
 
   interface Command {
@@ -18,6 +19,7 @@
     kbd?: string;
     action: () => void;
     when?: 'always' | 'auth' | 'anon';
+    requires?: string;
   }
 
   const nav = (href: string) => () => (window.location.href = href);
@@ -31,19 +33,21 @@
   });
 
   const commands = $derived<Command[]>(
-    (
+    visibleForModules(
       [
         { id: 'go-home', label: 'Ir para o início', icon: 'home', action: nav('/') },
-        { id: 'go-feed', label: 'Ir para o feed', icon: 'feed', action: nav('/feed'), when: 'auth' },
+        { id: 'go-feed', label: 'Ir para o feed', icon: 'feed', action: nav('/feed'), when: 'auth', requires: 'federation' },
         { id: 'go-notif', label: 'Notificações', icon: 'bell', action: nav('/notificacoes'), when: 'auth' },
         { id: 'go-search', label: 'Buscar no fediverso', icon: 'search', action: nav('/buscar') },
-        { id: 'go-explore', label: 'Explorar', icon: 'globe', action: nav('/explorar') },
-        { id: 'go-politicos', label: 'Placar dos políticos', icon: 'users', action: nav('/politicos') },
-        { id: 'go-partidos', label: 'Partidos', icon: 'party', action: nav('/partidos') },
-        { id: 'go-propostas', label: 'Propostas', icon: 'ballot', action: nav('/propostas') },
-        { id: 'go-foruns', label: 'Fóruns', icon: 'chat', action: nav('/f/') },
-        { id: 'go-consultas', label: 'Consultas', icon: 'mic', action: nav('/consultas') },
-        { id: 'act-propor', label: 'Propor algo novo', hint: 'Ação', icon: 'plus', action: nav('/propor') },
+        { id: 'go-explore', label: 'Explorar', icon: 'globe', action: nav('/explorar'), requires: 'federation' },
+        { id: 'go-politicos', label: 'Placar dos políticos', icon: 'users', action: nav('/politicos'), requires: 'mandates' },
+        { id: 'go-partidos', label: 'Partidos', icon: 'party', action: nav('/partidos'), requires: 'mandates' },
+        { id: 'go-propostas', label: 'Propostas', icon: 'ballot', action: nav('/propostas'), requires: 'proposals' },
+        { id: 'go-foruns', label: 'Fóruns', icon: 'chat', action: nav('/f/'), requires: 'forums' },
+        { id: 'go-consultas', label: 'Consultas', icon: 'mic', action: nav('/consultas'), requires: 'consultations' },
+        { id: 'go-grupos', label: 'Grupos', icon: 'users', action: nav('/grupos'), requires: 'groups' },
+        { id: 'go-reunioes', label: 'Reuniões', icon: 'calendar', action: nav('/reunioes'), requires: 'meetings' },
+        { id: 'act-propor', label: 'Propor algo novo', hint: 'Ação', icon: 'plus', action: nav('/propor'), requires: 'proposals' },
         { id: 'act-config', label: 'Configurações', hint: 'Ação', icon: 'settings', action: nav('/configuracoes'), when: 'auth' },
         { id: 'act-login', label: 'Entrar', hint: 'Ação', icon: 'unlock', action: nav('/entrar'), when: 'anon' },
         { id: 'act-signup', label: 'Criar conta', hint: 'Ação', icon: 'plus', action: nav('/cadastrar'), when: 'anon' },

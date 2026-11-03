@@ -291,13 +291,14 @@ export interface ConsultationDto {
 export interface ConsultaSummary {
   id: string;
   title: string;
+  kind: 'consulta' | 'plebiscito';
   status: 'open' | 'closed';
   opens_at: string;
   closes_at: string;
   question_count: number;
 }
 
-/** Agregado das respostas de uma pergunta. */
+/** Agregado das respostas de uma pergunta (plebiscito). */
 export interface ConsultaTally {
   concordo: number;
   neutro: number;
@@ -305,19 +306,27 @@ export interface ConsultaTally {
   total: number;
 }
 
+/** Agregado de votos de uma opção (consulta single-choice). */
+export interface ConsultaVoteTally {
+  votes: number;
+}
+
 /** Pergunta de uma consulta, com agregado e a resposta do caller (se logado). */
 export interface ConsultaQuestion {
   id: string;
   prompt: string;
   position: number;
-  tally: ConsultaTally;
+  tally?: ConsultaTally;
+  vote_tally?: ConsultaVoteTally;
   my_answer: 'concordo' | 'neutro' | 'discordo' | null;
+  my_vote?: boolean;
 }
 
 /** Detalhe público de uma consulta. */
 export interface ConsultaDetail {
   id: string;
   title: string;
+  kind: 'consulta' | 'plebiscito';
   status: 'open' | 'closed';
   opens_at: string;
   closes_at: string;

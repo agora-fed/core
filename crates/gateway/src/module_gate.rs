@@ -106,6 +106,43 @@ async fn module_active(state: &AppState, org: Uuid, m: &ModuleManifest) -> bool 
     effective_active(flag_state(state, org, m.flag_key).await, m)
 }
 
+/// Which of `ids` are switched off in the org. Modules whose state could not be read stay out
+/// of the list: this only decides what the UI shows, and an outage should not reshape the menu.
+pub(crate) async fn inactive_for_ui(
+    state: &AppState,
+    org: Uuid,
+    ids: &[&'static str],
+) -> Vec<&'static str> {
+    let mut off = Vec::new();
+    for id in ids {
+        let Some(m) = module_catalog::find(id) else {
+            continue;
+        };
+        let found = flag_state(state, org, m.flag_key).await;
+        if found != FlagState::Unavailable && !effective_active(found, m) {
+            off.push(*id);
+        }
+    }
+    off
+}
+
+/// Which of `ids` are switched on in the org. A failed read counts as off, like the API gate.
+pub(crate) async fn active_for_ui(
+    state: &AppState,
+    org: Uuid,
+    ids: &[&'static str],
+) -> Vec<&'static str> {
+    let mut on = Vec::new();
+    for id in ids {
+        if let Some(m) = module_catalog::find(id) {
+            if module_active(state, org, m).await {
+                on.push(*id);
+            }
+        }
+    }
+    on
+}
+
 /// Gate for a handler: `Ok(())` when the module is active in the org, otherwise a ready 404 (a module off =
 /// the route "does not exist" for that org). An unknown id → Ok (never block what is not a module).
 pub async fn require_module(state: &AppState, org: Uuid, module_id: &str) -> Result<(), Response> {

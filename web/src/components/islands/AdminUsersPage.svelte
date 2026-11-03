@@ -247,7 +247,7 @@
       />
     </div>
     <div class="sel">
-      <label>
+      <label data-requires="mandates">
         <span>Partido (filiação)</span>
         <select bind:value={party} onchange={() => refresh()}>
           <option value="">Todos</option>
@@ -266,7 +266,7 @@
           <option value="none">Nenhum</option>
         </select>
       </label>
-      <label>
+      <label data-requires="mandates">
         <span>Papel partido</span>
         <select bind:value={partyRole} onchange={() => refresh()}>
           <option value="any">Todos</option>
@@ -275,7 +275,7 @@
           <option value="none">Nenhum</option>
         </select>
       </label>
-      <label>
+      <label data-requires="mandates">
         <span>Tipo cívico</span>
         <select bind:value={civicType} onchange={() => refresh()}>
           <option value="any">Todos</option>
@@ -308,9 +308,9 @@
             <th>Cidadão</th>
             <th>E-mail</th>
             <th>Perfil</th>
-            <th>Filiação</th>
+            <th data-requires="mandates">Filiação</th>
             <th>Papel</th>
-            <th>Partido admin</th>
+            <th data-requires="mandates">Partido admin</th>
             <th>Verif.</th>
             <th class="right">Criado</th>
             <th></th>
@@ -332,11 +332,15 @@
               <td class="mono small">{u.email ?? '—'}</td>
               <td>
                 <div class="chips">
-                  {#each civicBadges(u) as b}
-                    <Badge tone={b.tone} size="sm">{b.label}</Badge>
-                  {/each}
+                  <span class="gate-wrap" data-requires="mandates">
+                    {#each civicBadges(u) as b}
+                      <Badge tone={b.tone} size="sm">{b.label}</Badge>
+                    {/each}
+                  </span>
                   {#if u.titulo_status === 'validated' || u.titulo_status === 'verified'}
-                    <Badge tone="success" size="sm">título ✓</Badge>
+                    <span class="gate-wrap" data-requires="mandates">
+                      <Badge tone="success" size="sm">título ✓</Badge>
+                    </span>
                   {/if}
                   {#if u.cpf_status === 'validated'}
                     <Badge tone="success" size="sm">CPF ✓</Badge>
@@ -348,7 +352,7 @@
                   {/if}
                 </div>
               </td>
-              <td>
+              <td data-requires="mandates">
                 {#if u.party_sigla}
                   <Badge tone="accent" size="sm">{u.party_sigla}</Badge>
                 {:else}
@@ -362,7 +366,7 @@
                   <span class="muted small">—</span>
                 {/if}
               </td>
-              <td>
+              <td data-requires="mandates">
                 {#if u.party_admin_role}
                   <span class="mono small">
                     {u.party_admin_sigla}/{u.party_admin_role}
@@ -438,13 +442,13 @@
         <div><dt>Sexo</dt><dd>{genderLabel(editing.gender)}</dd></div>
         <div><dt>Nascimento</dt><dd>{fmtBirth(editing.birth_date)}</dd></div>
         <div><dt>CPF</dt><dd class="mono">{editing.cpf_masked ?? '— não informado —'}</dd></div>
-        <div><dt>Título</dt><dd>{tituloLabel(editing.titulo_status)}</dd></div>
+        <div data-requires="mandates"><dt>Título</dt><dd>{tituloLabel(editing.titulo_status)}</dd></div>
         <div><dt>Estado</dt><dd>{editing.uf ?? '—'}</dd></div>
         <div><dt>Município</dt><dd>{editing.municipio ?? '—'}</dd></div>
       </dl>
     </div>
 
-    <div class="field">
+    <div class="field" data-requires="mandates">
       <label for="d-party">Filiação partidária</label>
       <select id="d-party" bind:value={draftParty}>
         <option value="">— nenhum —</option>
@@ -486,7 +490,7 @@
       </select>
     </div>
 
-    <div class="field">
+    <div class="field" data-requires="mandates">
       <label for="d-pa">Papel de partido</label>
       <select id="d-pa" bind:value={draftPartyAdminRole}>
         <option value="none">— nenhum —</option>
@@ -783,4 +787,5 @@
   .alert-slot {
     margin-bottom: var(--sp-2);
   }
+  .gate-wrap { display: contents; }
 </style>

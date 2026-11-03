@@ -4,8 +4,17 @@ import svelte from '@astrojs/svelte';
 import sitemap from '@astrojs/sitemap';
 
 // Public canonical site URL (used for sitemap, canonical tags, Open Graph).
-// Override with the SITE env var in production.
-const SITE = process.env.SITE || 'https://democracia.social.br';
+// Each instance MUST set SITE in production (ActivityPub IDs are permanent).
+const SITE = process.env.SITE || 'http://localhost:4321';
+
+// Served by the gateway depending on the active modules, so not every instance has them.
+const INSTANCE_ONLY_PAGES = [
+  '/inicio-comunidade',
+  '/sobre-comunidade',
+  '/modulo-indisponivel',
+  '/grupos',
+  '/reunioes',
+];
 
 // https://astro.build/config
 //
@@ -17,7 +26,12 @@ const SITE = process.env.SITE || 'https://democracia.social.br';
 export default defineConfig({
   site: SITE,
   output: 'static',
-  integrations: [svelte(), sitemap()],
+  integrations: [
+    svelte(),
+    sitemap({
+      filter: (page) => !INSTANCE_ONLY_PAGES.some((path) => new URL(page).pathname.startsWith(path)),
+    }),
+  ],
   build: {
     inlineStylesheets: 'auto',
   },

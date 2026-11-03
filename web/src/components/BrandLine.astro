@@ -11,11 +11,15 @@ interface Props {
 const { size = 28, class: className } = Astro.props;
 const width = Math.round(size * (340 / 316));
 const fontSize = Math.round(size * 0.68);
+const SITE_NAME = (import.meta.env.PUBLIC_SITE_NAME as string | undefined) || 'AGORA';
+const ACCENT = (import.meta.env.PUBLIC_SITE_NAME_ACCENT as string | undefined) || '';
+const accented = ACCENT !== '' && SITE_NAME.endsWith(ACCENT);
+const namePrefix = accented ? SITE_NAME.slice(0, -ACCENT.length) : SITE_NAME;
 ---
 
 <span class:list={['brand-line', className]} style={`--brand-fs:${fontSize}px`}>
   <img src="/emblem.png" width={width} height={size} alt="" data-brand-logo />
-  <span class="brand-word" data-brand-name>Democracia<span class="brand-br">BR</span></span>
+  <span class="brand-word" data-brand-name>{namePrefix}{accented && <span class="brand-br">{ACCENT}</span>}</span>
 </span>
 
 <style>

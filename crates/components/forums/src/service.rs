@@ -202,6 +202,35 @@ impl ForumService {
             .map_err(map_sqlx)
     }
 
+    /// Resolve a path the viewer may read. Anything else looks like a forum that doesn't exist.
+    async fn readable_forum(
+        &self,
+        org: OrgId,
+        path: &str,
+        viewer: Option<Uuid>,
+    ) -> Result<ForumRow> {
+        let forum = self.resolve_or_materialize(org, path).await?;
+        if queries::forum_readable(&self.db, forum.id, viewer)
+            .await
+            .map_err(map_sqlx)?
+        {
+            Ok(forum)
+        } else {
+            Err(Error::NotFound("fórum não encontrado".to_owned()))
+        }
+    }
+
+    async fn ensure_topic_readable(&self, topic_id: Uuid, viewer: Option<Uuid>) -> Result<()> {
+        if queries::topic_readable(&self.db, topic_id, viewer)
+            .await
+            .map_err(map_sqlx)?
+        {
+            Ok(())
+        } else {
+            Err(Error::NotFound("tópico não encontrado".to_owned()))
+        }
+    }
+
     /// One level of the tree: the forum (when `path` is present) + materialized
     /// children + virtual sections of the territorial template not yet created.
     ///
@@ -212,9 +241,10 @@ impl ForumService {
         org: OrgId,
         path: Option<&str>,
         esfera: Option<&str>,
+        viewer: Option<Uuid>,
     ) -> Result<(Option<ForumRow>, Vec<ChildEntry>)> {
         let forum = match path {
-            Some(p) => Some(self.resolve_or_materialize(org, p).await?),
+            Some(p) => Some(self.readable_forum(org, p, viewer).await?),
             None => None,
         };
         let rows = queries::list_children(
@@ -226,6 +256,14 @@ impl ForumService {
         )
         .await
         .map_err(map_sqlx)?;
+        let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
+        let readable = queries::readable_forums(&self.db, &ids, viewer)
+            .await
+            .map_err(map_sqlx)?;
+        let rows: Vec<ForumRow> = rows
+            .into_iter()
+            .filter(|r| readable.contains(&r.id))
+            .collect();
         let mut children: Vec<ChildEntry> = rows
             .iter()
             .map(|r| ChildEntry {
@@ -285,7 +323,9 @@ impl ForumService {
         new: &NewTopic,
         targets: &[Uuid],
     ) -> Result<TopicRow> {
-        let forum = self.resolve_or_materialize(org, path).await?;
+        let forum = self
+            .readable_forum(org, path, Some(author.as_uuid()))
+            .await?;
         let targets = domain::sanitize_targets(targets);
         let now = self.clock.now();
         let mut tx = self.db.begin().await.map_err(map_sqlx)?;
@@ -330,13 +370,26 @@ impl ForumService {
         hot: bool,
         limit: i64,
         offset: i64,
+        viewer: Option<Uuid>,
     ) -> Result<(ForumRow, Vec<TopicRow>)> {
-        let forum = self.resolve_or_materialize(org, path).await?;
+        let forum = self.readable_forum(org, path, viewer).await?;
         let topics =
             queries::list_topics(&self.db, forum.id, hot, limit.clamp(1, 100), offset.max(0))
                 .await
                 .map_err(map_sqlx)?;
         Ok((forum, topics))
+    }
+
+    /// The forum's access level: `public`, `members` or `list`.
+    ///
+    /// # Errors
+    /// [`Error::Storage`].
+    pub async fn forum_visibility(&self, forum_id: Uuid) -> Result<String> {
+        sqlx::query_scalar("SELECT visibility FROM forum WHERE id = $1")
+            .bind(forum_id)
+            .fetch_one(&self.db)
+            .await
+            .map_err(map_sqlx)
     }
 
     /// Council transparency for a MUNICIPAL forum's header: cross-references the
@@ -372,8 +425,9 @@ impl ForumService {
         &self,
         org: OrgId,
         limit: i64,
+        viewer: Option<Uuid>,
     ) -> Result<Vec<queries::RecentTopicRow>> {
-        queries::list_recent_topics(&self.db, org.as_uuid(), limit.clamp(1, 50))
+        queries::list_recent_topics(&self.db, org.as_uuid(), viewer, limit.clamp(1, 50))
             .await
             .map_err(map_sqlx)
     }
@@ -384,7 +438,8 @@ impl ForumService {
     ///
     /// # Errors
     /// [`Error::NotFound`]/[`Error::Storage`].
-    pub async fn get_topic(&self, id: Uuid) -> Result<TopicDetail> {
+    pub async fn get_topic(&self, id: Uuid, viewer: Option<Uuid>) -> Result<TopicDetail> {
+        self.ensure_topic_readable(id, viewer).await?;
         let mut tx = self.db.begin().await.map_err(map_sqlx)?;
         let Some(topic) = queries::lock_topic(&mut *tx, id).await.map_err(map_sqlx)? else {
             return Err(Error::NotFound("tópico não encontrado".to_owned()));
@@ -452,7 +507,13 @@ impl ForumService {
     ///
     /// # Errors
     /// [`Error::NotFound`] when the topic does not exist; [`Error::Storage`] on I/O failure.
-    pub async fn topic_consensus(&self, topic_id: Uuid, limit: usize) -> Result<TopicConsensus> {
+    pub async fn topic_consensus(
+        &self,
+        topic_id: Uuid,
+        limit: usize,
+        viewer: Option<Uuid>,
+    ) -> Result<TopicConsensus> {
+        self.ensure_topic_readable(topic_id, viewer).await?;
         let limit = limit.clamp(1, 20);
         let mut tx = self.db.begin().await.map_err(map_sqlx)?;
         // lock_topic doubles as the existence check and yields forum_id for the electorate.
@@ -513,6 +574,8 @@ impl ForumService {
         citizen: CitizenId,
         stance: Stance,
     ) -> Result<TopicRow> {
+        self.ensure_topic_readable(topic_id, Some(citizen.as_uuid()))
+            .await?;
         let now = self.clock.now();
         let mut tx = self.db.begin().await.map_err(map_sqlx)?;
         let Some(topic) = queries::lock_topic(&mut *tx, topic_id)
@@ -542,6 +605,8 @@ impl ForumService {
         body: &str,
         stance: Option<Stance>,
     ) -> Result<TopicRow> {
+        self.ensure_topic_readable(topic_id, Some(citizen.as_uuid()))
+            .await?;
         let body = domain::validate_comment(body)?;
         let now = self.clock.now();
         let mut tx = self.db.begin().await.map_err(map_sqlx)?;
@@ -584,6 +649,12 @@ impl ForumService {
         citizen: CitizenId,
         stance: Stance,
     ) -> Result<(queries::CommentRow, TopicRow)> {
+        if !queries::comment_readable(&self.db, comment_id, Some(citizen.as_uuid()))
+            .await
+            .map_err(map_sqlx)?
+        {
+            return Err(Error::NotFound("argumento não encontrado".to_owned()));
+        }
         let now = self.clock.now();
         let mut tx = self.db.begin().await.map_err(map_sqlx)?;
         let comment = queries::get_comment(&mut *tx, comment_id)

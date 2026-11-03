@@ -17,9 +17,16 @@ WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
-# The SSG bundle calls the API on the SAME origin by default in dev images.
-ARG PUBLIC_API_BASE=""
+ARG PUBLIC_API_BASE="https://democracia.social.br"
 ENV PUBLIC_API_BASE=${PUBLIC_API_BASE}
+# Identity of the release image. Other instances override these with --build-arg.
+ARG SITE="https://democracia.social.br"
+ARG PUBLIC_SITE_NAME="DemocraciaBR"
+ARG PUBLIC_SITE_NAME_ACCENT="BR"
+ARG PUBLIC_SITE_MOTTO="Participação sem consequência é teatro."
+ARG PUBLIC_ANALYTICS_DOMAIN="democracia.social.br"
+ARG PUBLIC_ANALYTICS_URL="https://analytics.pop.coop/js/script.file-downloads.hash.outbound-links.pageview-props.revenue.tagged-events.js"
+ENV SITE=${SITE} PUBLIC_SITE_NAME=${PUBLIC_SITE_NAME} PUBLIC_SITE_NAME_ACCENT=${PUBLIC_SITE_NAME_ACCENT} PUBLIC_SITE_MOTTO="${PUBLIC_SITE_MOTTO}" PUBLIC_ANALYTICS_DOMAIN=${PUBLIC_ANALYTICS_DOMAIN} PUBLIC_ANALYTICS_URL=${PUBLIC_ANALYTICS_URL}
 RUN npm run build
 
 # ---- Stage 3: runtime (mirrors deploy/docker/Dockerfile) ------------------------
@@ -32,5 +39,8 @@ USER 10001:10001
 COPY --from=backend --chown=10001:10001 /src/target/release/dsoc-gateway /usr/local/bin/dsoc-gateway
 COPY --from=web --chown=10001:10001 /src/web/dist /srv/web
 ENV WEB_ROOT=/srv/web GATEWAY_PORT=8080 RUST_LOG=info
+ARG RUNTIME_SITE_NAME="DemocraciaBR"
+ARG RUNTIME_ORIGIN="https://democracia.social.br"
+ENV PUBLIC_SITE_NAME=${RUNTIME_SITE_NAME} PUBLIC_ORIGIN=${RUNTIME_ORIGIN}
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/dsoc-gateway"]

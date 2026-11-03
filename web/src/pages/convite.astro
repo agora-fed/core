@@ -1,4 +1,5 @@
 ---
+import { SITE_NAME } from '../lib/site';
 // Aceite de convite de parlamentar (rota query-param). Sob SSG puro (ADR-0009) é a única
 // rota viável — tokens são credenciais secretas e não podem ser pré-geradas em `getStaticPaths`.
 // O e-mail enviado pelo backend (`mandate_invite::send`) monta este link como
@@ -11,7 +12,7 @@ import BrandLine from '../components/BrandLine.astro';
 import AcceptMandateInvite from '../components/islands/AcceptMandateInvite.svelte';
 
 const description =
-  'Aceite o convite para assumir o mandato na plataforma DemocraciaBR.';
+  `Aceite o convite para assumir o mandato na plataforma ${SITE_NAME}.`;
 ---
 
 <BaseLayout title="Aceitar convite" {description} noindex>

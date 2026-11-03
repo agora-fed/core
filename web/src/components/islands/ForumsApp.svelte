@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SITE_NAME } from '../../lib/site';
   // Fóruns institucionais (/f/...) — UMA ilha, três telas, roteamento client-side:
   //   /f/                → home (Federal | Estados | Governança)
   //   /f/<caminho>       → fórum (breadcrumb, seções, tópicos, novo tópico)
@@ -55,6 +56,7 @@
   let recent = $state<RecentForumTopicDto[]>([]);
   // forum
   let forum = $state<ForumDto | null>(null);
+  let visibility = $state<string>('public');
   let children = $state<ForumChildDto[]>([]);
   let topics = $state<ForumTopicDto[]>([]);
   // Transparência da câmara (só fórum municipal): banner âmbar quando faltam
@@ -208,6 +210,7 @@
         return;
       }
       topics = tp.ok && tp.data ? tp.data.topics : [];
+      visibility = tp.ok && tp.data ? tp.data.visibility : 'public';
       transparency = tp.ok && tp.data ? (tp.data.transparency ?? null) : null;
       // Vereadores desta câmara — só em fórum municipal com uf+municipio. Fetch
       // best-effort e não-bloqueante: uma falha nunca derruba a listagem.
@@ -296,6 +299,13 @@
   let judiciario = $derived(roots.filter((r) => JUDICIARIO.has(r.slug)));
   let governanca = $derived(roots.filter((r) => r.slug === 'governanca'));
   let estados = $derived(roots.filter((r) => r.slug.length === 2));
+  let outros = $derived(
+    roots.filter(
+      (r) =>
+        r.slug !== 'senado' && r.slug !== 'camara' && r.slug !== 'governanca' &&
+        !r.slug.startsWith('ministerio-') && !JUDICIARIO.has(r.slug) && r.slug.length !== 2,
+    ),
+  );
 
   // --- forum estado: separa seções padrão dos ~200 municípios ---
   let isEstado = $derived(
@@ -467,7 +477,7 @@
     }
     shareState = 'sending';
     const res = await postNote(
-      `📣 "${detail.topic.title}"\n\nDebate público aberto na DemocraciaBR — participe:\n${topicUrl()}`,
+      `📣 "${detail.topic.title}"\n\nDebate público aberto na ${SITE_NAME} — participe:\n${topicUrl()}`,
     );
     shareState = res.success ? 'sent' : 'failed';
     // URL AP do objeto: seguidores recebem sozinhos; pra IMPORTAR/impulsionar de
@@ -523,7 +533,10 @@
 {:else if view === 'home'}
   <header class="f-head">
     <h1>🏛 Fóruns</h1>
-    <p class="muted">
+    <p class="muted" data-when-off="mandates">
+      Converse com a comunidade, proponha ideias e construa decisões em conjunto.
+    </p>
+    <p class="muted" data-requires="mandates">
       Debata com a sociedade e leve o resultado às instituições: ao cruzar os
       patamares de interação, o fórum envia o debate — com as respostas mais
       votadas — para a comissão, ministério ou secretaria responsável, com
@@ -532,7 +545,16 @@
   </header>
 
   <div class="f-home">
-    <aside class="f-side" aria-label="Todos os fóruns">
+    <aside class="f-side" aria-label="Todos os fóruns" data-when-off="mandates">
+      <nav>
+        {#each roots as r (r.slug)}
+          <a href={`/f/${r.full_path}`} onclick={(e) => { e.preventDefault(); navigate(`/f/${r.full_path}`); }}>{r.name}</a>
+        {:else}
+          <p class="muted small">Nenhum fórum criado ainda.</p>
+        {/each}
+      </nav>
+    </aside>
+    <aside class="f-side" aria-label="Todos os fóruns" data-requires="mandates">
       <details open>
         <summary>🇧🇷 Casas Federais</summary>
         <nav>
@@ -565,6 +587,16 @@
           {/each}
         </nav>
       </details>
+      {#if outros.length > 0}
+        <details open>
+          <summary>💬 Comunidade</summary>
+          <nav>
+            {#each outros as o (o.slug)}
+              <a href={`/f/${o.full_path}`} onclick={(e) => { e.preventDefault(); navigate(`/f/${o.full_path}`); }}>{o.name}</a>
+            {/each}
+          </nav>
+        </details>
+      {/if}
       {#if governanca.length > 0}
         <details>
           <summary>⚙️ Plataforma</summary>
@@ -624,11 +656,16 @@
       {/if}
       <h1>{forum.name}</h1>
     </div>
+    {#if visibility === 'list'}
+      <p class="f-badge" role="note">🔒 Fórum privado: só as pessoas da lista leem e participam.</p>
+    {:else if visibility === 'members'}
+      <p class="f-badge" role="note">🔒 Visível para quem tem conta nesta comunidade.</p>
+    {/if}
     {#if forum.description}<p class="muted">{forum.description}</p>{/if}
     {#if forum.has_contact_email}
-      <p class="f-badge">✉️ Instituição com e-mail vinculado — patamares: {forum.thresholds.map((t) => t.toLocaleString('pt-BR')).join(' · ')} interações</p>
+      <p class="f-badge" data-requires="mandates">✉️ Instituição com e-mail vinculado — patamares: {forum.thresholds.map((t) => t.toLocaleString('pt-BR')).join(' · ')} interações</p>
     {:else}
-      <p class="f-badge muted">Patamares: {forum.thresholds.map((t) => t.toLocaleString('pt-BR')).join(' · ')} interações (e-mail institucional em curadoria)</p>
+      <p class="f-badge muted" data-requires="mandates">Patamares: {forum.thresholds.map((t) => t.toLocaleString('pt-BR')).join(' · ')} interações (e-mail institucional em curadoria)</p>
     {/if}
     {#if isAdmin}
       <details class="f-admin">
@@ -661,7 +698,7 @@
   {#if transparency && (transparency.status === 'parcial' || transparency.status === 'ausente')}
     <aside class="f-transparency" role="note" aria-label="Aviso de transparência da Câmara">
       {#if transparency.status === 'parcial'}
-        <p>📋 Transparência limitada nesta Câmara. Ela mantém um site oficial, mas ainda não publica os dados dos vereadores — contatos, agendas e gastos — em formato aberto e legível por máquina. Por isso o DemocraciaBR ainda não conseguiu conectar automaticamente os gabinetes desta cidade. Site oficial: {#if transparency.official_url}<a href={transparency.official_url} target="_blank" rel="noopener">{transparency.official_url}</a>{/if}. Dados abertos são um direito da população (Lei de Acesso à Informação — Lei nº 12.527/2011).</p>
+        <p>📋 Transparência limitada nesta Câmara. Ela mantém um site oficial, mas ainda não publica os dados dos vereadores — contatos, agendas e gastos — em formato aberto e legível por máquina. Por isso o {SITE_NAME} ainda não conseguiu conectar automaticamente os gabinetes desta cidade. Site oficial: {#if transparency.official_url}<a href={transparency.official_url} target="_blank" rel="noopener">{transparency.official_url}</a>{/if}. Dados abertos são um direito da população (Lei de Acesso à Informação — Lei nº 12.527/2011).</p>
       {:else}
         <p>🔍 Portal de transparência não localizado. Não encontramos um site oficial desta Câmara com dados abertos sobre vereadores, agendas e gastos públicos. A ausência dessas informações em formato acessível enfraquece o controle social garantido pela Lei de Acesso à Informação. Conhece o site oficial? Ajude a comunidade a cadastrá-lo pelo <a href="/contato">/contato</a>.</p>
       {/if}
@@ -821,7 +858,7 @@
       <!-- Tag-a-representative (issue #3): the citizen marks the mandate who
            should care about this cause; the mandate gets a daily consolidated
            e-mail (aggregates only — LGPD). -->
-      <RepresentativeTagWidget topicId={detail.topic.id} />
+      <div data-requires="mandates"><RepresentativeTagWidget topicId={detail.topic.id} /></div>
 
       <!-- 🌉 Pontos de consenso (D8.2): ACIMA do placar de torcida. A síntese
            estilo Polis/vTaiwan — os argumentos-ponte, endossados pelos DOIS
@@ -864,18 +901,18 @@
         <span class="f-score-lbl">pontos</span>
         {#if detail.topic.score >= detail.escalation_threshold}
           {#if detail.escalation_destination}
-            <span class="f-score-hint ok">✓ encaminhado a {detail.escalation_destination}</span>
+            <span data-requires="mandates" class="f-score-hint ok">✓ encaminhado a {detail.escalation_destination}</span>
           {:else}
-            <span class="f-score-hint">✓ patamar cruzado — encaminhamento pendente (seção ainda sem canal institucional conectado)</span>
+            <span data-requires="mandates" class="f-score-hint">✓ patamar cruzado — encaminhamento pendente (seção ainda sem canal institucional conectado)</span>
           {/if}
         {:else if detail.topic.score > 0}
           {#if detail.escalation_destination}
-            <span class="f-score-hint">faltam {(detail.escalation_threshold - detail.topic.score).toLocaleString('pt-BR')} pontos para encaminhar a <strong>{detail.escalation_destination}</strong></span>
+            <span data-requires="mandates" class="f-score-hint">faltam {(detail.escalation_threshold - detail.topic.score).toLocaleString('pt-BR')} pontos para encaminhar a <strong>{detail.escalation_destination}</strong></span>
           {:else}
-            <span class="f-score-hint">faltam {(detail.escalation_threshold - detail.topic.score).toLocaleString('pt-BR')} pontos para o patamar — seção ainda sem canal institucional (encaminha quando conectar)</span>
+            <span data-requires="mandates" class="f-score-hint">faltam {(detail.escalation_threshold - detail.topic.score).toLocaleString('pt-BR')} pontos para o patamar — seção ainda sem canal institucional (encaminha quando conectar)</span>
           {/if}
         {:else}
-          <span class="f-score-hint">apoio líquido negativo — não encaminha</span>
+          <span data-requires="mandates" class="f-score-hint">apoio líquido negativo — não encaminha</span>
         {/if}
       </div>
 
@@ -969,7 +1006,7 @@
             {/each}
           </div>
           {#if federatedComments.length > 0}
-            <h3>🌐 Comentários do fediverso <span class="muted small">(não contam pros patamares)</span></h3>
+            <h3>🌐 Comentários do fediverso <span class="muted small" data-requires="mandates">(não contam pros patamares)</span></h3>
             <ul>
               {#each federatedComments as c (c.id)}
                 <li>

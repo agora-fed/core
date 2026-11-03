@@ -1,10 +1,11 @@
 ---
+import { SITE_NAME } from '../../lib/site';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import ConsultasList from '../../components/islands/ConsultasList.svelte';
 import CreateConsultaForm from '../../components/islands/CreateConsultaForm.svelte';
 
 const description =
-  'Consultas públicas da DemocraciaBR: a população é ouvida diretamente sobre as decisões que afetam o seu dia a dia.';
+  `Consultas públicas da ${SITE_NAME}: enquetes abertas e federadas — escolha uma opção e participe.`;
 ---
 
 <BaseLayout title="Consultas públicas" {description}>
@@ -13,13 +14,13 @@ const description =
       <header class="page-head">
         <h1>Consultas públicas</h1>
         <p class="muted lede">
-          Perguntas abertas à população. Você responde concordo, neutro ou
-          discordo — e cada resposta é um sinal direto para quem decide.
+          Enquetes abertas à população. Escolha uma opção e participe —
+          visível também no fediverso.
         </p>
       </header>
 
-      <CreateConsultaForm client:load />
-      <ConsultasList client:load />
+      <CreateConsultaForm fixedKind="consulta" client:load />
+      <ConsultasList kind="consulta" client:load />
     </div>
   </section>
 </BaseLayout>

@@ -1,0 +1,33 @@
+[Unit]
+Description=AGORA Gateway — Axum API + static web
+Documentation=https://github.com/agora-fed/core
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=agora
+Group=agora
+EnvironmentFile=/opt/agora/etc/agora.env
+ExecStart=/opt/agora/bin/dsoc-gateway
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadOnlyPaths=/srv/web
+ReadWritePaths=/opt/agora/data
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=agora-gateway
+
+[Install]
+WantedBy=multi-user.target

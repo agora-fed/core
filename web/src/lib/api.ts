@@ -1,6 +1,8 @@
 // Tiny typed API client wrapping `fetch` with the frozen ApiResponse envelope.
 // Base URL comes from PUBLIC_API_BASE (IPv6-first, per platform principle 4).
 
+import { onUnauthorized } from './session';
+
 import type {
   ActivityDto,
   ApiResponse,
@@ -188,6 +190,7 @@ export async function apiGetCredentialed<T>(
         ...(init?.headers ?? {}),
       },
     });
+    if (res.status === 401) void onUnauthorized(false, API_BASE);
     return parseEnvelope<T>(res);
   } catch {
     return networkFailure<T>();
@@ -212,6 +215,7 @@ async function apiBody<T>(
       },
       body: JSON.stringify(payload),
     });
+    if (res.status === 401) void onUnauthorized(true, API_BASE);
     return parseEnvelope<T>(res);
   } catch {
     return networkFailure<T>();
@@ -1133,7 +1137,8 @@ export const getConsultations = (orgId = DEFAULT_ORG_ID, limit = 30) =>
 // Superfície pública: leitura sem login, resposta com login (concordo/neutro/discordo).
 
 /** Lista pública de consultas (título, status, janela, nº perguntas). */
-export const getConsultas = () => apiGet<ConsultaSummary[]>('/api/v1/consultas');
+export const getConsultas = (kind?: 'consulta' | 'plebiscito') =>
+  apiGet<ConsultaSummary[]>(`/api/v1/consultas${kind ? `?kind=${kind}` : ''}`);
 
 /** Detalhe público de uma consulta. Credenciado: quando logado traz `my_answer`. */
 export const getConsulta = (id: string) =>
@@ -1154,10 +1159,18 @@ export const responderConsulta = (
 /** Cria uma consulta (admin ou político). Perguntas são prompts livres. */
 export const createConsulta = (input: {
   title: string;
+  kind: 'consulta' | 'plebiscito';
   opens_at: string;
   closes_at: string;
   questions: string[];
 }) => apiPost<{ id: string }>('/api/v1/consultas', input);
+
+/** O cidadão logado vota em uma opção (consulta single-choice). */
+export const votarConsulta = (id: string, questionId: string) =>
+  apiPost<{ saved: boolean }>(
+    `/api/v1/consultas/${encodeURIComponent(id)}/votar`,
+    { question_id: questionId },
+  );
 
 /** Encerra uma consulta aberta (admin ou político). */
 export const closeConsulta = (id: string) =>
@@ -1354,6 +1367,10 @@ export interface PublicStats {
 }
 export const getPublicStats = () =>
   apiGet<PublicStats>('/api/v1/stats/public');
+
+/** GET /auth/sso/status — whether to show the single sign-on button. */
+export const getSsoStatus = () =>
+  apiGet<{ enabled: boolean; only: boolean; label: string | null }>('/api/v1/auth/sso/status');
 
 /** GET /auth/govbr/status — front usa pra decidir se mostra o botão. */
 export const getGovbrStatus = () =>
@@ -3067,6 +3084,7 @@ export interface TransparencyDto {
 }
 
 export interface ForumTopicListDto {
+  visibility: 'public' | 'members' | 'list';
   forum: ForumDto;
   topics: ForumTopicDto[];
   /** Banner de transparência da câmara — só em fóruns municipais. */
@@ -3142,21 +3160,26 @@ export interface ForumTopicConsensusDto {
 export const getForumTree = (path?: string) =>
   apiGet<ForumTreeDto>(
     `/api/v1/f/tree${path ? `?path=${encodeURIComponent(path)}` : ''}`,
+    { credentials: 'include' },
   );
 
 /** Top N afirmações-ponte de um tópico (D8.2) — "argumentos que uniram quem discorda". */
 export const getForumConsensus = (id: string, limit = 5) =>
   apiGet<ForumTopicConsensusDto>(
     `/api/v1/f/topics/${encodeURIComponent(id)}/consensus?limit=${limit}`,
+    { credentials: 'include' },
   );
 
 export const getForumTopics = (path: string, sort: 'hot' | 'new' = 'hot') =>
   apiGet<ForumTopicListDto>(
     `/api/v1/f/topics?path=${encodeURIComponent(path)}&sort=${sort}`,
+    { credentials: 'include' },
   );
 
 export const getForumTopic = (id: string) =>
-  apiGet<ForumTopicDetailDto>(`/api/v1/f/topics/${encodeURIComponent(id)}`);
+  apiGet<ForumTopicDetailDto>(`/api/v1/f/topics/${encodeURIComponent(id)}`, {
+    credentials: 'include',
+  });
 
 /** Cria um tópico de fórum. `targets` (B1) = mandate_ids para direcionar a
  *  demanda a gabinete(s) específico(s); ausente/vazio = tópico sem alvo (cai no
@@ -3197,6 +3220,8 @@ export const voteForumComment = (id: string, stance: ForumStance) =>
   );
 
 /** Linha do painel admin de fóruns (F3). */
+export type ForumVisibility = 'public' | 'members' | 'list';
+
 export interface AdminForumDto {
   id: string;
   full_path: string;
@@ -3207,6 +3232,9 @@ export interface AdminForumDto {
   avatar_url: string | null;
   banner_url: string | null;
   thresholds: number[];
+  visibility: ForumVisibility;
+  federated: boolean;
+  member_count: number;
   moderator_count: number;
   pending_dispatches: number;
   topic_count: number;
@@ -3230,8 +3258,36 @@ export const adminUpdateForum = (
     thresholds?: number[];
     avatar_url?: string;
     banner_url?: string;
+    visibility?: ForumVisibility;
+    federated?: boolean;
   },
 ) => apiPatch<{ ok: true }>(`/api/v1/admin/forums/${encodeURIComponent(id)}`, payload);
+
+export const adminCreateForum = (payload: {
+  slug: string;
+  name: string;
+  description?: string;
+  visibility: ForumVisibility;
+  federated: boolean;
+}) => apiPost<{ id: string; full_path: string }>('/api/v1/admin/forums', payload);
+
+export const adminArchiveForum = (id: string) =>
+  apiDelete<{ ok: true }>(`/api/v1/admin/forums/${encodeURIComponent(id)}`);
+
+export const adminForumMembers = (id: string) =>
+  apiGetCredentialed<ForumModeratorDto[]>(
+    `/api/v1/admin/forums/${encodeURIComponent(id)}/members`,
+  );
+
+export const adminForumAddMember = (id: string, citizenId: string) =>
+  apiPost<{ ok: true }>(`/api/v1/admin/forums/${encodeURIComponent(id)}/members`, {
+    citizen_id: citizenId,
+  });
+
+export const adminForumRemoveMember = (id: string, citizenId: string) =>
+  apiDelete<{ ok: true }>(
+    `/api/v1/admin/forums/${encodeURIComponent(id)}/members/${encodeURIComponent(citizenId)}`,
+  );
 
 export const adminForumModerators = (id: string) =>
   apiGetCredentialed<ForumModeratorDto[]>(
@@ -3275,7 +3331,7 @@ export interface RecentForumTopicDto {
 }
 
 export const getRecentForumTopics = (limit = 25) =>
-  apiGet<RecentForumTopicDto[]>(`/api/v1/f/recent?limit=${limit}`);
+  apiGet<RecentForumTopicDto[]>(`/api/v1/f/recent?limit=${limit}`, { credentials: 'include' });
 
 /** Permissões efetivas do caller (chaves modulo.acao) — a UI decide o que mostrar. */
 export interface MyPermissions {
@@ -3768,4 +3824,41 @@ export const tagTopicRepresentative = (topicId: string, mandateId: string) =>
 export const untagTopicRepresentative = (topicId: string, mandateId: string) =>
   apiDelete<null>(
     `/api/v1/topics/${encodeURIComponent(topicId)}/representatives/${encodeURIComponent(mandateId)}`,
+  );
+
+// --- Contributions from the fediverse (admin) ---
+
+export interface ForumInboundItem {
+  kind: 'topic' | 'comment';
+  id: string;
+  forum_path: string;
+  actor_url: string;
+  handle: string | null;
+  title: string | null;
+  body: string;
+  created_at: string;
+}
+
+export interface ForumInboundBlock {
+  kind: 'actor' | 'domain';
+  id: string;
+  value: string;
+  reason: string | null;
+  created_at: string;
+}
+
+export const listForumInboundQueue = () =>
+  apiGetCredentialed<ForumInboundItem[]>('/api/v1/admin/forums/inbound/queue');
+export const decideForumInbound = (kind: string, id: string, decision: 'approve' | 'reject') =>
+  apiPost<{ decided: boolean }>(
+    `/api/v1/admin/forums/inbound/queue/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/${decision}`,
+    {},
+  );
+export const listForumInboundBlocks = () =>
+  apiGetCredentialed<ForumInboundBlock[]>('/api/v1/admin/forums/inbound/blocks');
+export const addForumInboundBlock = (body: { kind: 'actor' | 'domain'; value: string; reason?: string }) =>
+  apiPost<{ blocked: boolean }>('/api/v1/admin/forums/inbound/blocks', body);
+export const removeForumInboundBlock = (kind: string, id: string) =>
+  apiDelete<{ removed: boolean }>(
+    `/api/v1/admin/forums/inbound/blocks/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`,
   );

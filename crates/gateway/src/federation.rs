@@ -165,7 +165,13 @@ async fn webfinger_handler(
                 Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
             };
         }
-        return StatusCode::NOT_FOUND.into_response();
+        // Mastodon checks WebFinger for an author it has just fetched.
+        if crate::forum_outbound::resolve_opaque_author(&state.db, user)
+            .await
+            .is_none()
+        {
+            return StatusCode::NOT_FOUND.into_response();
+        }
     }
     let actor_url = actor_id(&host, user);
     let jrd = json!({
@@ -218,6 +224,30 @@ async fn object_handler(
                             "application/activity+json; charset=utf-8",
                         )],
                         axum::Json(note),
+                    )
+                        .into_response();
+                }
+                if let Some(note) =
+                    crate::forum_outbound::comment_object_json(&state.db, &host, &handle, topic_id)
+                        .await
+                {
+                    return (
+                        StatusCode::OK,
+                        [(header::CONTENT_TYPE, ACTIVITY_JSON)],
+                        axum::Json(note),
+                    )
+                        .into_response();
+                }
+            }
+            if let Some(consultation_id) = crate::consulta_ap::parse_consulta_id(&id) {
+                if let Some(question) =
+                    crate::consulta_ap::consulta_object_json(&state.db, &host, &handle, consultation_id)
+                        .await
+                {
+                    return (
+                        StatusCode::OK,
+                        [(header::CONTENT_TYPE, ACTIVITY_JSON)],
+                        axum::Json(question),
                     )
                         .into_response();
                 }
@@ -368,6 +398,24 @@ async fn actor_handler(
                 )
                     .into_response();
             }
+            // A forum author with a private profile: resolvable, and nothing about the person.
+            if let Some(citizen) =
+                crate::forum_outbound::resolve_opaque_author(&state.db, &handle).await
+            {
+                let Ok(public_pem) = svc
+                    .ensure_actor_public_key(CitizenId::from_uuid(citizen))
+                    .await
+                else {
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                };
+                let doc = crate::forum_outbound::opaque_author_json(&host, &handle, &public_pem);
+                return (
+                    StatusCode::OK,
+                    [(header::CONTENT_TYPE, ACTIVITY_JSON)],
+                    axum::Json(doc),
+                )
+                    .into_response();
+            }
             return StatusCode::NOT_FOUND.into_response();
         }
     };
@@ -406,6 +454,15 @@ async fn actor_handler(
     }
 }
 
+/// Per-minute caps on what one account and one server may send to forums.
+fn over_inbound_limit(config: &crate::forum_inbound::InboundConfig, actor: &str) -> bool {
+    let per_host = crate::forum_inbound::https_host(actor).is_some_and(|host| {
+        crate::rate_limit::over_limit(&format!("fed-host:{host}"), config.per_host_per_min)
+    });
+    per_host
+        || crate::rate_limit::over_limit(&format!("fed-actor:{actor}"), config.per_actor_per_min)
+}
+
 /// `POST /actors/{handle}/inbox` — receive a signed activity.
 ///
 /// Flow:
@@ -424,6 +481,27 @@ async fn inbox_post(
     Path(handle): Path<String>,
     body: Bytes,
 ) -> Response {
+    let config = crate::forum_inbound::InboundConfig::from_env();
+    process_inbox(state, headers, handle, body, config, |url| async move {
+        fetch_remote_actor(&url).await.map_err(|e| format!("{e:?}"))
+    })
+    .await
+}
+
+/// The inbox itself. `fetch_actor` retrieves the signer's document; production passes
+/// [`fetch_remote_actor`], and a test can answer without a public server behind the SSRF guard.
+pub async fn process_inbox<F, Fut>(
+    state: AppState,
+    headers: HeaderMap,
+    handle: String,
+    body: Bytes,
+    config: crate::forum_inbound::InboundConfig,
+    fetch_actor: F,
+) -> Response
+where
+    F: FnOnce(String) -> Fut,
+    Fut: std::future::Future<Output = Result<Value, String>>,
+{
     let Some(host) = host_from(&headers) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
@@ -492,6 +570,14 @@ async fn inbox_post(
         .next()
         .unwrap_or(&sig.key_id)
         .to_owned();
+    // Identity is compared as a string from here on, so one account must have one spelling.
+    if config.enabled
+        && forum_recipient.is_err()
+        && !crate::forum_inbound::is_canonical_actor(&signer_actor_url)
+    {
+        tracing::warn!(key = %sig.key_id, "forum inbox: signer is not a canonical actor URL");
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
     // Server-wide block (migration 0508): when the signer's host is in
     // server_domain_block with severity='suspend', we reject the activity
     // BEFORE any fetch. Silence-only does not block delivery — it only
@@ -511,7 +597,7 @@ async fn inbox_post(
             return StatusCode::FORBIDDEN.into_response();
         }
     }
-    let signer_actor = match fetch_remote_actor(&signer_actor_url).await {
+    let signer_actor = match fetch_actor(signer_actor_url.clone()).await {
         Ok(v) => v,
         Err(err) => {
             tracing::warn!(error = ?err, url = %signer_actor_url, "failed to fetch signer actor");
@@ -594,6 +680,27 @@ async fn inbox_post(
                 );
                 return StatusCode::UNAUTHORIZED.into_response();
             }
+            if config.enabled {
+                // Without this a server could present another account's document as its own.
+                if signer_actor.get("id").and_then(Value::as_str) != Some(&signer_actor_url) {
+                    tracing::warn!(signer = %signer_actor_url, "forum inbox: actor document has another id");
+                    return StatusCode::UNAUTHORIZED.into_response();
+                }
+                // An activity id belongs to its sender's server. Otherwise a signer could mark
+                // another server's activity as seen and have it dropped when it really arrives.
+                let id_host = crate::forum_inbound::https_host(&activity_id);
+                if id_host.is_none()
+                    || id_host != crate::forum_inbound::https_host(&signer_actor_url)
+                {
+                    return StatusCode::BAD_REQUEST.into_response();
+                }
+                if over_inbound_limit(&config, &signer_actor_url) {
+                    return StatusCode::TOO_MANY_REQUESTS.into_response();
+                }
+            } else if !crate::forum_federation::is_follow_activity(&activity) {
+                // Ignored, so not "seen": turning inbound on later must still process a retry.
+                return StatusCode::ACCEPTED.into_response();
+            }
             // Insert-before-act idempotency (0678): a replayed activity is a no-op.
             let fresh = sqlx::query(
                 "INSERT INTO forum_inbox_seen (activity_id, forum_id) \
@@ -608,8 +715,13 @@ async fn inbox_post(
             if !fresh {
                 return StatusCode::ACCEPTED.into_response();
             }
-            let status =
-                crate::forum_federation::inbox(&state.db, &host, &handle, &forum, &activity).await;
+            let preferred = signer_actor
+                .get("preferredUsername")
+                .and_then(Value::as_str);
+            let status = crate::forum_federation::inbox(
+                &state.db, &config, &host, &handle, &forum, &activity, preferred,
+            )
+            .await;
             return status.into_response();
         }
     };
@@ -901,6 +1013,13 @@ async fn outbox_get_populated(
     let svc = ProfileService::from_state(&state);
     let org = OrgId::from_uuid(DEFAULT_ORG_UUID);
     let Ok(profile) = svc.find_public_by_handle(org, &handle).await else {
+        if crate::forum_federation::lookup_by_handle(&state.db, &handle)
+            .await
+            .is_some()
+        {
+            let doc = crate::forum_federation::empty_outbox_json(&host, &handle);
+            return ([(header::CONTENT_TYPE, ACTIVITY_JSON)], axum::Json(doc)).into_response();
+        }
         return StatusCode::NOT_FOUND.into_response();
     };
     let (items, total) = match svc
@@ -2762,6 +2881,11 @@ async fn handle_inbox_create(
         tracing::warn!(attributed, signer = %signer_actor_url, "Create(Note) attribution mismatch — dropped");
         return;
     }
+    // Consulta vote: Mastodon sends Create{Note{name: "<option>", inReplyTo: "<question URL>"}}.
+    // Consume it here and skip regular Note processing.
+    if crate::consulta_ap::handle_consulta_vote(&state.db, signer_actor_url, object).await {
+        return;
+    }
     // Accept the Note if EITHER (a) at least one local citizen follows the sender, OR
     // (b) the Note mentions a local user, OR (c) the Note replies to one of our objects.
     // Mastodon-compatible: mentions and replies from strangers must always reach the
@@ -3350,6 +3474,11 @@ async fn followers_get(
     let svc = ProfileService::from_state(&state);
     let org = OrgId::from_uuid(DEFAULT_ORG_UUID);
     let Ok(profile) = svc.find_public_by_handle(org, &handle).await else {
+        if let Some(forum) = crate::forum_federation::lookup_by_handle(&state.db, &handle).await {
+            let doc =
+                crate::forum_federation::followers_json(&state.db, &host, &handle, &forum).await;
+            return ([(header::CONTENT_TYPE, ACTIVITY_JSON)], axum::Json(doc)).into_response();
+        }
         return StatusCode::NOT_FOUND.into_response();
     };
     let (items, total) = match svc
@@ -4017,7 +4146,7 @@ fn host_from_url(u: &str) -> Option<String> {
         .strip_prefix("https://")
         .or_else(|| u.strip_prefix("http://"))?;
     let end = rest.find('/').unwrap_or(rest.len());
-    let hostport = &rest[..end];
+    let hostport = rest[..end].rsplit('@').next().unwrap_or("");
     let host = hostport
         .split(':')
         .next()

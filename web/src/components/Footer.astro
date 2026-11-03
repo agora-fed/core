@@ -5,6 +5,10 @@ import Participacao from './icons/Participacao.astro';
 import NewsletterSignup from './islands/NewsletterSignup.svelte';
 
 const year = new Date().getFullYear();
+const SITE_NAME = (import.meta.env.PUBLIC_SITE_NAME as string | undefined) || 'AGORA';
+const MOTTO = (import.meta.env.PUBLIC_SITE_MOTTO as string | undefined) || '';
+const ANALYTICS_DOMAIN = import.meta.env.PUBLIC_ANALYTICS_DOMAIN as string | undefined;
+const ANALYTICS_URL = import.meta.env.PUBLIC_ANALYTICS_URL as string | undefined;
 const pillars = [
   {
     Icon: Dialogo,
@@ -17,12 +21,14 @@ const pillars = [
     name: 'Transparência',
     color: 'var(--pol-right)',
     text: 'Cada resposta — ou silêncio — fica registrado em público.',
+    textWhenOff: 'As decisões e os caminhos até elas ficam registrados.',
   },
   {
     Icon: Participacao,
     name: 'Participação',
     color: 'var(--accent)',
     text: 'Da proposta ao voto, a população no centro da decisão.',
+    textWhenOff: 'Da proposta ao voto, cada pessoa no centro da decisão.',
   },
 ];
 ---
@@ -37,7 +43,8 @@ const pillars = [
               <p.Icon size={26} />
             </span>
             <h3>{p.name}</h3>
-            <p class="muted">{p.text}</p>
+            <p class="muted" data-requires={p.textWhenOff && 'mandates'}>{p.text}</p>
+            {p.textWhenOff && <p class="muted" data-when-off="mandates">{p.textWhenOff}</p>}
           </div>
         ))
       }
@@ -45,9 +52,12 @@ const pillars = [
 
     <div class="newsletter">
       <h3>📬 Receba as novidades</h3>
-      <p class="muted">
+      <p class="muted" data-requires="mandates">
         Acompanhe o placar dos políticos, propostas em alta e o que mudou —
         direto no seu e-mail.
+      </p>
+      <p class="muted" data-when-off="mandates">
+        Acompanhe as decisões e novidades da comunidade direto no seu e-mail.
       </p>
       <NewsletterSignup client:visible />
     </div>
@@ -55,50 +65,55 @@ const pillars = [
     <div class="foot-bar">
       <div class="foot-brand">
         <a href="/" class="brand-line">
-          <img src="/emblem.png" width="28" height="26" alt="" />
-          <span>DemocraciaBR</span>
+          <img src="/emblem.png" width="28" height="26" alt="" data-brand-logo />
+          <span data-brand-name>{SITE_NAME}</span>
         </a>
-        <p class="tagline">Diferentes ideias, um só Brasil.</p>
+        <p class="tagline" data-requires="mandates">Diferentes ideias, um só Brasil.</p>
       </div>
       <nav aria-label="Rodapé" class="foot-nav">
-        <a href="/politicos">Políticos</a>
-        <a href="/propostas">Propostas</a>
-        <a href="/f/">Fóruns</a>
-        <a href="/consultas">Consultas</a>
-        <a href="/servicos">Serviços</a>
+        <a href="/politicos" data-requires="mandates">Políticos</a>
+        <a href="/propostas" data-requires="proposals">Propostas</a>
+        <a href="/f/" data-requires="forums">Fóruns</a>
+        <a href="/grupos" data-requires="groups">Grupos</a>
+        <a href="/consultas" data-requires="consultations">Consultas</a>
+        <a href="/reunioes" data-requires="meetings">Reuniões</a>
+        <a href="/servicos" data-requires="mandates">Serviços</a>
         <a href="/cadastrar">Criar conta</a>
       </nav>
       <nav aria-label="Institucional" class="foot-nav institutional">
         <a href="/sobre">Sobre</a>
-        <a href="/imprensa">Imprensa</a>
-        <a href="/transparencia">Transparência</a>
+        <a href="/imprensa" data-requires="mandates">Imprensa</a>
+        <a href="/transparencia" data-requires="mandates">Transparência</a>
         <a href="/privacidade">Privacidade (LGPD)</a>
         <a href="/termos">Termos</a>
       </nav>
     </div>
 
     <p class="copy muted">
-      © {year} DemocraciaBR · Infraestrutura democrática soberana, aberta e
-      auditável. Participação sem consequência é teatro.<br />
+      © {year} <span data-brand-name>{SITE_NAME}</span> <span data-requires="mandates">· Infraestrutura democrática soberana, aberta e
+      auditável.</span>{MOTTO && ` ${MOTTO}`}<br />
       Código aberto sob AGPLv3 · IPv6-first · Sem publicidade · Sem venda de dados.
     </p>
   </div>
 </footer>
 
-<!-- Plausible (self-hosted em analytics.pop.coop) — pedido do produto 2026-07-26. -->
-<script
-  is:inline
-  defer
-  data-domain="democracia.social.br"
-  src="https://analytics.pop.coop/js/script.file-downloads.hash.outbound-links.pageview-props.revenue.tagged-events.js"
-></script>
-<script is:inline>
-  window.plausible =
-    window.plausible ||
-    function () {
-      (window.plausible.q = window.plausible.q || []).push(arguments);
-    };
-</script>
+{ANALYTICS_DOMAIN && ANALYTICS_URL && (
+  <Fragment>
+    <script
+      is:inline
+      defer
+      data-domain={ANALYTICS_DOMAIN}
+      src={ANALYTICS_URL}
+    />
+    <script is:inline>
+      window.plausible =
+        window.plausible ||
+        function () {
+          (window.plausible.q = window.plausible.q || []).push(arguments);
+        };
+    </script>
+  </Fragment>
+)}
 
 <style>
   .site-footer {

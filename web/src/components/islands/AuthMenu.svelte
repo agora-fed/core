@@ -8,6 +8,7 @@
   // the login response only carries the opaque `u-<hex>` public handle, which we never
   // show as a label anymore.
   import { onMount } from 'svelte';
+  import { IDENTITY_KEYS, SESSION_EXPIRED_EVENT } from '../../lib/session';
   import {
     getMyProfile,
     refreshMyActor,
@@ -54,6 +55,11 @@
   );
 
   onMount(async () => {
+    window.addEventListener(SESSION_EXPIRED_EVENT, () => {
+      loggedIn = false;
+      isAdmin = false;
+      isPolitico = false;
+    });
     loggedIn = Boolean(read('dsoc_citizen'));
     // Paint immediately from cache, then refresh from /me in the background.
     name = read('dsoc_name');
@@ -131,7 +137,7 @@
     } catch {
       /* still clear locally; the cookie's TTL will expire it server-side */
     }
-    for (const k of ['dsoc_citizen', 'dsoc_handle', 'dsoc_name', 'dsoc_avatar', 'dsoc_is_admin', 'dsoc_is_politico'])
+    for (const k of IDENTITY_KEYS)
       write(k, null);
     window.location.href = '/';
   }
@@ -165,25 +171,25 @@
       {#if open}
         <nav class="menu" aria-label="Menu do perfil e rede social">
           <p class="menu-kicker">Rede social</p>
-          <a class="item" href="/feed">Feed</a>
+          <a class="item" data-requires="federation" href="/feed">Feed</a>
           {#if userHandle}
             <a class="item" href={`/perfil/?u=${encodeURIComponent(userHandle)}`}>Meu perfil</a>
           {/if}
-          <a class="item" href="/configuracoes#fediverso">Fediverso — buscar e seguir</a>
+          <a class="item" data-requires="federation" href="/configuracoes#fediverso">Fediverso — buscar e seguir</a>
           <button class="item item-button" type="button" onclick={pokeFediverse} disabled={refreshing}>
             {refreshing ? 'Propagando…' : 'Atualizar perfil no fediverso'}
           </button>
           <hr class="sep" />
-          <a class="item" href="/rede">Seguindo e seguidores</a>
+          <a class="item" data-requires="federation" href="/rede">Seguindo e seguidores</a>
           <a class="item" href="/convites">Convidar pessoas</a>
           {#if isPolitico}
             <!-- B3: cluster de campanha consolidado numa única seção "Campanha",
                  visível SÓ para contas candidato (isPolitico). O cidadão comum —
                  99% da base — nunca vê financiamento/grupo no menu nem no nav. -->
             <hr class="sep" />
-            <p class="menu-kicker">Campanha</p>
-            <a class="item" href="/servicos/painel">💰 Doações e financiamento</a>
-            <a class="item" href="/meu-grupo">📣 Meu grupo de campanha</a>
+            <p class="menu-kicker" data-requires="mandates">Campanha</p>
+            <a class="item" data-requires="mandates" href="/servicos/painel">💰 Doações e financiamento</a>
+            <a class="item" data-requires="mandates" href="/meu-grupo">📣 Meu grupo de campanha</a>
             <hr class="sep" />
           {/if}
           <a class="item" href="/configuracoes">Configurações</a>

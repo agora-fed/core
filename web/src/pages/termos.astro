@@ -1,9 +1,10 @@
 ---
+import { SITE_HOST, SITE_NAME } from '../lib/site';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import ColorBar from '../components/illustrations/ColorBar.astro';
 
 const description =
-  'Termos de uso da DemocraciaBR + Contrato Social herdado do Decidim: regras de convivência, participação civil, moderação auditável.';
+  `Termos de uso da ${SITE_NAME} + Contrato Social herdado do Decidim: regras de convivência, participação civil, moderação auditável.`;
 ---
 
 <BaseLayout title="Termos de uso" {description}>
@@ -24,7 +25,7 @@ const description =
       <article id="default-terms" class="prose">
         <h2>1. Aceitação</h2>
         <p>
-          Ao criar uma conta na DemocraciaBR, você aceita estes termos +
+          Ao criar uma conta na {SITE_NAME}, você aceita estes termos +
           a nossa <a href="/privacidade">Política de Privacidade</a>. Se não
           concorda, não crie conta.
         </p>
@@ -93,7 +94,7 @@ const description =
         <h2>8. Enquetes federadas, voto local</h2>
         <p>
           Enquetes publicadas circulam no fediverso, mas apenas cidadã(o)s com
-          conta em <code>democracia.social.br</code> podem votar. Perfis de outras
+          conta em <code>{SITE_HOST}</code> podem votar. Perfis de outras
           instâncias veem mas não computam voto.
         </p>
 

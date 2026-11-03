@@ -1,10 +1,11 @@
 ---
+import { SITE_NAME } from '../lib/site';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import BrandLine from '../components/BrandLine.astro';
 import LoginForm from '../components/islands/LoginForm.svelte';
 
 const description =
-  'Entre na sua conta DemocraciaBR para apoiar propostas, comentar e cobrar respostas dos mandatos.';
+  `Entre na sua conta ${SITE_NAME} para apoiar propostas, comentar e cobrar respostas dos mandatos.`;
 ---
 
 <BaseLayout title="Entrar" {description} noindex>
@@ -13,7 +14,8 @@ const description =
       <div class="auth-card card">
         <BrandLine size={34} class="logo" />
         <h1>Entrar</h1>
-        <p class="muted">Bem-vindo de volta. Sua voz, com consequência.</p>
+        <p class="muted" data-requires="mandates">Bem-vindo de volta. Sua voz, com consequência.</p>
+        <p class="muted" data-when-off="mandates">Bem-vindo de volta.</p>
         <LoginForm client:load />
       </div>
     </div>

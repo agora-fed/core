@@ -1,0 +1,12 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import MeetingsApp from '../components/islands/MeetingsApp.svelte';
+---
+
+<BaseLayout title="Reuniões" description="Agenda, presenças e atas das reuniões da comunidade.">
+  <section class="section">
+    <div class="container narrow">
+      <MeetingsApp client:load />
+    </div>
+  </section>
+</BaseLayout>

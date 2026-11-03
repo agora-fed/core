@@ -3,12 +3,20 @@
   // de envio e moderadores de cada fórum. Busca por caminho/nome; edição inline.
   import { onMount } from 'svelte';
   import {
+    adminArchiveForum,
+    adminCreateForum,
+    adminForumAddMember,
     adminForumAddModerator,
+    adminForumMembers,
+    adminForumRemoveMember,
     adminForumModerators,
     adminForumRemoveModerator,
     adminListForums,
     adminUpdateForum,
+    getAdminUsers,
     type AdminForumDto,
+    type AdminUserRow,
+    type ForumVisibility,
     type ForumModeratorDto,
   } from '../../lib/api';
 
@@ -24,6 +32,104 @@
   let mods = $state<ForumModeratorDto[]>([]);
   let newMod = $state('');
   let busy = $state(false);
+  let accessDraft = $state<Record<string, ForumVisibility>>({});
+  let federatedDraft = $state<Record<string, boolean>>({});
+  let openMembers = $state<string | null>(null);
+  let members = $state<ForumModeratorDto[]>([]);
+  let personQuery = $state('');
+  let personResults = $state<AdminUserRow[]>([]);
+  let newForum = $state({ slug: '', name: '', description: '', visibility: 'public' as ForumVisibility, federated: false });
+
+  const ACCESS_LABEL: Record<ForumVisibility, string> = {
+    public: 'Público (qualquer pessoa, mesmo sem login)',
+    members: 'Membros (qualquer conta com login)',
+    list: 'Lista (só as pessoas adicionadas)',
+  };
+
+  async function createForum() {
+    busy = true;
+    const res = await adminCreateForum({
+      ...newForum,
+      federated: newForum.visibility === 'public' && newForum.federated,
+    });
+    busy = false;
+    if (!res.success) {
+      msg = res.error?.message ?? 'Não foi possível criar o fórum.';
+      return;
+    }
+    newForum = { slug: '', name: '', description: '', visibility: 'public', federated: false };
+    await load();
+  }
+
+  async function archiveForum(r: AdminForumDto) {
+    if (!confirm(`Arquivar /f/${r.full_path}? O fórum e seus tópicos deixam de aparecer.`)) return;
+    busy = true;
+    const res = await adminArchiveForum(r.id);
+    busy = false;
+    if (!res.success) {
+      msg = res.error?.message ?? 'Não foi possível arquivar.';
+      return;
+    }
+    await load();
+  }
+
+  async function saveAccess(r: AdminForumDto) {
+    const visibility = accessDraft[r.id];
+    if (
+      visibility !== 'public' && r.federated &&
+      !confirm('Tornar restrito para a federação deste fórum. O que já foi enviado a outros servidores não é recolhido. Continuar?')
+    ) return;
+    busy = true;
+    const res = await adminUpdateForum(r.id, {
+      visibility,
+      federated: visibility === 'public' ? federatedDraft[r.id] : false,
+    });
+    busy = false;
+    if (!res.success) {
+      msg = res.error?.message ?? 'Não foi possível salvar o acesso.';
+      return;
+    }
+    await load();
+  }
+
+  async function toggleMembers(r: AdminForumDto) {
+    if (openMembers === r.id) {
+      openMembers = null;
+      return;
+    }
+    openMembers = r.id;
+    members = [];
+    personQuery = '';
+    personResults = [];
+    const res = await adminForumMembers(r.id);
+    if (res.success && res.data) members = res.data;
+  }
+
+  async function searchPeople() {
+    const res = await getAdminUsers(personQuery.trim(), 10);
+    personResults = res.success && res.data ? res.data : [];
+  }
+
+  async function addMember(r: AdminForumDto, person: AdminUserRow) {
+    busy = true;
+    const res = await adminForumAddMember(r.id, person.citizen_id);
+    busy = false;
+    if (!res.success) {
+      msg = res.error?.message ?? 'Não foi possível adicionar.';
+      return;
+    }
+    personResults = [];
+    personQuery = '';
+    const list = await adminForumMembers(r.id);
+    if (list.success && list.data) members = list.data;
+    await load();
+    openMembers = r.id;
+  }
+
+  async function removeMember(r: AdminForumDto, citizenId: string) {
+    const res = await adminForumRemoveMember(r.id, citizenId);
+    if (res.success) members = members.filter((m) => m.citizen_id !== citizenId);
+  }
 
   async function load() {
     loading = true;
@@ -35,6 +141,8 @@
       for (const r of rows) {
         emailDraft[r.id] = r.contact_email ?? '';
         thrDraft[r.id] = r.thresholds.join(', ');
+        accessDraft[r.id] = r.visibility;
+        federatedDraft[r.id] = r.federated;
       }
     } else {
       msg = res.error?.message ?? 'Não foi possível carregar (é admin?).';
@@ -121,6 +229,26 @@
   </form>
   {#if msg}<p class="note" role="status">{msg}</p>{/if}
 
+  <details class="new-forum">
+    <summary>Criar fórum</summary>
+    <form onsubmit={(e) => { e.preventDefault(); void createForum(); }}>
+      <label>Nome <input class="input" type="text" maxlength="120" bind:value={newForum.name} required /></label>
+      <label>Endereço (/f/…) <input class="input" type="text" maxlength="79" pattern="[a-z0-9][a-z0-9\-]+" bind:value={newForum.slug} required /></label>
+      <label>Descrição <input class="input" type="text" bind:value={newForum.description} /></label>
+      <label>Acesso
+        <select class="input" bind:value={newForum.visibility}>
+          {#each Object.entries(ACCESS_LABEL) as [value, label] (value)}
+            <option {value}>{label}</option>
+          {/each}
+        </select>
+      </label>
+      {#if newForum.visibility === 'public'}
+        <label class="check"><input type="checkbox" bind:checked={newForum.federated} /> Publicar também no fediverso</label>
+      {/if}
+      <button class="btn" type="submit" disabled={busy}>Criar</button>
+    </form>
+  </details>
+
   {#if loading}
     <p class="muted">Carregando…</p>
   {:else}
@@ -155,8 +283,54 @@
               <button class="btn" type="button" onclick={() => toggleMods(r)}>
                 Mods ({r.moderator_count})
               </button>
+              <button class="btn" type="button" onclick={() => toggleMembers(r)}>
+                Acesso ({r.visibility === 'list' ? `${r.member_count} na lista` : r.visibility === 'members' ? 'membros' : 'público'})
+              </button>
+              <button class="btn" type="button" onclick={() => archiveForum(r)} disabled={busy}>Arquivar</button>
             </td>
           </tr>
+          {#if openMembers === r.id}
+            <tr class="mods-row">
+              <td colspan="6">
+                <div class="mod-add">
+                  <select class="input" bind:value={accessDraft[r.id]}>
+                    {#each Object.entries(ACCESS_LABEL) as [value, label] (value)}
+                      <option {value}>{label}</option>
+                    {/each}
+                  </select>
+                  {#if accessDraft[r.id] === 'public'}
+                    <label class="check"><input type="checkbox" bind:checked={federatedDraft[r.id]} /> Publicar no fediverso</label>
+                  {/if}
+                  <button class="btn" type="button" onclick={() => saveAccess(r)} disabled={busy}>Salvar acesso</button>
+                </div>
+                {#if accessDraft[r.id] === 'members'}
+                  <p class="muted small">Qualquer conta com login lê este fórum. Para assuntos sensíveis, use a lista.</p>
+                {/if}
+                {#if r.visibility === 'list'}
+                  {#if members.length === 0}
+                    <p class="muted">Ninguém na lista ainda.</p>
+                  {:else}
+                    {#each members as m (m.citizen_id)}
+                      <span class="mod-chip">
+                        {m.display_name ?? `@${m.handle ?? '—'}`}
+                        <button type="button" title="Remover" onclick={() => removeMember(r, m.citizen_id)}>✕</button>
+                      </span>
+                    {/each}
+                  {/if}
+                  <form class="mod-add" onsubmit={(e) => { e.preventDefault(); void searchPeople(); }}>
+                    <input class="input" type="text" bind:value={personQuery} placeholder="Buscar por nome, @ ou e-mail" />
+                    <button class="btn" type="submit" disabled={!personQuery.trim()}>Buscar</button>
+                  </form>
+                  {#each personResults as p (p.citizen_id)}
+                    <div class="mod-add">
+                      <span>{p.display_name ?? '—'} {p.handle ? `@${p.handle}` : ''}</span>
+                      <button class="btn" type="button" onclick={() => addMember(r, p)} disabled={busy}>Adicionar</button>
+                    </div>
+                  {/each}
+                {/if}
+              </td>
+            </tr>
+          {/if}
           {#if openMods === r.id}
             <tr class="mods-row">
               <td colspan="6">
@@ -197,6 +371,12 @@
   .num { text-align: right; white-space: nowrap; }
   .thr { min-width: 11rem; }
   .actions { white-space: nowrap; display: flex; gap: 0.3rem; }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.25rem; max-width: 14rem; }
+  .panel { overflow-x: auto; }
+  .new-forum { margin: 0.75rem 0; }
+  .new-forum form { display: grid; gap: 0.5rem; max-width: 32rem; margin-top: 0.5rem; }
+  .new-forum label { display: grid; gap: 0.2rem; }
+  .check { display: flex !important; align-items: center; gap: 0.4rem; }
   .mods-row td { background: rgba(127, 127, 127, 0.06); }
   .mod-chip {
     display: inline-flex; align-items: center; gap: 0.3rem;

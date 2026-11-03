@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SITE_NAME } from '../../lib/site';
   // Feed federado do cidadão autenticado: notas próprias + de quem ele segue
   // (locais e remotas). CSR puro. Reações (Favoritar/Republicar) fazem toggle
   // OTIMISTA: a UI muda na hora e reverte se a API falhar. `content_html` vem
@@ -861,7 +862,7 @@
     onclose={cancelDelete}
   >
     <p>
-      Isso apaga a publicação da DemocraciaBR e envia um pedido para as
+      Isso apaga a publicação da {SITE_NAME} e envia um pedido para as
       instâncias que a receberam também a removerem. Ação irreversível.
     </p>
     {#snippet footer()}

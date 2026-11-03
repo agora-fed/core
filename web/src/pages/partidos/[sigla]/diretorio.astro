@@ -1,4 +1,5 @@
 ---
+import { SITE_NAME } from '../../../lib/site';
 // Public page of ONE party chapter (directory). SSG: one page per party sigla
 // (same enumeration as ../[sigla].astro); the concrete chapter arrives at
 // runtime via `?id=` — the site's runtime-entity pattern (like /perfil/?u=).
@@ -28,7 +29,7 @@ export async function getStaticPaths() {
 }
 
 const { sigla } = Astro.props as { sigla: string };
-const description = `Diretório do ${sigla} na DemocraciaBR — responsáveis e mandatos no território.`;
+const description = `Diretório do ${sigla} na ${SITE_NAME} — responsáveis e mandatos no território.`;
 ---
 
 <BaseLayout title={`Diretório · ${sigla}`} {description} noindex>

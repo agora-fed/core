@@ -30,7 +30,7 @@ use serde_json::{Map, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-const DEFAULT_ORG_UUID: Uuid = uuid::uuid!("11111111-1111-1111-1111-111111111111");
+pub(crate) const DEFAULT_ORG_UUID: Uuid = uuid::uuid!("11111111-1111-1111-1111-111111111111");
 
 /// Semantic color tokens an admin may override (the web shell maps each to the
 /// CSS custom property of the same name). Extending this list is a code change
@@ -162,6 +162,10 @@ fn validate_colors(colors: &Map<String, Value>) -> Result<Map<String, Value>, St
     Ok(clean)
 }
 
+pub(crate) async fn default_org_site_name(db: &PgPool) -> Option<String> {
+    load(db, DEFAULT_ORG_UUID).await.site_name
+}
+
 async fn load(db: &PgPool, org: Uuid) -> BrandingDto {
     let row: Option<(
         Option<String>,
@@ -283,6 +287,7 @@ async fn put_branding(
     .await;
     match result {
         Ok(_) => {
+            crate::instance_html::invalidate_site_name().await;
             let dto = load(&state.db, org).await;
             (StatusCode::OK, Json(ApiResponse::ok(dto))).into_response()
         }

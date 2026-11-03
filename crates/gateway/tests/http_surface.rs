@@ -209,6 +209,42 @@ async fn whoami_for_plain_citizen_is_cidadao() {
 }
 
 /// Admin logado: whoami reflete platform_role=owner/admin e is_admin=true.
+/// SECURITY: admin reads hold role names and module state; anonymous callers and citizens
+/// without a role must never get them.
+#[tokio::test]
+async fn admin_reads_require_a_role() {
+    let (app, st) = app().await;
+    let (org, citizen, cookie) = seed_session(&st.db).await;
+    let paths = [
+        "/api/v1/admin/orgs".to_owned(),
+        format!("/api/v1/admin/orgs/{org}"),
+        format!("/api/v1/admin/orgs/{org}/roles"),
+        format!("/api/v1/admin/orgs/{org}/flags"),
+        format!("/api/v1/admin/orgs/{org}/flags/module.votes"),
+        "/api/v1/admin/events/health".to_owned(),
+    ];
+    for path in &paths {
+        let anonymous = Request::get(path).body(Body::empty()).unwrap();
+        let res = app.clone().oneshot(anonymous).await.unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED, "{path}");
+    }
+    for path in &paths[1..] {
+        let plain = Request::get(path)
+            .header(header::COOKIE, &cookie)
+            .body(Body::empty())
+            .unwrap();
+        let res = app.clone().oneshot(plain).await.unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN, "{path}");
+    }
+
+    grant_admin(&st.db, org, citizen).await;
+    let admin = Request::get(format!("/api/v1/admin/orgs/{org}/roles"))
+        .header(header::COOKIE, &cookie)
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(app.oneshot(admin).await.unwrap().status(), StatusCode::OK);
+}
+
 #[tokio::test]
 async fn whoami_flags_admin() {
     let (app, st) = app().await;

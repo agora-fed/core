@@ -71,6 +71,8 @@ pub struct TopicRow {
     pub comment_count: i64,
     /// Next threshold to fire (index into `forum.thresholds`).
     pub next_threshold_idx: i32,
+    /// `@name@host` of a topic that came from another server.
+    pub remote_handle: Option<String>,
     /// Creation timestamp.
     pub created_at: DateTime<Utc>,
 }
@@ -322,7 +324,8 @@ pub async fn insert_topic(
            VALUES ($1, $2, $3, $4, $5, $6)
            RETURNING id, forum_id, author_id, title, body, interaction_count,
                      federated_interaction_count, score, favor_count, contra_count,
-                     ponderacao_count, comment_count, next_threshold_idx, created_at"#,
+                     ponderacao_count, comment_count, next_threshold_idx, created_at,
+                     remote_handle"#,
         id,
         forum_id,
         author_id,
@@ -346,6 +349,7 @@ pub async fn insert_topic(
         ponderacao_count: r.ponderacao_count,
         comment_count: r.comment_count,
         next_threshold_idx: r.next_threshold_idx,
+        remote_handle: r.remote_handle,
         created_at: r.created_at,
     })
 }
@@ -361,7 +365,8 @@ pub async fn lock_topic(
     let r = sqlx::query!(
         r#"SELECT id, forum_id, author_id, title, body, interaction_count,
                   federated_interaction_count, score, favor_count, contra_count,
-                  ponderacao_count, comment_count, next_threshold_idx, created_at
+                  ponderacao_count, comment_count, next_threshold_idx, created_at,
+                  remote_handle
            FROM forum_topic WHERE id = $1 AND hidden_at IS NULL FOR UPDATE"#,
         id,
     )
@@ -381,6 +386,7 @@ pub async fn lock_topic(
         ponderacao_count: r.ponderacao_count,
         comment_count: r.comment_count,
         next_threshold_idx: r.next_threshold_idx,
+        remote_handle: r.remote_handle,
         created_at: r.created_at,
     }))
 }
@@ -399,7 +405,8 @@ pub async fn list_topics(
     let rows = sqlx::query!(
         r#"SELECT id, forum_id, author_id, title, body, interaction_count,
                   federated_interaction_count, score, favor_count, contra_count,
-                  ponderacao_count, comment_count, next_threshold_idx, created_at
+                  ponderacao_count, comment_count, next_threshold_idx, created_at,
+                  remote_handle
            FROM forum_topic
            WHERE forum_id = $1 AND hidden_at IS NULL
            ORDER BY CASE WHEN $2 THEN score END DESC NULLS LAST, id DESC
@@ -427,13 +434,14 @@ pub async fn list_topics(
             ponderacao_count: r.ponderacao_count,
             comment_count: r.comment_count,
             next_threshold_idx: r.next_threshold_idx,
+            remote_handle: r.remote_handle,
             created_at: r.created_at,
         })
         .collect())
 }
 
 /// A recent topic with its originating forum (the /f home feed).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 pub struct RecentTopicRow {
     /// Topic id.
     pub id: Uuid,
@@ -466,38 +474,99 @@ pub struct RecentTopicRow {
 pub async fn list_recent_topics(
     executor: impl sqlx::PgExecutor<'_>,
     org_id: Uuid,
+    viewer: Option<Uuid>,
     limit: i64,
 ) -> Result<Vec<RecentTopicRow>, sqlx::Error> {
-    let rows = sqlx::query!(
-        r#"SELECT t.id, t.title, t.score, t.favor_count, t.contra_count,
-                  t.ponderacao_count, t.interaction_count, t.comment_count, t.created_at,
-                  f.full_path AS forum_path, f.name AS forum_name
-           FROM forum_topic t
-           JOIN forum f ON f.id = t.forum_id
+    sqlx::query_as(
+        r"SELECT t.id, t.title, t.score, t.favor_count, t.contra_count,
+                 t.ponderacao_count, t.interaction_count, t.comment_count, t.created_at,
+                 f.full_path AS forum_path, f.name AS forum_name
+            FROM forum_topic t
+            JOIN forum f ON f.id = t.forum_id
            WHERE t.hidden_at IS NULL AND f.hidden_at IS NULL AND f.org_id = $1
+             AND forum_readable(f.id, $2)
            ORDER BY t.id DESC
-           LIMIT $2"#,
-        org_id,
-        limit,
+           LIMIT $3",
     )
+    .bind(org_id)
+    .bind(viewer)
+    .bind(limit)
     .fetch_all(executor)
+    .await
+}
+
+/// Whether `viewer` may read the forum. See the `forum_readable` database function.
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn forum_readable(
+    executor: impl sqlx::PgExecutor<'_>,
+    forum_id: Uuid,
+    viewer: Option<Uuid>,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("SELECT forum_readable($1, $2)")
+        .bind(forum_id)
+        .bind(viewer)
+        .fetch_one(executor)
+        .await
+}
+
+/// The forums among `ids` that `viewer` may read.
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn readable_forums(
+    executor: impl sqlx::PgExecutor<'_>,
+    ids: &[Uuid],
+    viewer: Option<Uuid>,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar("SELECT id FROM unnest($1::uuid[]) AS id WHERE forum_readable(id, $2)")
+        .bind(ids)
+        .bind(viewer)
+        .fetch_all(executor)
+        .await
+}
+
+/// Whether `viewer` may read the forum holding this topic. An unknown topic is not readable.
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn topic_readable(
+    executor: impl sqlx::PgExecutor<'_>,
+    topic_id: Uuid,
+    viewer: Option<Uuid>,
+) -> Result<bool, sqlx::Error> {
+    let readable: Option<bool> = sqlx::query_scalar(
+        "SELECT forum_readable(forum_id, $2) FROM forum_topic
+              WHERE id = $1 AND hidden_at IS NULL",
+    )
+    .bind(topic_id)
+    .bind(viewer)
+    .fetch_optional(executor)
     .await?;
-    Ok(rows
-        .into_iter()
-        .map(|r| RecentTopicRow {
-            id: r.id,
-            title: r.title,
-            score: r.score,
-            favor_count: r.favor_count,
-            contra_count: r.contra_count,
-            ponderacao_count: r.ponderacao_count,
-            interaction_count: r.interaction_count,
-            comment_count: r.comment_count,
-            created_at: r.created_at,
-            forum_path: r.forum_path,
-            forum_name: r.forum_name,
-        })
-        .collect())
+    Ok(readable.unwrap_or(false))
+}
+
+/// Whether `viewer` may read the forum holding this comment.
+///
+/// # Errors
+/// Propaga o `sqlx::Error`.
+pub async fn comment_readable(
+    executor: impl sqlx::PgExecutor<'_>,
+    comment_id: Uuid,
+    viewer: Option<Uuid>,
+) -> Result<bool, sqlx::Error> {
+    let readable: Option<bool> = sqlx::query_scalar(
+        "SELECT forum_readable(t.forum_id, $2)
+           FROM forum_topic_comment c JOIN forum_topic t ON t.id = c.topic_id
+          WHERE c.id = $1 AND t.hidden_at IS NULL AND c.hidden_at IS NULL
+            AND c.moderation = 'approved'",
+    )
+    .bind(comment_id)
+    .bind(viewer)
+    .fetch_optional(executor)
+    .await?;
+    Ok(readable.unwrap_or(false))
 }
 
 /// Upsert the citizen's stance (one row per topic-citizen pair; switching
@@ -748,7 +817,10 @@ pub async fn refresh_comment_counters(
              contra_count = v."contra!"
            FROM (SELECT COUNT(*) FILTER (WHERE stance = 'favor') AS "favor!",
                         COUNT(*) FILTER (WHERE stance = 'contra') AS "contra!"
-                   FROM forum_comment_vote WHERE comment_id = $1) v
+                   FROM (SELECT stance FROM forum_comment_vote WHERE comment_id = $1
+                         UNION ALL
+                         SELECT stance FROM forum_remote_vote
+                          WHERE target_kind = 'comment' AND target_id = $1) all_votes) v
            WHERE c.id = $1"#,
         comment_id,
     )
@@ -806,7 +878,8 @@ pub fn karma_value(stance: &str) -> i32 {
 /// Recompute the topic's counters from the source tables (under the row lock):
 /// stances per side, score = favor - contra; countable interactions = votes +
 /// approved local comments + votes on arguments (all local by FK);
-/// federated = approved federated comments.
+/// federated = approved federated comments + remote votes. Remote votes show in favor/contra
+/// but stay out of the score and of the countable interactions.
 /// Retorna (interactions, federated).
 ///
 /// # Errors
@@ -820,13 +893,17 @@ pub async fn refresh_topic_counters(
     // remain the COUNT of votes per side (display); `score` is the signed scoreboard.
     let r = sqlx::query!(
         r#"UPDATE forum_topic t SET
-             favor_count = v."favor!",
-             contra_count = v."contra!",
+             favor_count = v."favor!" + rv."rfavor!",
+             contra_count = v."contra!" + rv."rcontra!",
              score = pos."base!" + amp."amp!",
              comment_count = c."local!" + c."fede!",
              interaction_count = v."votes!" + c."local!" + cv."cvotes!",
-             federated_interaction_count = c."fede!"
+             federated_interaction_count = c."fede!" + rv."rfavor!" + rv."rcontra!"
            FROM
+             (SELECT COUNT(*) FILTER (WHERE stance = 'favor') AS "rfavor!",
+                     COUNT(*) FILTER (WHERE stance = 'contra') AS "rcontra!"
+                FROM forum_remote_vote
+               WHERE target_kind = 'topic' AND target_id = $1) rv,
              (SELECT COUNT(*) FILTER (WHERE stance = 'favor') AS "favor!",
                      COUNT(*) FILTER (WHERE stance = 'contra') AS "contra!",
                      COUNT(*) AS "votes!"

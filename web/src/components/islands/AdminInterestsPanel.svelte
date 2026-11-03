@@ -141,7 +141,7 @@
       <span>Nome</span>
       <input type="text" bind:value={newName} placeholder="ex.: Saúde" />
     </label>
-    <label>
+    <label data-requires="mandates">
       <span>Ministério</span>
       <input type="text" bind:value={newMinistry} placeholder="opcional" />
     </label>
@@ -158,7 +158,7 @@
 <div class="table-wrap">
   <table>
     <thead>
-      <tr><th>Ordem</th><th>Slug</th><th>Nome</th><th>Ministério</th><th>Cidadãos</th><th>Ações</th></tr>
+      <tr><th>Ordem</th><th>Slug</th><th>Nome</th><th data-requires="mandates">Ministério</th><th>Cidadãos</th><th>Ações</th></tr>
     </thead>
     <tbody>
       {#if loading}
@@ -184,7 +184,7 @@
               <td class="center small">{a.position}</td>
               <td class="mono small">{a.slug}</td>
               <td>{a.name}</td>
-              <td class="small">{a.ministry ?? '—'}</td>
+              <td data-requires="mandates" class="small">{a.ministry ?? '—'}</td>
               <td class="center small">{a.citizen_count.toLocaleString('pt-BR')}</td>
               <td class="actions">
                 <button class="btn ghost small" onclick={() => startEdit(a)}>Editar</button>

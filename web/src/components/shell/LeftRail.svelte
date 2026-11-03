@@ -14,17 +14,20 @@
   let { active = '' }: Props = $props();
 
   const socialItems = [
-    { id: 'feed', href: '/feed', icon: 'feed', label: 'Feed' },
+    { id: 'feed', href: '/feed', icon: 'feed', label: 'Feed', requires: 'federation' },
     { id: 'notifs', href: '/notificacoes', icon: 'bell', label: 'Notificações' },
     { id: 'search', href: '/buscar', icon: 'search', label: 'Buscar' },
-    { id: 'explore', href: '/explorar', icon: 'globe', label: 'Explorar' },
+    { id: 'explore', href: '/explorar', icon: 'globe', label: 'Explorar', requires: 'federation' },
   ];
   const politicalItems = [
-    { id: 'politicos', href: '/politicos', icon: 'users', label: 'Políticos' },
-    { id: 'partidos', href: '/partidos', icon: 'party', label: 'Partidos' },
-    { id: 'propostas', href: '/propostas', icon: 'ballot', label: 'Propostas' },
-    { id: 'foruns', href: '/f/', icon: 'chat', label: 'Fóruns' },
-    { id: 'consultas', href: '/consultas', icon: 'mic', label: 'Consultas' },
+    { id: 'politicos', href: '/politicos', icon: 'users', label: 'Políticos', requires: 'mandates' },
+    { id: 'partidos', href: '/partidos', icon: 'party', label: 'Partidos', requires: 'mandates' },
+    { id: 'propostas', href: '/propostas', icon: 'ballot', label: 'Propostas', requires: 'proposals' },
+    { id: 'foruns', href: '/f/', icon: 'chat', label: 'Fóruns', requires: 'forums' },
+    { id: 'consultas', href: '/consultas', icon: 'mic', label: 'Consultas', requires: 'consultations' },
+    { id: 'plebiscitos', href: '/plebiscitos', icon: 'ballot', label: 'Plebiscitos', requires: 'consultations' },
+    { id: 'grupos', href: '/grupos', icon: 'users', label: 'Grupos', requires: 'groups' },
+    { id: 'reunioes', href: '/reunioes', icon: 'calendar', label: 'Reuniões', requires: 'meetings' },
   ];
 
   let handle = $state<string | null>(null);
@@ -88,7 +91,7 @@
   <p class="kicker">Rede social</p>
   <ul>
     {#each socialItems as it}
-      <li>
+      <li data-requires={it.requires}>
         <a href={it.href} class:active={active === it.id}>
           <Icon name={it.icon} size={20} />
           <span>{it.label}</span>
@@ -113,10 +116,11 @@
     {/if}
   </ul>
 
-  <p class="kicker">Política</p>
+  <p class="kicker" data-requires="mandates">Política</p>
+  <p class="kicker" data-when-off="mandates">Participação</p>
   <ul>
     {#each politicalItems as it}
-      <li>
+      <li data-requires={it.requires}>
         <a href={it.href} class:active={active === it.id}>
           <Icon name={it.icon} size={20} />
           <span>{it.label}</span>
@@ -125,7 +129,7 @@
     {/each}
   </ul>
 
-  <div class="cta">
+  <div class="cta" data-requires="proposals">
     <Button href="/propor" variant="primary" size="lg" fullWidth>
       <Icon name="plus" size={18} />
       Propor

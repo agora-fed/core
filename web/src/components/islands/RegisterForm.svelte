@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SITE_NAME } from '../../lib/site';
   // Registration: e-mail + senha + CPF, with client-side CPF check-digit
   // validation. Toggle Cidadão | Político/Candidata. In politician mode the
   // user picks their mandate from a searchable list; on submit we hit
@@ -20,6 +21,7 @@
     type MandateDto,
   } from '../../lib/api';
   import { formatCpf, isValidCpf, onlyDigits } from '../../lib/cpf';
+  import SsoButton from './SsoButton.svelte';
   import Input from '../ui/Input.svelte';
   import Button from '../ui/Button.svelte';
   import Alert from '../ui/Alert.svelte';
@@ -309,9 +311,10 @@
 {:else}
 {#if inviterName}
   <div class="invited-by" role="status">
-    <strong>{inviterName}</strong> te convidou pra DemocraciaBR. Crie sua conta abaixo.
+    <strong>{inviterName}</strong> te convidou pra {SITE_NAME}. Crie sua conta abaixo.
   </div>
 {/if}
+<SsoButton />
 <section class="rules" aria-label="Regras da conta">
   <h2>Antes de criar sua conta</h2>
   <ul>
@@ -323,7 +326,7 @@
       <strong>Uma publicação a cada 15 minutos</strong> — pra debate saudável,
       não enxurrada.
     </li>
-    <li>
+    <li data-requires="mandates">
       <strong>Só cidadã(o) verificada(o) vota em pauta urgente.</strong>
       Título de eleitor confirmado sinaliza voz brasileira.
     </li>
@@ -338,7 +341,7 @@
   {#if !showRoleOptions}
     <!-- B4: cadastro de cidadã(o) é o padrão. O seletor de papel só aparece
          quando alguém que representa um mandato/candidatura pede por ele. -->
-    <p class="role-reveal muted">
+    <p class="role-reveal muted" data-requires="mandates">
       Você está criando uma conta de <strong>cidadã(o)</strong>.
       <button
         type="button"
@@ -643,6 +646,7 @@
         </select>
       </label>
     </div>
+    <div data-requires="mandates">
     <Input
       id="r-titulo"
       label="Título de eleitor (opcional)"
@@ -655,6 +659,7 @@
         ? 'Habilita seu poder de voto no sistema.'
         : 'Sem o título, sua conta é criada, mas você NÃO terá poder de voto válido.'}
     />
+    </div>
   {/if}
 
   {#snippet atIcon()}<Icon name="at" size={16} />{/snippet}

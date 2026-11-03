@@ -1,0 +1,21 @@
+/* The gateway lists disabled modules on <html data-modules-off>; the list of ids here
+   must match UI_GATED_MODULES in crates/gateway/src/instance_html.rs. */
+html[data-modules-off~='mandates'] [data-requires~='mandates'],
+html[data-modules-off~='proposals'] [data-requires~='proposals'],
+html[data-modules-off~='forums'] [data-requires~='forums'],
+html[data-modules-off~='consultations'] [data-requires~='consultations'],
+html[data-modules-off~='federation'] [data-requires~='federation'] {
+  display: none !important;
+}
+
+/* Off by default: the gateway lists these on <html data-modules-on> only when on. The ids
+   must match UI_OPTIONAL_MODULES in the same file. */
+html:not([data-modules-on~='groups']) [data-requires~='groups'],
+html:not([data-modules-on~='meetings']) [data-requires~='meetings'] {
+  display: none !important;
+}
+
+/* Replacement entries, shown only on instances where the module is off. */
+html:not([data-modules-off~='mandates']) [data-when-off~='mandates'] {
+  display: none !important;
+}

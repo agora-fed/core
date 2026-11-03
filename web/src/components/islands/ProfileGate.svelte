@@ -3,6 +3,7 @@
   // nome/sexo/nascimento serem capturados: bloqueia a tela até completarem. Silencioso pra quem
   // já está completo ou não está logado (getProfileStatus responde 401 → não mostra nada).
   import { onMount } from 'svelte';
+  import { isModuleOff } from '../../lib/modules';
   import { getProfileStatus, completeProfile } from '../../lib/api';
   import { toast } from '../../lib/toasts';
 
@@ -23,6 +24,8 @@
   const valid = $derived(nomeValid && sexoValid && nascValid && nickValid);
 
   onMount(async () => {
+    // Voter-grade identity data only matters where the political modules run.
+    if (isModuleOff('mandates')) return;
     const res = await getProfileStatus();
     if (res.success && res.data && !res.data.complete) {
       show = true;
@@ -56,8 +59,11 @@
   <div class="gate" role="dialog" aria-modal="true" aria-labelledby="gate-h">
     <div class="card">
       <h2 id="gate-h">Complete seu cadastro</h2>
-      <p class="muted">
+      <p class="muted" data-requires="mandates">
         Precisamos de alguns dados obrigatórios pra sua conta cívica. Leva menos de um minuto.
+      </p>
+      <p class="muted" data-when-off="mandates">
+        Precisamos de alguns dados obrigatórios pra sua conta. Leva menos de um minuto.
       </p>
       <form onsubmit={save}>
         <label>

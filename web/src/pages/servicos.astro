@@ -1,11 +1,12 @@
 ---
+import { SITE_NAME } from '../lib/site';
 // Página institucional dos Serviços para candidaturas: declaração pública de
 // financiamento de campanha + pedido de doações.
 import BaseLayout from '../layouts/BaseLayout.astro';
 import ColorBar from '../components/illustrations/ColorBar.astro';
 
 const description =
-  'Serviços da DemocraciaBR para candidaturas: declare o financiamento da sua campanha em página pública auditável e peça doações dentro das regras do TSE.';
+  `Serviços da ${SITE_NAME} para candidaturas: declare o financiamento da sua campanha em página pública auditável e peça doações dentro das regras do TSE.`;
 ---
 
 <BaseLayout title="Serviços para candidaturas" {description}>
@@ -26,7 +27,7 @@ const description =
         <p>
           A prestação de contas oficial ao TSE acontece nos prazos da lei — e a
           maioria dos eleitores nunca a lê. A declaração de financiamento na
-          DemocraciaBR é o complemento
+          {' '}{SITE_NAME} é o complemento
           voluntário: <strong>uma página pública, com histórico imutável</strong>,
           que a própria candidatura atualiza ao longo da campanha.
         </p>
@@ -83,7 +84,7 @@ const description =
             A arrecadação acontece
             nos <strong>meios oficiais da candidatura</strong> (conta bancária de
             campanha ou plataforma de financiamento coletivo homologada pelo
-            TSE). A DemocraciaBR divulga e dá transparência
+            TSE). A {SITE_NAME} divulga e dá transparência
             — <strong>não intermedeia pagamento e não fica com percentual</strong>.
           </li>
         </ul>
@@ -115,7 +116,7 @@ const description =
         <p>
           Pelo mesmo motivo que o placar de mandatos existe: <strong>dado
           público que ninguém consegue ler não gera consequência</strong>. A
-          declaração na DemocraciaBR é legível, acompanhável durante a campanha
+          declaração na {SITE_NAME} é legível, acompanhável durante a campanha
           (não só depois dela) e fica ao lado do restante da vida pública da
           candidatura — propostas endereçadas, respostas, silêncios. Quem se
           compromete com transparência radical se diferencia de quem não se
