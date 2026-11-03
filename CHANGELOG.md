@@ -7,6 +7,26 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 
 ## [Unreleased]
 
+### Added
+- **Consultation kinds: consulta vs plebiscito** (ADR-0020, migration 0689).
+  `consulta` = open single-choice poll, federated as AP `Question`.
+  `plebiscito` = SSO-only, concordo/neutro/discordo, not federated.
+- **AP federation for consultas** (ADR-0020, migration 0690). The AP object
+  is served at `/actors/{forum}/objects/consulta-{uuid}` with `oneOf` options
+  and `votersCount`. Remote instances discover the poll by searching its URL.
+  Incoming votes (`Create{Note{name, inReplyTo}}`) are accepted at the forum
+  Group inbox. New `consultation_vote` table tracks both local and remote voters.
+- **Group actor attribution** (ADR-0020, migration 0691). Consultas are
+  attributed to a forum `Group` actor (`@propostas@agora.organica.social`),
+  not a personal `Person` actor. Each consulta has a `forum_id` FK.
+- **Separate navigation**: Consultas and Plebiscitos have distinct menu items,
+  list pages (`/consultas`, `/plebiscitos`), and create forms with fixed kind.
+
+### Fixed
+- **`consultation_vote` constraint bug**: `UNIQUE NULLS NOT DISTINCT` treated
+  all NULLs as equal, limiting votes to one remote actor per consultation.
+  Replaced with standard `UNIQUE` + `CHECK (num_nonnulls = 1)`.
+
 ## [0.71.0] — 2026-08-05
 
 ### Security
