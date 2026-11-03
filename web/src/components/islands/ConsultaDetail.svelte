@@ -25,6 +25,8 @@
   let picks = $state<Record<string, Choice>>({});
 
   const isOpen = $derived(consulta?.status === 'open');
+  const isPlebiscito = $derived(consulta?.kind === 'plebiscito');
+  const kindLabel = $derived(isPlebiscito ? 'Plebiscito' : 'Consulta');
 
   function pct(n: number, total: number): number {
     return total > 0 ? Math.round((n / total) * 100) : 0;
@@ -98,7 +100,8 @@
   </div>
 {:else if consulta}
   <header class="head">
-    <span class="badge {consulta.status}">{isOpen ? 'Consulta aberta' : 'Consulta encerrada'}</span>
+    <span class="badge {consulta.status}">{isOpen ? `${kindLabel} aberto` : `${kindLabel} encerrado`}</span>
+    {#if isPlebiscito}<span class="badge sso">Somente membros</span>{/if}
     <h1>{consulta.title}</h1>
     <p class="muted">
       {isOpen ? 'Encerra em' : 'Encerrou em'} {formatDate(consulta.closes_at)}
@@ -107,7 +110,11 @@
 
   {#if !loggedIn && isOpen}
     <div class="card notice">
-      <p><strong>Faça parte.</strong> Entre para registrar sua posição — os resultados abaixo são públicos.</p>
+      {#if isPlebiscito}
+        <p><strong>Plebiscito interno.</strong> Somente membros autenticados da Orgânica podem votar.</p>
+      {:else}
+        <p><strong>Faça parte.</strong> Entre para registrar sua posição — os resultados abaixo são públicos.</p>
+      {/if}
       <a class="btn" href={`/entrar/?next=${encodeURIComponent('/consulta/?id=' + consulta.id)}`}>Entrar para responder</a>
     </div>
   {/if}
@@ -167,6 +174,7 @@
   .badge { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; padding: 0.2rem 0.6rem; border-radius: 999px; }
   .badge.open { background: var(--c-green-soft, #dcfce7); color: var(--c-green-dark, #15803d); }
   .badge.closed { background: var(--c-bg, #f1f5f9); color: var(--muted, #64748b); }
+  .badge.sso { background: var(--c-blue-soft, #dbeafe); color: var(--c-blue-dark, #1d4ed8); margin-left: 0.35rem; }
   .card { background: var(--surface-1, var(--c-paper)); border: 1px solid var(--border-subtle, var(--c-border)); border-radius: 12px; padding: 1.25rem; }
   .center { text-align: center; padding: 2.5rem 1.5rem; }
   .notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.5rem; background: var(--c-green-soft, #f0fdf4); }

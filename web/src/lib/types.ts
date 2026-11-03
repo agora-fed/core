@@ -291,6 +291,7 @@ export interface ConsultationDto {
 export interface ConsultaSummary {
   id: string;
   title: string;
+  kind: 'consulta' | 'plebiscito';
   status: 'open' | 'closed';
   opens_at: string;
   closes_at: string;
@@ -318,6 +319,7 @@ export interface ConsultaQuestion {
 export interface ConsultaDetail {
   id: string;
   title: string;
+  kind: 'consulta' | 'plebiscito';
   status: 'open' | 'closed';
   opens_at: string;
   closes_at: string;

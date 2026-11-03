@@ -1158,6 +1158,7 @@ export const responderConsulta = (
 /** Cria uma consulta (admin ou político). Perguntas são prompts livres. */
 export const createConsulta = (input: {
   title: string;
+  kind: 'consulta' | 'plebiscito';
   opens_at: string;
   closes_at: string;
   questions: string[];

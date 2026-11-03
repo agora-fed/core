@@ -69,6 +69,7 @@ struct ListParams {
 struct ConsultationRow {
     id: Uuid,
     title: String,
+    kind: String,
     status: String,
     opens_at: DateTime<Utc>,
     closes_at: DateTime<Utc>,
@@ -128,7 +129,7 @@ async fn list(
     // Counts by subquery: number of questions and number of answers (answers link to the
     // consultation through the question, since consultation_response references question_id).
     let mut lb = sqlx::QueryBuilder::new(
-        "SELECT c.id, c.title, c.status, c.opens_at, c.closes_at, c.created_at, \
+        "SELECT c.id, c.title, c.kind, c.status, c.opens_at, c.closes_at, c.created_at, \
          (SELECT count(*) FROM consultations_consultation_question q \
             WHERE q.consultation_id = c.id) AS question_count, \
          (SELECT count(*) FROM consultation_response r \
@@ -177,6 +178,7 @@ struct QuestionDetail {
 struct ConsultationDetail {
     id: Uuid,
     title: String,
+    kind: String,
     status: String,
     opens_at: DateTime<Utc>,
     closes_at: DateTime<Utc>,
@@ -199,11 +201,12 @@ async fn detail(
         Uuid,
         String,
         String,
+        String,
         DateTime<Utc>,
         DateTime<Utc>,
         DateTime<Utc>,
     )> = match sqlx::query_as(
-        r"SELECT id, title, status, opens_at, closes_at, created_at
+        r"SELECT id, title, kind, status, opens_at, closes_at, created_at
                 FROM consultations_consultation
                WHERE id = $1 AND org_id = $2",
     )
@@ -218,7 +221,7 @@ async fn detail(
             return storage_error();
         }
     };
-    let Some((cid, title, status, opens_at, closes_at, created_at)) = head else {
+    let Some((cid, title, kind, status, opens_at, closes_at, created_at)) = head else {
         return fail(
             StatusCode::NOT_FOUND,
             "not_found",
@@ -292,6 +295,7 @@ async fn detail(
     let out = ConsultationDetail {
         id: cid,
         title,
+        kind,
         status,
         opens_at,
         closes_at,

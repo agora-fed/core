@@ -11,6 +11,7 @@
   let error = $state<string | null>(null);
 
   let title = $state('');
+  let kind = $state<'consulta' | 'plebiscito'>('plebiscito');
   let closesAt = $state(''); // datetime-local
   let questions = $state<string[]>(['']);
 
@@ -52,6 +53,7 @@
     busy = true;
     const res = await createConsulta({
       title: title.trim(),
+      kind,
       opens_at: new Date().toISOString(),
       closes_at: closes.toISOString(),
       questions: cleanQ,
@@ -85,6 +87,18 @@
         <h2>Nova consulta pública</h2>
 
         <label>
+          <span>Tipo</span>
+          <div class="kind-toggle">
+            <button type="button" class="kind-opt" class:active={kind === 'plebiscito'} onclick={() => (kind = 'plebiscito')}>
+              Plebiscito <span class="muted small">(só membros SSO)</span>
+            </button>
+            <button type="button" class="kind-opt" class:active={kind === 'consulta'} onclick={() => (kind = 'consulta')}>
+              Consulta <span class="muted small">(aberta / federada)</span>
+            </button>
+          </div>
+        </label>
+
+        <label>
           <span>Título</span>
           <input type="text" bind:value={title} maxlength="200" placeholder="Ex.: Prioridades do orçamento 2027" />
         </label>
@@ -95,7 +109,13 @@
         </label>
 
         <fieldset class="questions">
-          <legend>Perguntas <span class="muted small">(o cidadão responde concordo / neutro / discordo)</span></legend>
+          <legend>
+            {#if kind === 'plebiscito'}
+              Perguntas <span class="muted small">(o cidadão responde concordo / neutro / discordo)</span>
+            {:else}
+              Opções <span class="muted small">(enquete federada — o cidadão escolhe uma opção)</span>
+            {/if}
+          </legend>
           {#each questions as _q, i (i)}
             <div class="q-row">
               <input type="text" bind:value={questions[i]} maxlength="500" placeholder={`Pergunta ${i + 1}`} />
@@ -139,4 +159,8 @@
   .btn:disabled { opacity: 0.55; cursor: not-allowed; }
   .hint-error { color: #b91c1c; margin: 0; }
   .small { font-weight: 400; font-size: 0.82rem; }
+  .kind-toggle { display: flex; gap: 0.5rem; }
+  .kind-opt { flex: 1; padding: 0.6rem; border-radius: 8px; border: 1.5px solid var(--c-border, #cbd5e1); background: var(--c-paper, #fff); font: inherit; font-weight: 600; cursor: pointer; text-align: center; transition: border-color 100ms, background 100ms; }
+  .kind-opt:hover { border-color: var(--c-ink, #0f172a); }
+  .kind-opt.active { border-color: var(--c-green-dark, #15803d); background: var(--c-green-soft, #dcfce7); }
 </style>
