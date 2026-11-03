@@ -36,3 +36,4 @@ manifesto (R0.1) declarar posse. Já usadas:
 | 0689  | consultations — `kind` column (`consulta` / `plebiscito`), ADR-0020 |
 | 0690  | consultations — `consultation_vote` table (single-choice) + `created_by` FK, ADR-0020 |
 | 0691  | consultations — `forum_id` FK (Group actor attribution), ADR-0020 |
+| 0692  | consultations — `consulta_announce_delivery` (push federation), ADR-0020 |

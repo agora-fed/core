@@ -1033,7 +1033,16 @@ async fn outbox_get_populated(
             .await
             .is_some()
         {
-            let doc = crate::forum_federation::empty_outbox_json(&host, &handle);
+            let (consulta_items, consulta_total) =
+                crate::consulta_ap::outbox_items(&state.db, &host, &handle).await;
+            let id = format!("https://{host}/actors/{handle}/outbox");
+            let doc = serde_json::json!({
+                "@context": "https://www.w3.org/ns/activitystreams",
+                "id": id,
+                "type": "OrderedCollection",
+                "totalItems": consulta_total,
+                "orderedItems": consulta_items,
+            });
             return ([(header::CONTENT_TYPE, ACTIVITY_JSON)], axum::Json(doc)).into_response();
         }
         return StatusCode::NOT_FOUND.into_response();

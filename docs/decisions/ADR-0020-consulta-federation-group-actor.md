@@ -102,11 +102,13 @@ compatible: when `fed_group` lands, `forum_id` becomes a view or a simple migrat
 
 - **First AP surface for the Decidim layer.** Consultas can be discovered by searching
   their AP URL from any Mastodon/Pleroma/Misskey instance.
-- **Pull-only federation.** The consulta appears when a remote user searches the URL.
-  It does NOT automatically push to followers (no `Create{Question}` in the Group outbox).
-  Push (Announce to forum followers) is a follow-up.
-- **No outbox entry.** The Question is not in the Group's `outbox` collection, so it
-  won't appear on the @propostas profile page in Mastodon. URL search works.
+- **Push federation.** The worker sweep (`consulta_announce_sweep`) sends
+  `Create{Question}` to every accepted follower of the Group actor. Delivery
+  uses the same retry pattern as topic `Announce` (5 attempts, row-per-inbox).
+  Migration 0692 adds the `consulta_announce_delivery` table.
+- **Outbox entry.** The Group's outbox (`/actors/{handle}/outbox`) lists
+  `Create{Question}` activities for all consultas in that forum. Remote
+  instances that fetch the outbox see the consultas.
 - **Forward path to Ballot (Wave 4).** The consulta is `Ballot{method: SingleChoice,
   scope: Everyone, privacy: PublicTally, federation: Question}` in the Ballot model.
   When the Ballot primitive lands, consulta becomes a Ballot view.

@@ -235,9 +235,198 @@ fn parse_consulta_id_from_url(url: &str) -> Option<Uuid> {
     parse_consulta_id(segment)
 }
 
+/// Wrap a `Question` object in a `Create` activity from the Group actor.
+pub(crate) fn create_activity(actor_url: &str, question: &Value, consultation_id: Uuid) -> Value {
+    json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{actor_url}/activities/create-consulta-{consultation_id}"),
+        "type": "Create",
+        "actor": actor_url,
+        "to": question.get("to").cloned().unwrap_or(json!([])),
+        "cc": question.get("cc").cloned().unwrap_or(json!([])),
+        "audience": actor_url,
+        "published": question.get("published").cloned().unwrap_or(json!(null)),
+        "object": question,
+    })
+}
+
+/// Outbox items for a forum: `Create{Question}` for each open or recently closed consulta.
+pub(crate) async fn outbox_items(
+    db: &PgPool,
+    host: &str,
+    handle: &str,
+) -> (Vec<Value>, i64) {
+    let forum = match crate::forum_federation::lookup_by_handle(db, handle).await {
+        Some(f) => f,
+        None => return (vec![], 0),
+    };
+
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        r"SELECT c.id FROM consultations_consultation c
+          WHERE c.kind = 'consulta' AND c.forum_id = $1
+          ORDER BY c.created_at DESC LIMIT 40",
+    )
+    .bind(forum.id)
+    .fetch_all(db)
+    .await
+    .unwrap_or_default();
+
+    let total = rows.len() as i64;
+    let mut items = Vec::with_capacity(rows.len());
+    for (cid,) in rows {
+        if let Some(obj) = consulta_object_json(db, host, handle, cid).await {
+            let actor_url = format!("https://{host}/actors/{handle}");
+            items.push(create_activity(&actor_url, &obj, cid));
+        }
+    }
+    (items, total)
+}
+
+/// Sweep: enqueue delivery rows for open consultas × accepted followers, then send pending.
+pub(crate) async fn consulta_announce_sweep(db: &PgPool, host: &str) {
+    let _ = sqlx::query(
+        r"INSERT INTO consulta_announce_delivery (consultation_id, recipient_inbox)
+          SELECT c.id, ff.remote_inbox_url
+          FROM consultations_consultation c
+          JOIN forum f ON f.id = c.forum_id AND f.federated
+          JOIN forum_follower ff ON ff.forum_id = c.forum_id AND ff.accepted_at IS NOT NULL
+          WHERE c.kind = 'consulta' AND c.status = 'open' AND c.closes_at > now()
+            AND c.forum_id IS NOT NULL
+          ON CONFLICT (consultation_id, recipient_inbox) DO NOTHING",
+    )
+    .execute(db)
+    .await;
+
+    let pending: Vec<(Uuid, Uuid, String, Option<Uuid>)> = match sqlx::query_as(
+        r"SELECT d.id, d.consultation_id, d.recipient_inbox, c.forum_id
+          FROM consulta_announce_delivery d
+          JOIN consultations_consultation c ON c.id = d.consultation_id
+          WHERE d.sent_at IS NULL AND d.attempts < 5
+            AND c.kind = 'consulta' AND c.forum_id IS NOT NULL
+          ORDER BY d.created_at LIMIT 10",
+    )
+    .fetch_all(db)
+    .await
+    {
+        Ok(r) => r,
+        Err(err) => {
+            tracing::warn!(?err, "consulta announce: lookup failed");
+            return;
+        }
+    };
+
+    for (delivery_id, consultation_id, inbox, forum_id) in pending {
+        let Some(forum_id) = forum_id else { continue };
+
+        let forum = match crate::forum_federation::lookup_by_handle_by_id(db, forum_id).await {
+            Some(f) => f,
+            None => continue,
+        };
+        let handle = crate::forum_federation::path_to_handle(&forum.full_path);
+        let actor_url = format!("https://{host}/actors/{handle}");
+
+        let Some((_, private_pem)) =
+            crate::forum_federation::ensure_forum_keys(db, forum_id).await
+        else {
+            continue;
+        };
+
+        let Some(question) = consulta_object_json(db, host, &handle, consultation_id).await else {
+            let _ = sqlx::query(
+                "UPDATE consulta_announce_delivery SET attempts = 5 WHERE id = $1",
+            )
+            .bind(delivery_id)
+            .execute(db)
+            .await;
+            continue;
+        };
+
+        let activity = create_activity(&actor_url, &question, consultation_id);
+
+        match crate::federation::deliver_signed(&actor_url, &private_pem, &inbox, &activity).await
+        {
+            Ok(()) => {
+                let _ = sqlx::query(
+                    "UPDATE consulta_announce_delivery SET sent_at = now() WHERE id = $1 AND sent_at IS NULL",
+                )
+                .bind(delivery_id)
+                .execute(db)
+                .await;
+                tracing::info!(
+                    %consultation_id, inbox = %inbox,
+                    "consulta: Create(Question) delivered"
+                );
+            }
+            Err(err) => {
+                let _ = sqlx::query(
+                    "UPDATE consulta_announce_delivery SET attempts = attempts + 1 WHERE id = $1",
+                )
+                .bind(delivery_id)
+                .execute(db)
+                .await;
+                tracing::warn!(?err, inbox = %inbox, "consulta: Create(Question) delivery failed");
+            }
+        }
+    }
+}
+
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn create_activity_shape() {
+        let cid = Uuid::parse_str("56a3eb5f-a036-410e-8e6a-8b7bd32769ea").unwrap();
+        let actor = "https://agora.organica.social/actors/propostas";
+        let question = json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": format!("{actor}/objects/consulta-{cid}"),
+            "type": "Question",
+            "attributedTo": actor,
+            "to": [actor, "https://www.w3.org/ns/activitystreams#Public"],
+            "cc": [format!("{actor}/followers")],
+            "published": "2026-11-03T11:59:19Z",
+            "oneOf": [],
+        });
+
+        let activity = create_activity(actor, &question, cid);
+
+        assert_eq!(activity["type"], "Create");
+        assert_eq!(activity["actor"], actor);
+        assert_eq!(activity["object"]["type"], "Question");
+        assert_eq!(activity["object"]["attributedTo"], actor);
+        assert_eq!(
+            activity["id"],
+            format!("{actor}/activities/create-consulta-{cid}")
+        );
+        assert!(activity["to"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v == "https://www.w3.org/ns/activitystreams#Public"));
+
+        let activity2 = create_activity(actor, &question, cid);
+        assert_eq!(activity["id"], activity2["id"], "id must be stable");
+    }
+
+    #[test]
+    fn parse_consulta_id_round_trip() {
+        let id = Uuid::parse_str("56a3eb5f-a036-410e-8e6a-8b7bd32769ea").unwrap();
+        let url = consulta_object_url("agora.organica.social", "propostas", id);
+        assert!(url.contains("consulta-56a3eb5f"));
+        let segment = url.rsplit('/').next().unwrap();
+        assert_eq!(parse_consulta_id(segment), Some(id));
+    }
+
+    #[test]
+    fn html_escape_covers_basics() {
+        assert_eq!(html_escape("<b>&\"x\"</b>"), "&lt;b&gt;&amp;&quot;x&quot;&lt;/b&gt;");
+    }
 }

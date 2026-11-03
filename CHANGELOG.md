@@ -21,6 +21,10 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
   not a personal `Person` actor. Each consulta has a `forum_id` FK.
 - **Separate navigation**: Consultas and Plebiscitos have distinct menu items,
   list pages (`/consultas`, `/plebiscitos`), and create forms with fixed kind.
+- **Push federation for consultas** (ADR-0020, migration 0692). The worker
+  sends `Create{Question}` to every accepted follower of the Group actor.
+  The Group outbox now lists consultas. Remote instances display the poll
+  after following `@propostas`.
 
 ### Fixed
 - **`consultation_vote` constraint bug**: `UNIQUE NULLS NOT DISTINCT` treated
