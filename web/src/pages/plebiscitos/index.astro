@@ -1,0 +1,36 @@
+---
+import { SITE_NAME } from '../../lib/site';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import ConsultasList from '../../components/islands/ConsultasList.svelte';
+import CreateConsultaForm from '../../components/islands/CreateConsultaForm.svelte';
+
+const description =
+  `Plebiscitos internos da ${SITE_NAME}: somente membros autenticados votam concordo, neutro ou discordo.`;
+---
+
+<BaseLayout title="Plebiscitos" {description}>
+  <section class="section">
+    <div class="container">
+      <header class="page-head">
+        <h1>Plebiscitos</h1>
+        <p class="muted lede">
+          Votações internas para membros. Você responde concordo, neutro ou
+          discordo — e cada resposta é um sinal direto para quem decide.
+        </p>
+      </header>
+
+      <CreateConsultaForm fixedKind="plebiscito" client:load />
+      <ConsultasList kind="plebiscito" client:load />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .page-head {
+    max-width: 46rem;
+    margin-bottom: 2rem;
+  }
+  .lede {
+    font-size: 1.1rem;
+  }
+</style>

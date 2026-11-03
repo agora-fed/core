@@ -35,6 +35,7 @@ pub mod campaign_groups;
 pub mod campanha;
 pub mod civic_notify;
 mod civic_sources;
+pub mod consulta_ap;
 pub mod consultas_ext;
 pub mod contact;
 pub mod discovery;

@@ -69,6 +69,20 @@ pub(crate) async fn lookup_by_handle(db: &PgPool, handle: &str) -> Option<FedFor
     .filter(|f: &FedForum| f.federated)
 }
 
+/// Resolve a federated forum by its UUID.
+pub(crate) async fn lookup_by_handle_by_id(db: &PgPool, forum_id: Uuid) -> Option<FedForum> {
+    sqlx::query_as(
+        r"SELECT id, full_path, name, description, federated, avatar_url, banner_url
+          FROM forum WHERE id = $1 AND federated AND forum_readable(id, NULL)",
+    )
+    .bind(forum_id)
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+    .filter(|f: &FedForum| f.federated)
+}
+
 /// Group keypair — lazy generation, race-safe (guarded UPDATE + re-select).
 pub(crate) async fn ensure_forum_keys(db: &PgPool, forum_id: Uuid) -> Option<(String, String)> {
     let row: Option<(Option<String>, Option<String>)> =
@@ -380,17 +394,6 @@ pub(crate) async fn followers_json(
     })
 }
 
-/// An empty outbox: Lemmy fetches it when it first sees a community, to backfill.
-pub(crate) fn empty_outbox_json(host: &str, handle: &str) -> Value {
-    json!({
-        "@context": "https://www.w3.org/ns/activitystreams",
-        "id": format!("https://{host}/actors/{handle}/outbox"),
-        "type": "OrderedCollection",
-        "totalItems": 0,
-        "orderedItems": [],
-    })
-}
-
 /// Announce sweep (1/min in the worker): enqueues new topics × followers and
 /// sends the pending ones signed with the forum's key. Idempotent per (topic, inbox).
 pub async fn announce_sweep(db: &PgPool, public_origin: &str) {
@@ -501,6 +504,8 @@ pub async fn announce_sweep(db: &PgPool, public_origin: &str) {
             }
         }
     }
+
+    crate::consulta_ap::consulta_announce_sweep(db, host).await;
 
     let config = crate::forum_inbound::InboundConfig::from_env();
     crate::forum_outbound::sweep(db, host, &config).await;
