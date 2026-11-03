@@ -37,7 +37,11 @@
       <li class="card item" class:closed={c.status === 'closed'}>
         <a class="item-link" href={`/consulta/?id=${c.id}`}>
           <div class="row">
-            <span class="badge {c.status}">{c.status === 'open' ? 'Aberta' : 'Encerrada'}</span>
+            <span>
+              <span class="badge {c.status}">{c.status === 'open' ? 'Aberta' : 'Encerrada'}</span>
+              <span class="badge kind">{c.kind === 'plebiscito' ? 'Plebiscito' : 'Consulta'}</span>
+              {#if c.kind === 'plebiscito'}<span class="badge sso">Membros</span>{/if}
+            </span>
             <span class="muted small">{c.question_count} {c.question_count === 1 ? 'pergunta' : 'perguntas'}</span>
           </div>
           <h2 class="item-title">{c.title}</h2>
@@ -62,6 +66,8 @@
   .badge { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; padding: 0.15rem 0.5rem; border-radius: 999px; }
   .badge.open { background: var(--c-green-soft, #dcfce7); color: var(--c-green-dark, #15803d); }
   .badge.closed { background: var(--c-bg, #f1f5f9); color: var(--muted, #64748b); }
+  .badge.kind { background: var(--c-purple-soft, #f3e8ff); color: var(--c-purple-dark, #7c3aed); margin-left: 0.25rem; }
+  .badge.sso { background: var(--c-blue-soft, #dbeafe); color: var(--c-blue-dark, #1d4ed8); margin-left: 0.25rem; }
   .card {
     background: var(--surface-1, var(--c-paper));
     border: 1px solid var(--border-subtle, var(--c-border));
