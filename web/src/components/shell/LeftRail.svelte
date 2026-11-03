@@ -25,6 +25,7 @@
     { id: 'propostas', href: '/propostas', icon: 'ballot', label: 'Propostas', requires: 'proposals' },
     { id: 'foruns', href: '/f/', icon: 'chat', label: 'Fóruns', requires: 'forums' },
     { id: 'consultas', href: '/consultas', icon: 'mic', label: 'Consultas', requires: 'consultations' },
+    { id: 'plebiscitos', href: '/plebiscitos', icon: 'ballot', label: 'Plebiscitos', requires: 'consultations' },
     { id: 'grupos', href: '/grupos', icon: 'users', label: 'Grupos', requires: 'groups' },
     { id: 'reunioes', href: '/reunioes', icon: 'calendar', label: 'Reuniões', requires: 'meetings' },
   ];

@@ -5,13 +5,18 @@
   import { onMount } from 'svelte';
   import { createConsulta } from '../../lib/api';
 
+  interface Props {
+    fixedKind?: 'consulta' | 'plebiscito';
+  }
+  let { fixedKind }: Props = $props();
+
   let canManage = $state(false);
   let open = $state(false);
   let busy = $state(false);
   let error = $state<string | null>(null);
 
   let title = $state('');
-  let kind = $state<'consulta' | 'plebiscito'>('plebiscito');
+  let kind = $state<'consulta' | 'plebiscito'>(fixedKind ?? 'plebiscito');
   let closesAt = $state(''); // datetime-local
   let questions = $state<string[]>(['']);
 
@@ -86,6 +91,7 @@
       <form class="card form" onsubmit={(e) => { e.preventDefault(); submit(); }}>
         <h2>Nova consulta pública</h2>
 
+        {#if !fixedKind}
         <label>
           <span>Tipo</span>
           <div class="kind-toggle">
@@ -97,6 +103,7 @@
             </button>
           </div>
         </label>
+        {/if}
 
         <label>
           <span>Título</span>

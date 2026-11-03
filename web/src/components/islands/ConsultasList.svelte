@@ -7,12 +7,17 @@
   import { formatDate } from '../../lib/format';
   import type { ConsultaSummary } from '../../lib/types';
 
+  interface Props {
+    kind?: 'consulta' | 'plebiscito';
+  }
+  let { kind }: Props = $props();
+
   let loading = $state(true);
   let error = $state<string | null>(null);
   let items = $state<ConsultaSummary[]>([]);
 
   onMount(async () => {
-    const res = await getConsultas();
+    const res = await getConsultas(kind);
     loading = false;
     if (res.ok && res.data) items = res.data;
     else error = res.error ?? 'Não foi possível carregar as consultas.';
@@ -28,8 +33,8 @@
   </div>
 {:else if items.length === 0}
   <div class="card state">
-    <h2>Nenhuma consulta publicada</h2>
-    <p class="muted">Novas consultas públicas aparecerão aqui assim que abertas.</p>
+    <h2>{kind === 'plebiscito' ? 'Nenhum plebiscito publicado' : 'Nenhuma consulta publicada'}</h2>
+    <p class="muted">{kind === 'plebiscito' ? 'Novos plebiscitos aparecerão aqui assim que abertos.' : 'Novas consultas públicas aparecerão aqui assim que abertas.'}</p>
   </div>
 {:else}
   <ul class="list grid grid-2">
@@ -38,11 +43,10 @@
         <a class="item-link" href={`/consulta/?id=${c.id}`}>
           <div class="row">
             <span>
-              <span class="badge {c.status}">{c.status === 'open' ? 'Aberta' : 'Encerrada'}</span>
-              <span class="badge kind">{c.kind === 'plebiscito' ? 'Plebiscito' : 'Consulta'}</span>
+              <span class="badge {c.status}">{c.status === 'open' ? (c.kind === 'consulta' ? 'Aberta' : 'Aberto') : (c.kind === 'consulta' ? 'Encerrada' : 'Encerrado')}</span>
               {#if c.kind === 'plebiscito'}<span class="badge sso">Membros</span>{/if}
             </span>
-            <span class="muted small">{c.question_count} {c.question_count === 1 ? 'pergunta' : 'perguntas'}</span>
+            <span class="muted small">{c.question_count} {c.question_count === 1 ? (c.kind === 'consulta' ? 'opção' : 'pergunta') : (c.kind === 'consulta' ? 'opções' : 'perguntas')}</span>
           </div>
           <h2 class="item-title">{c.title}</h2>
           <p class="muted small">
