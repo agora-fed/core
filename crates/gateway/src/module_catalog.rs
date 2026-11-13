@@ -333,7 +333,7 @@ pub static CATALOG: &[ModuleManifest] = &[
     },
     ModuleManifest {
         id: "initiatives",
-        title: "Iniciativas populares",
+        title: "Abaixo-assinados",
         core: false,
         flag_key: "module.initiatives",
         default_enabled: false,

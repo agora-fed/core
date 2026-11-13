@@ -402,6 +402,18 @@ fn sso_required() -> Response {
         .into_response()
 }
 
+/// The sign-up rules for a flow that creates an account outside `/auth/register`
+/// (public petition signing): the origin's IP rules (scope `signup`) and the blocked
+/// e-mail domains. `true` means the account may be created.
+pub(crate) async fn signup_allowed(db: &PgPool, headers: &HeaderMap, email: &str) -> bool {
+    if let Some(ip) = client_ip(headers) {
+        if ip_denied(db, ip, "signup").await {
+            return false;
+        }
+    }
+    !email_domain_blocked(db, email).await
+}
+
 /// Middleware applied to the `/api/v1` router: intercepts register/login and
 /// aplica as regras administradas em /admin/email-domains e /admin/ip-rules.
 /// Fails OPEN on a DB error (log + carry on) — a storage outage

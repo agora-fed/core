@@ -1,0 +1,17 @@
+---
+// Target of the confirmation e-mail. It carries a secret, so it is never indexed.
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PetitionConfirm from '../../components/islands/PetitionConfirm.svelte';
+---
+
+<BaseLayout title="Confirmar assinatura" description="Confirmação de assinatura." noindex>
+  <section class="section">
+    <div class="container narrow">
+      <PetitionConfirm client:load />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .narrow { max-width: 40rem; }
+</style>

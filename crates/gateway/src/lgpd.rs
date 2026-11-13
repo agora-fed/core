@@ -175,6 +175,19 @@ async fn build_export(db: &PgPool, citizen_id: Uuid) -> Result<serde_json::Value
     .fetch_all(db)
     .await?;
 
+    // Petitions I signed, with what I chose to show.
+    let petition_signatures: Vec<serde_json::Value> = sqlx::query_scalar(
+        r"SELECT jsonb_build_object(
+              'petition_id', s.initiative_id, 'title', i.title,
+              'public_name', s.public_name, 'city', s.city, 'signed_at', s.created_at
+          )
+          FROM initiative_signature s JOIN initiative i ON i.id = s.initiative_id
+          WHERE s.citizen_id = $1",
+    )
+    .bind(citizen_id)
+    .fetch_all(db)
+    .await?;
+
     Ok(json!({
         "$schema": "https://democracia.social.br/schemas/lgpd-export-v1.json",
         "generated_at": chrono::Utc::now(),
@@ -186,6 +199,7 @@ async fn build_export(db: &PgPool, citizen_id: Uuid) -> Result<serde_json::Value
         "amendments": amendments,
         "notifications": notifications,
         "push_subscriptions": push_subs,
+        "petition_signatures": petition_signatures,
         "note": "Este é o pacote completo dos seus dados pessoais na DemocraciaBR. Interesse público em conteúdo já publicado (proposta, voto) pode fazer com que o artefato permaneça no registro histórico após exclusão da conta — apenas seu vínculo com ele é removido."
     }))
 }
@@ -210,6 +224,28 @@ async fn delete_account(State(state): State<AppState>, headers: HeaderMap) -> Re
         crate::pii_registry::erase_set_clause()
     );
     if let Err(err) = sqlx::query(&erase_sql).bind(cid).execute(&mut *tx).await {
+        return storage(err);
+    }
+    // 1b. Petitions: the signature stays in the count (public deliberation, like votes),
+    // but the name and city shown with it go, and so do open requests for the address.
+    if let Err(err) = sqlx::query(
+        "UPDATE initiative_signature SET public_name = NULL, city = NULL WHERE citizen_id = $1",
+    )
+    .bind(cid)
+    .execute(&mut *tx)
+    .await
+    {
+        return storage(err);
+    }
+    if let Err(err) = sqlx::query(
+        "DELETE FROM initiative_pending_signature WHERE email IN (
+            SELECT email FROM auth_credential WHERE citizen_id = $1
+        )",
+    )
+    .bind(cid)
+    .execute(&mut *tx)
+    .await
+    {
         return storage(err);
     }
     // 2. Limpa credenciais (email, cpf, senha_hash).

@@ -77,6 +77,7 @@ pub mod notification_receipts;
 pub mod notifications;
 pub mod og_cards;
 pub mod outbound;
+mod petitions;
 pub mod pii_registry;
 mod sso_oidc;
 
@@ -269,6 +270,8 @@ pub fn api_router(state: AppState) -> Router {
         .merge(crate::party_dashboard::routes(state.clone()))
         .merge(crate::module_gate::routes(state.clone()))
         .merge(crate::groups::routes(state.clone()))
+        // Public petitions: sign with or without an account (module.initiatives).
+        .merge(crate::petitions::routes(state.clone()))
         .merge(admin_ext::routes(state.clone()))
         // Super-admin: editar/ocultar/apagar mandato, proposta, partido (0.40, SOCRATES).
         .merge(admin_content::routes(state.clone()))
@@ -279,7 +282,9 @@ pub fn api_router(state: AppState) -> Router {
         // spaces
         .merge(dsoc_processes::routes(state.clone()))
         .merge(dsoc_assemblies::routes(state.clone()))
-        .merge(dsoc_initiatives::routes(state.clone()))
+        // The raw `dsoc-initiatives` routes are NOT mounted: they know nothing of the
+        // author, the closed/hidden states or moderation. `/petitions` (crate::petitions)
+        // is the public surface over the same tables.
         .merge(dsoc_consultations::routes(state.clone()))
         .merge(dsoc_mandates::routes(state.clone()))
         // Party catalog + subnational directories + administrators (phase 2B,

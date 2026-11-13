@@ -383,7 +383,15 @@ async fn sign_in(db: &PgPool, claims: &Claims) -> Result<Option<(Uuid, i64)>, sq
 
     let citizen = match citizen {
         Some(id) => id,
-        None => create_account(&mut tx, org, claims, email.as_deref()).await?,
+        None => {
+            let account = NewAccount {
+                subject: Some(&claims.sub),
+                name: claims.name.as_deref(),
+                preferred_handle: claims.preferred_username.as_deref(),
+                email: email.as_deref(),
+            };
+            create_account(&mut tx, org, &account).await?
+        }
     };
 
     if email.is_some() {
@@ -432,20 +440,31 @@ async fn sign_in(db: &PgPool, claims: &Claims) -> Result<Option<(Uuid, i64)>, sq
     Ok(Some((session, ttl)))
 }
 
-async fn create_account(
+/// What a new account starts with. Used by the SSO login and by petition signing.
+pub(crate) struct NewAccount<'a> {
+    /// The identity provider's subject, when the person has a provider account.
+    pub subject: Option<&'a str>,
+    pub name: Option<&'a str>,
+    pub preferred_handle: Option<&'a str>,
+    /// A VERIFIED address only.
+    pub email: Option<&'a str>,
+}
+
+/// Create a citizen (and, with an address, a password-less credential that keeps it).
+pub(crate) async fn create_account(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     org: Uuid,
-    claims: &Claims,
-    email: Option<&str>,
+    account: &NewAccount<'_>,
 ) -> Result<Uuid, sqlx::Error> {
     let id = Uuid::now_v7();
-    let name = display_name(claims.name.as_deref());
+    let email = account.email;
+    let name = display_name(account.name);
     let level = if email.is_some() {
         "email"
     } else {
         "anonymous"
     };
-    let wanted = usable_handle(claims.preferred_username.as_deref());
+    let wanted = usable_handle(account.preferred_handle);
     let handle = match wanted {
         Some(handle) => {
             let taken: bool = sqlx::query_scalar(
@@ -459,7 +478,9 @@ async fn create_account(
         }
         None => None,
     }
-    .unwrap_or_else(|| format!("cidadao-{}", &id.as_simple().to_string()[..8]));
+    // The tail of a UUIDv7 is random; its head is the clock, so two accounts made in the
+    // same minute would collide on `citizen_org_handle_unique`.
+    .unwrap_or_else(|| format!("cidadao-{}", &id.as_simple().to_string()[20..]));
 
     sqlx::query(
         "INSERT INTO citizen
@@ -468,7 +489,7 @@ async fn create_account(
     )
     .bind(id)
     .bind(org)
-    .bind(&claims.sub)
+    .bind(account.subject)
     .bind(level)
     .bind(&handle)
     .bind(&name)

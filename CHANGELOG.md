@@ -8,6 +8,12 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 ## [Unreleased]
 
 ### Added
+- **Public petitions (abaixo-assinados)** (migration 0693, `docs/petitions.md`).
+  Members publish a text with a signature goal. Anyone signs with name and e-mail,
+  after a self-hosted ALTCHA proof-of-work; the signature counts after the e-mail
+  link. The operator chooses who sends that e-mail: this server (`local`, SMTP) or
+  the identity provider (`sso`). Optional Zitadel provisioning creates the signer's
+  SSO account. Authors close; admins hide. Switch: `module.initiatives`.
 - **Consultation kinds: consulta vs plebiscito** (ADR-0020, migration 0689).
   `consulta` = open single-choice poll, federated as AP `Question`.
   `plebiscito` = SSO-only, concordo/neutro/discordo, not federated.

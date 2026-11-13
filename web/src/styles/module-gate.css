@@ -11,7 +11,8 @@ html[data-modules-off~='federation'] [data-requires~='federation'] {
 /* Off by default: the gateway lists these on <html data-modules-on> only when on. The ids
    must match UI_OPTIONAL_MODULES in the same file. */
 html:not([data-modules-on~='groups']) [data-requires~='groups'],
-html:not([data-modules-on~='meetings']) [data-requires~='meetings'] {
+html:not([data-modules-on~='meetings']) [data-requires~='meetings'],
+html:not([data-modules-on~='initiatives']) [data-requires~='initiatives'] {
   display: none !important;
 }
 
