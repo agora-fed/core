@@ -1,0 +1,16 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PetitionsApp from '../components/islands/PetitionsApp.svelte';
+---
+
+<BaseLayout title="Abaixo-assinados" description="Abaixo-assinados da comunidade: apoie uma ideia ou crie a sua.">
+  <section class="section">
+    <div class="container narrow">
+      <PetitionsApp client:load />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .narrow { max-width: 48rem; }
+</style>

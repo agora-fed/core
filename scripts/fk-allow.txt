@@ -34,3 +34,5 @@
 0676_topic_representative_tags.sql forum_topic
 # Group inbox idempotency (issue #6): the log belongs to the forums crate, same as forum.
 0678_forum_inbox_seen.sql forum
+# initiative_pending_signature lives in the initiatives crate, same as initiative (public petitions).
+0693_initiative_public_signing.sql initiative

@@ -47,10 +47,15 @@ const MODULE_ROUTES: [(&str, &str); 19] = [
 const UNAVAILABLE_PAGE: &str = "/modulo-indisponivel/";
 
 /// First path segment of static pages that belong to a module that is off by default.
-const OPTIONAL_MODULE_ROUTES: &[(&str, &str)] = &[("grupos", "groups"), ("reunioes", "meetings")];
+const OPTIONAL_MODULE_ROUTES: &[(&str, &str)] = &[
+    ("grupos", "groups"),
+    ("reunioes", "meetings"),
+    ("abaixo-assinados", "initiatives"),
+    ("abaixo-assinado", "initiatives"),
+];
 
 /// Off by default, so listed only when on. Must match web/src/styles/module-gate.css.
-const UI_OPTIONAL_MODULES: &[&str] = &["groups", "meetings"];
+const UI_OPTIONAL_MODULES: &[&str] = &["groups", "meetings", "initiatives"];
 
 /// Must match web/src/styles/module-gate.css.
 const UI_GATED_MODULES: [&str; 5] = [

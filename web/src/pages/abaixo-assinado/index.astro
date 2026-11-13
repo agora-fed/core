@@ -1,0 +1,17 @@
+---
+// One petition: /abaixo-assinado/?id=<uuid>. Static page; the island reads the id.
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PetitionPage from '../../components/islands/PetitionPage.svelte';
+---
+
+<BaseLayout title="Abaixo-assinado" description="Leia o pedido e assine. Basta confirmar seu e-mail.">
+  <section class="section">
+    <div class="container narrow">
+      <PetitionPage client:load />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .narrow { max-width: 48rem; }
+</style>
