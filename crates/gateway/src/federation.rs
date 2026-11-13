@@ -239,6 +239,19 @@ async fn object_handler(
                         .into_response();
                 }
             }
+            if let Some(consultation_id) = crate::consulta_ap::parse_consulta_id(&id) {
+                if let Some(question) =
+                    crate::consulta_ap::consulta_object_json(&state.db, &host, &handle, consultation_id)
+                        .await
+                {
+                    return (
+                        StatusCode::OK,
+                        [(header::CONTENT_TYPE, ACTIVITY_JSON)],
+                        axum::Json(question),
+                    )
+                        .into_response();
+                }
+            }
             return StatusCode::NOT_FOUND.into_response();
         }
         Err(err) => {
@@ -667,6 +680,22 @@ where
                 );
                 return StatusCode::UNAUTHORIZED.into_response();
             }
+            // Consulta vote: intercept Create{Note{name, inReplyTo}} before
+            // the general inbound gate — votes work even without full forum
+            // inbound federation enabled.
+            if activity.get("type").and_then(Value::as_str) == Some("Create") {
+                if let Some(obj) = activity.get("object") {
+                    if crate::consulta_ap::handle_consulta_vote(
+                        &state.db,
+                        &signer_actor_url,
+                        obj,
+                    )
+                    .await
+                    {
+                        return StatusCode::ACCEPTED.into_response();
+                    }
+                }
+            }
             if config.enabled {
                 // Without this a server could present another account's document as its own.
                 if signer_actor.get("id").and_then(Value::as_str) != Some(&signer_actor_url) {
@@ -1004,7 +1033,16 @@ async fn outbox_get_populated(
             .await
             .is_some()
         {
-            let doc = crate::forum_federation::empty_outbox_json(&host, &handle);
+            let (consulta_items, consulta_total) =
+                crate::consulta_ap::outbox_items(&state.db, &host, &handle).await;
+            let id = format!("https://{host}/actors/{handle}/outbox");
+            let doc = serde_json::json!({
+                "@context": "https://www.w3.org/ns/activitystreams",
+                "id": id,
+                "type": "OrderedCollection",
+                "totalItems": consulta_total,
+                "orderedItems": consulta_items,
+            });
             return ([(header::CONTENT_TYPE, ACTIVITY_JSON)], axum::Json(doc)).into_response();
         }
         return StatusCode::NOT_FOUND.into_response();
@@ -2866,6 +2904,11 @@ async fn handle_inbox_create(
         .unwrap_or("");
     if attributed != signer_actor_url {
         tracing::warn!(attributed, signer = %signer_actor_url, "Create(Note) attribution mismatch — dropped");
+        return;
+    }
+    // Consulta vote: Mastodon sends Create{Note{name: "<option>", inReplyTo: "<question URL>"}}.
+    // Consume it here and skip regular Note processing.
+    if crate::consulta_ap::handle_consulta_vote(&state.db, signer_actor_url, object).await {
         return;
     }
     // Accept the Note if EITHER (a) at least one local citizen follows the sender, OR

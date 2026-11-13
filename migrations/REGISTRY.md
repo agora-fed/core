@@ -33,3 +33,8 @@ manifesto (R0.1) declarar posse. Já usadas:
 | Range | Escopo |
 |------:|--------|
 | 0600  | base/core — `user_role` + `citizen_role_binding` (papéis flexíveis, ADR-0011) |
+| 0689  | consultations — `kind` column (`consulta` / `plebiscito`), ADR-0020 |
+| 0690  | consultations — `consultation_vote` table (single-choice) + `created_by` FK, ADR-0020 |
+| 0691  | consultations — `forum_id` FK (Group actor attribution), ADR-0020 |
+| 0692  | consultations — `consulta_announce_delivery` (push federation), ADR-0020 |
+| 0693  | initiatives — public signing: `initiative.author_id/status`, `initiative_pending_signature`, `altcha_spent` |

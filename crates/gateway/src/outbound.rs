@@ -491,16 +491,33 @@ pub async fn guarded_post(
     body: Vec<u8>,
     policy: &OutboundPolicy,
 ) -> Result<(u16, Vec<u8>), OutboundError> {
+    guarded_send(reqwest::Method::POST, raw_url, headers, body, policy).await
+}
+
+/// Send a request with any `method` through the guard, returning `(status, body)`.
+///
+/// The same checks as [`guarded_post`]. Admin APIs (for example an identity provider's
+/// user API) also need `DELETE` and `PATCH`.
+///
+/// # Errors
+/// Returns the [`OutboundError`] describing which guard refused, or the transport failure.
+pub async fn guarded_send(
+    method: reqwest::Method,
+    raw_url: &str,
+    headers: &[(String, String)],
+    body: Vec<u8>,
+    policy: &OutboundPolicy,
+) -> Result<(u16, Vec<u8>), OutboundError> {
     let url = validate_url(raw_url, policy).inspect_err(|err| {
-        tracing::warn!(url = raw_url, error = %err, "outbound POST refused by the SSRF guard");
+        tracing::warn!(url = raw_url, error = %err, %method, "outbound request refused by the SSRF guard");
     })?;
     let addrs = resolve_checked(&url).await.inspect_err(|err| {
-        tracing::warn!(url = raw_url, error = %err, "outbound POST refused by the SSRF guard");
+        tracing::warn!(url = raw_url, error = %err, %method, "outbound request refused by the SSRF guard");
     })?;
     let host = url.host_str().unwrap_or_default().to_owned();
     let client = pinned_client(&host, &addrs, policy)?;
 
-    let mut req = client.post(url.clone()).body(body);
+    let mut req = client.request(method, url.clone()).body(body);
     for (name, value) in headers {
         req = req.header(name.as_str(), value.as_str());
     }

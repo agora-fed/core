@@ -1137,7 +1137,8 @@ export const getConsultations = (orgId = DEFAULT_ORG_ID, limit = 30) =>
 // Superfície pública: leitura sem login, resposta com login (concordo/neutro/discordo).
 
 /** Lista pública de consultas (título, status, janela, nº perguntas). */
-export const getConsultas = () => apiGet<ConsultaSummary[]>('/api/v1/consultas');
+export const getConsultas = (kind?: 'consulta' | 'plebiscito') =>
+  apiGet<ConsultaSummary[]>(`/api/v1/consultas${kind ? `?kind=${kind}` : ''}`);
 
 /** Detalhe público de uma consulta. Credenciado: quando logado traz `my_answer`. */
 export const getConsulta = (id: string) =>
@@ -1163,6 +1164,13 @@ export const createConsulta = (input: {
   closes_at: string;
   questions: string[];
 }) => apiPost<{ id: string }>('/api/v1/consultas', input);
+
+/** O cidadão logado vota em uma opção (consulta single-choice). */
+export const votarConsulta = (id: string, questionId: string) =>
+  apiPost<{ saved: boolean }>(
+    `/api/v1/consultas/${encodeURIComponent(id)}/votar`,
+    { question_id: questionId },
+  );
 
 /** Encerra uma consulta aberta (admin ou político). */
 export const closeConsulta = (id: string) =>
