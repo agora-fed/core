@@ -7,6 +7,15 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 
 ## [Unreleased]
 
+### Added
+- **DIOGENES add-on** ([agora-fed/diogenes](https://github.com/agora-fed/diogenes)): vote
+  count and articulation rooms for the Chamber of Deputies, at `/articulacao/`. Based on the
+  "Placar de Votações" design by Lucas Leffa. Compiled in through the `diogenes` cargo feature
+  (on by default) and **off per org** until `module.diogenes` is enabled. New permissions
+  `diogenes.rooms.create` and `diogenes.sync.operate`. The add-on owns its `diogenes_*`
+  tables and applies them at start. The Chamber/TSE sync is opt-in: `DIOGENES_SYNC_ENABLED=true`; only `DIOGENES_OPERATOR_ORG` can
+  trigger it by hand. The dependency is pinned by commit (`rev`).
+
 ### Security
 - **OAuth bearer tokens are now limited to their scopes.** `inject_identity` accepted a
   Mastodon Client API token as a full login and never read its `scopes`, so a token

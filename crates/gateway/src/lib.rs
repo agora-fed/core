@@ -39,6 +39,8 @@ mod civic_sources;
 pub mod consulta_ap;
 pub mod consultas_ext;
 pub mod contact;
+#[cfg(feature = "diogenes")]
+pub mod diogenes_addon;
 pub mod discovery;
 pub mod elections;
 pub mod email_templates;
@@ -252,10 +254,29 @@ pub(crate) fn cookie_value<'a>(cookie_header: &'a str, name: &str) -> Option<&'a
     })
 }
 
+/// Add-on API routes (`/api/v1/...`). They start the `api` chain, so the identity, signup-gate
+/// and rate-limit layers at the end of that chain cover them too.
+fn addon_api_routes(state: &AppState) -> Router {
+    let router = Router::new();
+    #[cfg(feature = "diogenes")]
+    let router = router.merge(diogenes_addon::routes(state.clone()));
+    #[cfg(not(feature = "diogenes"))]
+    let _ = state;
+    router
+}
+
+/// Add-on pages at the site root (before the static-site fallback).
+fn addon_root_routes() -> Router {
+    let router = Router::new();
+    #[cfg(feature = "diogenes")]
+    let router = router.merge(diogenes_addon::web_routes());
+    router
+}
+
 /// Compose every crate's `routes(state)` under `/api/v1`. Each crate owns its own paths and already
 /// carries its state, so the gateway merges them; cross-crate effects still flow only through events.
 pub fn api_router(state: AppState) -> Router {
-    let api = Router::new()
+    let api = addon_api_routes(&state)
         // platform
         .merge(dsoc_auth::routes(state.clone()))
         .merge(whoami::routes(state.clone()))
@@ -481,6 +502,8 @@ pub fn api_router(state: AppState) -> Router {
         // Forums (/f/*): SPA fallback — the front end routes client-side; any path
         // serves the same f/index.html (forums/topics created at runtime never 404).
         .merge(forums_spa_routes(state.clone()))
+        // Add-on pages, e.g. the DIOGENES articulation area at /articulacao/.
+        .merge(addon_root_routes())
         .fallback_service(static_site)
 }
 

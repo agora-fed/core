@@ -14,6 +14,12 @@ workspace = true
 name = "dsoc-gateway"
 path = "src/main.rs"
 
+[features]
+# DIOGENES add-on (agora-fed/diogenes): vote count + articulation rooms for the Chamber of
+# Deputies. Compiled in by default; it is still OFF per org until `module.diogenes` is enabled.
+default = ["diogenes"]
+diogenes = ["dep:diogenes"]
+
 [dependencies]
 dsoc-core = { path = "../core" }
 dsoc-db = { path = "../db" }
@@ -50,6 +56,9 @@ dsoc-surveys = { path = "../components/surveys" }
 dsoc-accountability = { path = "../components/accountability" }
 dsoc-consequence = { path = "../components/consequence" }
 dsoc-scorecard = { path = "../components/scorecard" }
+# add-ons
+# Pinned by commit: the add-on runs in-process with the DB pool. Bump the rev on purpose.
+diogenes = { git = "https://github.com/agora-fed/diogenes", rev = "de95ccbbf70fea9aafb3de48d8f89a46fe0ab592", optional = true }
 
 axum = { workspace = true }
 async-trait = { workspace = true }

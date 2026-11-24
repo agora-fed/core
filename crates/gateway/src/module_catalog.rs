@@ -39,6 +39,12 @@ const fn nav(label: &'static str, href: &'static str, order: i16) -> NavItem {
     }
 }
 
+/// DIOGENES permission: create articulation rooms. Declared here (always compiled) so the
+/// catalog is the same with or without the `diogenes` cargo feature.
+pub const DIOGENES_CREATE_ROOMS: &str = "diogenes.rooms.create";
+/// DIOGENES permission: trigger the parliamentary data sync by hand.
+pub const DIOGENES_OPERATE_SYNC: &str = "diogenes.sync.operate";
+
 /// The full registry, newest concerns last. Order is display order in the admin module list.
 pub static CATALOG: &[ModuleManifest] = &[
     // --- Core (always on; gateable=false) --------------------------------------------------
@@ -396,6 +402,30 @@ pub static CATALOG: &[ModuleManifest] = &[
         depends_on: &[],
         permissions: &[],
         nav: &[],
+    },
+    // DIOGENES add-on (agora-fed/diogenes): vote count and articulation rooms for the
+    // Chamber of Deputies. Off by default: an installation turns it on per org.
+    ModuleManifest {
+        id: "diogenes",
+        title: "Sala de articulação (DIOGENES)",
+        core: false,
+        flag_key: "module.diogenes",
+        default_enabled: false,
+        gateable: true,
+        depends_on: &[],
+        permissions: &[
+            managed(
+                DIOGENES_CREATE_ROOMS,
+                "Criar salas de articulação",
+                PermissionCategory::Administration,
+            ),
+            managed(
+                DIOGENES_OPERATE_SYNC,
+                "Operar a sincronização de dados parlamentares",
+                PermissionCategory::Administration,
+            ),
+        ],
+        nav: &[nav("Articulação", "/articulacao/", 90)],
     },
 ];
 

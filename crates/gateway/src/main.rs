@@ -57,6 +57,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Start the background event worker (the consequence loop's runtime: dispatch + SLA sweep).
     // It shares the same pool/clock and runs for the process lifetime; WORKER_ENABLED=false disables.
     dsoc_gateway::worker::spawn(state.clone());
+    // DIOGENES add-on: its own schema (diogenes_* tables) and the Chamber data sync.
+    #[cfg(feature = "diogenes")]
+    dsoc_gateway::diogenes_addon::start(&state).await;
 
     let addr = SocketAddr::from((Ipv6Addr::UNSPECIFIED, port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
