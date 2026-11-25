@@ -15,7 +15,11 @@ import {
   outcomeText,
   parseRoute,
   prioritiesIn,
+  projectBody,
   roleLabel,
+  RULE_CHOICES,
+  ruleText,
+  thresholdHint,
   safeUrl,
   sections,
   selectIds,
@@ -111,6 +115,51 @@ describe('labels', () => {
     expect(outcomeText({ outcome: { state: 'open', missing: 8, reachable: false }, counts, threshold: 308 })).toContain(
       'não alcança',
     );
+  });
+  it('states the outcome of a simple majority', () => {
+    const counts = { yes: 276, no: 186, disputed: 0, absent: 48, chair: 1, undecided: 2 };
+    const sc = (outcome: Parameters<typeof outcomeText>[0]['outcome']) => ({ outcome, counts, threshold: 257, rule: 'simple' as const });
+    expect(outcomeText(sc({ state: 'approved', margin: 90 }))).toBe(
+      'Aprovado por maioria simples — 276 Sim × 186 Não, vantagem de 90',
+    );
+    expect(outcomeText(sc({ state: 'rejected' }))).toBe(
+      'Rejeitado — o Sim (276) não supera mais o Não (186), ou o quórum de 257 não é possível',
+    );
+    expect(outcomeText(sc({ state: 'open', missing: 11, reachable: true, quorum_missing: 0 }))).toBe(
+      'Faltam 11 votos Sim entre os indecisos para vencer · Sim + Em disputa vence o Não',
+    );
+    expect(outcomeText(sc({ state: 'open', missing: 0, reachable: false, quorum_missing: 47 }))).toBe(
+      'O Sim vence o Não (276 × 186) · Sim + Em disputa não vence o Não · faltam 47 presentes para o quórum de 257',
+    );
+    // A server without the field (older add-on) still reads.
+    expect(outcomeText(sc({ state: 'open', missing: 3, reachable: true }))).not.toContain('quórum');
+  });
+  it('labels the rule', () => {
+    expect(ruleText('simple', 257)).toBe('maioria simples · quórum 257');
+    expect(ruleText('fixed', 308)).toBe('mínimo 308');
+    expect(ruleText(undefined, 257)).toBe('mínimo 257');
+    expect(RULE_CHOICES.map((c) => c.value)).toEqual(['auto', 'simple', 'fixed']);
+    expect(thresholdHint('auto')).toContain('PEC 308');
+    expect(thresholdHint('simple')).toContain('Quórum');
+    expect(thresholdHint('fixed')).toContain('308');
+  });
+  it('lets the server pick the rule when the form is on auto', () => {
+    expect(projectBody({ name: ' PL 1 ', rule: 'auto', threshold: '', bill: '2562481' })).toEqual({
+      name: 'PL 1',
+      bill_id: 2562481,
+    });
+    expect(projectBody({ name: 'X', rule: 'simple', threshold: '257', bill: '' })).toEqual({
+      name: 'X',
+      bill_id: null,
+      rule: 'simple',
+      threshold: 257,
+    });
+    // A bad number is not sent; the server keeps its default.
+    expect(projectBody({ name: 'X', rule: 'fixed', threshold: '-3', bill: ' ' })).toEqual({
+      name: 'X',
+      bill_id: null,
+      rule: 'fixed',
+    });
   });
   it('lists only orientations that exist', () => {
     expect(orientationsText([['PT', 'Sim'], ['PL', null], ['Gov.', 'Não']])).toBe('PT Sim · Gov. Não');

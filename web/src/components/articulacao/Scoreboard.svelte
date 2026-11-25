@@ -1,6 +1,6 @@
 <script lang="ts">
   // The count of one scenario: tiles, a bar in voting order, the threshold marker, the outcome.
-  import { barSegments, orientationsText, outcomeText, prioritiesIn, undecidedId, type Scenario } from '../../lib/articulacao';
+  import { barSegments, orientationsText, outcomeText, prioritiesIn, ruleText, undecidedId, type Scenario } from '../../lib/articulacao';
 
   let { scenario: sc, priorities }: { scenario: Scenario; priorities: number[] } = $props();
 
@@ -10,7 +10,7 @@
   const total = $derived(sc.total > 0 ? sc.total : 513);
   const custom = $derived(sc.columns.filter((c) => !c.key));
   const tiles = $derived([
-    { key: 'yes', label: `Sim (mínimo ${sc.threshold})`, n: sc.counts.yes, tone: 'yes' },
+    { key: 'yes', label: `Sim (${ruleText(sc.rule, sc.threshold)})`, n: sc.counts.yes, tone: 'yes' },
     { key: 'no', label: 'Não', n: sc.counts.no, tone: 'no' },
     { key: 'disputed', label: 'Em disputa', n: sc.counts.disputed, tone: 'disputed' },
     { key: 'undecided', label: 'Sem posição', n: sc.column_counts[und] ?? 0, tone: '' },
@@ -41,7 +41,9 @@
     <div class="s absent" style:width={`${seg.absent}%`}></div>
     <div class="s chair" style:width={`${seg.chair}%`}></div>
     <div class="s no" style:width={`${seg.no}%`}>{seg.no > 4 ? sc.counts.no : ''}</div>
-    <div class="marker" style:left={`${(100 * sc.threshold) / total}%`} title={`Mínimo: ${sc.threshold}`}></div>
+    {#if sc.rule !== 'simple'}
+      <div class="marker" style:left={`${(100 * sc.threshold) / total}%`} title={`Mínimo: ${sc.threshold}`}></div>
+    {/if}
   </div>
   <p class="outcome {sc.outcome.state}">{outcomeText(sc)}</p>
   {#if custom.length}

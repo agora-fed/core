@@ -3,8 +3,9 @@
   import Modal from '../ui/Modal.svelte';
   import Button from '../ui/Button.svelte';
   import Input from '../ui/Input.svelte';
+  import Select from '../ui/Select.svelte';
   import { toast } from '../../lib/toasts';
-  import { api, type Project } from '../../lib/articulacao';
+  import { api, projectBody, RULE_CHOICES, thresholdHint, type Project, type RuleChoice } from '../../lib/articulacao';
 
   interface Props {
     open: boolean;
@@ -18,6 +19,7 @@
   // The form starts from the values at open time; the modal is created anew each time.
   const initial = untrack(() => project);
   let name = $state(initial.name);
+  let rule = $state<RuleChoice>(initial.rule ?? 'fixed');
   let threshold = $state(String(initial.threshold));
   let bill = $state(initial.bill_id ? String(initial.bill_id) : '');
   let busy = $state(false);
@@ -25,11 +27,7 @@
   async function save(e: SubmitEvent) {
     e.preventDefault();
     busy = true;
-    const res = await api.patchProject(project.id, {
-      name,
-      threshold: Number(threshold),
-      bill_id: bill ? Number(bill) : null,
-    });
+    const res = await api.patchProject(project.id, projectBody({ name, rule, threshold, bill }));
     busy = false;
     if (!res.success) {
       toast.error(res.error?.message ?? 'Não foi possível salvar.');
@@ -53,7 +51,14 @@
 <Modal bind:open title="Configurar projeto" {onclose}>
   <form id="project-settings" onsubmit={save}>
     <Input label="Nome" bind:value={name} required maxlength={120} />
-    <Input label="Mínimo para aprovar" type="number" inputmode="numeric" bind:value={threshold} hint="257 = maioria absoluta · 308 = 3/5 (PEC)" />
+    <Select label="Regra de aprovação" bind:value={rule} options={RULE_CHOICES.filter((c) => c.value !== 'auto').map((c) => ({ ...c }))} />
+    <Input
+      label={rule === 'simple' ? 'Quórum' : 'Mínimo para aprovar'}
+      type="number"
+      inputmode="numeric"
+      bind:value={threshold}
+      hint={thresholdHint(rule)}
+    />
     <Input label="Id da proposição na Câmara" type="number" inputmode="numeric" bind:value={bill} hint="Opcional." />
   </form>
   {#snippet footer()}

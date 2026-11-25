@@ -18,6 +18,9 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
   Navigation follows the optional-module pattern (header, left rail, command palette, footer),
   pinned by `web/tests/modules.contract.test.ts`; production check in
   `web/tests/ui/articulacao.spec.ts`. Decision recorded in ADR-0020.
+  Projects carry an approval rule (diogenes ADR-0008): ordinary bills (PL, MPV, PDL) count by
+  simple majority with a quorum, PLP needs 257 votes and PEC 308; the kind of the bill sets the
+  default and the project settings can change it.
 - **Articulation area redrawn with the design system** (ADR-0020 revision). The pages
   moved from the add-on into the site (`/articulacao/`, `web/src/components/articulacao/`),
   with a new `ui/Select.svelte`. The hash links of the first version keep working.

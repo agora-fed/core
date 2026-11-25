@@ -58,7 +58,7 @@ dsoc-consequence = { path = "../components/consequence" }
 dsoc-scorecard = { path = "../components/scorecard" }
 # add-ons
 # Pinned by commit: the add-on runs in-process with the DB pool. Bump the rev on purpose.
-diogenes = { git = "https://github.com/agora-fed/diogenes", rev = "4579e5c518cff429bd2aa2e0e8859b33faa0c4e6", optional = true }
+diogenes = { git = "https://github.com/agora-fed/diogenes", rev = "4dc42a353a632119df6c8a8027fd547adbb3ffd2", optional = true }
 
 axum = { workspace = true }
 async-trait = { workspace = true }

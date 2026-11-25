@@ -13,8 +13,13 @@
     api,
     failureOf,
     href,
+    projectBody,
     roleLabel,
+    RULE_CHOICES,
+    ruleText,
+    thresholdHint,
     type Failure as F,
+    type RuleChoice,
     type Role,
     type RoomDetail,
   } from '../../lib/articulacao';
@@ -25,7 +30,12 @@
   let failure = $state<F | null>(null);
   let handle = $state('');
   let role = $state<Role>('editor');
-  let project = $state({ name: '', threshold: '257', bill: '' });
+  let project = $state<{ name: string; rule: RuleChoice; threshold: string; bill: string }>({
+    name: '',
+    rule: 'auto',
+    threshold: '',
+    bill: '',
+  });
   let busy = $state(false);
 
   const isOwner = $derived(room?.role === 'owner');
@@ -72,11 +82,7 @@
   async function createProject(e: SubmitEvent) {
     e.preventDefault();
     const res = await act(
-      api.createProject(id, {
-        name: project.name,
-        threshold: Number(project.threshold) || 257,
-        bill_id: project.bill ? Number(project.bill) : null,
-      }),
+      api.createProject(id, projectBody(project)),
     );
     if (res?.data) window.location.hash = href.project(res.data);
   }
@@ -113,7 +119,7 @@
             <li>
               <a class="row-link" href={href.project(p.id)}>
                 <span class="strong">{p.name}</span>
-                <span class="muted small">mínimo {p.threshold}{p.bill_id ? ` · proposição ${p.bill_id}` : ''}</span>
+                <span class="muted small">{ruleText(p.rule, p.threshold)}{p.bill_id ? ` · proposição ${p.bill_id}` : ''}</span>
               </a>
             </li>
           {/each}
@@ -123,9 +129,16 @@
         <form class="form" onsubmit={createProject}>
           <h3 class="h3">Novo projeto</h3>
           <Input label="Nome" bind:value={project.name} required maxlength={120} placeholder="Ex.: PEC 45 — 1º turno" />
+          <Input label="Id da proposição na Câmara" type="number" inputmode="numeric" bind:value={project.bill} hint="Opcional. Filtra as votações reais e define a regra." />
           <div class="two">
-            <Input label="Mínimo para aprovar" type="number" inputmode="numeric" bind:value={project.threshold} hint="257 = maioria absoluta · 308 = 3/5 (PEC)" />
-            <Input label="Id da proposição na Câmara" type="number" inputmode="numeric" bind:value={project.bill} hint="Opcional. Filtra as votações reais." />
+            <Select label="Regra de aprovação" bind:value={project.rule} options={[...RULE_CHOICES]} />
+            <Input
+              label={project.rule === 'simple' ? 'Quórum' : 'Mínimo para aprovar'}
+              type="number"
+              inputmode="numeric"
+              bind:value={project.threshold}
+              hint={thresholdHint(project.rule)}
+            />
           </div>
           <Button type="submit" variant="primary" loading={busy} disabled={!project.name.trim()}>Criar projeto</Button>
         </form>

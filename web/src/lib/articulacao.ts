@@ -22,10 +22,14 @@ export interface Member {
   display_name: string;
   role: Role;
 }
+/** How a project is approved (diogenes ADR-0008). */
+export type Rule = 'fixed' | 'simple';
 export interface ProjectSummary {
   id: string;
   name: string;
+  /** For the rule `simple`: the quorum. */
   threshold: number;
+  rule: Rule;
   bill_id: number | null;
 }
 export interface RoomDetail extends RoomSummary {
@@ -68,6 +72,7 @@ export interface Project {
   room_id: string;
   name: string;
   threshold: number;
+  rule: Rule;
   bill_id: number | null;
   role: Role;
   columns: Column[];
@@ -90,7 +95,7 @@ export interface Counts {
 export type Outcome =
   | { state: 'approved'; margin: number }
   | { state: 'rejected' }
-  | { state: 'open'; missing: number; reachable: boolean };
+  | { state: 'open'; missing: number; reachable: boolean; quorum_missing?: number };
 export interface Scenario {
   id: string;
   project_id: string;
@@ -102,6 +107,7 @@ export interface Scenario {
   counts: Counts;
   total: number;
   threshold: number;
+  rule: Rule;
   outcome: Outcome;
   orientations: [string, string | null][];
   dissidents: number[];
@@ -173,10 +179,10 @@ export const api = {
   removeMember: (id: string, userId: string) =>
     apiDelete<string>(`${D}/rooms/${enc(id)}/members/${enc(userId)}`),
   audit: (id: string) => apiGetCredentialed<AuditRow[]>(`${D}/rooms/${enc(id)}/audit?limit=200`),
-  createProject: (roomId: string, body: { name: string; threshold: number; bill_id: number | null }) =>
+  createProject: (roomId: string, body: ProjectBody) =>
     apiPost<string>(`${D}/rooms/${enc(roomId)}/projects`, body),
   project: (id: string) => apiGetCredentialed<Project>(`${D}/projects/${enc(id)}`),
-  patchProject: (id: string, body: { name: string; threshold: number; bill_id: number | null }) =>
+  patchProject: (id: string, body: ProjectBody) =>
     apiPatch<string>(`${D}/projects/${enc(id)}`, body),
   deleteProject: (id: string) => apiDelete<string>(`${D}/projects/${enc(id)}`),
   addColumn: (projectId: string, name: string) =>
@@ -314,8 +320,9 @@ export function auditDetail(row: AuditRow, names: Map<number, string>): string {
   return typeof name === 'string' ? name : '';
 }
 
-export function outcomeText(sc: Pick<Scenario, 'outcome' | 'counts' | 'threshold'>): string {
+export function outcomeText(sc: Pick<Scenario, 'outcome' | 'counts' | 'threshold'> & { rule?: Rule }): string {
   const { outcome: o, counts: c, threshold } = sc;
+  if (sc.rule === 'simple') return simpleOutcomeText(o, c, threshold);
   if (o.state === 'approved') {
     return `Aprovado — ${c.yes} votos Sim, ${o.margin} acima do mínimo de ${threshold}`;
   }
@@ -324,6 +331,63 @@ export function outcomeText(sc: Pick<Scenario, 'outcome' | 'counts' | 'threshold
   }
   const reach = o.reachable ? 'alcança' : 'não alcança';
   return `Faltam ${o.missing} votos Sim · Sim + Em disputa = ${c.yes + c.disputed} (${reach} o mínimo)`;
+}
+
+function simpleOutcomeText(o: Outcome, c: Counts, quorum: number): string {
+  if (o.state === 'approved') {
+    return `Aprovado por maioria simples — ${c.yes} Sim × ${c.no} Não, vantagem de ${o.margin}`;
+  }
+  if (o.state === 'rejected') {
+    return `Rejeitado — o Sim (${c.yes}) não supera mais o Não (${c.no}), ou o quórum de ${quorum} não é possível`;
+  }
+  const parts: string[] = [];
+  if (o.missing > 0) {
+    parts.push(`Faltam ${o.missing} votos Sim entre os indecisos para vencer`);
+  } else {
+    parts.push(`O Sim vence o Não (${c.yes} × ${c.no})`);
+  }
+  parts.push(`Sim + Em disputa ${o.reachable ? 'vence' : 'não vence'} o Não`);
+  const q = o.quorum_missing ?? 0;
+  if (q > 0) parts.push(`faltam ${q} presentes para o quórum de ${quorum}`);
+  return parts.join(' · ');
+}
+
+/** The short label of a rule, for lists and tiles. */
+export function ruleText(rule: Rule | undefined, threshold: number): string {
+  return rule === 'simple' ? `maioria simples · quórum ${threshold}` : `mínimo ${threshold}`;
+}
+
+/** The choices of the rule in the project forms. `auto` lets the kind of the bill decide. */
+export const RULE_CHOICES = [
+  { value: 'auto', label: 'Automática pelo tipo da proposição' },
+  { value: 'simple', label: 'Maioria simples (PL, MPV, PDL)' },
+  { value: 'fixed', label: 'Número fixo de votos (PLP 257, PEC 308)' },
+] as const;
+export type RuleChoice = (typeof RULE_CHOICES)[number]['value'];
+
+export interface ProjectBody {
+  name: string;
+  bill_id: number | null;
+  rule?: Rule;
+  threshold?: number;
+}
+
+/**
+ * The body of a project form. With `auto` and no number, the server picks the rule and the
+ * number from the kind of the bill (PEC 308, PLP 257, other kinds simple majority).
+ */
+export function projectBody(form: { name: string; rule: RuleChoice; threshold: string; bill: string }): ProjectBody {
+  const body: ProjectBody = { name: form.name.trim(), bill_id: form.bill.trim() ? Number(form.bill) : null };
+  if (form.rule !== 'auto') body.rule = form.rule;
+  const n = Number(form.threshold);
+  if (form.threshold.trim() && Number.isInteger(n) && n > 0) body.threshold = n;
+  return body;
+}
+
+export function thresholdHint(rule: RuleChoice): string {
+  if (rule === 'simple') return 'Quórum de presença. Padrão: 257.';
+  if (rule === 'fixed') return 'Votos Sim necessários. 257 = maioria absoluta · 308 = 3/5 (PEC).';
+  return 'Deixe em branco: PEC 308, PLP 257, demais tipos por maioria simples.';
 }
 
 // ------------------------------------------------------------- the board -------
