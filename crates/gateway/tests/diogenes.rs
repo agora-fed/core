@@ -260,3 +260,36 @@ async fn diogenes_through_the_real_identity_adapter() {
     .await;
     assert_eq!(s, StatusCode::FORBIDDEN);
 }
+
+/// Boot wiring: `start` applies the schema and, with no `DIOGENES_SYNC_ENABLED`, starts no
+/// scheduler; `start_with(.., true)` returns the scheduler task. The test aborts it before the
+/// first poll (current-thread runtime, no await in between), so no request reaches the Câmara.
+#[tokio::test]
+async fn start_applies_the_schema_and_gates_the_scheduler() {
+    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL must point at a test database");
+    let db = dsoc_db::connect(&url, 5).await.expect("connect");
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+    let bus = Arc::new(dsoc_events::PgEventBus::new(db.clone()));
+    let authz = dsoc_auth::authorization(db.clone(), clock.clone(), bus.clone());
+    let state = AppState {
+        db: db.clone(),
+        bus,
+        authz,
+        clock,
+        storage: None,
+    };
+    assert!(std::env::var("DIOGENES_SYNC_ENABLED").is_err());
+    dsoc_gateway::diogenes_addon::start(&state).await;
+    let version: i32 = sqlx::query_scalar("SELECT max(version) FROM diogenes_migration")
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert!(version >= 1);
+    assert!(dsoc_gateway::diogenes_addon::start_with(&state, false)
+        .await
+        .is_none());
+    let scheduler = dsoc_gateway::diogenes_addon::start_with(&state, true)
+        .await
+        .expect("scheduler task");
+    scheduler.abort();
+}

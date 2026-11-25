@@ -33,6 +33,8 @@ const links: Array<{
   { href: '/plebiscitos', label: 'Plebiscitos', requires: 'consultations', whenOff: 'mandates' },
   { href: '/grupos', label: 'Grupos', requires: 'groups', whenOff: 'mandates' },
   { href: '/reunioes', label: 'Reuniões', requires: 'meetings', whenOff: 'mandates' },
+  // Political add-on, so shown next to the political items (no whenOff). ADR-0020.
+  { href: '/articulacao/', label: 'Articulação', requires: 'diogenes' },
 ];
 ---
 

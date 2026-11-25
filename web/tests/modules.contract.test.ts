@@ -94,3 +94,31 @@ describe('settings tabs', () => {
     expect(shell).toContain("label: 'Fediverso', requires: 'federation'");
   });
 });
+
+describe('DIOGENES add-on navigation (ADR-0020)', () => {
+  // Incident 2026-11-25: the module was on but the header had no entry, so nothing changed
+  // for the admin. Every surface that lists modules must carry the link.
+  const surfaces = {
+    header: readFileSync('src/components/Header.astro', 'utf8'),
+    leftRail: readFileSync('src/components/shell/LeftRail.svelte', 'utf8'),
+    palette: readFileSync('src/components/islands/CommandPalette.svelte', 'utf8'),
+    footer: readFileSync('src/components/Footer.astro', 'utf8'),
+  };
+  it('links /articulacao/ from every navigation surface', () => {
+    for (const [name, src] of Object.entries(surfaces)) {
+      expect(src, name).toMatch(/\/articulacao\/[^\n]*diogenes/);
+    }
+  });
+  it('shows the header entry on political instances (no whenOff)', () => {
+    const line = surfaces.header.split('\n').find((l) => l.includes("'/articulacao/'")) ?? '';
+    expect(line).toContain("requires: 'diogenes'");
+    expect(line).not.toContain('whenOff');
+  });
+  it('hides the link until the gateway lists the module as on', () => {
+    const items = [{ requires: 'diogenes' }];
+    const off = (id: string) => isModuleOff(id, { dataset: {} });
+    const on = (id: string) => isModuleOff(id, { dataset: { modulesOn: 'diogenes' } });
+    expect(visibleForModules(items, off)).toHaveLength(0);
+    expect(visibleForModules(items, on)).toHaveLength(1);
+  });
+});
