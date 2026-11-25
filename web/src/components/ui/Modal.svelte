@@ -191,6 +191,7 @@
   }
   .foot {
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
     gap: var(--sp-3);
     padding: var(--sp-4) var(--sp-6);
