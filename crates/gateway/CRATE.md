@@ -22,7 +22,9 @@ Axum router assembling every crate behind one public API surface. Owns no domain
 - `diogenes_addon.rs` — host side of the DIOGENES add-on (`agora-fed/diogenes`, cargo feature
   `diogenes`). Implements `diogenes::Identity`; mounts its API inside `/api/v1` and its pages at
   `/articulacao/`; applies its `diogenes_*` schema at start. Module `module.diogenes` is off by
-  default. Tests: `tests/diogenes.rs`.
+  default. Pages are drawn by the site, not by the crate. Tests: `tests/diogenes.rs`.
+- `diogenes_notice.rs` — tells a new room member: `user_notification` (`room_member`),
+  web push and the `diogenes_room_member` e-mail (opt-out `email_prefs.room_member`).
 
 ## Bearer tokens
 

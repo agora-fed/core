@@ -11,9 +11,10 @@
 
 1. **An add-on is a crate in its own repository** with **no dependency on any `dsoc-*` crate**.
    It exposes a small host contract:
-   - `api_router(state) -> Router` (mounted under `/api/v1`) and `web_router() -> Router`
-     (mounted at the site root, here `/articulacao/`);
-   - an `Identity` trait the host implements (caller, user lookup by handle, module gate);
+   - `api_router(state) -> Router`, mounted under `/api/v1`. **The add-on serves JSON only;
+     the site draws its pages** (see "Revision 2026-11-25" below);
+   - an `Identity` trait the host implements (caller, user lookup by handle, module gate,
+     and `member_added` so the host can tell a new member — bell, web push, e-mail);
    - `migrate(&PgPool)` with its own migration table (`diogenes_migration`), its own advisory
      lock and table prefix (`diogenes_*`). It never touches host tables.
 2. **The host owns all wiring in one file**, `crates/gateway/src/<addon>_addon.rs`, which
@@ -24,10 +25,11 @@
    dependency is a git dependency **pinned by `rev`**, allowed in `deny.toml`.
 4. **Run-time switch:** a module manifest in `module_catalog.rs` with
    `default_enabled: false` (ADR-0011 D5). The add-on is off in every org until an admin turns
-   it on at `/admin/modulos`. Navigation follows the optional-module pattern of `groups`
-   (#78): `UI_OPTIONAL_MODULES` in `instance_html.rs`, `module-gate.css`, `OPTIONAL_MODULES`
-   in `web/src/lib/modules.ts`, and links in the header, left rail, command palette and
-   footer.
+   it on at `/admin/modulos`. Navigation and pages follow the optional-module pattern of
+   `groups` (#78): `UI_OPTIONAL_MODULES` and `OPTIONAL_MODULE_ROUTES` in `instance_html.rs`,
+   `module-gate.css`, `OPTIONAL_MODULES` in `web/src/lib/modules.ts`, links in the header,
+   left rail, command palette and footer, and the page itself under `web/src/pages/`
+   built from the design system (`web/src/components/ui/`).
 5. **Background work is opt-in per installation** by environment
    (`DIOGENES_SYNC_ENABLED=true`). Shared reference data has no org, so only one operator org
    (`DIOGENES_OPERATOR_ORG`) may trigger the sync by hand.
@@ -37,6 +39,23 @@
    through its own PR.
 7. **Documentation:** the add-on repository keeps its own ADRs. DIOGENES writes them in
    ASD-STE100 (its `docs/STYLE.md`). This ADR records the host side.
+
+## Revision 2026-11-25 — the site draws the pages
+
+The first deploy mounted the add-on's own HTML/CSS/JS at `/articulacao/`. In production it
+looked like a different product: buttons escaped their cards, inputs cut their text, the
+header did not match, members without a profile name showed a bare generated handle.
+
+- The pages now live in the site (`web/src/pages/articulacao.astro`,
+  `web/src/components/articulacao/`, logic in `web/src/lib/articulacao.ts`) and use the
+  design system only; a `ui/Select.svelte` was added for the missing native select.
+- The gateway no longer mounts `diogenes::web_router()`; the static page is gated by
+  `OPTIONAL_MODULE_ROUTES` like `/grupos`. The hash routes of the first version are kept.
+- A member without a profile name is shown as `@handle`.
+- New members are told: `user_notification` kind `room_member` (migration 0900, add-on
+  range 0900–0949), web push, and the editable e-mail template `diogenes_room_member`
+  (opt-out `email_prefs.room_member`). Code: `crates/gateway/src/diogenes_notice.rs`.
+- Add-on side: diogenes ADR-0007 (`member_added`; `web_router` deprecated for one release).
 
 ## Rationale
 
@@ -50,8 +69,15 @@
 
 ## If this reverses a prior decision (PLAN.md principle 12)
 
-Not a reversal. It extends ADR-0011 (modules inside the workspace) to modules outside it, the
-same way ADR-0015 moved country-specific code to `agora-fed/l10n-brazil`.
+The architecture extends ADR-0011 to modules outside the workspace, as ADR-0015 did for
+`agora-fed/l10n-brazil`. The 2026-11-25 revision reverses the first version's "add-on
+ships its own pages":
+- (a) Why it failed: a second, hand-written UI outside the design system drifted at once
+  (broken layout in production, inconsistent header, no dark-mode/mobile guarantees).
+- (b) Salvage: the JSON API, the hash routes and the behaviour were kept; only the
+  rendering moved. `web_router` stays one release for a one-line rollback.
+- (c) Why the new is better: one design system, one navigation, the site's tests
+  (vitest, svelte-check ratchet, Playwright) cover the add-on like any other page.
 
 ## Consequences
 

@@ -17,4 +17,8 @@ Dois agentes trabalham neste monorepo canônico (git.pop.coop/brasil/democracia-
 - `GET  /api/v1/me/feed`, `/me/notifications`, `/proposals`, `/consultas`, `/debates`, `/campaign-groups/*`, `/politicos/*`, `/scorecards/*` — telas do app (leitura).
 
 ## Handoff (log de mudanças cross-cutting — mais recente no topo)
+- 2026-11-25 (Backend): `/api/v1/me/notifications` (e o endpoint Mastodon) pode trazer o novo
+  `kind` **`room_member`** (DIOGENES — alguém adicionou você a uma sala de articulação).
+  `object_uri` é a URL da sala no site (`https://…/articulacao/#/sala/<id>`). O app deve
+  tratar kinds desconhecidos com fallback genérico; nenhum campo existente mudou.
 - 2026-07-25 (App): adicionado `GET /api/v1/me/whoami` (`crates/gateway/src/whoami.rs`) + testes. App em produção depende dele. **Não remover.**

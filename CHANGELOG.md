@@ -18,6 +18,11 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
   Navigation follows the optional-module pattern (header, left rail, command palette, footer),
   pinned by `web/tests/modules.contract.test.ts`; production check in
   `web/tests/ui/articulacao.spec.ts`. Decision recorded in ADR-0020.
+- **Articulation area redrawn with the design system** (ADR-0020 revision). The pages
+  moved from the add-on into the site (`/articulacao/`, `web/src/components/articulacao/`),
+  with a new `ui/Select.svelte`. The hash links of the first version keep working.
+- **New room members are told**: bell notification (`room_member`, migration 0900), web push
+  and the editable e-mail `diogenes_room_member`; opt-out in Preferências.
 
 ### Security
 - **OAuth bearer tokens are now limited to their scopes.** `inject_identity` accepted a
