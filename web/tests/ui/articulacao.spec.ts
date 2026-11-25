@@ -68,11 +68,40 @@ test('public deputies API answers with the envelope', async ({ request }) => {
   expect(Array.isArray(body.data)).toBe(true);
 });
 
-test('campaign finance API gates anonymous callers (diogenes ADR-0009)', async ({ request }) => {
-  const deputies = await (await request.get('/api/v1/diogenes/deputies')).json();
-  const first = (deputies.data as Array<{ camara_id: number }>)[0];
-  test.skip(!first, 'no deputies synced on this installation');
-  const res = await request.get(`/api/v1/diogenes/deputies/${first.camara_id}/campaign`);
+test('campaign finance is open data for anonymous callers (diogenes ADR-0009, ADR-0010)', async ({ request }) => {
+  const list = await request.get('/api/v1/diogenes/campaigns');
+  expect(list.status()).toBe(200);
+  const body = await list.json();
+  expect(body.success).toBe(true);
+  const rows = body.data.deputies as Array<{ camara_id: number; total_cents: number }>;
+  test.skip(rows.length === 0, 'no deputies synced on this installation');
+  const res = await request.get(`/api/v1/diogenes/deputies/${rows[0].camara_id}/campaign`);
+  expect(res.status()).toBe(200);
+  const c = (await res.json()).data;
+  expect(c.deputy.camara_id).toBe(rows[0].camara_id);
+  expect(c.total_cents).toBe(rows[0].total_cents);
+  expect(Array.isArray(c.deputy_companies)).toBe(true);
+  // The six CPF digits used for the match never leave the server.
+  expect(JSON.stringify(c)).not.toContain('cpf');
+});
+
+test('scenario money stays private to the room (diogenes ADR-0009)', async ({ request }) => {
+  const res = await request.get('/api/v1/diogenes/scenarios/00000000-0000-0000-0000-000000000000/donors');
   expect(res.status()).toBe(401);
-  expect((await res.json()).success).toBe(false);
+});
+
+test('"Quem financia" page lists deputies and opens a card without sign-in', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/politicos/financiamento/');
+  await expect(page.getByRole('heading', { level: 1, name: 'Quem financia' })).toBeVisible();
+  const first = page.getByRole('button', { name: /^Ver o financiamento de / }).first();
+  await expect(first).toBeVisible({ timeout: 15000 });
+  await first.click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('heading', { name: 'Financiamento de campanha' })).toBeVisible();
+  await expect(page).toHaveURL(/deputado=\d+/);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  expect(errors).toEqual([]);
 });

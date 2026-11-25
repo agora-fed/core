@@ -3,10 +3,13 @@
   // that several deputies share (TSE 2022, diogenes ADR-0009). It loads when opened.
   import Skeleton from '../ui/Skeleton.svelte';
   import Badge from '../ui/Badge.svelte';
+  import CompanyList from './CompanyList.svelte';
   import {
     api,
     brl,
     byColumnText,
+    companySourceText,
+    MATCH_NOTE,
     provenanceText,
     sourceLabel,
     type Column,
@@ -90,9 +93,42 @@
             <span class="muted small">— {d.deputies} deputados · {brl(d.cents)}</span>
             <div class="cols">{byColumnText(d.by_column, columns)}</div>
             {#if d.activity}<div class="muted small">{d.activity}</div>{/if}
+            <CompanyList companies={d.companies ?? []} total={d.companies_total ?? 0} />
           </li>
         {/each}
       </ol>
+    {/if}
+    {#if (data.sectors ?? []).length}
+      <h3 class="h3">Setores das empresas dos doadores</h3>
+      <p class="muted small">
+        Atividade principal das empresas em que os doadores são sócios, e em que coluna estão os deputados que eles
+        financiaram. Um doador com empresas em dois setores conta nos dois.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <caption class="sr-only">Setores das empresas dos doadores</caption>
+          <thead>
+            <tr><th scope="col">Setor</th><th scope="col">Doadores</th><th scope="col">Valor</th><th scope="col">Deputados por coluna</th></tr>
+          </thead>
+          <tbody>
+            {#each data.sectors as s (s.cnae_text)}
+              <tr>
+                <th scope="row">{s.cnae_text}</th>
+                <td>{s.donors}</td>
+                <td class="num">{brl(s.cents)}</td>
+                <td>{byColumnText(s.by_column, columns)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
+    {#if data.companies_source}
+      <p class="muted small source">
+        {companySourceText(data.companies_source)} ·
+        <a href={data.companies_source.source_url} target="_blank" rel="noopener noreferrer">dados abertos ↗</a>.
+        {MATCH_NOTE}
+      </p>
     {/if}
     <p class="muted small source">
       {provenanceText(data)} · <a href={data.source_url} target="_blank" rel="noopener noreferrer">dados abertos ↗</a>.

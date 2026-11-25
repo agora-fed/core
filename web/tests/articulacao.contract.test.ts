@@ -19,6 +19,13 @@ import {
   defaultThreshold,
   brl,
   byColumnText,
+  cnpjBase,
+  companyDetail,
+  companySourceText,
+  companyStatusText,
+  MATCH_NOTE,
+  moreCompanies,
+  type CompanyView,
   donorKindText,
   provenanceText,
   sourceLabel,
@@ -307,5 +314,48 @@ describe('campaign finance (TSE)', () => {
     expect(provenanceText({ year: 2022, source_url: 'x', imported_at: '2026-11-25T18:00:00Z' })).toMatch(
       /^Fonte: TSE, prestação de contas 2022 · importado em 25\/11\/2026$/,
     );
+  });
+});
+
+describe('companies of the donors (Receita)', () => {
+  const company = (over: Partial<CompanyView> = {}): CompanyView => ({
+    cnpj_basico: '11222333',
+    name: 'SOJA GRANDE SA',
+    trade_name: null,
+    cnae_text: 'Cultivo de soja',
+    status: 'active',
+    uf: 'MT',
+    city: 'LUCAS DO RIO VERDE',
+    capital_cents: 500000000,
+    role: 'Sócio-Administrador',
+    since: '2010-01-05',
+    ...over,
+  });
+  it('describes the role, the activity and the place', () => {
+    expect(companyDetail(company())).toBe('Sócio-Administrador desde 2010 · Cultivo de soja · Lucas do Rio Verde/MT');
+    expect(companyDetail(company({ status: 'closed', since: null, city: null, cnae_text: null }))).toBe(
+      'Sócio-Administrador · MT · baixada',
+    );
+  });
+  it('formats the CNPJ base and the status', () => {
+    expect(cnpjBase('11222333')).toBe('11.222.333');
+    expect(cnpjBase('x')).toBe('x');
+    expect(companyStatusText('unfit')).toBe('inapta');
+    expect(companyStatusText('other')).toBe('other');
+  });
+  it('counts the companies it does not show', () => {
+    expect(moreCompanies(5, 5)).toBe('');
+    expect(moreCompanies(5, 6)).toBe('+ 1 empresa');
+    expect(moreCompanies(3, 10)).toBe('+ 7 empresas');
+  });
+  it('states the Receita month and never calls a partner an owner', () => {
+    expect(companySourceText(null)).toContain('ainda não foram importados');
+    expect(companySourceText({ version: '2026-11', source_url: 'x', imported_at: '2026-11-25T18:00:00Z' })).toBe(
+      'Empresas: Receita Federal, CNPJ 11/2026 · importado em 25/11/2026',
+    );
+    expect(MATCH_NOTE).toContain('Sócio não quer dizer dono');
+    for (const t of [MATCH_NOTE, companyDetail(company())]) {
+      expect(t).not.toMatch(/lobista|influenciad|suspeit|laranja/i);
+    }
   });
 });

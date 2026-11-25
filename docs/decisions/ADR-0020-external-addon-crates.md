@@ -92,6 +92,11 @@ ships its own pages":
   (`web/tests/modules.contract.test.ts`) now pin every navigation surface.
 - Add-on data that is large and changes rarely (the TSE campaign accounts, diogenes ADR-0009)
   is an operator-started job, not part of the hourly sync. After a deploy that adds such a
-  job, the operator starts it once and checks `GET /api/v1/diogenes/sync/status`.
+  job, the operator starts it once and checks `GET /api/v1/diogenes/sync/status`. The
+  Receita CNPJ job (`companies`, diogenes ADR-0010) depends on `donations`: run it after
+  each donations run.
+- A route that the add-on makes public (the campaign reads, diogenes ADR-0009 change) has no
+  session, so the mutating-only limiter of the host does not cover it. The host wraps the
+  add-on router with a read limiter for those routes (`diogenes_addon::public_read_limit`).
 - Follow-up: a generic `Addon` trait in the gateway when a second add-on arrives (YAGNI until
   then).

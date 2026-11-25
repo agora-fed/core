@@ -81,7 +81,7 @@ pub(crate) fn over_limit(key: &str, per_min: u32) -> bool {
     hit(key, per_min)
 }
 
-fn too_many() -> Response {
+pub(crate) fn too_many() -> Response {
     (
         StatusCode::TOO_MANY_REQUESTS,
         Json(ApiResponse::<()>::fail(

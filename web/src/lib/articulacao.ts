@@ -189,11 +189,24 @@ export interface DonorView {
   uf: string | null;
   cents: number;
   via_party: boolean;
+  companies: CompanyView[];
+  companies_total: number;
+}
+export interface DeputyHead {
+  camara_id: number;
+  name: string;
+  party: string | null;
+  uf: string | null;
+  photo_url: string | null;
+  in_office: boolean;
 }
 export interface Campaign extends Provenance {
+  deputy: DeputyHead;
   total_cents: number;
   totals: SourceTotal[];
   donors: DonorView[];
+  deputy_companies: CompanyView[];
+  companies_source: CompanySource | null;
 }
 export interface ColumnMoney {
   column_id: string;
@@ -209,11 +222,112 @@ export interface SharedDonor {
   deputies: number;
   cents: number;
   by_column: Record<string, number>;
+  companies: CompanyView[];
+  companies_total: number;
+}
+export interface Sector {
+  cnae_text: string;
+  donors: number;
+  cents: number;
+  by_column: Record<string, number>;
 }
 export interface ScenarioMoney extends Provenance {
   columns: ColumnMoney[];
   donors: SharedDonor[];
+  sectors: Sector[];
+  companies_source: CompanySource | null;
 }
+
+// ------------------------------------------------- companies (Receita Federal) ------
+// diogenes ADR-0010. A link "person → company" means that the name and the six middle CPF
+// digits in the Receita file of partners are equal. The role is the Receita text: a
+// partner is not always an owner.
+export type CompanyStatus = 'active' | 'suspended' | 'unfit' | 'closed' | 'null' | 'unknown';
+export interface CompanySource {
+  version: string;
+  source_url: string;
+  imported_at: string;
+}
+export interface CompanyView {
+  cnpj_basico: string;
+  name: string;
+  trade_name: string | null;
+  cnae_text: string | null;
+  status: CompanyStatus;
+  uf: string | null;
+  city: string | null;
+  capital_cents: number | null;
+  role: string;
+  since: string | null;
+}
+export interface CampaignRow {
+  camara_id: number;
+  name: string;
+  party: string | null;
+  uf: string | null;
+  photo_url: string | null;
+  total_cents: number;
+  people_cents: number;
+  donors_with_companies: number;
+  own_companies: number;
+}
+export interface CampaignList {
+  year: number;
+  source_url: string;
+  companies: CompanySource | null;
+  deputies: CampaignRow[];
+}
+
+const STATUS_TEXT: Record<CompanyStatus, string> = {
+  active: 'ativa',
+  suspended: 'suspensa',
+  unfit: 'inapta',
+  closed: 'baixada',
+  null: 'nula',
+  unknown: 'situação não informada',
+};
+export const companyStatusText = (s: string) => STATUS_TEXT[s as CompanyStatus] ?? s;
+
+/** "Sócio-Administrador desde 2010 · Cultivo de soja · Sorriso/MT · baixada". */
+export function companyDetail(c: CompanyView): string {
+  const place = [c.city ? titleCase(c.city) : null, c.uf].filter(Boolean).join('/');
+  const since = c.since ? ` desde ${c.since.slice(0, 4)}` : '';
+  return [
+    `${c.role}${since}`,
+    c.cnae_text,
+    place || null,
+    c.status === 'active' ? null : companyStatusText(c.status),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** "12.345.678": the CNPJ base as the Receita prints it. */
+export const cnpjBase = (b: string) =>
+  /^\d{8}$/.test(b) ? `${b.slice(0, 2)}.${b.slice(2, 5)}.${b.slice(5)}` : b;
+
+const LOWER_WORDS = new Set(['de', 'da', 'do', 'das', 'dos', 'e', "d'"]);
+/** "LUCAS DO RIO VERDE" → "Lucas do Rio Verde". */
+function titleCase(s: string): string {
+  return s
+    .toLowerCase()
+    .split(' ')
+    .map((w, i) => (i > 0 && LOWER_WORDS.has(w) ? w : w.replace(/(^|-)(\p{L})/gu, (_, a: string, b: string) => a + b.toUpperCase())))
+    .join(' ');
+}
+
+/** "+ 3 empresas" when the answer has fewer companies than the donor has. */
+export const moreCompanies = (shown: number, total: number) =>
+  total > shown ? `+ ${total - shown} ${total - shown === 1 ? 'empresa' : 'empresas'}` : '';
+
+export function companySourceText(s: CompanySource | null): string {
+  if (!s) return 'Os dados de empresas (Receita Federal) ainda não foram importados.';
+  return `Empresas: Receita Federal, CNPJ ${s.version.split('-').reverse().join('/')} · importado em ${new Date(s.imported_at).toLocaleDateString('pt-BR')}`;
+}
+
+/** The notice next to every company link. */
+export const MATCH_NOTE =
+  'Empresas: o nome e os 6 dígitos do CPF que a Receita publica são iguais aos do doador. Sócio não quer dizer dono: o papel é o que a Receita informa. A lista mostra os sócios de hoje, não os de 2022.';
 
 const SOURCE_LABEL: Record<MoneySource, string> = {
   party: 'Partido (inclui fundo eleitoral)',
@@ -261,6 +375,7 @@ export function provenanceText(p: Provenance): string {
 
 export const api = {
   campaign: (camaraId: number) => apiGetCredentialed<Campaign>(`${D}/deputies/${Number(camaraId)}/campaign`),
+  campaigns: () => apiGetCredentialed<CampaignList>(`${D}/campaigns`),
   scenarioMoney: (id: string) => apiGetCredentialed<ScenarioMoney>(`${D}/scenarios/${enc(id)}/donors`),
   rooms: () => apiGetCredentialed<MyRooms>(`${D}/rooms`),
   createRoom: (name: string) => apiPost<RoomSummary>(`${D}/rooms`, { name }),

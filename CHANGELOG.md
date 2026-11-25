@@ -31,6 +31,16 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
   "Quem financiou as campanhas deste cenário" with the money per column and the donors that
   several deputies share. Facts with source and date only; no label about a person. An
   operator starts the import once (`POST /api/v1/diogenes/sync/donations`).
+  **Quem financia** (`/politicos/financiamento/`, public, no sign-in): every deputy in office
+  with the 2022 campaign total, the money from people, the donors that are partners of
+  companies and the companies of the deputy; the card opens by link (`?deputado=<id>`).
+  The campaign API is open data now (diogenes ADR-0009 change); the scenario panel stays
+  private to the room. Companies come from the Receita Federal CNPJ open data
+  (diogenes ADR-0010): match by name and the six CPF digits that the Receita publishes, with
+  the role as the Receita writes it ("sócio" is not "dono"). The scenario panel also lists
+  the sectors (main activity) of the donors' companies per column. The anonymous campaign
+  reads are limited to 120 per minute per caller. The operator runs `companies` after each
+  `donations` run (`POST /api/v1/diogenes/sync/companies`).
 - **Articulation area redrawn with the design system** (ADR-0020 revision). The pages
   moved from the add-on into the site (`/articulacao/`, `web/src/components/articulacao/`),
   with a new `ui/Select.svelte`. The hash links of the first version keep working.

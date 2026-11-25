@@ -4,24 +4,32 @@
   import { onMount } from 'svelte';
   import Badge from '../ui/Badge.svelte';
   import Skeleton from '../ui/Skeleton.svelte';
+  import CompanyList from './CompanyList.svelte';
   import {
     api,
     brl,
+    companySourceText,
     donorKindText,
+    MATCH_NOTE,
     provenanceText,
     sourceShares,
     type Campaign,
   } from '../../lib/articulacao';
 
-  let { camaraId }: { camaraId: number } = $props();
+  let { camaraId, onLoad }: { camaraId: number; onLoad?: (c: Campaign) => void } = $props();
 
   let data = $state<Campaign | null>(null);
   let error = $state('');
 
+  const hasCompanies = (c: Campaign) =>
+    (c.deputy_companies ?? []).length > 0 || c.donors.some((d) => (d.companies ?? []).length > 0);
+
   onMount(async () => {
     const res = await api.campaign(camaraId);
-    if (res.success && res.data) data = res.data;
-    else error = res.error?.message ?? 'Não foi possível carregar.';
+    if (res.success && res.data) {
+      data = res.data;
+      onLoad?.(res.data);
+    } else error = res.error?.message ?? 'Não foi possível carregar.';
   });
 </script>
 
@@ -57,6 +65,7 @@
               <Badge size="sm" tone={d.via_party ? 'warning' : 'neutral'}>{donorKindText(d)}</Badge>
               {#if d.activity}<span class="muted small">{d.activity}</span>{/if}
             </span>
+            <CompanyList companies={d.companies ?? []} total={d.companies_total ?? 0} />
           </li>
         {/each}
       </ol>
@@ -64,6 +73,17 @@
     <p class="muted small source">
       {provenanceText(data)} · <a href={data.source_url} target="_blank" rel="noopener noreferrer">dados abertos ↗</a>.
       Doação declarada é um fato público; sozinha, não prova influência sobre o voto.
+    </p>
+  {/if}
+  {#if data && (data.deputy_companies ?? []).length}
+    <h4 class="h4">Empresas em que o deputado é sócio</h4>
+    <CompanyList companies={data.deputy_companies} />
+  {/if}
+  {#if data && data.companies_source && hasCompanies(data)}
+    <p class="muted small source">
+      {companySourceText(data.companies_source)} ·
+      <a href={data.companies_source.source_url} target="_blank" rel="noopener noreferrer">dados abertos ↗</a>.
+      {MATCH_NOTE}
     </p>
   {/if}
 </section>

@@ -132,6 +132,43 @@ pub fn routes(state: AppState) -> Router<()> {
     let db = state.db.clone();
     let identity = Arc::new(HostIdentity { state });
     diogenes::api_router(diogenes::DiogenesState::new(db, identity))
+        .layer(axum::middleware::from_fn(public_read_limit))
+}
+
+/// Reads per minute of one caller on the public campaign routes.
+const PUBLIC_READS_PER_MIN: u32 = 120;
+
+/// True for the campaign routes that anonymous callers can read (diogenes ADR-0009/0010).
+fn is_public_read(method: &axum::http::Method, path: &str) -> bool {
+    method == axum::http::Method::GET
+        && (path.ends_with("/diogenes/campaigns")
+            || (path.contains("/diogenes/deputies/") && path.ends_with("/campaign")))
+}
+
+/// The public campaign routes need no session, so the mutating-only limiter of the host
+/// does not cover them. Limit them per citizen, or per client address when anonymous.
+async fn public_read_limit(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    if is_public_read(req.method(), req.uri().path()) {
+        let header = |name: &str| {
+            req.headers()
+                .get(name)
+                .and_then(|v| v.to_str().ok())
+                .filter(|v| !v.is_empty())
+                .map(str::to_owned)
+        };
+        let key = header("x-dsoc-citizen-id")
+            .map(|c| format!("diogenes-read:c:{c}"))
+            .or_else(|| header(crate::CLIENT_IP_HEADER).map(|ip| format!("diogenes-read:ip:{ip}")));
+        if let Some(key) = key {
+            if crate::rate_limit::over_limit(&key, PUBLIC_READS_PER_MIN) {
+                return crate::rate_limit::too_many();
+            }
+        }
+    }
+    next.run(req).await
 }
 
 /// Apply the DIOGENES schema and start the sync scheduler.
@@ -194,6 +231,39 @@ mod tests {
             clock,
             storage: None,
         }
+    }
+
+    #[test]
+    fn only_the_campaign_reads_are_public() {
+        use axum::http::Method;
+        assert!(is_public_read(&Method::GET, "/api/v1/diogenes/campaigns"));
+        assert!(is_public_read(&Method::GET, "/api/v1/diogenes/deputies/204554/campaign"));
+        assert!(!is_public_read(&Method::POST, "/api/v1/diogenes/campaigns"));
+        assert!(!is_public_read(&Method::GET, "/api/v1/diogenes/rooms"));
+        assert!(!is_public_read(&Method::GET, "/api/v1/diogenes/scenarios/x/donors"));
+    }
+
+    #[tokio::test]
+    async fn anonymous_campaign_reads_are_limited_per_address() {
+        use tower::ServiceExt;
+        let app = Router::new()
+            .route("/api/v1/diogenes/campaigns", axum::routing::get(|| async { "ok" }))
+            .layer(axum::middleware::from_fn(public_read_limit));
+        let ip = format!("203.0.113.{}", std::process::id() % 250);
+        let call = || {
+            axum::http::Request::get("/api/v1/diogenes/campaigns")
+                .header(crate::CLIENT_IP_HEADER, ip.clone())
+                .body(axum::body::Body::empty())
+                .unwrap()
+        };
+        // Twice the cap plus one: one minute window gets more than the cap, even when the
+        // loop crosses a minute boundary.
+        let mut limited = false;
+        for _ in 0..=2 * PUBLIC_READS_PER_MIN {
+            let status = app.clone().oneshot(call()).await.unwrap().status();
+            limited |= status == axum::http::StatusCode::TOO_MANY_REQUESTS;
+        }
+        assert!(limited);
     }
 
     fn parts(headers: &[(&str, String)]) -> Parts {

@@ -1302,12 +1302,14 @@ dependencies = [
 [[package]]
 name = "diogenes"
 version = "0.1.0"
-source = "git+https://github.com/agora-fed/diogenes?rev=a132a826fb8daa30ea33fbd963542b3b00663c22#a132a826fb8daa30ea33fbd963542b3b00663c22"
+source = "git+https://github.com/agora-fed/diogenes?rev=a8e57a2894b5224dcac2b72f54a5d72d9d68920d#a8e57a2894b5224dcac2b72f54a5d72d9d68920d"
 dependencies = [
  "async-trait",
  "axum",
+ "bytes",
  "chrono",
  "csv",
+ "flate2",
  "futures-util",
  "reqwest",
  "serde",

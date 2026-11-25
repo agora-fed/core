@@ -1,0 +1,25 @@
+---
+// Quem financia: campaign money of the federal deputies (TSE 2022) and the companies of
+// the donors (Receita Federal CNPJ). Public open data (diogenes ADR-0009, ADR-0010).
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PoliticosTabs from '../../components/PoliticosTabs.astro';
+import CampaignDirectory from '../../components/islands/CampaignDirectory.svelte';
+
+const description =
+  'Quem financiou a campanha de cada deputado federal em 2022, de que empresas os doadores são sócios e em que empresas o próprio deputado é sócio. Dados abertos do TSE e da Receita Federal.';
+---
+
+<BaseLayout title="Quem financia" {description}>
+  <section class="section">
+    <div class="container narrow">
+      <PoliticosTabs />
+      <CampaignDirectory client:load />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .narrow {
+    max-width: 60rem;
+  }
+</style>
