@@ -28,6 +28,7 @@
     { id: 'plebiscitos', href: '/plebiscitos', icon: 'ballot', label: 'Plebiscitos', requires: 'consultations' },
     { id: 'grupos', href: '/grupos', icon: 'users', label: 'Grupos', requires: 'groups' },
     { id: 'reunioes', href: '/reunioes', icon: 'calendar', label: 'Reuniões', requires: 'meetings' },
+    { id: 'articulacao', href: '/articulacao/', icon: 'ballot', label: 'Articulação', requires: 'diogenes' },
   ];
 
   let handle = $state<string | null>(null);

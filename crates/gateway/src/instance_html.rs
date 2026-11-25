@@ -50,7 +50,7 @@ const UNAVAILABLE_PAGE: &str = "/modulo-indisponivel/";
 const OPTIONAL_MODULE_ROUTES: &[(&str, &str)] = &[("grupos", "groups"), ("reunioes", "meetings")];
 
 /// Off by default, so listed only when on. Must match web/src/styles/module-gate.css.
-const UI_OPTIONAL_MODULES: &[&str] = &["groups", "meetings"];
+const UI_OPTIONAL_MODULES: &[&str] = &["groups", "meetings", "diogenes"];
 
 /// Must match web/src/styles/module-gate.css.
 const UI_GATED_MODULES: [&str; 5] = [

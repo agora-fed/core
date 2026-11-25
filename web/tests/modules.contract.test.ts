@@ -27,6 +27,8 @@ describe('isModuleOff for modules off by default', () => {
     expect(isModuleOff('groups', { dataset: { modulesOn: 'groups' } })).toBe(false);
     expect(isModuleOff('meetings', root())).toBe(true);
     expect(isModuleOff('meetings', { dataset: { modulesOn: 'meetings' } })).toBe(false);
+    expect(isModuleOff('diogenes', root())).toBe(true);
+    expect(isModuleOff('diogenes', { dataset: { modulesOn: 'diogenes' } })).toBe(false);
   });
 });
 
