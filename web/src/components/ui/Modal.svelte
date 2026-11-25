@@ -91,7 +91,11 @@
       aria-modal="true"
       aria-label={title}
       onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => e.stopPropagation()}
+      onkeydown={(e) => {
+        // Only Enter must not reach the backdrop (it would close the dialog while typing).
+        // Escape and Tab must reach the window handler: close and the focus trap.
+        if (e.key === 'Enter') e.stopPropagation();
+      }}
       tabindex="-1"
     >
       {#if header}

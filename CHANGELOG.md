@@ -7,6 +7,10 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 
 ## [Unreleased]
 
+### Fixed
+- **Modal (design system):** Escape did not close a dialog and Tab left it while the focus
+  was inside, because the dialog stopped every key event. It now stops only Enter.
+
 ### Added
 - **DIOGENES add-on** ([agora-fed/diogenes](https://github.com/agora-fed/diogenes)): vote
   count and articulation rooms for the Chamber of Deputies, at `/articulacao/`. Based on the
