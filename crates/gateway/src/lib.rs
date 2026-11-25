@@ -41,6 +41,8 @@ pub mod consultas_ext;
 pub mod contact;
 #[cfg(feature = "diogenes")]
 pub mod diogenes_addon;
+#[cfg(feature = "diogenes")]
+pub mod diogenes_notice;
 pub mod discovery;
 pub mod elections;
 pub mod email_templates;
@@ -265,13 +267,6 @@ fn addon_api_routes(state: &AppState) -> Router {
     router
 }
 
-/// Add-on pages at the site root (before the static-site fallback).
-fn addon_root_routes() -> Router {
-    let router = Router::new();
-    #[cfg(feature = "diogenes")]
-    let router = router.merge(diogenes_addon::web_routes());
-    router
-}
 
 /// Compose every crate's `routes(state)` under `/api/v1`. Each crate owns its own paths and already
 /// carries its state, so the gateway merges them; cross-crate effects still flow only through events.
@@ -502,8 +497,6 @@ pub fn api_router(state: AppState) -> Router {
         // Forums (/f/*): SPA fallback — the front end routes client-side; any path
         // serves the same f/index.html (forums/topics created at runtime never 404).
         .merge(forums_spa_routes(state.clone()))
-        // Add-on pages, e.g. the DIOGENES articulation area at /articulacao/.
-        .merge(addon_root_routes())
         .fallback_service(static_site)
 }
 

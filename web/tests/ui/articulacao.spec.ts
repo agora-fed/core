@@ -41,6 +41,18 @@ test('articulation area loads without JS errors', async ({ page, request }) => {
   expect(jsErrors, `uncaught JS: ${jsErrors.join(' | ')}`).toHaveLength(0);
 });
 
+test('anonymous visitors get the login prompt of the design system', async ({ page, request }) => {
+  test.skip(!(await diogenesActive(request)), 'module off on this installation');
+  const jsErrors: string[] = [];
+  page.on('pageerror', (err) => jsErrors.push(String(err)));
+  await page.goto('/articulacao/');
+  await expect(page.getByRole('heading', { name: 'Entre na sua conta' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Entrar' }).last()).toHaveAttribute('href', /\/entrar\/\?next=/);
+  // The page is the site's own page: same header and sub-navigation, no second product.
+  await expect(page.getByRole('navigation', { name: 'Seções da sala de articulação' })).toBeVisible();
+  expect(jsErrors, `uncaught JS: ${jsErrors.join(' | ')}`).toHaveLength(0);
+});
+
 test('rooms API gates anonymous callers', async ({ request }) => {
   const res = await request.get('/api/v1/diogenes/rooms');
   expect(res.status()).toBe(401);

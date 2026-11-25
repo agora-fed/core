@@ -33,3 +33,12 @@ manifesto (R0.1) declarar posse. Já usadas:
 | Range | Escopo |
 |------:|--------|
 | 0600  | base/core — `user_role` + `citizen_role_binding` (papéis flexíveis, ADR-0011) |
+
+## Faixa ADD-ONS 0900–0949 (ADR-0020)
+
+Host-side integration of external add-on crates (their own tables use their own runner).
+Lives on installation deploy branches, so it never collides with the next core number.
+
+| Range | Escopo |
+|------:|--------|
+| 0900  | DIOGENES — `room_member` notification kind + `diogenes_room_member` e-mail template |

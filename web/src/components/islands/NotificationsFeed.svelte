@@ -39,6 +39,7 @@
     sla_started: 'bell',
     sla_response: 'check',
     sla_expired: 'alert',
+    room_member: 'ballot',
   };
   const labelByKind: Record<string, string> = {
     mention: 'mencionou você',
@@ -50,6 +51,7 @@
     sla_started: 'o prazo de resposta começou',
     sla_response: 'o político respondeu você',
     sla_expired: 'silêncio público registrado',
+    room_member: 'adicionou você a uma sala de articulação',
   };
   const toneByKind: Record<
     string,
@@ -64,6 +66,7 @@
     sla_started: 'info',
     sla_response: 'success',
     sla_expired: 'warning',
+    room_member: 'accent',
   };
 
   let ready = $state(false);
@@ -160,8 +163,12 @@
     'sla_expired',
   ]);
 
+  // DIOGENES add-on (migration 0900): object_uri is the room page on this site.
+  const SITE_LINK_KINDS = new Set(['room_member']);
+
   function targetHref(item: NotificationDto): string | null {
     if (item.kind === 'follow') return item.source_actor_url;
+    if (item.object_uri && SITE_LINK_KINDS.has(item.kind)) return item.object_uri;
     // Kinds cívicas: object_uri já vem como URL completa `/propostas/<id>`.
     // Reutilizar direto — /publicacao?uri= é só pro fediverso.
     if (item.object_uri && CIVIC_KINDS.has(item.kind)) {

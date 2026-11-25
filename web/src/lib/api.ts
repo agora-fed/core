@@ -2022,6 +2022,8 @@ export interface EmailPrefs {
   reblog?: boolean;
   follow?: boolean;
   admin_action?: boolean;
+  /** DIOGENES add-on: someone added me to an articulation room. */
+  room_member?: boolean;
 }
 export interface MyPreferencesDto {
   email_prefs: EmailPrefs;
@@ -2454,6 +2456,7 @@ export interface NotificationDto {
     | 'sla_started'
     | 'sla_response'
     | 'sla_expired'
+    | 'room_member'
     | string;
   source_actor_url: string | null;
   source_handle: string;

@@ -9,6 +9,9 @@
 //! * Permissions: `diogenes.rooms.create`, `diogenes.sync.operate` (role grants, or
 //!   `administrator`).
 //! * Module gate: `module.diogenes`, default off per org.
+//! * Pages: drawn by the site (`web/src/pages/articulacao`) with the design system; the
+//!   crate's own pages are not mounted (ADR-0020, diogenes ADR-0007).
+//! * New members are told through `diogenes_notice` (bell, web push, e-mail).
 
 use std::sync::Arc;
 
@@ -56,7 +59,7 @@ impl diogenes::Identity for HostIdentity {
         let citizen = header_uuid(parts, "x-dsoc-citizen-id")?;
         let org = header_uuid(parts, "x-dsoc-org-id")?;
         let lookup = sqlx::query_scalar::<_, String>(
-            "SELECT COALESCE(NULLIF(display_name, ''), handle, 'Participante') FROM citizen WHERE id = $1",
+            "SELECT COALESCE(NULLIF(display_name, ''), '@' || handle, 'Participante') FROM citizen WHERE id = $1",
         )
         .bind(citizen)
         .fetch_optional(&self.state.db)
@@ -81,7 +84,7 @@ impl diogenes::Identity for HostIdentity {
 
     async fn find_user(&self, org_id: Uuid, handle: &str) -> Option<diogenes::UserRef> {
         let lookup = sqlx::query_as::<_, (Uuid, String)>(
-            "SELECT id, COALESCE(NULLIF(display_name, ''), handle)
+            "SELECT id, COALESCE(NULLIF(display_name, ''), '@' || handle)
                FROM citizen WHERE org_id = $1 AND lower(handle) = lower($2)",
         )
         .bind(org_id)
@@ -101,6 +104,15 @@ impl diogenes::Identity for HostIdentity {
             .await
             .is_ok()
     }
+
+    async fn member_added(&self, notice: diogenes::MemberAdded) {
+        crate::diogenes_notice::spawn(self.state.db.clone(), public_origin(), notice);
+    }
+}
+
+/// Public origin of the site, for links in notices (`PUBLIC_ORIGIN`).
+fn public_origin() -> String {
+    std::env::var("PUBLIC_ORIGIN").unwrap_or_else(|_| "https://democracia.social.br".to_owned())
 }
 
 /// True when `org` is the operator org of the installation (`DIOGENES_OPERATOR_ORG`).
@@ -120,11 +132,6 @@ pub fn routes(state: AppState) -> Router<()> {
     let db = state.db.clone();
     let identity = Arc::new(HostIdentity { state });
     diogenes::api_router(diogenes::DiogenesState::new(db, identity))
-}
-
-/// The articulation area pages (`/articulacao/`). Merge at the site root.
-pub fn web_routes() -> Router<()> {
-    diogenes::web_router()
 }
 
 /// Apply the DIOGENES schema and start the sync scheduler.

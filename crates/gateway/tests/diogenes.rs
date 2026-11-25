@@ -247,6 +247,19 @@ async fn diogenes_through_the_real_identity_adapter() {
     assert_eq!(s, StatusCode::OK);
     assert_eq!(body["data"]["role"], "viewer");
 
+    // Bia was told: the bell row arrives from the background task.
+    let mut rings = 0;
+    for _ in 0..50 {
+        rings = bell(&db, _bia).await.len();
+        if rings > 0 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert_eq!(rings, 1, "the new member gets one notification");
+    // A member without a profile name shows as @handle, never as a bare id.
+    assert_eq!(body["data"]["role"], "viewer");
+
     // The data sync is shared by the installation: with no DIOGENES_OPERATOR_ORG, no org
     // can trigger it by hand, whatever its roles.
     let (s, _) = call(
@@ -292,4 +305,123 @@ async fn start_applies_the_schema_and_gates_the_scheduler() {
         .await
         .expect("scheduler task");
     scheduler.abort();
+}
+
+async fn credential(db: &Db, org: Uuid, citizen: Uuid, email: &str) {
+    sqlx::query(
+        "INSERT INTO auth_credential (id, citizen_id, org_id, email, password_hash, created_at)
+         VALUES ($1, $2, $3, $4, 'x', now())",
+    )
+    .bind(Uuid::now_v7())
+    .bind(citizen)
+    .bind(org)
+    .bind(email)
+    .execute(db)
+    .await
+    .unwrap();
+}
+
+fn notice(org: Uuid, user: Uuid, by: Uuid) -> diogenes::MemberAdded {
+    diogenes::MemberAdded {
+        org_id: org,
+        room_id: Uuid::now_v7(),
+        room_name: "PL 4675/2025".into(),
+        user_id: user,
+        role: "editor".into(),
+        added_by: by,
+        added_by_name: "Ana".into(),
+    }
+}
+
+async fn bell(db: &Db, citizen: Uuid) -> Vec<(String, Option<String>, Option<String>)> {
+    sqlx::query_as(
+        "SELECT kind, object_uri, object_preview FROM user_notification WHERE citizen_id = $1",
+    )
+    .bind(citizen)
+    .fetch_all(db)
+    .await
+    .unwrap()
+}
+
+/// The notice writes the bell row and renders the e-mail from the editable template.
+#[tokio::test]
+async fn member_notice_rings_the_bell_and_renders_the_mail() {
+    let (_app, db) = app().await;
+    let org = Uuid::now_v7();
+    let s = Uuid::now_v7().simple().to_string();
+    let (ana, _) = citizen(&db, org, &format!("na{}", &s[20..])).await;
+    let (bia, _) = citizen(&db, org, &format!("nb{}", &s[20..])).await;
+    credential(&db, org, bia, &format!("bia{}@example.org", &s[20..])).await;
+
+    let n = notice(org, bia, ana);
+    let mail = dsoc_gateway::diogenes_notice::record(&db, "https://site.test/", &n)
+        .await
+        .unwrap()
+        .expect("e-mail");
+    assert_eq!(mail.to, format!("bia{}@example.org", &s[20..]));
+    assert_eq!(mail.subject, "Ana adicionou você à sala \"PL 4675/2025\"");
+    let url = format!("https://site.test/articulacao/#/sala/{}", n.room_id);
+    assert!(mail.body.contains(&url), "{}", mail.body);
+    assert!(mail.body.contains("como editor(a)"));
+    assert!(mail
+        .body
+        .contains("https://site.test/configuracoes#preferencias"));
+
+    let rows = bell(&db, bia).await;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].0, "room_member");
+    assert_eq!(rows[0].1.as_deref(), Some(url.as_str()));
+    assert_eq!(
+        rows[0].2.as_deref(),
+        Some("Ana adicionou você à sala \"PL 4675/2025\" como editor(a)")
+    );
+}
+
+/// Opt-out keeps the bell but sends no e-mail; no address sends no e-mail; a recipient of
+/// another org gets nothing at all.
+#[tokio::test]
+async fn member_notice_respects_opt_out_address_and_org() {
+    let (_app, db) = app().await;
+    let org = Uuid::now_v7();
+    let s = Uuid::now_v7().simple().to_string();
+    let (ana, _) = citizen(&db, org, &format!("oa{}", &s[20..])).await;
+    let (opted_out, _) = citizen(&db, org, &format!("ob{}", &s[20..])).await;
+    credential(&db, org, opted_out, &format!("ob{}@example.org", &s[20..])).await;
+    sqlx::query(
+        "UPDATE citizen SET email_prefs = email_prefs || '{\"room_member\": false}' WHERE id = $1",
+    )
+    .bind(opted_out)
+    .execute(&db)
+    .await
+    .unwrap();
+    let got =
+        dsoc_gateway::diogenes_notice::record(&db, "https://s.test", &notice(org, opted_out, ana))
+            .await
+            .unwrap();
+    assert!(got.is_none());
+    assert_eq!(bell(&db, opted_out).await.len(), 1);
+
+    let (no_mail, _) = citizen(&db, org, &format!("oc{}", &s[20..])).await;
+    let got =
+        dsoc_gateway::diogenes_notice::record(&db, "https://s.test", &notice(org, no_mail, ana))
+            .await
+            .unwrap();
+    assert!(got.is_none());
+    assert_eq!(bell(&db, no_mail).await.len(), 1);
+
+    let foreign_org = Uuid::now_v7();
+    let (foreign, _) = citizen(&db, foreign_org, &format!("od{}", &s[20..])).await;
+    credential(
+        &db,
+        foreign_org,
+        foreign,
+        &format!("od{}@example.org", &s[20..]),
+    )
+    .await;
+    let got =
+        dsoc_gateway::diogenes_notice::record(&db, "https://s.test", &notice(org, foreign, ana))
+            .await
+            .unwrap();
+    assert!(got.is_none());
+    assert!(bell(&db, foreign).await.is_empty());
 }

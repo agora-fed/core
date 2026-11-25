@@ -139,8 +139,9 @@
         { key: 'reblog', label: 'Alguém republicou (boost)' },
         { key: 'follow', label: 'Alguém começou a me seguir' },
         { key: 'admin_action', label: 'Ação da moderação sobre minha conta' },
+        { key: 'room_member', label: 'Alguém me adicionou a uma sala de articulação', requires: 'diogenes' },
       ] as row (row.key)}
-        <label class="check">
+        <label class="check" data-requires={'requires' in row ? row.requires : undefined}>
           <input
             type="checkbox"
             checked={prefs.email_prefs[row.key as keyof EmailPrefs] !== false}

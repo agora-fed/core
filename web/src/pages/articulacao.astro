@@ -1,0 +1,24 @@
+---
+// DIOGENES articulation area (ADR-0020). Off unless `module.diogenes` is on: the gateway
+// serves /modulo-indisponivel/ for this route otherwise (OPTIONAL_MODULE_ROUTES).
+import BaseLayout from '../layouts/BaseLayout.astro';
+import ArticulacaoApp from '../components/articulacao/ArticulacaoApp.svelte';
+---
+
+<BaseLayout
+  title="Sala de articulação"
+  description="Contagem de votos e articulação na Câmara dos Deputados."
+  noindex
+>
+  <section class="articulacao">
+    <div class="container">
+      <ArticulacaoApp client:load />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .articulacao {
+    padding-block: var(--sp-6) var(--sp-16);
+  }
+</style>

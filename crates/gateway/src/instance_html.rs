@@ -47,7 +47,11 @@ const MODULE_ROUTES: [(&str, &str); 19] = [
 const UNAVAILABLE_PAGE: &str = "/modulo-indisponivel/";
 
 /// First path segment of static pages that belong to a module that is off by default.
-const OPTIONAL_MODULE_ROUTES: &[(&str, &str)] = &[("grupos", "groups"), ("reunioes", "meetings")];
+const OPTIONAL_MODULE_ROUTES: &[(&str, &str)] = &[
+    ("grupos", "groups"),
+    ("reunioes", "meetings"),
+    ("articulacao", "diogenes"),
+];
 
 /// Off by default, so listed only when on. Must match web/src/styles/module-gate.css.
 const UI_OPTIONAL_MODULES: &[&str] = &["groups", "meetings", "diogenes"];
@@ -356,6 +360,8 @@ mod tests {
         assert_eq!(route_override("/grupos/", &[], &["groups"]), None);
         assert_eq!(route_override("/reunioes/", &[], &[]), expected);
         assert_eq!(route_override("/reunioes/", &[], &["meetings"]), None);
+        assert_eq!(route_override("/articulacao/", &[], &[]), expected);
+        assert_eq!(route_override("/articulacao/", &[], &["diogenes"]), None);
     }
 
     #[test]
