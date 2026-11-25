@@ -477,6 +477,11 @@ export function projectBody(form: { name: string; rule: RuleChoice; threshold: s
   return body;
 }
 
+/** The number to show after the rule changes: a simple majority uses the quorum 257. */
+export function defaultThreshold(rule: RuleChoice, current: string): string {
+  return rule === 'simple' ? '257' : current;
+}
+
 export function thresholdHint(rule: RuleChoice): string {
   if (rule === 'simple') return 'Quórum de presença. Padrão: 257.';
   if (rule === 'fixed') return 'Votos Sim necessários. 257 = maioria absoluta · 308 = 3/5 (PEC).';

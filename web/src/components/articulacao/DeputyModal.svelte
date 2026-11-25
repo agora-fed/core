@@ -108,7 +108,10 @@
     </form>
   {/if}
 
-  <CampaignSection camaraId={d.camara_id} />
+  <!-- The modal stays mounted while the deputy changes: key the section so it loads again. -->
+  {#key d.camara_id}
+    <CampaignSection camaraId={d.camara_id} />
+  {/key}
 
   <details class="groups">
     <summary>Frentes e bancadas ({groups.length})</summary>

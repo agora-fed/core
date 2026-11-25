@@ -16,6 +16,7 @@ import {
   parseRoute,
   prioritiesIn,
   projectBody,
+  defaultThreshold,
   brl,
   byColumnText,
   donorKindText,
@@ -148,6 +149,10 @@ describe('labels', () => {
     expect(thresholdHint('auto')).toContain('PEC 308');
     expect(thresholdHint('simple')).toContain('Quórum');
     expect(thresholdHint('fixed')).toContain('308');
+  });
+  it('resets the number to the quorum when the rule becomes simple', () => {
+    expect(defaultThreshold('simple', '308')).toBe('257');
+    expect(defaultThreshold('fixed', '308')).toBe('308');
   });
   it('lets the server pick the rule when the form is on auto', () => {
     expect(projectBody({ name: ' PL 1 ', rule: 'auto', threshold: '', bill: '2562481' })).toEqual({

@@ -5,7 +5,7 @@
   import Input from '../ui/Input.svelte';
   import Select from '../ui/Select.svelte';
   import { toast } from '../../lib/toasts';
-  import { api, projectBody, RULE_CHOICES, thresholdHint, type Project, type RuleChoice } from '../../lib/articulacao';
+  import { api, defaultThreshold, projectBody, RULE_CHOICES, thresholdHint, type Project, type RuleChoice } from '../../lib/articulacao';
 
   interface Props {
     open: boolean;
@@ -51,7 +51,12 @@
 <Modal bind:open title="Configurar projeto" {onclose}>
   <form id="project-settings" onsubmit={save}>
     <Input label="Nome" bind:value={name} required maxlength={120} />
-    <Select label="Regra de aprovação" bind:value={rule} options={RULE_CHOICES.filter((c) => c.value !== 'auto').map((c) => ({ ...c }))} />
+    <Select
+      label="Regra de aprovação"
+      bind:value={rule}
+      options={RULE_CHOICES.filter((c) => c.value !== 'auto').map((c) => ({ ...c }))}
+      onchange={(v) => (threshold = defaultThreshold(v as RuleChoice, threshold))}
+    />
     <Input
       label={rule === 'simple' ? 'Quórum' : 'Mínimo para aprovar'}
       type="number"
