@@ -1967,10 +1967,12 @@ fn urlencoding_encode(s: &str) -> String {
 /// Middleware helper: if the request carries a valid Bearer token AND no
 /// cookie session was set, resolve it and inject the same identity headers
 /// `inject_identity` uses. Callable from lib.rs's middleware chain.
+/// Returns `(citizen, org, scopes)`; the caller MUST check the scopes
+/// (`bearer_scope::permits`) before it trusts the identity.
 pub async fn resolve_bearer_to_headers(
     state: &AppState,
     headers: &HeaderMap,
-) -> Option<(Uuid, Uuid)> {
+) -> Option<(Uuid, Uuid, String)> {
     let raw = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())?;
@@ -1986,5 +1988,5 @@ pub async fn resolve_bearer_to_headers(
         .await
         .ok()
         .flatten()?;
-    Some((citizen_id, org_id))
+    Some((citizen_id, org_id, resolved.scopes))
 }

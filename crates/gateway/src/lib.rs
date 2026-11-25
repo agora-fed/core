@@ -27,6 +27,7 @@ pub mod announcements;
 pub mod attestations;
 pub mod audience;
 pub mod authz_ext;
+mod bearer_scope;
 pub mod campaign_broadcast;
 pub mod campaign_broadcast_sms;
 pub mod campaign_consent;
@@ -111,9 +112,9 @@ pub mod whoami;
 pub mod worker;
 
 use axum::extract::{Request, State};
-use axum::http::{header, HeaderValue};
+use axum::http::{header, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use axum::{routing::get, Json, Router};
 use dsoc_app::AppState;
 use std::net::SocketAddr;
@@ -208,10 +209,24 @@ async fn inject_identity(State(state): State<AppState>, mut req: Request, next: 
     }
     // Second: Mastodon-compatible Bearer token. Only checked when cookie
     // didn't resolve (cookies win for the site's own web).
+    // The token is limited to the scopes the user granted: a `read` token must not
+    // post, delete or vote. Out of scope = 403 (Mastodon's answer), not anonymous: the
+    // client must learn the token is too weak instead of acting logged out.
     if resolved.is_none() {
-        if let Some((citizen, org)) =
+        if let Some((citizen, org, scopes)) =
             crate::mastodon_api::resolve_bearer_to_headers(&state, req.headers()).await
         {
+            let path = req
+                .extensions()
+                .get::<axum::extract::OriginalUri>()
+                .map_or_else(|| req.uri().path().to_owned(), |u| u.path().to_owned());
+            if !bearer_scope::permits(req.method(), &path, &scopes) {
+                return (
+                    StatusCode::FORBIDDEN,
+                    Json(serde_json::json!({ "error": bearer_scope::OUT_OF_SCOPE })),
+                )
+                    .into_response();
+            }
             resolved = Some((citizen, org));
         }
     }

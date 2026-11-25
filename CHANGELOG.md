@@ -7,6 +7,14 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
 
 ## [Unreleased]
 
+### Security
+- **OAuth bearer tokens are now limited to their scopes.** `inject_identity` accepted a
+  Mastodon Client API token as a full login and never read its `scopes`, so a token
+  granted only `read` could post, delete, vote and change settings on every route. Now
+  safe methods need `read`, mutating methods need `write` (`follow` also covers
+  follow/block/mute, `push` the Web Push subscription). Out of scope = 403
+  `This action is outside the authorized scopes`. Cookie sessions are unchanged.
+
 ## [0.71.0] — 2026-08-05
 
 ### Security
