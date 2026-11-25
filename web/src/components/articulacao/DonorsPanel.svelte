@@ -101,8 +101,9 @@
     {#if (data.sectors ?? []).length}
       <h3 class="h3">Setores das empresas dos doadores</h3>
       <p class="muted small">
-        Atividade principal das empresas em que os doadores são sócios, e em que coluna estão os deputados que eles
-        financiaram. Um doador com empresas em dois setores conta nos dois.
+        Atividade principal das empresas em que os doadores aparecem como sócios ou administradores, e em que coluna
+        estão os deputados que eles financiaram. Um doador com empresas em dois setores conta nos dois. Holdings
+        aparecem como setor próprio: a Receita não diz o que elas controlam.
       </p>
       <div class="table-wrap">
         <table>

@@ -46,7 +46,7 @@
   const sortOptions = [
     { value: 'total', label: 'Total declarado' },
     { value: 'people', label: 'Doações de pessoas' },
-    { value: 'companies', label: 'Doadores sócios de empresas' },
+    { value: 'companies', label: 'Doadores ligados a empresas' },
   ];
 
   const sortKey: Record<SortBy, (d: CampaignRow) => number> = {
@@ -102,8 +102,8 @@
 <header class="intro">
   <h1>Quem financia</h1>
   <p class="lead">
-    De onde veio o dinheiro da campanha de 2022 de cada deputado federal em exercício, quem doou e de que empresas os
-    doadores são sócios. Todos os dados são públicos: vêm do TSE e da Receita Federal.
+    De onde veio o dinheiro da campanha de 2022 de cada deputado federal em exercício, quem doou e em que empresas os
+    doadores aparecem como sócios ou administradores. Todos os dados são públicos: vêm do TSE e da Receita Federal.
   </p>
 </header>
 
@@ -135,9 +135,11 @@
             <span class="figures">
               <span class="total">{brl(d.total_cents)}</span>
               <span class="muted small">
-                pessoas {brl(d.people_cents)}{d.donors_with_companies
-                  ? ` · ${d.donors_with_companies} ${d.donors_with_companies === 1 ? 'doador sócio' : 'doadores sócios'} de empresas`
-                  : ''}{d.own_companies ? ` · sócio de ${d.own_companies} ${d.own_companies === 1 ? 'empresa' : 'empresas'}` : ''}
+                pessoas físicas {brl(d.people_cents)}{d.donors_with_companies
+                  ? ` · ${d.donors_with_companies} ${d.donors_with_companies === 1 ? 'doador ligado' : 'doadores ligados'} a empresas`
+                  : ''}{d.own_companies
+                  ? ` · consta em ${d.own_companies} ${d.own_companies === 1 ? 'empresa' : 'empresas'}`
+                  : ''}
               </span>
             </span>
           </button>

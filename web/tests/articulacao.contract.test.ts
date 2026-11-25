@@ -25,6 +25,7 @@ import {
   companyStatusText,
   MATCH_NOTE,
   moreCompanies,
+  namesakesText,
   type CompanyView,
   donorKindText,
   provenanceText,
@@ -329,6 +330,7 @@ describe('companies of the donors (Receita)', () => {
     capital_cents: 500000000,
     role: 'Sócio-Administrador',
     since: '2010-01-05',
+    namesakes: 0,
     ...over,
   });
   it('describes the role, the activity and the place', () => {
@@ -353,7 +355,10 @@ describe('companies of the donors (Receita)', () => {
     expect(companySourceText({ version: '2026-11', source_url: 'x', imported_at: '2026-11-25T18:00:00Z' })).toBe(
       'Empresas: Receita Federal, CNPJ 11/2026 · importado em 25/11/2026',
     );
-    expect(MATCH_NOTE).toContain('Sócio não quer dizer dono');
+    expect(MATCH_NOTE).toContain('não quer dizer ser dono');
+    expect(namesakesText(0)).toBe('');
+    expect(namesakesText(1)).toBe('outra pessoa com este nome no cadastro');
+    expect(namesakesText(12)).toBe('outras 12 pessoas com este nome no cadastro');
     for (const t of [MATCH_NOTE, companyDetail(company())]) {
       expect(t).not.toMatch(/lobista|influenciad|suspeit|laranja/i);
     }

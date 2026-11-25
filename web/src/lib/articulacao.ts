@@ -259,6 +259,7 @@ export interface CompanyView {
   capital_cents: number | null;
   role: string;
   since: string | null;
+  namesakes: number;
 }
 export interface CampaignRow {
   camara_id: number;
@@ -325,9 +326,15 @@ export function companySourceText(s: CompanySource | null): string {
   return `Empresas: Receita Federal, CNPJ ${s.version.split('-').reverse().join('/')} · importado em ${new Date(s.imported_at).toLocaleDateString('pt-BR')}`;
 }
 
+/** "outras 12 pessoas com este nome no cadastro", when the name is not unique. */
+export function namesakesText(n: number): string {
+  if (!n) return '';
+  return n === 1 ? 'outra pessoa com este nome no cadastro' : `outras ${n} pessoas com este nome no cadastro`;
+}
+
 /** The notice next to every company link. */
 export const MATCH_NOTE =
-  'Empresas: o nome e os 6 dígitos do CPF que a Receita publica são iguais aos do doador. Sócio não quer dizer dono: o papel é o que a Receita informa. A lista mostra os sócios de hoje, não os de 2022.';
+  'Empresas: o nome e os 6 dígitos do CPF que a Receita publica são iguais aos do doador. Estar no quadro de sócios e administradores não quer dizer ser dono: o papel é o que a Receita informa. O quadro é o de hoje, não o de 2022. Com nome comum, a coincidência pode ser de outra pessoa.';
 
 const SOURCE_LABEL: Record<MoneySource, string> = {
   party: 'Partido (inclui fundo eleitoral)',

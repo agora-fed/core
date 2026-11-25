@@ -76,7 +76,7 @@
     </p>
   {/if}
   {#if data && (data.deputy_companies ?? []).length}
-    <h4 class="h4">Empresas em que o deputado é sócio</h4>
+    <h4 class="h4">Empresas em que o deputado consta como sócio ou administrador</h4>
     <CompanyList companies={data.deputy_companies} />
   {/if}
   {#if data && data.companies_source && hasCompanies(data)}

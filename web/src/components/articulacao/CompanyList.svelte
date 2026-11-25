@@ -1,7 +1,7 @@
 <script lang="ts">
   // The companies of one person (Receita Federal, diogenes ADR-0010). The role is the
   // Receita text; the page never calls a partner an owner.
-  import { brl, cnpjBase, companyDetail, moreCompanies, type CompanyView } from '../../lib/articulacao';
+  import { brl, cnpjBase, companyDetail, moreCompanies, namesakesText, type CompanyView } from '../../lib/articulacao';
 
   let { companies, total = companies.length }: { companies: CompanyView[]; total?: number } = $props();
 </script>
@@ -13,6 +13,7 @@
         <span class="name">{c.name}</span>
         <span class="muted">CNPJ {cnpjBase(c.cnpj_basico)}{c.capital_cents ? ` · capital ${brl(c.capital_cents)}` : ''}</span>
         <span class="detail">{companyDetail(c)}</span>
+        {#if c.namesakes}<span class="detail warn">Atenção: {namesakesText(c.namesakes)}; o CPF parcial coincide com o do doador.</span>{/if}
       </li>
     {/each}
     {#if moreCompanies(companies.length, total)}
@@ -43,5 +44,8 @@
   .detail {
     flex-basis: 100%;
     color: var(--text-2);
+  }
+  .warn {
+    font-style: italic;
   }
 </style>
