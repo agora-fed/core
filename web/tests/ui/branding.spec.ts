@@ -36,11 +36,17 @@ test('aparencia panel parses the envelope (no generic failure banner)', async ({
   page.on('pageerror', (err) => jsErrors.push(String(err)));
 
   await page.goto('/admin/aparencia/');
-  // The island always resolves its load: either the form (admin session) or
-  // the SERVER's auth message. The generic banner means envelope parsing broke.
-  await expect(
-    page.getByText(/Autenticação necessária|Requer administrador|Nome do site/i).first(),
-  ).toBeVisible();
+  // Since #70 the gateway sends anonymous visitors to the login page before the island
+  // loads. With an admin session the island renders the form; the generic banner still
+  // means envelope parsing broke.
+  if (new URL(page.url()).pathname.startsWith('/entrar')) {
+    expect(new URL(page.url()).searchParams.get('next')).toBe('/admin/aparencia/');
+    await expect(page.getByRole('heading', { name: 'Entrar' })).toBeVisible();
+  } else {
+    await expect(
+      page.getByText(/Autenticação necessária|Requer administrador|Nome do site/i).first(),
+    ).toBeVisible();
+  }
   await expect(
     page.getByText('Falha ao carregar identidade visual.'),
   ).toHaveCount(0);

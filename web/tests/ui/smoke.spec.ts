@@ -17,7 +17,8 @@ const PUBLIC_ROUTES = [
   { path: '/entrar/', match: /entrar|e-mail/i, name: 'entrar' },
   { path: '/cadastrar/', match: /cadastr|criar|conta/i, name: 'cadastrar' },
   { path: '/configuracoes/', match: /configura[çc]|entre/i, name: 'configuracoes' },
-  { path: '/admin/', match: /admin|entre|restrit/i, name: 'admin' },
+  // Anonymous visitors are sent to the login page (#70): /entrar/?next=/admin/.
+  { path: '/admin/', match: /admin|entrar|restrit/i, name: 'admin' },
   { path: '/notificacoes/', match: /notifica[çc]|entre/i, name: 'notificacoes' },
   { path: '/design/', match: /design|componente/i, name: 'design system' },
 ];
