@@ -5,6 +5,7 @@
   import Select from '../ui/Select.svelte';
   import Textarea from '../ui/Textarea.svelte';
   import Avatar from '../ui/Avatar.svelte';
+  import CampaignSection from './CampaignSection.svelte';
   import {
     camaraUrl,
     fmtTime,
@@ -106,6 +107,8 @@
       </div>
     </form>
   {/if}
+
+  <CampaignSection camaraId={d.camara_id} />
 
   <details class="groups">
     <summary>Frentes e bancadas ({groups.length})</summary>

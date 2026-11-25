@@ -16,6 +16,12 @@ import {
   parseRoute,
   prioritiesIn,
   projectBody,
+  brl,
+  byColumnText,
+  donorKindText,
+  provenanceText,
+  sourceLabel,
+  sourceShares,
   roleLabel,
   RULE_CHOICES,
   ruleText,
@@ -254,5 +260,47 @@ describe('safeUrl', () => {
     expect(safeUrl('javascript:alert(1)')).toBeNull();
     expect(safeUrl('https://x" onerror="y')).toBeNull();
     expect(safeUrl(null)).toBeNull();
+  });
+});
+
+describe('campaign finance (TSE)', () => {
+  it('formats cents as reais', () => {
+    expect(brl(123456)).toMatch(/^R\$\s1\.234,56$/);
+    expect(brl(0)).toMatch(/0,00$/);
+  });
+  it('labels the sources and their shares', () => {
+    expect(sourceLabel('party')).toContain('fundo eleitoral');
+    expect(sourceLabel('unknown')).toBe('unknown');
+    const shares = sourceShares([
+      { source: 'party', cents: 750, receipts: 1 },
+      { source: 'individuals', cents: 250, receipts: 3 },
+    ]);
+    expect(shares.map((x) => [x.source, x.pct])).toEqual([
+      ['party', 75],
+      ['individuals', 25],
+    ]);
+    expect(sourceShares([{ source: 'own', cents: 0, receipts: 0 }])[0].pct).toBe(0);
+  });
+  it('says how the money came, never a judgement', () => {
+    expect(donorKindText({ kind: 'person', via_party: false })).toBe('doação direta');
+    expect(donorKindText({ kind: 'person', via_party: true })).toBe('doou ao partido, que repassou');
+    expect(donorKindText({ kind: 'candidate', via_party: false })).toBe('campanha de outro candidato');
+    for (const t of [donorKindText({ kind: 'person', via_party: true }), provenanceText({ year: 2022, source_url: '', imported_at: null })]) {
+      expect(t).not.toMatch(/lobista|influenciad|suspeit/i);
+    }
+  });
+  it('lists deputies per column in board order, without zeros', () => {
+    const cols: Column[] = [
+      { id: 'y', key: 'yes', name: 'Sim', color: '', position: 1 },
+      { id: 'n', key: 'no', name: 'Não', color: '', position: 2 },
+      { id: 'd', key: 'disputed', name: 'Em disputa', color: '', position: 3 },
+    ];
+    expect(byColumnText({ n: 2, y: 5, d: 0 }, cols)).toBe('Sim 5 · Não 2');
+  });
+  it('states the provenance', () => {
+    expect(provenanceText({ year: 2022, source_url: 'x', imported_at: null })).toContain('ainda não foram importados');
+    expect(provenanceText({ year: 2022, source_url: 'x', imported_at: '2026-11-25T18:00:00Z' })).toMatch(
+      /^Fonte: TSE, prestação de contas 2022 · importado em 25\/11\/2026$/,
+    );
   });
 });

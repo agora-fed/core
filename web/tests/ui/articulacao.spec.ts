@@ -67,3 +67,12 @@ test('public deputies API answers with the envelope', async ({ request }) => {
   expect(body.success).toBe(true);
   expect(Array.isArray(body.data)).toBe(true);
 });
+
+test('campaign finance API gates anonymous callers (diogenes ADR-0009)', async ({ request }) => {
+  const deputies = await (await request.get('/api/v1/diogenes/deputies')).json();
+  const first = (deputies.data as Array<{ camara_id: number }>)[0];
+  test.skip(!first, 'no deputies synced on this installation');
+  const res = await request.get(`/api/v1/diogenes/deputies/${first.camara_id}/campaign`);
+  expect(res.status()).toBe(401);
+  expect((await res.json()).success).toBe(false);
+});

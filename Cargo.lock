@@ -1302,7 +1302,7 @@ dependencies = [
 [[package]]
 name = "diogenes"
 version = "0.1.0"
-source = "git+https://github.com/agora-fed/diogenes?rev=4dc42a353a632119df6c8a8027fd547adbb3ffd2#4dc42a353a632119df6c8a8027fd547adbb3ffd2"
+source = "git+https://github.com/agora-fed/diogenes?rev=a132a826fb8daa30ea33fbd963542b3b00663c22#a132a826fb8daa30ea33fbd963542b3b00663c22"
 dependencies = [
  "async-trait",
  "axum",
@@ -1312,6 +1312,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "sqlx 0.8.6",
  "thiserror 2.0.18",
  "tokio",
@@ -2874,7 +2875,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.4",
+ "socket2 0.5.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -3945,7 +3946,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.6.4",
+ "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -3982,7 +3983,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.4",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.60.2",
 ]

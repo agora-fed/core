@@ -168,7 +168,100 @@ export interface ListMatch {
 const D = '/api/v1/diogenes';
 const enc = encodeURIComponent;
 
+// ------------------------------------------------------- campaign finance (TSE) ------
+// diogenes ADR-0009. Declared facts with their source; the site never labels a person.
+export type MoneySource = 'individuals' | 'party' | 'own' | 'candidates' | 'crowdfunding' | 'other';
+export interface Provenance {
+  year: number;
+  source_url: string;
+  imported_at: string | null;
+}
+export interface SourceTotal {
+  source: MoneySource;
+  cents: number;
+  receipts: number;
+}
+export interface DonorView {
+  key: string;
+  name: string;
+  kind: 'person' | 'candidate';
+  activity: string | null;
+  uf: string | null;
+  cents: number;
+  via_party: boolean;
+}
+export interface Campaign extends Provenance {
+  total_cents: number;
+  totals: SourceTotal[];
+  donors: DonorView[];
+}
+export interface ColumnMoney {
+  column_id: string;
+  deputies: number;
+  with_accounts: number;
+  cents_by_source: Partial<Record<MoneySource, number>>;
+}
+export interface SharedDonor {
+  key: string;
+  name: string;
+  kind: 'person' | 'candidate';
+  activity: string | null;
+  deputies: number;
+  cents: number;
+  by_column: Record<string, number>;
+}
+export interface ScenarioMoney extends Provenance {
+  columns: ColumnMoney[];
+  donors: SharedDonor[];
+}
+
+const SOURCE_LABEL: Record<MoneySource, string> = {
+  party: 'Partido (inclui fundo eleitoral)',
+  individuals: 'Pessoas físicas',
+  own: 'Recursos próprios',
+  candidates: 'Outros candidatos',
+  crowdfunding: 'Financiamento coletivo',
+  other: 'Outras origens',
+};
+export const sourceLabel = (s: string) => SOURCE_LABEL[s as MoneySource] ?? s;
+
+const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+/** Cents → "R$ 1.234,56". */
+export const brl = (cents: number) => BRL.format((Number(cents) || 0) / 100);
+
+/** Each source with its share of the total, in percent (one decimal). */
+export function sourceShares(totals: SourceTotal[]): { source: MoneySource; label: string; cents: number; pct: number }[] {
+  const all = totals.reduce((n, t) => n + t.cents, 0);
+  return totals.map((t) => ({
+    source: t.source,
+    label: sourceLabel(t.source),
+    cents: t.cents,
+    pct: all > 0 ? Math.round((1000 * t.cents) / all) / 10 : 0,
+  }));
+}
+
+export function donorKindText(d: Pick<DonorView, 'kind' | 'via_party'>): string {
+  if (d.kind === 'candidate') return 'campanha de outro candidato';
+  return d.via_party ? 'doou ao partido, que repassou' : 'doação direta';
+}
+
+/** "Sim 12 · Não 3": deputies per column, in the order of the columns, without zeros. */
+export function byColumnText(byColumn: Record<string, number>, columns: Column[]): string {
+  return columns
+    .filter((c) => (byColumn[c.id] ?? 0) > 0)
+    .map((c) => `${c.name} ${byColumn[c.id]}`)
+    .join(' · ');
+}
+
+/** "importado em 25/11/2026" or a notice that there is no import yet. */
+export function provenanceText(p: Provenance): string {
+  if (!p.imported_at) return 'Os dados de campanha ainda não foram importados.';
+  return `Fonte: TSE, prestação de contas ${p.year} · importado em ${new Date(p.imported_at).toLocaleDateString('pt-BR')}`;
+}
+
 export const api = {
+  campaign: (camaraId: number) => apiGetCredentialed<Campaign>(`${D}/deputies/${Number(camaraId)}/campaign`),
+  scenarioMoney: (id: string) => apiGetCredentialed<ScenarioMoney>(`${D}/scenarios/${enc(id)}/donors`),
   rooms: () => apiGetCredentialed<MyRooms>(`${D}/rooms`),
   createRoom: (name: string) => apiPost<RoomSummary>(`${D}/rooms`, { name }),
   room: (id: string) => apiGetCredentialed<RoomDetail>(`${D}/rooms/${enc(id)}`),

@@ -16,6 +16,7 @@
   import SettingsModal from './SettingsModal.svelte';
   import PasteModal from './PasteModal.svelte';
   import ColumnModal from './ColumnModal.svelte';
+  import DonorsPanel from './DonorsPanel.svelte';
   import { toast } from '../../lib/toasts';
   import {
     EMPTY_FILTER,
@@ -280,6 +281,8 @@
       onselectall={(ids) => (selected = new Set([...selected, ...ids]))}
       oneditcolumn={(col) => ((editing = col), (modal = 'column'))}
     />
+
+    <DonorsPanel scenarioId={scenario.id} columns={scenario.columns} />
 
     {#if canEdit && selected.size}
       <div class="actionbar" role="region" aria-label="Ações da seleção">

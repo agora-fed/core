@@ -21,6 +21,11 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
   Projects carry an approval rule (diogenes ADR-0008): ordinary bills (PL, MPV, PDL) count by
   simple majority with a quorum, PLP needs 257 votes and PEC 308; the kind of the bill sets the
   default and the project settings can change it.
+  Campaign finance (diogenes ADR-0009): the deputy card shows the 2022 TSE accounts (money by
+  source, largest donors, money that came through a party), and each scenario has a panel
+  "Quem financiou as campanhas deste cenário" with the money per column and the donors that
+  several deputies share. Facts with source and date only; no label about a person. An
+  operator starts the import once (`POST /api/v1/diogenes/sync/donations`).
 - **Articulation area redrawn with the design system** (ADR-0020 revision). The pages
   moved from the add-on into the site (`/articulacao/`, `web/src/components/articulacao/`),
   with a new `ui/Select.svelte`. The hash links of the first version keep working.

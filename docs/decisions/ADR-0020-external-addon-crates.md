@@ -90,5 +90,8 @@ ships its own pages":
 - Incident 2026-11-25: the first deploy wired the module into the catalog but not the header,
   so turning it on changed nothing visible. Decision 4 and the vitest contract
   (`web/tests/modules.contract.test.ts`) now pin every navigation surface.
+- Add-on data that is large and changes rarely (the TSE campaign accounts, diogenes ADR-0009)
+  is an operator-started job, not part of the hourly sync. After a deploy that adds such a
+  job, the operator starts it once and checks `GET /api/v1/diogenes/sync/status`.
 - Follow-up: a generic `Addon` trait in the gateway when a second add-on arrives (YAGNI until
   then).
