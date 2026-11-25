@@ -15,6 +15,9 @@ Per PLAN.md principle 1, we **credit Decidim concepts we port**.
   `diogenes.rooms.create` and `diogenes.sync.operate`. The add-on owns its `diogenes_*`
   tables and applies them at start. The Chamber/TSE sync is opt-in: `DIOGENES_SYNC_ENABLED=true`; only `DIOGENES_OPERATOR_ORG` can
   trigger it by hand. The dependency is pinned by commit (`rev`).
+  Navigation follows the optional-module pattern (header, left rail, command palette, footer),
+  pinned by `web/tests/modules.contract.test.ts`; production check in
+  `web/tests/ui/articulacao.spec.ts`. Decision recorded in ADR-0020.
 
 ### Security
 - **OAuth bearer tokens are now limited to their scopes.** `inject_identity` accepted a

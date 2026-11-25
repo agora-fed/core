@@ -17,6 +17,19 @@ Axum router assembling every crate behind one public API surface. Owns no domain
 
 - (none)
 
+## Add-ons (ADR-0020)
+
+- `diogenes_addon.rs` — host side of the DIOGENES add-on (`agora-fed/diogenes`, cargo feature
+  `diogenes`). Implements `diogenes::Identity`; mounts its API inside `/api/v1` and its pages at
+  `/articulacao/`; applies its `diogenes_*` schema at start. Module `module.diogenes` is off by
+  default. Tests: `tests/diogenes.rs`.
+
+## Bearer tokens
+
+- `bearer_scope.rs` — OAuth scope check for Mastodon Client API tokens in `inject_identity`:
+  safe methods need `read`, mutating methods need `write` (`follow`/`push` for their paths).
+  Tests: `tests/bearer_scopes.rs`.
+
 ## Public surface
 
 - Implements the relevant service trait(s) from `dsoc-core`.
