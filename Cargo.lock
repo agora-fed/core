@@ -1302,7 +1302,7 @@ dependencies = [
 [[package]]
 name = "diogenes"
 version = "0.1.0"
-source = "git+https://github.com/agora-fed/diogenes?rev=42ab9910e4a919d7f5713ea0ad393d75ae583136#42ab9910e4a919d7f5713ea0ad393d75ae583136"
+source = "git+https://github.com/agora-fed/diogenes?rev=0a74afbc1945f4ae08ed2bb5d7da94792b45fad3#0a74afbc1945f4ae08ed2bb5d7da94792b45fad3"
 dependencies = [
  "async-trait",
  "axum",
